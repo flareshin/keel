@@ -1,0 +1,24 @@
+{
+  "payload": {
+    "session_id": "wired-fires",
+    "transcript_path": "{{TMP}}/session.jsonl",
+    "cwd": "{{TMP}}/app",
+    "permission_mode": "default",
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "git push origin feature",
+      "description": "wired-fires fixture"
+    },
+    "tool_use_id": "toolu_wired"
+  },
+  "expect": "deny",
+  "setup": [
+    "git init -q --bare remotes/acme/app.git",
+    "git init -q -b main app && cd app && git config user.name keel && git config user.email keel@example.invalid && git config commit.gpgsign false",
+    "git -C app remote add origin \"$PWD/remotes/acme/app.git\"",
+    "cd app && echo seed > README.md && git add -A && git commit -q --no-verify -m seed && git push -q --no-verify origin main",
+    "cd app && git checkout -q -b feature && mkdir -p src && echo 'print(1)' > src/app.py && git add -A && git commit -q --no-verify -m work",
+    "mkdir -p overlay && printf 'origin\\tgate\\tintegration_base\\trisk_rules\\ttests\\nacme/app\\tsmoke\\tmain\\t-\\trequired\\n' > overlay/gated-repos.tsv"
+  ]
+}

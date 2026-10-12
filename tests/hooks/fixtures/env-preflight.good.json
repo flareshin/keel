@@ -1,0 +1,18 @@
+{
+  "payload": {
+    "session_id": "wired-fires",
+    "transcript_path": "{{TMP}}/session.jsonl",
+    "cwd": "{{TMP}}/app",
+    "permission_mode": "default",
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "mvn -q test",
+      "description": "wired-fires fixture"
+    },
+    "tool_use_id": "toolu_wired"
+  },
+  "setup": [
+    "git init -q -b main app && git -C app remote add origin https://example.invalid/acme/app.git"
+  ]
+}

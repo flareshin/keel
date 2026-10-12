@@ -1,0 +1,9 @@
+# Overlay registry of gated repos (DESIGN 5.3, Interfaces (h)); origin = normalized owner/repo.
+# push_approval (optional column, default false): true where a branch push itself deploys or
+# notifies, so approval (and the heavy read ack) is due at the push, not only at the merge.
+origin	gate	integration_base	risk_rules	tests	push_approval
+acmecorp/storefront	code	develop	acme	required	false
+acmecorp/pages	code	main	acme	required	true
+example/keel	code	main	keel	required	false
+example/keel-overlay	code	main	overlay	required	false
+example/notes-data	off	main	-	none	false

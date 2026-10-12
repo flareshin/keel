@@ -1,0 +1,3 @@
+origin_glob	action	pattern	rule_id	message
+acmecorp/platform-root	deny-commit	-	O-parent	Commit inside the submodule, not the parent repo.
+acmecorp/*	deny-path	*.sql	O-files	SQL files go through the DBA handoff, not git.

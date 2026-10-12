@@ -1,0 +1,3 @@
+# Example overlay ledger (invented values). Overlay rows use scope overlay and may cite private:<id> incidents.
+id	scope	type	statement	layer	enforced_at	why_not_stronger	justification	incidents	metric	review_by	grace_until	status
+O-files	overlay	knowledge	SQL files go through the DBA handoff, not git.	hook	hook:git-guard	-	-	private:TKT-1234,private:TKT-1300	fires:O-files	2026-12-10	2026-12-10	active

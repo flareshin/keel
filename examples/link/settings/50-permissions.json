@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "deny": ["Bash(rm -rf /:*)"],
+    "ask": ["Bash(git push:*)"]
+  },
+  "env": {
+    "ACME_NOTES_DIR": "{{DATA}}/notes"
+  }
+}

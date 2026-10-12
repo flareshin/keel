@@ -1,0 +1,19 @@
+{
+  "payload": {
+    "session_id": "wired-fires",
+    "transcript_path": "{{TMP}}/session.jsonl",
+    "cwd": "{{TMP}}",
+    "permission_mode": "default",
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Write",
+    "tool_input": {
+      "file_path": "{{TMP}}/overlay/PERSONAL.md",
+      "content": "- a note\n"
+    },
+    "tool_use_id": "toolu_wired"
+  },
+  "expect": "deny",
+  "setup": [
+    "mkdir -p overlay"
+  ]
+}

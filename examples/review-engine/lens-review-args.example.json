@@ -1,0 +1,13 @@
+{
+  "$comment": "Sample args for the lens-review workflow, with invented values. A root review omits since, runId and rootRunId (the run id is derived as rv-<UTC stamp>-<6 hex>); a delta review gives since (the reviewed tree of the previous review) on every diff plus rootRunId, and priorFindings after a NEEDS_FIXES. Omit lenses to use workflows/review-lenses.json.",
+  "root": {
+    "diffs": [{ "repo": "/work/acmecorp-storefront", "base": "origin/develop" }],
+    "readingGuide": "Entry point : CartService.applyCoupon (src/cart/service.py:40)\nFlow        : validate -> price -> save\nChanged     : coupons stack per line, not per cart\nUnchanged   : totals are rounded once, at checkout\nDecisions   : none\nRejected    : none\nRead first  : src/cart/service.py:52"
+  },
+  "delta": {
+    "diffs": [{ "repo": "/work/acmecorp-storefront", "base": "origin/develop", "since": "4b825dc642cb6eb9a060e54bf8d69288fbee4904" }],
+    "rootRunId": "rv-20261011T085500Z-7f3e21",
+    "priorFindings": ["src/cart/service.py:57 drops the per-line cap when two coupons apply"],
+    "lenses": [{ "key": "pricing", "prompt": "Lens: pricing. Recompute every changed total by hand for two coupons on one line." }]
+  }
+}

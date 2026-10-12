@@ -1,0 +1,33 @@
+#!/usr/bin/env python3
+"""measure/propose [--model-upgrade <model>]: demotion / extension proposals for rows past review_by.
+
+Proposals go to stdout; no ledger is edited.
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "lib"))
+
+from measurekit.cli import EXIT_OK, print_json, run_main  # noqa: E402
+from measurekit.propose import build_expiry_proposals, build_rereview_proposals  # noqa: E402
+from measurekit.smoke_context import SmokeContext  # noqa: E402
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="measure/propose", description="Propose demotions for expired ledger rows.")
+    parser.add_argument("--model-upgrade", metavar="MODEL", help="emit one re-review proposal per active row instead")
+    args = parser.parse_args(argv)
+    ctx = SmokeContext.from_environment()
+    if args.model_upgrade:
+        proposals = build_rereview_proposals(ctx.counted_rows, args.model_upgrade)
+    else:
+        proposals = build_expiry_proposals(ctx.counted_rows, ctx.metric_window_start, ctx.today)
+    print_json({"proposals": proposals})
+    return EXIT_OK
+
+
+if __name__ == "__main__":
+    run_main(main)

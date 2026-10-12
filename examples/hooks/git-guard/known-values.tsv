@@ -1,0 +1,9 @@
+# Overlay list of where secret values live (F-secrets known-values scan; hookkit/knownvalues.py).
+# file: a glob of config files; values of secret-named keys (password, pwd, secret, token, key,
+#       credential, auth) six characters or longer are the known values.
+# env:  an environment variable whose value is a known value.
+# The values stay in memory; a hit names file:line and the key, never the value.
+source	pattern
+file	~/.config/acmecorp/*.env
+file	~/git/acme-*/src/main/resources/application-*.yml
+env	ACME_API_TOKEN

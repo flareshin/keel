@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+"""measure/weekly: read-only weekly report of repo-layer rules, always-loaded bytes, core size, defects, proposals."""
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "lib"))
+
+from measurekit.cli import EXIT_OK, print_json, run_main  # noqa: E402
+from measurekit.gitutil import run_git  # noqa: E402
+from measurekit.metrics import MetricError, collect_metric_items  # noqa: E402
+from measurekit.propose import build_expiry_proposals  # noqa: E402
+from measurekit.smoke_context import SmokeContext  # noqa: E402
+
+DEFECT_RUNNER_PREFIX = "defects-"
+TESTS_PREFIX = "tests/"
+EXECUTABLE_MODE = "100755"
+CODE_EXTENSIONS = {".py", ".js", ".mjs", ".sh"}
+
+
+def main(argv: list[str]) -> int:
+    argparse.ArgumentParser(prog="measure/weekly", description="Weekly measurement report.").parse_args(argv)
+    print_json(build_weekly_report(SmokeContext.from_environment()))
+    return EXIT_OK
+
+
+def build_weekly_report(ctx: SmokeContext) -> dict:
+    rows = ctx.counted_rows
+    repo_rows = [row.id for row in rows if row.layer == "repo"]
+    return {
+        "repo_layer_rules": {"count": len(repo_rows), "ids": repo_rows},
+        "always_loaded": {
+            "claude_md": _file_size(os.path.join(ctx.data_dir, "CLAUDE.md")),
+            "memory_indexes": sum(_file_size(path) for path in ctx.memory_indexes()),
+        },
+        "core_size": measure_core_size(ctx.keel_home),
+        "defects": collect_defects(ctx),
+        "proposals": build_expiry_proposals(rows, ctx.metric_window_start, ctx.today),
+    }
+
+
+def measure_core_size(keel_home: str) -> dict:
+    """Lines of tracked code outside tests/ (executables and code extensions), and DESIGN.md bytes; no cap, a trend only."""
+    index = run_git(keel_home, ["ls-files", "-s", "-z"])
+    lines = 0
+    for entry in filter(None, index.split("\0")):
+        meta, path = entry.split("\t", 1)
+        if not path.startswith(TESTS_PREFIX) and (meta.split()[0] == EXECUTABLE_MODE or os.path.splitext(path)[1] in CODE_EXTENSIONS):
+            lines += _count_lines(os.path.join(keel_home, path))
+    return {"non_test_loc": lines, "design_md_bytes": _file_size(os.path.join(keel_home, "docs", "DESIGN.md"))}
+
+
+def _count_lines(path: str) -> int:
+    if not os.path.isfile(path):
+        return 0
+    with open(path, "rb") as handle:
+        return handle.read().count(b"\n")
+
+
+def collect_defects(ctx: SmokeContext) -> dict[str, dict]:
+    """Runs every overlay runner named `defects-*`; defect sources read company systems, so they live in the overlay."""
+    runner_dir = os.path.join(ctx.overlay_dir, "measure", "metrics")
+    names = sorted(os.listdir(runner_dir)) if os.path.isdir(runner_dir) else []
+    defects = {}
+    for name in [name for name in names if name.startswith(DEFECT_RUNNER_PREFIX)]:
+        try:
+            count, items = collect_metric_items("run:" + name, ctx.metric_window_start)
+        except MetricError as error:
+            defects[name] = {"error": str(error)}
+            continue
+        defects[name] = {"count": count, "items": items}
+    return defects
+
+
+def _file_size(path: str) -> int:
+    return os.path.getsize(path) if os.path.isfile(path) else 0
+
+
+if __name__ == "__main__":
+    run_main(main)

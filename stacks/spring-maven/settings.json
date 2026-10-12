@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 {{KEEL}}/stacks/spring-maven/hooks/env-preflight.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

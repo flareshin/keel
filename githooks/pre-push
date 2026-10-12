@@ -1,0 +1,21 @@
+#!/bin/bash
+# Blocks a push whose commits (messages and added lines) hit the public-boundary rules.
+# Install: git config core.hooksPath githooks
+set -e
+keel_home=${KEEL_HOME:-$(cd -P "$(dirname "$0")/.." && pwd)}
+boundary=${KEEL_BOUNDARY:-$keel_home/measure/boundary}
+
+status=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$local_sha" in  # empty or all zeros (a deletion) pushes no content
+    *[!0]*) "$boundary" --range "$remote_sha..$local_sha" >/dev/null || { status=$?; break; } ;;
+  esac
+done
+
+case "$status" in
+  0) exit 0 ;;
+  1) echo "pre-push: pushed commits hit the public boundary (listed above); rewrite them before pushing." >&2 ;;
+  2) echo "pre-push: boundary scan could not run (missing or empty overlay lexicon? set KEEL_OVERLAY_DIR)." >&2 ;;
+  *) echo "pre-push: boundary scan failed with exit $status (unknown remote commit? git fetch first)." >&2 ;;
+esac
+exit 1

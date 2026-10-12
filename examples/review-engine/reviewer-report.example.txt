@@ -1,0 +1,20 @@
+VERDICT: PASS
+
+Diff: /work/acmecorp-storefront: 3 files changed, 41 insertions(+), 6 deletions(-)
+
+Lenses fired: pricing, readable-code, rule-checks
+
+Merge-blocking: none
+
+Non-blocking: none
+
+Unverified (the verifier failed; re-verify before any PASS): none
+
+Lenses that did not run (re-run the review): none
+
+Refuted: 1
+
+Lens notes:
+- rule-checks: summary repos=1 scanned_lines=41 signals=0 unscanned=none blocked=none
+
+KEEL-EVIDENCE: {"v":1,"repo_root":"/work/acmecorp-storefront","review_base":"1111111111111111111111111111111111111111","head":null,"snapshot_tree":"2222222222222222222222222222222222222222","since":"4b825dc642cb6eb9a060e54bf8d69288fbee4904","run_id":"rv-20261011T093000Z-0c1d2e","root_run_id":"rv-20261011T085500Z-7f3e21","review_kind":"lens-review"}

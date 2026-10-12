@@ -1,0 +1,3 @@
+# Overlay link manifest: source (placeholders allowed) -> target relative to KEEL_DATA_DIR.
+source	target
+{{OVERLAY}}/commands/hello.md	commands/hello.md

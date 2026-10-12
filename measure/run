@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+"""measure/run <id> [--since YYYY-MM-DD]: evaluate one ledger row's metric.
+
+Prints {"id","metric","count","items","status"}; exit 0 PASS/GRACE, 1 FAIL, 2 unknown id or usage.
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+from datetime import date, timedelta
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "lib"))
+
+from measurekit import env  # noqa: E402
+from measurekit.cli import EXIT_NEGATIVE, EXIT_OK, EXIT_USAGE, iso_date, print_json, run_main  # noqa: E402
+from measurekit.ledger import all_rows, load_ledgers_from  # noqa: E402
+from measurekit.metrics import DEFAULT_WINDOW_DAYS, FAIL, evaluate_metric  # noqa: E402
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="measure/run", description="Evaluate one ledger row's metric.")
+    parser.add_argument("id", help="ledger id, e.g. K1 or C-dispatch")
+    parser.add_argument("--since", type=iso_date, help="window start (default: today - %d days)" % DEFAULT_WINDOW_DAYS)
+    args = parser.parse_args(argv)
+    rows = all_rows(load_ledgers_from(env.keel_home(), env.overlay_dir()))
+    row = next((row for row in rows if row.id == args.id), None)
+    if row is None:
+        print("run: no ledger row with id %r" % args.id, file=sys.stderr)
+        return EXIT_USAGE
+    today = date.today()
+    result = evaluate_metric(row, args.since or today - timedelta(days=DEFAULT_WINDOW_DAYS), today)
+    print_json(result)
+    return EXIT_NEGATIVE if result["status"] == FAIL else EXIT_OK
+
+
+if __name__ == "__main__":
+    run_main(main)

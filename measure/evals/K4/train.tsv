@@ -1,0 +1,8 @@
+# Train cases: id, kind (ambiguous | clear-change | clear-answer), expect (an identifier only a correct answer contains; - otherwise), prompt.
+# Split by tab; prompts are one line each and keep their quotes verbatim. Holdout cases live in holdout.tsv; never paste them here.
+id	kind	expect	prompt
+a2	ambiguous	-	Clean up the vendor report stuff, you know what I mean.
+a3	ambiguous	-	Fix the failing test in the PR we just opened.
+c1	clear-change	-	Rename getUserList to findActiveUsers in src/user/UserService.java and update its two callers.
+c2	clear-answer	grandTotalCents	What does the useCart hook in src/hooks/useCart.ts return?
+c4	clear-answer	4317	Which port does the dev server listen on when I run npm run dev?

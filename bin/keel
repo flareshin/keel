@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+"""keel CLI: test runs, approvals, snapshots and evidence (Interfaces (e))."""
+from __future__ import annotations
+
+import os
+import sys
+
+KEEL_HOME = os.environ.get("KEEL_HOME") or os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+sys.path.insert(0, os.path.join(KEEL_HOME, "lib"))
+
+from evidence.cli import main  # noqa: E402
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

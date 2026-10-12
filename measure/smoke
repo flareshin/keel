@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""measure/smoke [--json-only] [--candidate]: run every ledger check and append the run to keel-smoke.jsonl.
+
+Prints {"run_id","ok","count","cap","assertions":[...]}; exit 0 when no assertion FAILs, else 1.
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import secrets
+import sys
+from datetime import datetime, timezone
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "lib"))
+
+from measurekit.cli import EXIT_NEGATIVE, EXIT_OK, print_json, run_main  # noqa: E402
+from measurekit.datafiles import append_jsonl  # noqa: E402
+from measurekit.gitutil import GitError, is_git_repo, repo_key, snapshot_tree  # noqa: E402
+from measurekit.metrics import FAIL, PASS  # noqa: E402
+from measurekit.smoke_context import SmokeContext, assertion  # noqa: E402
+from measurekit.smoke_files import (  # noqa: E402
+    check_boundary, check_dangling, check_fires_rule_ids, check_file_caps, check_id_tagging, check_link_integrity,
+)
+from measurekit.smoke_ledger import (  # noqa: E402
+    check_expiry, check_id_unique, check_ledger_format, check_metrics, check_row_caps, check_rule_of_two,
+)
+from measurekit.smoke_mods import check_mod_trust  # noqa: E402
+from measurekit.smoke_wired import check_wired_fires  # noqa: E402
+
+CHECKS = (
+    check_ledger_format, check_id_unique, check_row_caps, check_file_caps, check_id_tagging,
+    check_fires_rule_ids, check_rule_of_two, check_metrics, check_expiry, check_boundary,
+    check_link_integrity, check_dangling, check_wired_fires, check_mod_trust,
+)
+ASSERTIONS_PER_ROW = 2
+ASSERTION_ALLOWANCE = 40
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="measure/smoke", description="Run every ledger check.")
+    parser.add_argument("--json-only", action="store_true", help="print only the JSON result")
+    parser.add_argument(
+        "--candidate", action="store_true",
+        help="check the link plan of KEEL_HOME and KEEL_OVERLAY_DIR against an empty data dir instead of the live one",
+    )
+    args = parser.parse_args(argv)
+    ctx = SmokeContext.from_environment(candidate=args.candidate)
+    result = run_smoke(ctx)
+    record_smoke_run(result, ctx)
+    print_json(result)
+    if not args.json_only:
+        print_summary(result)
+    return EXIT_OK if result["ok"] else EXIT_NEGATIVE
+
+
+def run_smoke(ctx: SmokeContext) -> dict:
+    assertions = [item for check in CHECKS for item in check(ctx)]
+    cap = ASSERTIONS_PER_ROW * len(ctx.counted_rows) + ASSERTION_ALLOWANCE
+    count = len(assertions) + 1
+    assertions.append(assertion("assertion-cap", "all", PASS if count <= cap else FAIL, "%d/%d" % (count, cap)))
+    ok = all(item["status"] != FAIL for item in assertions)
+    run_id = "smoke-%s-%s" % (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"), secrets.token_hex(3))
+    return {"run_id": run_id, "ok": ok, "count": count, "cap": cap, "assertions": assertions}
+
+
+def record_smoke_run(result: dict, ctx: SmokeContext) -> None:
+    failed = [{key: item[key] for key in ("check", "scope", "detail")} for item in result["assertions"] if item["status"] == FAIL]
+    line = {
+        "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "run_id": result["run_id"],
+        "ok": result["ok"],
+        "count": result["count"],
+        "failed": failed,
+        "trees": snapshot_checkouts([ctx.keel_home, ctx.overlay_dir]),
+    }
+    if ctx.candidate:
+        line["candidate"] = True
+    append_jsonl(os.path.join(ctx.data_dir, "logs", "keel-smoke.jsonl"), line)
+
+
+def snapshot_checkouts(checkouts: list[str]) -> dict[str, str]:
+    """Working-tree tree id per checkout, keyed by normalized origin; checkouts without an owner/repo origin are skipped."""
+    trees = {}
+    for checkout in filter(is_git_repo, checkouts):
+        key = repo_key(checkout)
+        if key is None:
+            print("smoke: %s has no owner/repo origin; its tree is not recorded" % checkout, file=sys.stderr)
+            continue
+        try:
+            trees[key] = snapshot_tree(checkout)
+        except GitError as error:
+            print("smoke: tree snapshot failed for %s: %s" % (checkout, error), file=sys.stderr)
+    return trees
+
+
+def print_summary(result: dict) -> None:
+    for item in result["assertions"]:
+        if item["status"] != PASS:
+            print("%-5s %s/%s: %s" % (item["status"], item["check"], item["scope"], item["detail"]), file=sys.stderr)
+    verdict = "ok" if result["ok"] else "FAILED"
+    print("smoke %s: %d assertions (cap %d), run %s" % (verdict, result["count"], result["cap"], result["run_id"]), file=sys.stderr)
+
+
+if __name__ == "__main__":
+    run_main(main)

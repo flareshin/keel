@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+"""Link keel into KEEL_DATA_DIR: symlinks, generated CLAUDE.md, owned settings keys."""
+import os
+import sys
+
+KEEL_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+sys.path.insert(0, os.path.join(KEEL_ROOT, "lib"))
+sys.path.insert(0, os.path.join(KEEL_ROOT, "measure", "lib"))
+
+from link.cli import main  # noqa: E402
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

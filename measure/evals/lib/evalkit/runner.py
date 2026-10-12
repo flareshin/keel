@@ -1,0 +1,84 @@
+"""One run: a fresh copy of the fixture under git, `claude -p` fed the prompt, then what the run left behind."""
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+import tempfile
+from dataclasses import dataclass
+
+from evalkit.grade import QUESTION_MARKER
+from evalkit.liveconfig import project_dir_for
+from evalkit.stream import RunFacts, summarize_stream
+from measurekit.gitutil import run_git
+
+CLAUDE_BINARY = "claude"
+MAX_TURNS = 8
+ALLOWED_TOOLS = "Skill,Read,Grep,Glob,Edit,Write,AskUserQuestion"
+DENIED_TOOLS = "Bash,NotebookEdit,Agent,Task,Workflow,WebFetch,WebSearch"
+TIMEOUT_EXIT = 124  # what GNU timeout would have reported; kept in the raw record only
+FIXTURE_IDENTITY = ["-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false"]
+OUTSIDE_FIXTURE = [".", ":!.claude"]  # the CLI may write .claude/ into its cwd; that is not the model changing files
+QUESTION_PROTOCOL = ("This session is non-interactive and the AskUserQuestion tool is unavailable. To ask the user something, "
+                     "write each question on its own line starting with \"%s\"." % QUESTION_MARKER)
+
+
+@dataclass
+class RunRecord:
+    facts: RunFacts
+    stream_text: str
+    diff: str
+
+
+def claude_command(model: str) -> list[str]:
+    return [
+        CLAUDE_BINARY, "-p", "--model", model, "--output-format", "stream-json", "--verbose",
+        "--settings", '{"disableAllHooks":true}',
+        "--tools", ALLOWED_TOOLS, "--disallowedTools", DENIED_TOOLS,
+        "--permission-mode", "acceptEdits", "--strict-mcp-config",
+        "--max-turns", str(MAX_TURNS), "--no-session-persistence", "--append-system-prompt", QUESTION_PROTOCOL,
+    ]
+
+
+def run_once(prompt: str, fixture: str, command: list[str], config_dir: str, timeout_seconds: int) -> RunRecord:
+    work = tempfile.mkdtemp(prefix="keel-eval-")
+    try:
+        _prepare_fixture_repo(fixture, work)
+        exit_code, timed_out, stream_text = _run_claude(command, prompt, work, timeout_seconds)
+        changed = bool(run_git(work, ["status", "--porcelain", "--"] + OUTSIDE_FIXTURE).strip())
+        leftover = project_dir_for(work, config_dir)
+        facts = RunFacts(
+            stream=summarize_stream(stream_text.splitlines()), exit_code=exit_code, timed_out=timed_out,
+            changed=changed, leftover_project_dir=leftover if os.path.isdir(leftover) else None,
+        )
+        return RunRecord(facts, stream_text, _diff_of_changes(work))
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def _prepare_fixture_repo(fixture: str, work: str) -> None:
+    shutil.copytree(fixture, work, dirs_exist_ok=True)
+    run_git(work, ["init", "-q"])
+    run_git(work, ["add", "-A"])
+    run_git(work, FIXTURE_IDENTITY + ["commit", "-q", "-m", "init"])
+
+
+def _run_claude(command: list[str], prompt: str, cwd: str, timeout_seconds: int) -> tuple[int, bool, str]:
+    env = {**os.environ, "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}
+    try:
+        completed = subprocess.run(command, input=prompt + "\n", capture_output=True, text=True, cwd=cwd, env=env, timeout=timeout_seconds)
+    except subprocess.TimeoutExpired as expired:
+        return TIMEOUT_EXIT, True, _as_text(expired.stdout)
+    return completed.returncode, False, completed.stdout
+
+
+def _as_text(partial_output: bytes | str | None) -> str:
+    """TimeoutExpired carries the partial stdout as bytes even in text mode."""
+    if partial_output is None:
+        return ""
+    return partial_output.decode("utf-8", "replace") if isinstance(partial_output, bytes) else partial_output
+
+
+def _diff_of_changes(work: str) -> str:
+    run_git(work, ["add", "-A", "--"] + OUTSIDE_FIXTURE)
+    return run_git(work, ["diff", "--cached"])

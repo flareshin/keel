@@ -1,0 +1,3 @@
+# Held-out prompt-refine behavior cases; never read while editing skills/prompt-refine.
+id	kind	expect	prompt
+h2	ambiguous	-	Make the dashboard better, whatever you think is best.

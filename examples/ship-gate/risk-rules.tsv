@@ -1,0 +1,9 @@
+# Overlay risk rules (DESIGN 5.4); path_glob is fnmatchcase on the repo-relative path, `*` crosses `/`.
+set	path_glob	class
+acme	src/*/billing/*	heavy
+acme	db/migration/*	heavy
+acme	*.css	light
+keel	docs/*	light
+keel	*.md	light
+overlay	settings/*	smoke-only
+overlay	ledger.tsv	smoke-only

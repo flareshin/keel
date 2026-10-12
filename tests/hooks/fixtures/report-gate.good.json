@@ -1,0 +1,17 @@
+{
+  "payload": {
+    "session_id": "wired-fires",
+    "transcript_path": "{{TMP}}/session.jsonl",
+    "cwd": "{{TMP}}",
+    "permission_mode": "default",
+    "hook_event_name": "SubagentStop",
+    "agent_id": "a1",
+    "agent_type": "general-purpose",
+    "agent_transcript_path": "{{TMP}}/agent-a1.jsonl",
+    "last_assistant_message": "The parser is defined in one module and called from two.",
+    "stop_hook_active": false
+  },
+  "setup": [
+    "printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"Review the change.\"}}' > agent-a1.jsonl"
+  ]
+}

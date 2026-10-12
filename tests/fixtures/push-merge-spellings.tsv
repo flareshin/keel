@@ -1,0 +1,130 @@
+# Push and merge spellings and what ship-gate must do with each, run through the one shared parser.
+# expect: gate = judged against evidence (denied unreviewed, passed with a bundle, scanned by git-guard);
+#         pass = never a gated action (a tag, a deletion, a dry run, or not a push at all);
+#         deny = cannot be attributed to one repo and branch, so refused with the user-run command.
+# Placeholders: {repo} = the clone, {tmp} = a directory outside any repo, {head} = the feature commit;
+# a literal \n in the command is a newline. The fixture repo is on branch `feature` and holds tag `tmp`
+# at the feature commit.
+# clone (optional): gated (default) = a clone of the gated acme/app; fork = a clone of the ungated fork
+# me/app whose `upstream` remote is acme/app and whose branch `feature` pushes to upstream; fork-origin =
+# another clone of that fork whose branch `feature` pushes to origin.
+command	expect	note	clone
+git push origin feature	gate	plain
+git -c color.ui=never push origin feature	gate	an unrelated config override
+git config --get remote.origin.url && git push origin feature	gate	config read earlier in the call
+git config user.email && git push origin feature	gate	config value read by name earlier in the call
+git config --global user.email; git push origin feature	gate	global config value read by name earlier in the call
+git config user.email bot@example.invalid && git push origin feature	gate	a key that routes no push written earlier in the call
+git push -u origin feature	gate	set-upstream flag
+git push -odeploy origin feature	gate	push option with its value attached (not -d)
+git push -uo deploy origin feature	gate	push option closing a short-flag cluster
+git push	gate	no arguments: the current branch
+git push origin HEAD:feature	gate	HEAD as the source
+git push origin feature:feature	gate	explicit destination
+git push origin refs/heads/feature	gate	full ref name
+cd {tmp} && git -C {repo} push origin feature	gate	-C after a cd away from the repo
+git status && git push origin feature	gate	&& chain
+git fetch origin; git push origin feature	gate	; chain
+git push origin feature || echo failed	gate	|| chain
+echo start\ngit push origin feature	gate	newline chain
+cat <<'EOF' > notes.txt\nhello\nEOF\ngit push origin feature	gate	heredoc data before the push
+GIT_TRACE=1 git push origin feature 2>&1 | tail -n 5	gate	assignment, redirection and pipe
+env GIT_TRACE=1 git push origin feature	gate	env with an assignment
+env git push origin feature	gate	bare env
+timeout 60 git push origin feature	gate	timeout wrapper
+timeout -s KILL 60 git push origin feature	gate	timeout wrapper with options
+sudo -E git push origin feature	gate	sudo wrapper with options
+eval 'git push origin feature'	gate	eval string
+bash -c 'git push origin feature'	gate	inline shell
+bash <<'EOF'\ngit push origin feature\nEOF	gate	heredoc fed to a shell
+bash <<< 'git push origin feature'	gate	here-string fed to a shell
+echo `git push origin feature`	gate	backtick substitution
+git push origin tmp:feature	gate	tag source pushed to a branch
+git push origin refs/tags/tmp:refs/heads/feature	gate	tag source pushed to a branch, full refs
+gh pr merge 7 --squash --match-head-commit {head}	gate	merge with the head pinned
+gh -R acme/app pr merge 7 --squash --match-head-commit {head}	gate	repo flag before pr
+gh -Racme/app pr merge 7 --squash --match-head-commit {head}	gate	repo flag before pr, value attached
+R={repo}; git -C "$R" push origin feature	gate	a plain shell variable names the clone
+echo feature | xargs git push origin	deny	xargs appends the refspec from stdin
+xargs git push origin feature < /dev/null	deny	bare xargs wrapper
+xargs -0 git push origin feature < /dev/null	deny	xargs wrapper with options
+env --chdir={tmp} git push origin feature	deny	env option the gate does not read
+gh api -X PUT repos/acme/app/pulls/7/merge	deny	REST merge
+gh api --method PUT /repos/acme/app/pulls/7/merge -f sha={head}	deny	REST merge, long option
+gh api graphql -f query='mutation { mergePullRequest(input: {pullRequestId: "PR_1"}) { clientMutationId } }'	deny	GraphQL merge
+gh pr merge 7 --squash	deny	merge without --match-head-commit
+gh pr -R acme/app merge 7 --squash	deny	repo flag between pr and merge, no head pinned
+gh pr -R=acme/app merge 7 --squash	deny	repo flag with =value between pr and merge, no head pinned
+git push --all origin	deny	every branch
+git push --mirror origin	deny	mirror
+git push --branches origin	deny	every branch, --branches spelling
+git push upstream feature	deny	a gated upstream named from a fork clone	fork
+git push	deny	the branch's push remote is a gated upstream	fork
+git push --repo=upstream	deny	a gated upstream named by the --repo option	fork-origin
+R=upstream; git push $R feature	deny	remote resolved at run time from a fork clone	fork
+R=origin; git push $R feature	deny	remote resolved at run time
+R=origin; git push "$R" feature	deny	remote from a quoted variable
+git push ${R:-origin} feature	deny	remote from a parameter default
+git push $(git remote | head -1) feature	deny	remote from a substitution
+git push nosuch feature	deny	neither a remote of the clone nor a URL or path
+gh pr merge 7 --squash --match-head-commit {head}	deny	gh may pick the gated upstream of a fork clone	fork
+GIT=git; $GIT push origin feature	deny	command name resolved at run time
+GIT=git; S=push; $GIT $S origin feature	deny	command name and subcommand both resolved at run time
+sh -c 'GIT=git; S=push; $GIT $S origin feature'	deny	both resolved at run time inside an inline shell
+S=push; git $S origin feature	deny	subcommand from a variable
+git $(echo push) origin feature	deny	subcommand from a substitution
+SUB=push\ngit "$SUB" origin feature	deny	subcommand from a quoted variable
+git ${SUB:-push} origin feature	deny	subcommand from a parameter default
+S=$(echo cHVzaA== | base64 -d); git $S origin feature	deny	subcommand decoded at run time, no push word
+git --git-dir={repo}/.git --work-tree={repo} push origin feature	deny	git pointed at a repository by option
+git --git-dir {repo}/.git --work-tree {repo} push origin feature	deny	git pointed at a repository by separate-word option
+GIT_DIR={repo}/.git GIT_WORK_TREE={repo} git push origin feature	deny	git pointed at a repository by variable
+git -c remote.pushDefault=upstream push	deny	push remote set by a one-call config override	fork-origin
+git -c Remote.PushDefault=upstream push	deny	config override keys are case-insensitive	fork-origin
+git -c branch.feature.pushRemote=upstream push	deny	branch push remote set by a one-call config override	fork-origin
+git -c branch.feature.remote=upstream push	deny	branch remote set by a one-call config override	fork-origin
+git -c remote.origin.pushurl=git@example.invalid:acme/app.git push	deny	push URL set by a one-call config override	fork-origin
+git -c remote.origin.url=git@example.invalid:acme/app.git push origin feature	deny	remote URL set by a one-call config override	fork-origin
+git -c url.git@example.invalid:acme/app.git.pushInsteadOf=git@example.invalid:me/app.git push	deny	URL rewrite set by a one-call config override	fork-origin
+git -c push.default=upstream push	deny	push behavior set by a one-call config override	fork-origin
+git -c include.path={tmp}/pushes.cfg push	deny	a config file included by a one-call override	fork-origin
+PD=upstream git --config-env=remote.pushDefault=PD push	deny	config override read from a variable	fork-origin
+PD=upstream git --config-env remote.pushDefault=PD push	deny	config override read from a variable, separate word	fork-origin
+GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=remote.pushDefault GIT_CONFIG_VALUE_0=upstream git push	deny	config override from GIT_CONFIG_COUNT variables	fork-origin
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=remote.pushDefault GIT_CONFIG_VALUE_0=upstream; git push	deny	config override variables exported earlier in the call	fork-origin
+GIT_CONFIG_PARAMETERS="'remote.pushdefault'='upstream'" git push	deny	config override from GIT_CONFIG_PARAMETERS	fork-origin
+GIT_CONFIG_GLOBAL={tmp}/pushes.cfg git push	deny	another global config file	fork-origin
+git config remote.pushDefault upstream && git push	deny	push remote written to config earlier in the call	fork-origin
+git config set remote.pushDefault upstream && git push	deny	config written with the set subcommand earlier in the call	fork-origin
+git config --unset branch.feature.pushRemote && git push	deny	branch push remote unset earlier in the call	fork-origin
+git config --remove-section remote.origin && git push	deny	remote section removed earlier in the call	fork-origin
+git config --file .git/config remote.pushDefault upstream && git push	deny	push remote written to a named config file earlier in the call	fork-origin
+git config --type bool push.autoSetupRemote true && git push	deny	push behavior written with a typed value earlier in the call	fork-origin
+git config --edit && git push	deny	config edited in an editor earlier in the call	fork-origin
+git remote set-url origin git@example.invalid:acme/app.git && git push	deny	remote URL changed earlier in the call	fork-origin
+git remote rename origin fork && git remote rename upstream origin && git push	deny	remotes renamed earlier in the call	fork-origin
+git remote add gated git@example.invalid:acme/app.git && git config branch.feature.pushRemote gated && git push	deny	remote added earlier in the call	fork-origin
+git push --tags origin	pass	tags only
+git push origin tmp	pass	a tag by name
+git push origin refs/tags/tmp	pass	a tag by full ref
+git push origin tmp:refs/tags/tmp	pass	a tag to a tag ref
+git push origin :feature	pass	deletion by refspec
+git push --delete origin feature	pass	deletion by flag
+git push -n origin feature	pass	dry run, short flag
+git push --dry-run origin feature	pass	dry run, long flag
+git push origin feature	pass	the fork itself is not gated	fork
+git push	pass	the branch's push remote is the ungated fork	fork-origin
+git push-it origin feature	pass	not the push subcommand
+echo "git push"	pass	push as data
+cat <<'EOF' > notes.txt\ngit push origin feature\nEOF\nls	pass	push inside a heredoc body
+git log --grep push	pass	push as a search term
+gh pr view 7	pass	not a merge
+git config push.default simple	pass	push as a config key
+git -c color.ui=never push	pass	an unrelated config override	fork-origin
+git config --get remote.pushDefault; git push	pass	config read earlier in the call	fork-origin
+git config get remote.pushDefault; git push	pass	config read with the get subcommand earlier in the call	fork-origin
+git remote -v && git push	pass	remotes listed earlier in the call	fork-origin
+git stash push	pass	stash push
+grep -n 'git push' notes.md	pass	push inside a quoted argument
+echo git push origin feature	pass	push words as arguments of a program that does not run them
+man git push	pass	push words as a manual page name

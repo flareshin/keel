@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+"""Stand-in for `claude -p` in tests: plays the scenario named by the prompt's first line. No model, no network.
+
+$KEEL_TEST_SCENARIOS/<name>.json holds {"events": [...], "exit": 0, "writes": {"rel/path": "text"}, "sleep": 0,
+"leave_project_dir": false} or {"rounds": [<such objects>...]}, where call k of that scenario plays rounds[k % len].
+Every call appends {"argv", "cwd", "scenario", "auto_memory_disabled"} to $KEEL_TEST_SCENARIOS/calls.jsonl.
+"""
+import json
+import os
+import re
+import sys
+import time
+
+SCENARIO_DIR = os.environ["KEEL_TEST_SCENARIOS"]
+CALLS_LOG = os.path.join(SCENARIO_DIR, "calls.jsonl")
+
+
+def main() -> int:
+    name = sys.stdin.readline().strip()
+    round_index = _previous_calls(name)
+    with open(CALLS_LOG, "a", encoding="utf-8") as log:
+        log.write(json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd(), "scenario": name, "auto_memory_disabled": os.environ.get("CLAUDE_CODE_DISABLE_AUTO_MEMORY")}) + "\n")
+    with open(os.path.join(SCENARIO_DIR, name + ".json"), encoding="utf-8") as handle:
+        scenario = json.load(handle)
+    if scenario.get("rounds"):
+        scenario = scenario["rounds"][round_index % len(scenario["rounds"])]
+    for relative_path, content in scenario.get("writes", {}).items():
+        path = os.path.join(os.getcwd(), relative_path)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(content)
+    if scenario.get("leave_project_dir"):
+        slug = re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(os.getcwd()))
+        os.makedirs(os.path.join(os.environ["CLAUDE_CONFIG_DIR"], "projects", slug), exist_ok=True)
+    time.sleep(scenario.get("sleep", 0))
+    for event in scenario.get("events", []):
+        print(json.dumps(event))
+    sys.stdout.flush()
+    return scenario.get("exit", 0)
+
+
+def _previous_calls(name: str) -> int:
+    if not os.path.exists(CALLS_LOG):
+        return 0
+    with open(CALLS_LOG, encoding="utf-8") as log:
+        return sum(1 for line in log if json.loads(line)["scenario"] == name)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

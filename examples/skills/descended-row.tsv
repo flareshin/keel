@@ -1,0 +1,3 @@
+id	scope	type	statement	layer	enforced_at	why_not_stronger	justification	incidents	metric	review_by	grace_until	status
+# A row after /descend moved a recurring review finding into the target repo. Invented values.
+O-web-no-persistence	overlay	knowledge	Web controllers never depend on persistence classes.	repo	repo:acme/shop:src/test/java/arch/LayeringTest.java	-	-	private:review-0412,private:review-0419	exists:/work/shop:origin/main:src/test/java/arch/LayeringTest.java	2026-12-10	-	active

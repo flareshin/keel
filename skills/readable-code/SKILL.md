@@ -7,7 +7,7 @@ description: Rules for writing code a human can follow when AI wrote it — read
 
 Implements K5 (change only what the request needs, minimally, in code a person can follow). AI writes the code; a person must still follow its flow, understand it and own it. People do not read every line, so the code has to make sense from the **entry point and the flow alone**.
 
-Good code = code that someone else (or the next AI session) can **understand quickly** and change correctly and safely. Before/after examples: `references/examples.md`. Signal-only regex checks over a diff: `scripts/rule-checks.py` (each signal is a candidate the reviewer judges, never a verdict).
+Good code = code that someone else (or the next AI session) can **understand quickly** and change correctly and safely. Before/after examples: `references/examples.md`. Signal-only regex checks over a diff: `scripts/rule-checks.py` (each signal is a candidate the reviewer judges, never a verdict). FE performance while writing (data loading, large lists or grids, heavy components, Next.js server side): `references/react-perf.md`, the 70 Vercel `react-best-practices` rules distilled; a writing reference, not a K5 rule, so a review blocks on it only where a project lens says so.
 
 ## Reader-cost model
 

@@ -697,7 +697,7 @@ test('lensReview_namesSkillRulesByK5Label_inEveryBuiltInLensPrompt', async () =>
   for (const lens of lenses) assert.doesNotMatch(lens.prompt, /\bR(?:\d+|<n>)\b/)
 })
 
-test('lensReview_tellsRuleChecksToQuoteEachListedSummaryOnce_whenItMakesExtraRuns', async () => {
+test('lensReview_tellsRuleChecksToQuoteEachListedSummaryOnce_inBuiltInLensPrompt', async () => {
   // given
   const rt = createRuntime({ respond: responder() })
   // when

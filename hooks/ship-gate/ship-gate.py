@@ -36,7 +36,7 @@ PUSH_OR_MERGE_WORD = re.compile(r"\b(push|merge)\b")
 PUSH_OR_MERGE_WORDS = {"push", "merge"}
 # Not `.git/refs` or `merges.md`: those are local paths, not endpoints.
 PUSH_OR_MERGE_WITHOUT_THE_WORD = re.compile(r"\bsend-pack\b|/merges(?![\w.-])|/git/refs\b")
-PUSHES_OUTSIDE_GIT_PUSH = {"send-pack", "http-push"}  # git plumbing that updates a remote's refs
+PUSHES_OUTSIDE_GIT_PUSH = {"send-pack", "http-push"}
 QUOTING = re.compile(r"""['"\\]""")
 PULL_URL = re.compile(r"^https?://[^/]+/([^/]+/[^/]+)/pull/\d+")
 PULL_MERGE_ENDPOINT = re.compile(r"/pulls/[^/]+/merge/?$")  # any segment: `repos/$R/pulls/$N/merge`
@@ -46,7 +46,7 @@ GRAPHQL_BRANCH_CHANGE = re.compile(r"\b(?:mergePullRequest|mergeBranch|enablePul
 GH_API_METHOD_OPTIONS = {"-X", "--method"}
 GH_API_BODY_OPTIONS = ("-f", "-F", "--field", "--raw-field", "--input")  # any of them makes gh send POST
 READ_METHODS = {"GET", "HEAD"}
-RUNTIME_NAME = re.compile(r"[$`]")
+RUNTIME_NAME = shell.RUN_TIME_WORD_RE
 URL_FORM = re.compile(r"^[^/]*:")  # scheme://…, scp-like host:path, transport::address; any other word is a path
 FORWARDERS_THE_PARSER_KEEPS = {"xargs", "parallel"}
 ARGV_FORWARDERS = {"xargs", "parallel", "env", "sudo", "exec", "nice", "nohup", "time", "timeout", "gtimeout", "command"}

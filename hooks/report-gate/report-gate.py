@@ -43,6 +43,9 @@ VERDICT_RE = re.compile(
 )
 REVIEW_VERDICTS = {"VERDICT: PASS": "PASS", "VERDICT: NEEDS_FIXES": "NEEDS_FIXES"}
 KEEL_EVIDENCE_RE = re.compile(r"^\s*KEEL-EVIDENCE: (\{.*\})\s*$", re.M)
+# The lines lens-review.js frames its reporter's report with; a reporter that echoes them still records.
+REPORT_START = "<<<KEEL-REPORT"
+REPORT_END = "KEEL-REPORT>>>"
 SCOPE_RE = re.compile(r"\[SCOPE\][ \t]*([^\n]+)")
 SCOPE_EXEMPT_PREFIXES = ("/tmp/", "/private/tmp/", "/var/folders/")
 SCRATCH_PREFIXES = SCOPE_EXEMPT_PREFIXES + tuple(  # writes a reviewer may make
@@ -164,7 +167,7 @@ def judge_handback(payload: dict, fires: FireLog) -> int:
     if missing:
         fires.append("K2", contract.OUTCOME, detail=contract.miss_detail(payload, missing))
         return protocol.EXIT_PASS
-    report = str(protocol.tool_input(payload).get("message"))
+    report = without_report_markers(str(protocol.tool_input(payload).get("message")))
     state = TurnState(payload)
     state.handed_back = True
     state.save()
@@ -201,7 +204,7 @@ def judge_stop(payload: dict, fires: FireLog) -> int:
     if missing:
         fires.append("K2", contract.OUTCOME, detail=contract.miss_detail(payload, missing))
     agent_transcript = payload.get("agent_transcript_path")
-    report = text_of(payload.get("last_assistant_message"))
+    report = without_report_markers(text_of(payload.get("last_assistant_message")))
     if not agent_transcript or not os.path.exists(agent_transcript):
         # Claude Code's internal agents fire SubagentStop with a transcript that is never written.
         if report and _verdict_of(report) and KEEL_EVIDENCE_RE.search(report):
@@ -275,6 +278,22 @@ def _send_to_cli(evidence_line: str, verdict: str, source: dict, fires: FireLog)
     except (ValueError, AttributeError):
         evidence_id = "(unparsed stdout)"
     fires.append("K1", "record", detail="review evidence %s" % evidence_id)
+
+
+# Same rule as withoutReportMarkers in workflows/lens-review.js for ASCII whitespace: _comparable_lines drops
+# trailing whitespace per line and blank lines at either end, then a marker line matches with its own whitespace
+# trimmed. Not for U+FEFF or U+0085: Python strip and JS \s/trim disagree on them.
+def without_report_markers(report: str | None) -> str | None:
+    if not report:
+        return report
+    lines = _comparable_lines(report)
+    start = 1 if lines[0].strip() == REPORT_START else 0
+    end = len(lines) - 1 if len(lines) > start and lines[-1].strip() == REPORT_END else len(lines)
+    return "\n".join(lines[start:end])
+
+
+def _comparable_lines(text: str) -> list[str]:
+    return "\n".join(line.rstrip() for line in text.split("\n")).strip("\n").split("\n")
 
 
 def _verdict_of(report: str) -> str | None:

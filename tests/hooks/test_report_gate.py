@@ -12,6 +12,7 @@ EVIDENCE_LINE = (
     '"review_kind":"lens-review"}' % ("a" * 40, "b" * 40)
 )
 PASS_REPORT = "VERDICT: PASS\nNo findings. 3 files changed, 40 insertions(+).\n" + EVIDENCE_LINE
+FRAMED_PASS_REPORT = "<<<KEEL-REPORT\n%s\nKEEL-REPORT>>>" % PASS_REPORT
 UNPROVEN_REPORT = "Done. All good, VERDICT: PASS"
 PROVEN_REPORT = "Done.\nRan 12 tests in 0.4s\nOK"
 
@@ -168,6 +169,47 @@ class HandbackReviewEvidenceTest(ReportGateTestCase):
         self.handback("Summary first.\n" + PASS_REPORT)
         self.assertEqual([], self.sandbox.stub_calls("keel"))
 
+    def test_handback_pipesEvidenceToCli_whenReporterEchoesTheMarkerLines(self):
+        # when
+        result = self.handback(FRAMED_PASS_REPORT)
+        # then
+        self.assertEqual(0, result.code)
+        calls = self.sandbox.stub_calls("keel")
+        self.assertEqual(1, len(calls))
+        self.assertEqual(["evidence", "write-review"], calls[0]["argv"])
+        request = json.loads(calls[0]["stdin"])
+        self.assertEqual("PASS", request["verdict"])
+        self.assertEqual("a" * 40, request["keel_evidence"]["review_base"])
+        self.assertFired("K1", "record", "report-gate")
+
+    def test_handback_pipesEvidenceToCli_whenReporterEchoesOnlyTheOpeningMarker(self):
+        # when
+        self.handback("<<<KEEL-REPORT\n" + PASS_REPORT)
+        # then
+        calls = self.sandbox.stub_calls("keel")
+        self.assertEqual(1, len(calls))
+        self.assertEqual("PASS", json.loads(calls[0]["stdin"])["verdict"])
+
+    def test_handback_pipesEvidenceToCli_whenReporterStartsWithABlankLine(self):
+        # when
+        self.handback("\n" + FRAMED_PASS_REPORT)
+        # then
+        calls = self.sandbox.stub_calls("keel")
+        self.assertEqual(1, len(calls))
+        self.assertEqual("PASS", json.loads(calls[0]["stdin"])["verdict"])
+
+    def test_handback_pipesEvidenceToCli_whenReporterIndentsTheOpeningMarker(self):
+        # when
+        self.handback("  " + FRAMED_PASS_REPORT)
+        # then
+        calls = self.sandbox.stub_calls("keel")
+        self.assertEqual(1, len(calls))
+        self.assertEqual("PASS", json.loads(calls[0]["stdin"])["verdict"])
+
+    def test_handback_writesNothing_whenPreambleComesBeforeTheMarkerLines(self):
+        self.handback("Here is the report:\n" + FRAMED_PASS_REPORT)
+        self.assertEqual([], self.sandbox.stub_calls("keel"))
+
     def test_handback_warnsK1_whenCliRefuses(self):
         self.sandbox.env["KEEL_CLI"] = self.sandbox.stub("keel-refusing", exit_code=3)
         result = self.handback(PASS_REPORT)
@@ -207,6 +249,39 @@ class HandbackReviewEvidenceTest(ReportGateTestCase):
         self.assertEqual(1, len(self.sandbox.stub_calls("keel")))
 
 
+class ReportMarkersTest(unittest.TestCase):
+    def test_reportMarkers_matchLensReviewWorkflow_soBothSidesStripTheSameLines(self):
+        module = load_report_gate()
+        with open(os.path.join(helpers.KEEL_HOME, "workflows", "lens-review.js")) as workflow:
+            source = workflow.read()
+        self.assertIn("const REPORT_START = '%s'" % module.REPORT_START, source)
+        self.assertIn("const REPORT_END = '%s'" % module.REPORT_END, source)
+
+    def test_withoutReportMarkers_dropsTheClosingMarker_whenReporterEchoesOnlyThatLine(self):
+        # given
+        module = load_report_gate()
+        # when
+        report = module.without_report_markers(PASS_REPORT + "\nKEEL-REPORT>>>")
+        # then
+        self.assertEqual(PASS_REPORT, report)
+
+    def test_withoutReportMarkers_dropsTheClosingMarker_whenReporterIndentsIt(self):
+        # given
+        module = load_report_gate()
+        # when
+        report = module.without_report_markers(PASS_REPORT + "\n  KEEL-REPORT>>>")
+        # then
+        self.assertEqual(PASS_REPORT, report)
+
+    def test_withoutReportMarkers_dropsBothMarkers_whenReporterUsesCrlfAndIndentsTheClosingMarker(self):
+        # given
+        module = load_report_gate()
+        # when
+        report = module.without_report_markers("<<<KEEL-REPORT\r\n" + PASS_REPORT.replace("\n", "\r\n") + "\r\n  KEEL-REPORT>>>")
+        # then
+        self.assertEqual(PASS_REPORT, report)
+
+
 class SubagentStopTest(ReportGateTestCase):
     def test_stop_blocksWithK2_whenMutatingAgentReportsWithoutEvidence(self):
         result = self.stop("Changed it.", tool_uses=[("Edit", {"file_path": os.path.join(self.scope, "a.py")})])
@@ -227,6 +302,12 @@ class SubagentStopTest(ReportGateTestCase):
         self.stop(PASS_REPORT)
         request = json.loads(self.sandbox.stub_calls("keel")[0]["stdin"])
         self.assertEqual("SubagentStop", request["source"]["via"])
+
+    def test_stop_writesEvidence_whenReporterEchoesTheMarkerLines(self):
+        self.stop(FRAMED_PASS_REPORT)
+        request = json.loads(self.sandbox.stub_calls("keel")[0]["stdin"])
+        self.assertEqual(("PASS", "SubagentStop"), (request["verdict"], request["source"]["via"]))
+        self.assertFired("K1", "record", "report-gate")
 
     def test_stop_refusesEvidence_whenReviewerEdited(self):
         self.stop(PASS_REPORT, tool_uses=[("Write", {"file_path": os.path.join(self.scope, "a.py"), "content": "x"})])

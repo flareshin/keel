@@ -426,19 +426,19 @@ function toOneLine(text) {
 
 // The reporter is a separate subagent with no schema: report-gate records review evidence from its final message.
 function handBackReport(report) {
-  const prompt = `Your final message must be exactly the report between the two marker lines below, character for character: no text before or after it, no markdown fences, no edits. Do not run any tool and do not judge the report.
+  const prompt = `Your final message must be exactly the report between the two marker lines below, character for character: no text before or after it, no markdown fences, no edits. The two marker lines frame the report and are not part of your message: it starts with the line that begins VERDICT: and ends with the last line before the closing marker. Do not run any tool and do not judge the report.
 ${REPORT_START}
 ${report}
 ${REPORT_END}`
   return agent(prompt, { label: 'report', phase: 'Report', model: MODEL, effort: MECHANICAL_EFFORT })
 }
 
-// The caller gets the reporter's text as the report, so it must be the expected report up to trailing whitespace.
+// The caller gets the reporter's text as the report, so it must be the expected report up to trailing whitespace, blank edge lines and echoed marker lines.
 function findHandBackProblem(message, expectedReport, evidenceLines) {
   if (typeof message !== 'string' || message.trim() === '') return 'returned no message'
-  const lines = toComparableLines(message)
+  const lines = withoutReportMarkers(toComparableLines(message))
   const expected = toComparableLines(expectedReport)
-  if (lines[0] !== expected[0]) return `first line is ${JSON.stringify(lines[0].slice(0, 80))}, expected "${expected[0]}"`
+  if (lines[0] !== expected[0]) return `first line is ${JSON.stringify(String(lines[0] ?? '<missing>').slice(0, 80))}, expected "${expected[0]}"`
   const handedEvidence = lines.filter((line) => EVIDENCE_LINE.test(line))
   const missing = evidenceLines.filter((line) => !handedEvidence.includes(line))
   if (missing.length) return `${missing.length} KEEL-EVIDENCE line(s) missing or altered`
@@ -449,7 +449,16 @@ function findHandBackProblem(message, expectedReport, evidenceLines) {
 }
 
 function toComparableLines(text) {
-  return text.replace(/\s+$/, '').split('\n').map((line) => line.replace(/\s+$/, ''))
+  return text.replace(/^\s*\n/, '').replace(/\s+$/, '').split('\n').map((line) => line.replace(/\s+$/, ''))
+}
+
+// Same rule as without_report_markers in hooks/report-gate/report-gate.py for ASCII whitespace: toComparableLines
+// drops trailing whitespace per line and blank lines at either end, then a marker line matches with its own
+// whitespace trimmed. Not for U+FEFF or U+0085: JS \s/trim and Python strip disagree on them.
+function withoutReportMarkers(lines) {
+  const start = lines[0].trim() === REPORT_START ? 1 : 0
+  const end = lines.length > start && lines[lines.length - 1].trim() === REPORT_END ? lines.length - 1 : lines.length
+  return lines.slice(start, end)
 }
 
 function findFirstDifferentLine(lines, expected) {

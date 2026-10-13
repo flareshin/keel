@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   createRuntime, reportBetweenMarkers, evidenceLines, parseEvidenceLine, preparedLine, preparePromptCommands,
-  cleanRuleChecksNotes, CLEAN_RULE_CHECKS_SUMMARY, SHA_A, SHA_B, SHA_C, SHA_D,
+  cleanRuleChecksNotes, CLEAN_RULE_CHECKS_SUMMARY, REPORT_START, REPORT_END, SHA_A, SHA_B, SHA_C, SHA_D,
 } from './helpers.mjs'
 
 const DERIVED_RUN_ID = 'rv-20261011T090000Z-abc123'
@@ -451,6 +451,8 @@ const BAD_HAND_BACKS = [
   ['repeats the evidence line', (prompt) => `${reportBetweenMarkers(prompt)}\n${evidenceLines(reportBetweenMarkers(prompt))[0]}`, /2 KEEL-EVIDENCE lines for 1 reviewed repo/],
   ['adds an indented evidence line', (prompt) => `${reportBetweenMarkers(prompt)}\n  KEEL-EVIDENCE: {"v":1,"repo_root":"/work/other"}`, /2 KEEL-EVIDENCE lines for 1 reviewed repo/],
   ['drops a section', (prompt) => reportBetweenMarkers(prompt).replace('Refuted: 0\n\n', ''), /line \d+ differs from the expected report/],
+  ['returns only the marker lines', () => `${REPORT_START}\n${REPORT_END}`, /first line is "<missing>"/],
+  ['frames the report and adds a preamble', (prompt) => `Here is the report:\n${REPORT_START}\n${reportBetweenMarkers(prompt)}\n${REPORT_END}`, /first line is "Here is the report:"/],
 ]
 
 for (const [name, report, expected] of BAD_HAND_BACKS) {
@@ -465,6 +467,70 @@ for (const [name, report, expected] of BAD_HAND_BACKS) {
     assert.match(result.expectedReport, /^VERDICT: PASS\n/)
   })
 }
+
+test('lensReview_acceptsTheMarkerLines_whenReporterEchoesThem', async () => {
+  // given
+  const rt = createRuntime({ respond: responder({ report: (prompt) => `${REPORT_START}\n${reportBetweenMarkers(prompt)}\n${REPORT_END}` }) })
+  // when
+  const result = await rt.run('lens-review', { diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
+  // then
+  assert.equal(result.verdict, 'PASS')
+})
+
+test('lensReview_acceptsTheOpeningMarker_whenReporterEchoesOnlyThatLine', async () => {
+  // given
+  const rt = createRuntime({ respond: responder({ report: (prompt) => `${REPORT_START}\n${reportBetweenMarkers(prompt)}` }) })
+  // when
+  const result = await rt.run('lens-review', { diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
+  // then
+  assert.equal(result.verdict, 'PASS')
+})
+
+test('lensReview_acceptsTheClosingMarker_whenReporterEchoesOnlyThatLine', async () => {
+  // given
+  const rt = createRuntime({ respond: responder({ report: (prompt) => `${reportBetweenMarkers(prompt)}\n${REPORT_END}` }) })
+  // when
+  const result = await rt.run('lens-review', { diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
+  // then
+  assert.equal(result.verdict, 'PASS')
+})
+
+test('lensReview_acceptsTheMarkerLines_whenReporterStartsWithABlankLine', async () => {
+  // given
+  const rt = createRuntime({ respond: responder({ report: (prompt) => `\n${REPORT_START}\n${reportBetweenMarkers(prompt)}\n${REPORT_END}` }) })
+  // when
+  const result = await rt.run('lens-review', { diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
+  // then
+  assert.equal(result.verdict, 'PASS')
+})
+
+test('lensReview_acceptsTheMarkerLines_whenReporterIndentsTheOpeningMarker', async () => {
+  // given
+  const rt = createRuntime({ respond: responder({ report: (prompt) => `  ${REPORT_START}\n${reportBetweenMarkers(prompt)}\n${REPORT_END}` }) })
+  // when
+  const result = await rt.run('lens-review', { diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
+  // then
+  assert.equal(result.verdict, 'PASS')
+})
+
+test('lensReview_acceptsTheMarkerLines_whenReporterIndentsTheClosingMarker', async () => {
+  // given
+  const rt = createRuntime({ respond: responder({ report: (prompt) => `${REPORT_START}\n${reportBetweenMarkers(prompt)}\n  ${REPORT_END}` }) })
+  // when
+  const result = await rt.run('lens-review', { diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
+  // then
+  assert.equal(result.verdict, 'PASS')
+})
+
+test('lensReview_tellsReporterTheMarkerLinesAreNotPartOfTheMessage_whenHandingBack', async () => {
+  // given
+  const rt = createRuntime({ respond: responder() })
+  // when
+  await rt.run('lens-review', { diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
+  // then
+  const reporterPrompt = rt.record.agents.find((call) => call.opts.label === 'report').prompt
+  assert.match(reporterPrompt, /The two marker lines frame the report and are not part of your message/)
+})
 
 test('lensReview_acceptsTrailingBlankLines_whenReporterEndsWithThem', async () => {
   // given

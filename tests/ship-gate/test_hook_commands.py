@@ -189,6 +189,7 @@ class CommandParsingTest(unittest.TestCase):
                 self.assertIsInstance(action, self.hook.Unattributable)
         self.assertEqual(self.actions("$EDITOR notes.md && git status"), [])
         self.assertEqual(self.actions("GIT=git; S=status; $GIT $S"), [])
+        self.assertEqual(self.actions("GH=gh; $GH api repos/acme/app/pulls/7"), [])
 
     def test_runtimeProgramWord_isUnattributable_whenThePushOrMergeWordSitsElsewhereInTheCall(self):
         for command in ("GP=\"$(git --exec-path)/git-push\"; $GP origin main",
@@ -273,6 +274,8 @@ class CommandParsingTest(unittest.TestCase):
                         "Q='mutation { updateRefs(input: {}) { clientMutationId } }'; gh api graphql -f query=\"$Q\"",
                         "KV='query=mutation { mergeBranch(input: {}) { clientMutationId } }'; gh api graphql -f \"$KV\"",
                         "gh api graphql -F \"$KV\"", "gh api graphql --raw-field=\"$KV\"", "gh api graphql -f\"$K=$V\"",
+                        "gh api -H 'Accept: application/json' -X PATCH \"$E\" -f sha=abc",
+                        "gh api -f sha=abc -X PATCH \"$E\"", "gh api --jq .sha repos/acme/app/$X -f base=main -f head=feature",
                         mutation % "updateRefs", mutation % "createRef", mutation % "mergeBranch",
                         mutation % "enablePullRequestAutoMerge"):
             with self.subTest(command=command):

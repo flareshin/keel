@@ -31,6 +31,7 @@ cat <<'EOF' > notes.txt\nhello\nEOF\ngit push origin feature	gate	heredoc data b
 GIT_TRACE=1 git push origin feature 2>&1 | tail -n 5	gate	assignment, redirection and pipe
 env GIT_TRACE=1 git push origin feature	gate	env with an assignment
 env git push origin feature	gate	bare env
+env -- git push origin feature	gate	env's -- before the command
 timeout 60 git push origin feature	gate	timeout wrapper
 timeout -s KILL 60 git push origin feature	gate	timeout wrapper with options
 sudo -E git push origin feature	gate	sudo wrapper with options
@@ -88,6 +89,11 @@ X=git/refs/heads/main; gh api -X PATCH repos/acme/app/$X -f sha={head}	deny	gh a
 M=merge; gh api -X PUT repos/acme/app/pulls/7/$M	deny	gh api merging through an endpoint tail in a variable
 KV='query=mutation { mergePullRequest(input: {pullRequestId: "x"}) { clientMutationId } }'; gh api graphql -f "$KV"	deny	a GraphQL field held whole in a variable
 gh api graphql -F "$KV"	deny	a typed GraphQL field held whole in a variable
+Q='mutation { updateRefs(input: {}) { clientMutationId } }'; gh api graphql -f query="$Q"	deny	a GraphQL query held in a variable
+gh api -X PATCH "$E" -f sha={head}	deny	an endpoint resolved at run time
+E=repos/acme/app/git/refs/heads/main; gh api -H 'Accept: application/json' -X PATCH "$E" -f sha={head}	deny	a header before an endpoint resolved at run time
+E=repos/acme/app/git/refs/heads/main; gh api -f sha={head} -X PATCH "$E"	deny	a body field before an endpoint resolved at run time
+X=merges; gh api --jq .sha repos/acme/app/$X -f base=main -f head=feature	deny	a jq filter before an endpoint tail in a variable
 GH=gh; X=merges; $GH api repos/acme/app/$X -f base=main -f head=feature	deny	a run-time gh merging through an endpoint tail in a variable
 gh api -XDELETE repos/acme/app/git/refs/heads/x	deny	REST ref delete, method attached
 gh api --method=DELETE repos/acme/app/git/refs/heads/x	deny	REST ref delete, long method option
@@ -189,6 +195,8 @@ $EDITOR x && git log --merges	pass	git log's --merges option beside a run-time p
 timeout 120 ls hooks/git-guard && git merge-base main HEAD	pass	an unwrapped wrapper whose argument holds git- beside merge-base
 env LC_ALL=C grep -rn gh docs; git merge-base --is-ancestor main HEAD	pass	an unwrapped env running grep beside merge-base
 gh api "$E" && git merge-base main HEAD	pass	a gh api read from an endpoint resolved at run time
+T=x; gh api -f title="$T" -X POST repos/acme/app/issues	pass	a run-time body value before a literal non-branch endpoint
+GH=gh; $GH api repos/acme/app/pulls/7	pass	a run-time gh reading through gh api
 keel="${KEEL_DATA_DIR:-$HOME/.claude}/bin/keel"; python3 "$keel" test -- ./mvnw test -Dtest='*Merge*'	pass	the overlay's keel test step through python3, test names holding merge
 cd {repo} && pat=$(git diff main...HEAD --no-renames --diff-filter=D --name-only | sort -u) && [ -n "$pat" ] && git grep -nE "$pat" HEAD -- '*.md'	pass	the overlay's pinned-head deletion grep without xargs
 python3 "${KEEL_DATA_DIR:-$HOME/.claude}/bin/keel" evidence show --repo {repo} && git -C {repo} merge-base --is-ancestor main HEAD	pass	overlay's keel call through python3 beside merge-base

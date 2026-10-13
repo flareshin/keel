@@ -146,15 +146,18 @@ class CommandParsingTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual(self.actions(command), [])
 
-    def test_argvForwarders_areKeptByTheParser_exactlyWhenListedAsKept(self):
+    def test_argvForwarders_stayFirst_whenTheParserMeetsAnOptionItDoesNotRead(self):
         for name in sorted(self.hook.ARGV_FORWARDERS):
             with self.subTest(name=name):
-                argv = self.shell.unwrap(self.shell.parse_commands(name + " git status")[0]).argv
-                self.assertEqual(name in self.hook.FORWARDERS_THE_PARSER_KEEPS, argv[0] == name)
+                argv = self.shell.unwrap(self.shell.parse_commands(name + " --no-such-option git status")[0]).argv
+                self.assertEqual(name, argv[0])
 
-    def test_wrapperWithAnOptionTheParserMisreads_isUnattributable_whenItsWordsNameGit(self):
+    def test_wrapperTheParserKeeps_isUnattributable_whenItRunsGitAShellOrARunTimeName(self):
         for command in ("sudo --chdir /tmp git push origin feature", "sudo -D /tmp git push origin feature",
-                        "sudo -iu bob git push origin feature", "exec -la foo git push origin feature"):
+                        "sudo -iu bob git push origin feature", "exec -la foo git push origin feature",
+                        "sudo -iu git git push origin feature", "sudo --chdir /srv/git git push origin feature",
+                        "sudo -D /srv/gh gh pr merge 7 --squash", "exec -la foo $GIT push origin feature",
+                        "exec -la git sh -c 'git push origin feature'", "sudo --chdir /tmp sh -c 'git push origin feature'"):
             with self.subTest(command=command):
                 action, = self.actions(command)
                 self.assertIsInstance(action, self.hook.Unattributable)
@@ -163,11 +166,16 @@ class CommandParsingTest(unittest.TestCase):
     def test_unwrappedProgram_staysAttributable_besideAPushOrMergeSpelling(self):
         for command in ("git merge-base main HEAD && timeout 60 cat \"$F\"",
                         "base=$(git merge-base main HEAD) && nice -n 5 make -C \"$DIR\"",
-                        "git merge-base main HEAD; env FOO=1 python3 \"$SCRIPT\"", "git merge-base main HEAD; command -v git"):
+                        "git merge-base main HEAD; env FOO=1 python3 \"$SCRIPT\"", "git merge-base main HEAD; command -v git",
+                        "cd /x/sg-push-spellings && timeout 120 ls hooks/git-guard",
+                        "git merge-base main HEAD && timeout 60 grep git README",
+                        "env LC_ALL=C grep -rn gh docs; git merge-base --is-ancestor main HEAD"):
             with self.subTest(command=command):
                 self.assertEqual(self.actions(command), [])
-        push, = self.actions("command -v git && git push origin feature")
-        self.assertIsInstance(push, self.hook.Push)
+        for command in ("command -v git && git push origin feature", "timeout 30 which git && git push origin feature"):
+            with self.subTest(command=command):
+                push, = self.actions(command)
+                self.assertIsInstance(push, self.hook.Push)
 
     def test_runtimeCommandName_isUnattributable_onlyWhenTheCallSpellsAPushOrMerge(self):
         for command in ("GIT=git; $GIT push origin feature", "CMD='git push origin feature'; eval \"$CMD\"",
@@ -184,6 +192,7 @@ class CommandParsingTest(unittest.TestCase):
                         "P=push; GP=\"$(git --exec-path)/git-$P\"; $GP origin main",
                         "for GP in \"$(git --exec-path)/git-push\"; do $GP origin main; done",
                         "GH=gh; $GH api -X PATCH repos/acme/app/git/refs/heads/main -f sha=abc",
+                        "GH=gh; X=refs/heads/main; $GH api -X PATCH repos/acme/app/git/$X -f sha=abc",
                         "eval \"$(ssh-agent -s)\" && git log --oneline | grep push"):
             with self.subTest(command=command):
                 self.assertTrue(any(isinstance(action, self.hook.Unattributable) for action in self.actions(command)))
@@ -255,6 +264,10 @@ class CommandParsingTest(unittest.TestCase):
                         "N=7; gh api -X PUT repos/acme/app/pulls/$N/merge",
                         "GH=gh; X=git/refs/heads/main; $GH api -X PATCH repos/acme/app/$X -f sha=abc",
                         "GH=gh; X=merges; $GH api repos/acme/app/$X -f base=main -f head=feature",
+                        "X=git/refs/heads/main; gh api -X PATCH repos/acme/app/$X -f sha=abc",
+                        "gh api -X PATCH \"$E\" -f sha=abc", "M=merge; gh api -X PUT repos/acme/app/pulls/7/$M",
+                        "X=merges; gh api repos/acme/app/$X -f base=main -f head=feature",
+                        "Q='mutation { updateRefs(input: {}) { clientMutationId } }'; gh api graphql -f query=\"$Q\"",
                         mutation % "updateRefs", mutation % "createRef", mutation % "mergeBranch",
                         mutation % "enablePullRequestAutoMerge"):
             with self.subTest(command=command):
@@ -262,7 +275,8 @@ class CommandParsingTest(unittest.TestCase):
                 self.assertIsInstance(action, self.hook.Unattributable)
         for command in ("gh api repos/acme/app/git/refs/heads/main", "gh api -X GET repos/acme/app/git/refs -f per_page=1",
                         "gh api repos/acme/app/git/refs/heads/main --jq .object.sha",
-                        "gh api -X HEAD repos/acme/app/git/refs/heads/main", "gh api -X get repos/acme/app/git/refs/heads/main"):
+                        "gh api -X HEAD repos/acme/app/git/refs/heads/main", "gh api -X get repos/acme/app/git/refs/heads/main",
+                        "gh api \"$E\"", "gh api graphql -f query='query { viewer { login } }' -F owner=\"$O\""):
             with self.subTest(command=command):
                 self.assertEqual(self.actions(command), [])
 

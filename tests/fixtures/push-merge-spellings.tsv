@@ -47,6 +47,7 @@ gh -Racme/app pr merge 7 --squash --match-head-commit {head}	gate	repo flag befo
 R={repo}; git -C "$R" push origin feature	gate	a plain shell variable names the clone
 /usr/libexec/git-core/git-push origin feature	gate	git's own dashed push program, by path
 command -v git && git push origin feature	gate	a presence check beside a push
+timeout 30 which git && git push origin feature	gate	an unwrapped wrapper naming git beside a push
 KEEL_OVERLAY_DIR={repo} python3 "${KEEL_HOME:-$HOME/git/keel}/bin/keel" evidence write-smoke --repo {repo} --run r1 && git push origin feature	gate	overlay reconcile's smoke write through python3 before its push
 echo feature | xargs git push origin	deny	xargs appends the refspec from stdin
 xargs git push origin feature < /dev/null	deny	bare xargs wrapper
@@ -56,6 +57,9 @@ sudo --chdir /tmp git push origin feature	deny	a sudo option whose value the par
 sudo -D /tmp git push origin feature	deny	sudo's short directory option
 exec -la foo git push origin feature	deny	exec's clustered -a takes a value the parser does not skip
 env --chdir=$D true; echo push	deny	a forwarder's own run-time option in a call that spells push
+sudo -iu git git push origin feature	deny	a sudo option cluster the parser does not read, its value named git
+sudo --chdir /tmp sh -c 'git push origin feature'	deny	a kept sudo running a shell
+exec -la foo $GIT push origin feature	deny	a kept exec running a run-time program
 xargs git-push origin feature < /dev/null	deny	xargs runs git's dashed push program
 xargs $CORE/git-push origin feature < /dev/null	deny	xargs runs a dashed push program at a run-time path
 R=acme/app; echo x | xargs gh api -X PATCH repos/$R/git/refs/heads/main -f sha={head}	deny	xargs runs a ref write whose repo is a variable
@@ -73,6 +77,9 @@ gh api repos/acme/app/git/refs -f ref=refs/heads/x -f sha={head}	deny	REST ref c
 R=acme/app; gh api -X PATCH repos/$R/git/refs/heads/main -f sha={head}	deny	REST ref update whose repo is a variable
 N=7; gh api -X PUT repos/acme/app/pulls/$N/merge	deny	REST merge whose pull number is a variable
 GH=gh; X=git/refs/heads/main; $GH api -X PATCH repos/acme/app/$X -f sha={head}	deny	a run-time gh writing a ref whose path tail is a variable
+GH=gh; X=refs/heads/main; $GH api -X PATCH repos/acme/app/git/$X -f sha={head}	deny	a run-time program whose arguments make a gh api write
+X=git/refs/heads/main; gh api -X PATCH repos/acme/app/$X -f sha={head}	deny	gh api writing to an endpoint resolved at run time
+M=merge; gh api -X PUT repos/acme/app/pulls/7/$M	deny	gh api merging through an endpoint tail in a variable
 GH=gh; X=merges; $GH api repos/acme/app/$X -f base=main -f head=feature	deny	a run-time gh merging through an endpoint tail in a variable
 gh api -XDELETE repos/acme/app/git/refs/heads/x	deny	REST ref delete, method attached
 gh api --method=DELETE repos/acme/app/git/refs/heads/x	deny	REST ref delete, long method option
@@ -171,6 +178,9 @@ ls .git/refs/heads | xargs -n1 git log -1	pass	a local refs path, not an endpoin
 $EDITOR notes.md && cat .git/refs/heads/main	pass	a local refs path beside a run-time program
 $EDITOR x && cat docs/merges.md	pass	a merges file name beside a run-time program
 $EDITOR x && git log --merges	pass	git log's --merges option beside a run-time program
+timeout 120 ls hooks/git-guard && git merge-base main HEAD	pass	an unwrapped wrapper whose argument holds git- beside merge-base
+env LC_ALL=C grep -rn gh docs; git merge-base --is-ancestor main HEAD	pass	an unwrapped env running grep beside merge-base
+gh api "$E" && git merge-base main HEAD	pass	a gh api read from an endpoint resolved at run time
 keel="${KEEL_DATA_DIR:-$HOME/.claude}/bin/keel"; python3 "$keel" test -- ./mvnw test -Dtest='*Merge*'	pass	the overlay's keel test step through python3, test names holding merge
 cd {repo} && pat=$(git diff main...HEAD --no-renames --diff-filter=D --name-only | sort -u) && [ -n "$pat" ] && git grep -nE "$pat" HEAD -- '*.md'	pass	the overlay's pinned-head deletion grep without xargs
 python3 "${KEEL_DATA_DIR:-$HOME/.claude}/bin/keel" evidence show --repo {repo} && git -C {repo} merge-base --is-ancestor main HEAD	pass	overlay's keel call through python3 beside merge-base

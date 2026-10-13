@@ -46,9 +46,11 @@ GRAPHQL_BRANCH_CHANGE = re.compile(r"\b(?:mergePullRequest|mergeBranch|enablePul
 GH_API_METHOD_OPTIONS = {"-X", "--method"}
 GH_API_BODY_OPTIONS = ("-f", "-F", "--field", "--raw-field", "--input")  # any of them makes gh send POST
 READ_METHODS = {"GET", "HEAD"}
+GH_API_VALUE_OPTIONS = {"-X", "--method", "-H", "--header", "-f", "--raw-field", "-F", "--field", "--input", "-q", "--jq",
+                        "-t", "--template", "--hostname", "-p", "--preview", "--cache"}
 RUNTIME_NAME = shell.RUN_TIME_WORD_RE
 URL_FORM = re.compile(r"^[^/]*:")  # scheme://…, scp-like host:path, transport::address; any other word is a path
-FORWARDERS_THE_PARSER_KEEPS = {"xargs", "parallel"}
+PROGRAMS_THAT_MAY_PUSH = {"git", "gh"} | shell.SHELLS
 ARGV_FORWARDERS = {"xargs", "parallel", "env", "sudo", "exec", "nice", "nohup", "time", "timeout", "gtimeout", "command"}
 PR_VIEW_FIELDS = "statusCheckRollup,baseRefName"
 FAILED_CHECKS = {"FAILURE", "CANCELLED", "TIMED_OUT", "ERROR", "STARTUP_FAILURE", "ACTION_REQUIRED"}
@@ -276,8 +278,8 @@ def actions_of(step: shell.Step, call: str = "", call_cwd: str = "") -> list:
         return _git_actions(step, call, call_cwd)
     if program == "gh":
         return _gh_actions(shell.gh_subcommand_argv(words), workdir, step.environment, call, call_cwd)
-    if _hides_push_or_merge(step.command.name, words, call):
-        return [_resolved_at_run_time(workdir, words, "`%s` wraps it" % step.command.name, call, call_cwd)]
+    if _hides_push_or_merge(words, call):
+        return [_resolved_at_run_time(workdir, words, "`%s` wraps it" % os.path.basename(words[0]), call, call_cwd)]
     if RUNTIME_NAME.search(words[0]) and _runtime_name_may_push_or_merge(words, call):
         return [_resolved_at_run_time(workdir, words, "`%s` is resolved only at run time" % words[0], call, call_cwd)]
     return []
@@ -295,6 +297,8 @@ def _gh_actions(words: List[str], workdir: str, environment: dict, call: str, ca
         return [PrCreate(workdir, words)]
     if words[1:2] == ["api"] and _gh_api_changes_a_branch(words[2:]):
         return [Unattributable(workdir, words, "`gh api` merges or moves a branch outside the gate")]
+    if words[1:2] == ["api"] and _gh_api_hides_its_target(words[2:]):
+        return [_resolved_at_run_time(workdir, words, "`gh api` writes to an endpoint resolved at run time", call, call_cwd)]
     return []
 
 
@@ -304,6 +308,27 @@ def _gh_api_changes_a_branch(args: List[str]) -> bool:
     if any(pattern.search(arg) for arg in args for pattern in branch_changes):
         return True
     return any(REF_ENDPOINT.search(arg) for arg in args) and _gh_api_writes(args)
+
+
+def _gh_api_hides_its_target(args: List[str]) -> bool:
+    """A writing `gh api` call whose endpoint or GraphQL query is resolved at run time, so the gate cannot read
+    what it changes."""
+    endpoint = _gh_api_endpoint(args) or ""
+    run_time_query = any(RUNTIME_NAME.search(arg.partition("query=")[2]) for arg in args if "query=" in arg)
+    return bool(RUNTIME_NAME.search(endpoint) or run_time_query) and _gh_api_writes(args)
+
+
+def _gh_api_endpoint(args: List[str]) -> Optional[str]:
+    """The endpoint `gh api` calls: its first argument that is neither an option nor an option's value."""
+    index = 0
+    while index < len(args):
+        if args[index] in GH_API_VALUE_OPTIONS:
+            index += 2
+        elif args[index].startswith("-"):
+            index += 1
+        else:
+            return args[index]
+    return None
 
 
 def _gh_api_writes(args: List[str]) -> bool:
@@ -329,33 +354,27 @@ def _gh_api_method(args: List[str]) -> Optional[str]:
 
 def _runtime_name_may_push_or_merge(words: List[str], call: str) -> bool:
     """A command name the shell resolves at run time may be any program, so it may push or merge whenever the call
-    spells a push or merge anywhere (its own path, an assignment, a loop list, another command's argument) or an
-    argument is a push/merge word."""
-    return _spells_push_or_merge(call) or bool(PUSH_OR_MERGE_WORDS.intersection(words[1:]))
+    spells a push or merge anywhere (its own path, an assignment, a loop list, another command's argument), an
+    argument is a push/merge word, or its arguments make a gh api write (`$GH api -X PATCH …`)."""
+    gh_api_write = words[1:2] == ["api"] and _gh_api_writes(words[2:])
+    return _spells_push_or_merge(call) or bool(PUSH_OR_MERGE_WORDS.intersection(words[1:])) or gh_api_write
 
 
-def _hides_push_or_merge(program: str, words: List[str], call: str) -> bool:
-    """A wrapper whose command the parser could not lay bare (`xargs git push …`, `env --chdir=… git push …`,
-    `sudo --chdir /d git push …`), when its words name git or gh (`git-push` too), or name something resolved at
-    run time where the parser kept the forwarder, in a call that spells a push or merge anywhere."""
-    if os.path.basename(program) not in ARGV_FORWARDERS or _only_looks_up(words):
+def _hides_push_or_merge(words: List[str], call: str) -> bool:
+    """A forwarder the parser keeps because it cannot read past it (`xargs …`, or a wrapper with an option the
+    parser does not read such as `env --chdir=…` or `sudo -D …`), when the forwarded words name git, gh or a shell
+    (`git-push` too) or something resolved at run time, in a call that spells a push or merge anywhere."""
+    if os.path.basename(words[0]) not in ARGV_FORWARDERS or _only_looks_up(words):
         return False
-    names_git = any(os.path.basename(word) in {"git", "gh"} or shell.dashed_git_subcommand(word) for word in words)
-    runs_run_time_name = _forwarder_left_in_place(words) and any(RUNTIME_NAME.search(word) for word in words)
-    if not (names_git or runs_run_time_name):
-        return False
-    return _spells_push_or_merge(call) or bool(PUSH_OR_MERGE_WORDS.intersection(words))
+    forwarded = words[1:]
+    runs_opaque = any(os.path.basename(word) in PROGRAMS_THAT_MAY_PUSH or shell.dashed_git_subcommand(word)
+                      or RUNTIME_NAME.search(word) for word in forwarded)
+    return runs_opaque and (_spells_push_or_merge(call) or bool(PUSH_OR_MERGE_WORDS.intersection(forwarded)))
 
 
 def _only_looks_up(words: List[str]) -> bool:
-    """The parser keeps `command` only for `command -v`/`-V`, which names a program without running it."""
+    """The parser keeps `command` only for a lookup (`command -v`) or an option command does not take."""
     return words[0] == "command"
-
-
-def _forwarder_left_in_place(words: List[str]) -> bool:
-    """The parser kept the forwarder (`xargs …`) or stopped at an option it does not read (`env --chdir=…` leaves
-    `--chdir=…` first); `timeout 60 cat "$F"` is already `cat "$F"`."""
-    return os.path.basename(words[0]) in FORWARDERS_THE_PARSER_KEEPS or words[0].startswith("-")
 
 
 def _git_actions(step: shell.Step, call: str, call_cwd: str) -> list:

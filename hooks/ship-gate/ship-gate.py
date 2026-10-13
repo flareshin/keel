@@ -35,12 +35,17 @@ DECISION_HINT = re.compile(r"\b(git|gh|push|merge)\b")
 SPELLED_PUSH_OR_MERGE = re.compile(r"\bgit\s+push\b|\bgh\s+pr\s+merge\b|/pulls/\d+/merge\b")
 PUSH_OR_MERGE_WORD = re.compile(r"\b(push|merge)\b")
 PUSH_OR_MERGE_WORDS = {"push", "merge"}
-PUSH_WITHOUT_A_PUSH_WORD = re.compile(r"\bsend-pack\b")
+PUSH_OR_MERGE_WITHOUT_THE_WORD = re.compile(r"\bsend-pack\b|/merges\b|\bgit/refs\b")
 PUSHES_OUTSIDE_GIT_PUSH = {"send-pack", "http-push"}  # git plumbing that updates a remote's refs
 QUOTING = re.compile(r"""['"\\]""")
 PULL_URL = re.compile(r"^https?://[^/]+/([^/]+/[^/]+)/pull/\d+")
 PULL_MERGE_ENDPOINT = re.compile(r"/pulls/\d+/merge/?$")
-GRAPHQL_MERGE = re.compile(r"\bmergePullRequest\b")
+BRANCH_MERGE_ENDPOINT = re.compile(r"(?:^|/)repos/[^/]+/[^/]+/merges/?(?:\?|$)")
+REF_ENDPOINT = re.compile(r"(?:^|/)repos/[^/]+/[^/]+/git/refs(?:/|\?|$)")
+GRAPHQL_BRANCH_CHANGE = re.compile(r"\b(?:mergePullRequest|mergeBranch|enablePullRequestAutoMerge|createRef|updateRefs?|deleteRef)\b")
+GH_API_METHOD_OPTIONS = {"-X", "--method"}
+GH_API_BODY_OPTIONS = ("-f", "-F", "--field", "--raw-field", "--input")  # any of them makes gh send POST
+READ_METHODS = {"GET", "HEAD"}
 RUNTIME_NAME = re.compile(r"[$`]")
 URL_FORM = re.compile(r"^[^/]*:")  # scheme://…, scp-like host:path, transport::address; any other word is a path
 ARGV_FORWARDERS = {"xargs", "parallel", "env", "sudo", "exec", "nice", "nohup", "time", "timeout", "gtimeout", "command"}
@@ -245,10 +250,11 @@ def may_push_or_merge(call: str) -> bool:
 
 
 def _spells_push_or_merge(call: str) -> bool:
-    """A push or merge word anywhere in the call, a push program without one (`send-pack`), or a GraphQL merge."""
+    """A push or merge word anywhere in the call, a push or merge spelled without one (`send-pack`, a REST merges or
+    git/refs endpoint), or a GraphQL merge or ref mutation."""
     unquoted = _unquoted(call)
-    return bool(PUSH_OR_MERGE_WORD.search(unquoted) or PUSH_WITHOUT_A_PUSH_WORD.search(unquoted)
-                or GRAPHQL_MERGE.search(call))
+    return bool(PUSH_OR_MERGE_WORD.search(unquoted) or PUSH_OR_MERGE_WITHOUT_THE_WORD.search(unquoted)
+                or GRAPHQL_BRANCH_CHANGE.search(call))
 
 
 def _unquoted(command: str) -> str:
@@ -286,9 +292,38 @@ def _gh_actions(words: List[str], workdir: str, environment: dict, call: str, ca
         return [merge]
     if words[1:3] == ["pr", "create"]:
         return [PrCreate(workdir, words)]
-    if words[1:2] == ["api"] and any(PULL_MERGE_ENDPOINT.search(word) or GRAPHQL_MERGE.search(word) for word in words[2:]):
-        return [Unattributable(workdir, words, "`gh api` merges the PR outside the gate")]
+    if words[1:2] == ["api"] and _gh_api_changes_a_branch(words[2:]):
+        return [Unattributable(workdir, words, "`gh api` merges or moves a branch outside the gate")]
     return []
+
+
+def _gh_api_changes_a_branch(args: List[str]) -> bool:
+    """A `gh api` call that merges a PR or a branch, or writes a branch ref, through REST or GraphQL."""
+    branch_changes = (PULL_MERGE_ENDPOINT, BRANCH_MERGE_ENDPOINT, GRAPHQL_BRANCH_CHANGE)
+    if any(pattern.search(arg) for arg in args for pattern in branch_changes):
+        return True
+    return any(REF_ENDPOINT.search(arg) for arg in args) and _gh_api_writes(args)
+
+
+def _gh_api_writes(args: List[str]) -> bool:
+    """gh api sends GET unless a method option names another method or a body option makes it POST."""
+    method = _gh_api_method(args)
+    if method is not None:
+        return method.upper() not in READ_METHODS
+    return any(arg.startswith(GH_API_BODY_OPTIONS) for arg in args)
+
+
+def _gh_api_method(args: List[str]) -> Optional[str]:
+    """The method the last `-X`/`--method` option names, as gh reads it; None when there is none."""
+    method = None
+    for index, arg in enumerate(args):
+        if arg in GH_API_METHOD_OPTIONS:
+            method = args[index + 1] if index + 1 < len(args) else ""
+        elif arg.startswith("--method="):
+            method = arg.split("=", 1)[1]
+        elif arg.startswith("-X"):
+            method = arg[2:]
+    return method
 
 
 def _runtime_name_may_push_or_merge(words: List[str], call: str) -> bool:

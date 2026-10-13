@@ -56,6 +56,10 @@ gh api graphql -f query='mutation { mergePullRequest(input: {pullRequestId: "PR_
 git send-pack ../app.git feature	deny	plumbing push, no push word
 git http-push https://example.invalid/acme/app.git feature	deny	plumbing push over HTTP
 git subtree push --prefix=lib origin feature	deny	a split subtree pushed to a remote
+gh api -X POST repos/acme/app/merges -f base=main -f head=feature	deny	REST branch merge
+gh api -X PATCH repos/acme/app/git/refs/heads/main -f sha={head}	deny	REST ref update
+gh api repos/acme/app/git/refs -f ref=refs/heads/x -f sha={head}	deny	REST ref create, POST implied by its fields
+gh api graphql -f query='mutation { updateRefs(input: {repositoryId: "R_1", refUpdates: []}) { clientMutationId } }'	deny	GraphQL ref update
 gh pr merge 7 --squash	deny	merge without --match-head-commit
 gh pr -R acme/app merge 7 --squash	deny	repo flag between pr and merge, no head pinned
 gh pr -R=acme/app merge 7 --squash	deny	repo flag with =value between pr and merge, no head pinned
@@ -124,6 +128,7 @@ echo "git push"	pass	push as data
 cat <<'EOF' > notes.txt\ngit push origin feature\nEOF\nls	pass	push inside a heredoc body
 git log --grep push	pass	push as a search term
 gh pr view 7	pass	not a merge
+gh api repos/acme/app/git/refs/heads/main	pass	a ref read
 git config push.default simple	pass	push as a config key
 git -c color.ui=never push	pass	an unrelated config override	fork-origin
 git config --get remote.pushDefault; git push	pass	config read earlier in the call	fork-origin

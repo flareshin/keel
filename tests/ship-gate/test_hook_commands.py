@@ -191,6 +191,25 @@ class CommandParsingTest(unittest.TestCase):
                 self.assertIsInstance(action, self.hook.Unattributable)
         self.assertEqual(self.actions("gh api repos/acme/app/pulls/7"), [])
 
+    def test_ghApi_isUnattributable_whenItMergesABranchOrWritesARef(self):
+        mutation = "gh api graphql -f query='mutation { %s(input: {}) { clientMutationId } }'"
+        for command in ("gh api -X POST repos/acme/app/merges -f base=main -f head=feature",
+                        "gh api repos/{owner}/{repo}/merges -f base=main -f head=feature",
+                        "gh api -X PATCH repos/acme/app/git/refs/heads/main -f sha=abc",
+                        "gh api --method=PATCH https://api.github.com/repos/acme/app/git/refs/heads/main -F force=true",
+                        "gh api repos/acme/app/git/refs -f ref=refs/heads/x -f sha=abc",
+                        "gh api -XDELETE repos/acme/app/git/refs/heads/x",
+                        "gh api -X GET -X PATCH repos/acme/app/git/refs/heads/main --input body.json",
+                        mutation % "updateRefs", mutation % "createRef", mutation % "mergeBranch",
+                        mutation % "enablePullRequestAutoMerge"):
+            with self.subTest(command=command):
+                action, = self.actions(command)
+                self.assertIsInstance(action, self.hook.Unattributable)
+        for command in ("gh api repos/acme/app/git/refs/heads/main", "gh api -X GET repos/acme/app/git/refs -f per_page=1",
+                        "gh api repos/acme/app/git/refs/heads/main --jq .object.sha"):
+            with self.subTest(command=command):
+                self.assertEqual(self.actions(command), [])
+
     def test_otherCommands_produceNoAction_whenPushIsOnlyAWordOrInsideOneWord(self):
         self.assertEqual(self.actions("grep -n 'git push' notes.md; git stash push; git config push.default simple"), [])
         self.assertEqual(self.actions("echo 'git push' > notes.md && git log --oneline | grep merge"), [])

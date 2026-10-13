@@ -37,7 +37,7 @@ TIMEOUT_VALUE_OPTIONS = {"-k", "-s", "--kill-after", "--signal"}
 # unattributable options, read as SUDO_MOVING_OPTIONS.
 SUDO_MOVING_OPTIONS = {"-D", "--chdir", "-R", "--chroot", "-i", "--login"}
 ENV_UNSET_OPTION = "-u"
-ENV_SPLIT_OPTION = "-S"  # env reads its value again as words
+ENV_SPLIT_OPTION, ENV_SPLIT_LONG_OPTION = "-S", "--split-string"  # env reads the value again as words
 ENV_MOVING_OPTIONS = {"-C", "--chdir"}
 ENV_VALUE_OPTIONS = {ENV_UNSET_OPTION, ENV_SPLIT_OPTION, "-P"}  # -P: BSD env's search path
 SUDO_FLAGS = {"-A", "-b", "-E", "-H", "-k", "-n", "-P", "-S", "-s", "--askpass", "--background", "--preserve-env",
@@ -568,11 +568,14 @@ def _nice_command(invocation: Invocation, args: list) -> list:
 
 
 def _env_command(invocation: Invocation, args: list) -> list:
-    """env's command after its assignments and options; one it does not read (`--chdir`, `-S`) is read past as a flag
-    and recorded as unattributable."""
+    """env's command after its assignments and options; an -S value is split into words read in its place, as env
+    does. An option it does not read (`--chdir`) is read past as a flag and recorded as unattributable."""
     while args:
         word = args[0]
-        if word in {"-i", "-", "--ignore-environment"}:
+        resplit = _split_string_args(args)
+        if resplit is not None:
+            args = resplit
+        elif word in {"-i", "-", "--ignore-environment"}:
             invocation.clears_env = True
             invocation.assignments = []
             args = args[1:]
@@ -584,9 +587,12 @@ def _env_command(invocation: Invocation, args: list) -> list:
             args = args[1:]
         elif word == "--":
             return args[1:]
+        elif word in ENV_MOVING_OPTIONS and len(args) > 1:
+            _record_unread_option(invocation, word, ENV_MOVING_OPTIONS, ENV_VALUE_OPTIONS)
+            args = args[2:]
         elif word.startswith("-"):
             _record_unread_option(invocation, word, ENV_MOVING_OPTIONS, ENV_VALUE_OPTIONS)
-            invocation.moves_directory |= _split_string_moves(word)
+            invocation.moves_directory |= _split_string_at(args) is not None  # an -S value that does not split
             args = args[1:]
         elif "=" in word and IDENTIFIER_RE.match(word.split("=", 1)[0]):
             invocation.assignments.append(tuple(word.split("=", 1)))
@@ -596,35 +602,32 @@ def _env_command(invocation: Invocation, args: list) -> list:
     return args
 
 
-def _split_string_moves(word: str) -> bool:
-    """env reads an -S value again as its own leading options: a move among them (`-S'-C /x'`) moves the command, and so
-    may a value resolved at run time or one that does not split."""
-    value = _split_string_value(word)
-    if value is None:
-        return False
-    if RUN_TIME_WORD_RE.search(value):
-        return True
+def _split_string_args(args: list) -> list | None:
+    """`args` with the -S or --split-string option at their head replaced by the words env splits its value into
+    (`-iS'-C /x' mvn` -> `-i -C /x mvn`); None when they start with no such option, or its value does not split."""
+    found = _split_string_at(args)
+    if found is None:
+        return None
+    flags, value, rest = found
     try:
-        words = shlex.split(value)
+        return flags + shlex.split(value) + rest
     except ValueError:
-        return True
-    options = Invocation(argv=[], assignments=[])
-    for option in words:
-        if not option.startswith("-"):
-            break
-        _record_unread_option(options, option, ENV_MOVING_OPTIONS, ENV_VALUE_OPTIONS)
-    return options.moves_directory
+        return None
 
 
-def _split_string_value(word: str) -> str | None:
-    """The value env's -S or --split-string carries in this word (`-S'-C /x'`, `-iSA=1`, `--split-string=…`)."""
-    if word.startswith("--"):
-        name, has_value, value = word.partition("=")
-        return value if has_value and name == "--split-string" else None
-    for index, letter in enumerate(word[1:], start=2):
+def _split_string_at(args: list) -> tuple | None:
+    """(the flags before it, its value, the words after it) for an -S or --split-string option at the head of args."""
+    word, rest = args[0], args[1:]
+    if word in {ENV_SPLIT_OPTION, ENV_SPLIT_LONG_OPTION}:
+        return ([], rest[0], rest[1:]) if rest else None
+    if word.startswith(ENV_SPLIT_LONG_OPTION + "="):
+        return [], word.partition("=")[2], rest
+    if word.startswith("--") or not word.startswith("-"):
+        return None
+    for index, letter in enumerate(word[1:], start=1):
         if "-" + letter == ENV_SPLIT_OPTION:
-            return word[index:]
-        if "-" + letter in ENV_VALUE_OPTIONS:
+            return ([word[:index]] if index > 1 else []), word[index + 1:], rest
+        if "-" + letter in ENV_VALUE_OPTIONS | ENV_MOVING_OPTIONS:
             return None
     return None
 

@@ -139,6 +139,17 @@ class CommandParsingTest(unittest.TestCase):
         self.assertEqual(self.actions("eval \"$(ssh-agent -s)\" && git log --oneline | grep push"), [])
         self.assertEqual(self.actions("GIT=git; S=status; $GIT $S"), [])
 
+    def test_runtimeProgramWord_isUnattributable_whenItsOwnTextHoldsAPushOrMergeWord(self):
+        for command in ("$CORE/git-push origin main", "\"$(git --exec-path)\"/git-push origin main",
+                        "$X/git-merge feature"):
+            with self.subTest(command=command):
+                action, = self.actions(command)
+                self.assertIsInstance(action, self.hook.Unattributable)
+                self.assertIn("run time", action.why)
+        for command in ("$EDITOR notes.md", "KEEL=k; $KEEL snapshot ."):
+            with self.subTest(command=command):
+                self.assertEqual(self.actions(command), [])
+
     def test_runtimeSubcommand_isUnattributable_evenWhenTheCallNeverSpellsPush(self):
         for command in ("S=push; git $S origin feature", "git $(echo push) origin feature",
                         "SUB=push\ngit \"$SUB\" origin feature", "git ${SUB:-push} origin feature",

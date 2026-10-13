@@ -262,7 +262,7 @@ def actions_of(step: shell.Step, call: str = "", call_cwd: str = "") -> list:
         return _gh_actions(shell.gh_subcommand_argv(words), workdir, step.environment, call, call_cwd)
     if _hides_push_or_merge(step.command.name, words):
         return [Unattributable(workdir, words, "`%s` wraps it" % step.command.name)]
-    if RUNTIME_NAME.search(words[0]) and _runtime_name_may_push_or_merge(words[1:], call):
+    if RUNTIME_NAME.search(words[0]) and _runtime_name_may_push_or_merge(words, call):
         return [_resolved_at_run_time(workdir, words, "`%s` is resolved only at run time" % words[0], call, call_cwd)]
     return []
 
@@ -282,11 +282,14 @@ def _gh_actions(words: List[str], workdir: str, environment: dict, call: str, ca
     return []
 
 
-def _runtime_name_may_push_or_merge(args: List[str], call: str) -> bool:
-    """A command name the shell resolves at run time may push or merge when the call spells one anywhere (an
-    assignment, a quoted string), an argument is a push/merge word, or an argument is resolved at run time
-    too (`$GIT $S …`) while the call holds a push or merge word anywhere (`S=push`)."""
+def _runtime_name_may_push_or_merge(words: List[str], call: str) -> bool:
+    """A command name the shell resolves at run time may push or merge when its own text holds a push or merge
+    word (`$CORE/git-push`), the call spells one anywhere, an argument is a push/merge word, or an argument is
+    resolved at run time too (`$GIT $S …`) while the call holds a push or merge word anywhere (`S=push`)."""
+    program, args = words[0], words[1:]
     unquoted = _unquoted(call)
+    if PUSH_OR_MERGE_WORD.search(_unquoted(program)):
+        return True
     if SPELLED_PUSH_OR_MERGE.search(unquoted) or PUSH_OR_MERGE_WORDS.intersection(args):
         return True
     return any(RUNTIME_NAME.search(arg) for arg in args) and bool(PUSH_OR_MERGE_WORD.search(unquoted))

@@ -44,7 +44,8 @@ BRANCH_MERGE_ENDPOINT = re.compile(r"/merges/?(?:\?|$)")
 REF_ENDPOINT = re.compile(r"(?:^|/)git/refs(?:/|\?|$)")
 GRAPHQL_BRANCH_CHANGE = re.compile(r"\b(?:mergePullRequest|mergeBranch|enablePullRequestAutoMerge|createRef|updateRefs?|deleteRef)\b")
 GH_API_METHOD_OPTIONS = {"-X", "--method"}
-GH_API_BODY_OPTIONS = ("-f", "-F", "--field", "--raw-field", "--input")  # any of them makes gh send POST
+GH_API_FIELD_OPTIONS = ("-f", "-F", "--field", "--raw-field")
+GH_API_BODY_OPTIONS = GH_API_FIELD_OPTIONS + ("--input",)  # any of them makes gh send POST
 READ_METHODS = {"GET", "HEAD"}
 GH_API_VALUE_OPTIONS = GH_API_METHOD_OPTIONS | set(GH_API_BODY_OPTIONS) | {
     "-H", "--header", "-q", "--jq", "-t", "--template", "--hostname", "-p", "--preview", "--cache"}
@@ -311,11 +312,25 @@ def _gh_api_changes_a_branch(args: List[str]) -> bool:
 
 
 def _gh_api_hides_its_target(args: List[str]) -> bool:
-    """A writing `gh api` call whose endpoint or GraphQL query is resolved at run time, so the gate cannot read
-    what it changes."""
+    """A writing `gh api` call whose endpoint or GraphQL query is resolved at run time (the query's text, or the name
+    of a field that may be `query`), so the gate cannot read what it changes."""
     endpoint = _gh_api_endpoint(args) or ""
     run_time_query = any(RUNTIME_NAME.search(arg.partition("query=")[2]) for arg in args if "query=" in arg)
-    return bool(RUNTIME_NAME.search(endpoint) or run_time_query) and _gh_api_writes(args)
+    run_time_field_name = any(RUNTIME_NAME.search(field.partition("=")[0]) for field in _gh_api_fields(args))
+    return bool(RUNTIME_NAME.search(endpoint) or run_time_query or run_time_field_name) and _gh_api_writes(args)
+
+
+def _gh_api_fields(args: List[str]) -> List[str]:
+    """The `name=value` fields a `gh api` call sends, as written after -f, -F, --field or --raw-field."""
+    fields = []
+    for index, arg in enumerate(args):
+        if arg in GH_API_FIELD_OPTIONS:
+            fields.append(args[index + 1] if index + 1 < len(args) else "")
+        elif arg.startswith(("--field=", "--raw-field=")):
+            fields.append(arg.partition("=")[2])
+        elif arg.startswith(("-f", "-F")):
+            fields.append(arg[2:])
+    return fields
 
 
 def _gh_api_endpoint(args: List[str]) -> Optional[str]:

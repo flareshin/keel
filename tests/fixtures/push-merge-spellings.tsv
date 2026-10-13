@@ -86,6 +86,8 @@ GH=gh; X=git/refs/heads/main; $GH api -X PATCH repos/acme/app/$X -f sha={head}	d
 GH=gh; X=refs/heads/main; $GH api -X PATCH repos/acme/app/git/$X -f sha={head}	deny	a run-time program whose arguments make a gh api write
 X=git/refs/heads/main; gh api -X PATCH repos/acme/app/$X -f sha={head}	deny	gh api writing to an endpoint resolved at run time
 M=merge; gh api -X PUT repos/acme/app/pulls/7/$M	deny	gh api merging through an endpoint tail in a variable
+KV='query=mutation { mergePullRequest(input: {pullRequestId: "x"}) { clientMutationId } }'; gh api graphql -f "$KV"	deny	a GraphQL field held whole in a variable
+gh api graphql -F "$KV"	deny	a typed GraphQL field held whole in a variable
 GH=gh; X=merges; $GH api repos/acme/app/$X -f base=main -f head=feature	deny	a run-time gh merging through an endpoint tail in a variable
 gh api -XDELETE repos/acme/app/git/refs/heads/x	deny	REST ref delete, method attached
 gh api --method=DELETE repos/acme/app/git/refs/heads/x	deny	REST ref delete, long method option

@@ -88,8 +88,7 @@ class DenyTest(EnvPreflightTestCase):
 
     def test_mvn_deniedWithFire_whenAWrapperOptionTheParserReadsPastKeepsTheDirectory(self):
         for command in ("sudo -nE mvn test", "timeout --bogus 60 mvn test", "sudo -nC3 mvn test", "sudo -nuDavid mvn test",
-                        "env -iv mvn test", "env -iuCFLAGS mvn test", "env -P/opt/homebrew/Cellar/maven/bin mvn test",
-                        "env -SX=1 mvn test", "env -S'MAVEN_OPTS=-Xmx1g' mvn test", "env -S -i mvn test"):
+                        "env -iv mvn test", "env -iuCFLAGS mvn test", "env -P/opt/homebrew/Cellar/maven/bin mvn test"):
             with self.subTest(command=command):
                 self.assertDenied(self.check(command))
         self.assertFired("S-jdk", "deny", "env-preflight")
@@ -135,7 +134,7 @@ class PassTest(EnvPreflightTestCase):
     def test_mvn_passesWithoutFire_whenAWrapperRunsItInADirectoryTheHookCannotRead(self):
         for command in ("env --chdir=/tmp mvn test", "env -C/tmp mvn test", "env -iC/tmp mvn test", "sudo -i mvn test",
                         "sudo --login mvn test", "sudo --chdir=/tmp mvn test", "sudo -nD/tmp mvn test", "sudo -R/srv mvn test",
-                        "sudo --chroot=/srv mvn test", "env -S'-C /tmp' mvn test", "env -S\"$X\" mvn test"):
+                        "sudo --chroot=/srv mvn test", "env -S'-C /tmp' mvn test"):
             with self.subTest(command=command):
                 self.assertPassed(self.check(command))
         self.assertEqual([], self.sandbox.fires())

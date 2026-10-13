@@ -36,7 +36,8 @@ TIMEOUT_VALUE_OPTIONS = {"-k", "-s", "--kill-after", "--signal"}
 # unattributable options, read as SUDO_MOVING_OPTIONS.
 SUDO_MOVING_OPTIONS = {"-D", "--chdir", "-R", "--chroot", "-i", "--login"}
 ENV_UNSET_OPTION = "-u"
-ENV_MOVING_OPTIONS, ENV_VALUE_OPTIONS = {"-C", "--chdir"}, {ENV_UNSET_OPTION, "-P", "-S"}  # -P: BSD env's search path
+# -S splits its value into words env reads again, so its value may hold -C; -P is BSD env's search path.
+ENV_MOVING_OPTIONS, ENV_VALUE_OPTIONS = {"-C", "--chdir", "-S", "--split-string"}, {ENV_UNSET_OPTION, "-P"}
 SUDO_FLAGS = {"-A", "-b", "-E", "-H", "-k", "-n", "-P", "-S", "-s", "--askpass", "--background", "--preserve-env",
               "--set-home", "--reset-timestamp", "--non-interactive", "--preserve-groups", "--stdin", "--shell"}
 SUDO_VALUE_OPTIONS = {"-C", "-g", "-h", "-p", "-r", "-T", "-t", "-U", "-u", "--close-from", "--group", "--host",

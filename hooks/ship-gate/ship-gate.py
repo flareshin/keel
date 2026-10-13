@@ -34,19 +34,21 @@ F_IRREVERSIBLE = "F-irreversible"
 DECISION_HINT = re.compile(r"\b(git|gh|push|merge)\b")
 PUSH_OR_MERGE_WORD = re.compile(r"\b(push|merge)\b")
 PUSH_OR_MERGE_WORDS = {"push", "merge"}
-PUSH_OR_MERGE_WITHOUT_THE_WORD = re.compile(r"\bsend-pack\b|/merges\b|\bgit/refs\b")
+# Not `.git/refs` or `merges.md`: those are local paths, not endpoints.
+PUSH_OR_MERGE_WITHOUT_THE_WORD = re.compile(r"\bsend-pack\b|/merges(?![\w.-])|/git/refs\b")
 PUSHES_OUTSIDE_GIT_PUSH = {"send-pack", "http-push"}  # git plumbing that updates a remote's refs
 QUOTING = re.compile(r"""['"\\]""")
 PULL_URL = re.compile(r"^https?://[^/]+/([^/]+/[^/]+)/pull/\d+")
-PULL_MERGE_ENDPOINT = re.compile(r"/pulls/\d+/merge/?$")
-BRANCH_MERGE_ENDPOINT = re.compile(r"(?:^|/)repos/[^/]+/[^/]+/merges/?(?:\?|$)")
-REF_ENDPOINT = re.compile(r"(?:^|/)repos/[^/]+/[^/]+/git/refs(?:/|\?|$)")
+PULL_MERGE_ENDPOINT = re.compile(r"/pulls/[^/]+/merge/?$")  # any segment: `repos/$R/pulls/$N/merge`
+BRANCH_MERGE_ENDPOINT = re.compile(r"/merges/?(?:\?|$)")
+REF_ENDPOINT = re.compile(r"(?:^|/)git/refs(?:/|\?|$)")
 GRAPHQL_BRANCH_CHANGE = re.compile(r"\b(?:mergePullRequest|mergeBranch|enablePullRequestAutoMerge|createRef|updateRefs?|deleteRef)\b")
 GH_API_METHOD_OPTIONS = {"-X", "--method"}
 GH_API_BODY_OPTIONS = ("-f", "-F", "--field", "--raw-field", "--input")  # any of them makes gh send POST
 READ_METHODS = {"GET", "HEAD"}
 RUNTIME_NAME = re.compile(r"[$`]")
 URL_FORM = re.compile(r"^[^/]*:")  # scheme://…, scp-like host:path, transport::address; any other word is a path
+FORWARDERS_THE_PARSER_KEEPS = {"xargs", "parallel"}
 ARGV_FORWARDERS = {"xargs", "parallel", "env", "sudo", "exec", "nice", "nohup", "time", "timeout", "gtimeout", "command"}
 PR_VIEW_FIELDS = "statusCheckRollup,baseRefName"
 FAILED_CHECKS = {"FAILURE", "CANCELLED", "TIMED_OUT", "ERROR", "STARTUP_FAILURE", "ACTION_REQUIRED"}
@@ -336,12 +338,17 @@ def _hides_push_or_merge(program: str, words: List[str], call: str) -> bool:
     """A program that runs its arguments as a command the parser did not unwrap (`xargs git push …`,
     `env --chdir=… git push …`), when those arguments name git or gh (`git-push` too) or a name resolved at run
     time, in a call that spells a push or merge anywhere."""
-    if os.path.basename(program) not in ARGV_FORWARDERS:
+    if os.path.basename(program) not in ARGV_FORWARDERS or not _forwarder_left_in_place(words):
         return False
-    forwarded = words[1:]
     runs_opaque_git = any(os.path.basename(word) in {"git", "gh"} or shell.dashed_git_subcommand(word)
-                          or RUNTIME_NAME.search(word) for word in forwarded)
-    return runs_opaque_git and (_spells_push_or_merge(call) or bool(PUSH_OR_MERGE_WORDS.intersection(forwarded)))
+                          or RUNTIME_NAME.search(word) for word in words)
+    return runs_opaque_git and (_spells_push_or_merge(call) or bool(PUSH_OR_MERGE_WORDS.intersection(words)))
+
+
+def _forwarder_left_in_place(words: List[str]) -> bool:
+    """The parser kept the forwarder (`xargs …`) or stopped at an option it does not read (`env --chdir=…` leaves
+    `--chdir=…` first); `timeout 60 cat "$F"` is already `cat "$F"`, and `command -v git` only looks git up."""
+    return os.path.basename(words[0]) in FORWARDERS_THE_PARSER_KEEPS or words[0].startswith("-")
 
 
 def _git_actions(step: shell.Step, call: str, call_cwd: str) -> list:

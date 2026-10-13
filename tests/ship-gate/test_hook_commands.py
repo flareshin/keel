@@ -134,14 +134,24 @@ class CommandParsingTest(unittest.TestCase):
                         "xargs git send-pack ../app.git feature < /dev/null",
                         "xargs gh api -X PATCH repos/acme/app/git/refs/heads/main -f sha=abc < /dev/null",
                         "GP=\"$(git --exec-path)/git-push\"; xargs $GP origin feature < /dev/null",
-                        "S=push; xargs git $S origin feature < /dev/null"):
+                        "S=push; xargs git $S origin feature < /dev/null",
+                        "R=acme/app; echo x | xargs gh api -X PATCH repos/$R/git/refs/heads/main -f sha=abc"):
             with self.subTest(command=command):
                 action, = [action for action in self.actions(command) if isinstance(action, self.hook.Unattributable)]
                 self.assertIn("wraps it", action.why)
         for command in ("git log --format=%H | xargs echo push", "find . -name '*.orig' | xargs rm",
-                        "xargs grep -l merge < files.txt"):
+                        "xargs grep -l merge < files.txt", "ls .git/refs/heads | xargs -n1 git log -1"):
             with self.subTest(command=command):
                 self.assertEqual(self.actions(command), [])
+
+    def test_unwrappedProgram_staysAttributable_besideAPushOrMergeSpelling(self):
+        for command in ("git merge-base main HEAD && timeout 60 cat \"$F\"",
+                        "base=$(git merge-base main HEAD) && nice -n 5 make -C \"$DIR\"",
+                        "git merge-base main HEAD; env FOO=1 python3 \"$SCRIPT\"", "git merge-base main HEAD; command -v git"):
+            with self.subTest(command=command):
+                self.assertEqual(self.actions(command), [])
+        push, = self.actions("command -v git && git push origin feature")
+        self.assertIsInstance(push, self.hook.Push)
 
     def test_runtimeCommandName_isUnattributable_onlyWhenTheCallSpellsAPushOrMerge(self):
         for command in ("GIT=git; $GIT push origin feature", "CMD='git push origin feature'; eval \"$CMD\"",
@@ -169,7 +179,8 @@ class CommandParsingTest(unittest.TestCase):
                 action, = self.actions(command)
                 self.assertIsInstance(action, self.hook.Unattributable)
                 self.assertIn("run time", action.why)
-        for command in ("$EDITOR notes.md", "KEEL=k; $KEEL snapshot ."):
+        for command in ("$EDITOR notes.md", "KEEL=k; $KEEL snapshot .", "$EDITOR notes.md && cat .git/refs/heads/main",
+                        "$EDITOR x && cat docs/merges.md"):
             with self.subTest(command=command):
                 self.assertEqual(self.actions(command), [])
 
@@ -223,6 +234,9 @@ class CommandParsingTest(unittest.TestCase):
                         "gh api repos/acme/app/git/refs -f ref=refs/heads/x -f sha=abc",
                         "gh api -XDELETE repos/acme/app/git/refs/heads/x",
                         "gh api -X GET -X PATCH repos/acme/app/git/refs/heads/main --input body.json",
+                        "R=acme/app; gh api -X PATCH repos/$R/git/refs/heads/main -f sha=abc",
+                        "R=acme/app; gh api repos/$R/merges -f base=main -f head=feature",
+                        "N=7; gh api -X PUT repos/acme/app/pulls/$N/merge",
                         mutation % "updateRefs", mutation % "createRef", mutation % "mergeBranch",
                         mutation % "enablePullRequestAutoMerge"):
             with self.subTest(command=command):
@@ -280,7 +294,8 @@ class CommandParsingTest(unittest.TestCase):
                     self.assertEqual((push.workdir, push.words), ("/home/u/app", ["git", "push", "origin", "x"]))
 
     def test_mayPushOrMerge_isFalse_whenTheCallHasNoPushOrMergeWordAndNoRunTimeGit(self):
-        for call in ("gh pr create --title t --body b", "git status && git log --oneline", "echo $HOME", ""):
+        for call in ("gh pr create --title t --body b", "git status && git log --oneline", "echo $HOME", "",
+                     "cat .git/refs/heads/main", "cat docs/merges.md"):
             with self.subTest(call=call):
                 self.assertFalse(self.hook.may_push_or_merge(call))
 

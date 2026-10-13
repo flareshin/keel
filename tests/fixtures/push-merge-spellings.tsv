@@ -37,8 +37,8 @@ timeout -s KILL 60 git push origin feature	gate	timeout wrapper with options
 sudo -E git push origin feature	gate	sudo wrapper with options
 sudo -uroot git push origin feature	gate	sudo's user option with its value attached
 timeout -sKILL -k5 60 git push origin feature	gate	timeout's options with their values attached
-exec -agit-push git origin feature	gate	exec -a names git's push program as git's argv[0]
-exec -a git-push git origin feature	gate	exec -a names git's push program, value spaced
+exec -agit-push git origin feature	deny	git may run the push program exec -a names as its argv[0]
+exec -a git-push git origin feature	deny	git may run the push program exec -a names, value spaced
 A=git-push; exec -a "$A" git origin feature	deny	exec -a names git's argv[0] at run time
 eval 'git push origin feature'	gate	eval string
 bash -c 'git push origin feature'	gate	inline shell

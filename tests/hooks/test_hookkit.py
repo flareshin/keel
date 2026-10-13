@@ -263,6 +263,18 @@ class UnwrapTest(unittest.TestCase):
     def test_unwrap_leavesLookup_whenCommandDashV(self):
         self.assertEqual(["command", "-v", "mvn"], unwrap(parse_commands("command -v mvn")[0]).argv)
 
+    def test_unwrap_readsGitsOwnDashedProgram_asGitAndItsSubcommand(self):
+        for command, argv in (("/usr/libexec/git-core/git-push origin x", ["git", "push", "origin", "x"]),
+                              ("timeout 5 git-commit --no-verify -m m", ["git", "commit", "--no-verify", "-m", "m"]),
+                              ("./git-merge-base main HEAD", ["git", "merge-base", "main", "HEAD"])):
+            with self.subTest(command=command):
+                self.assertEqual(argv, unwrap(parse_commands(command)[0]).argv)
+
+    def test_unwrap_leavesDashedProgram_whenItsPathIsResolvedAtRunTime(self):
+        for command in ("$CORE/git-push origin x", "\"$(git --exec-path)\"/git-push origin x"):
+            with self.subTest(command=command):
+                self.assertEqual(parse_commands(command)[0].argv, unwrap(parse_commands(command)[0]).argv)
+
 
 class WriteTargetsTest(unittest.TestCase):
     def test_writeTargets_namesRedirectTarget_whenNotDevNull(self):

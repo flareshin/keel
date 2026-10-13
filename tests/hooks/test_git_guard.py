@@ -761,6 +761,9 @@ class ForcePushTest(GitGuardTestCase):
     def test_push_denied_whenShortFlagCombined(self):
         self.assertDenied(self.guard("git push -fu origin feature", cwd=self.repo), "F-force-push")
 
+    def test_push_denied_whenGitsOwnDashedPushProgramForces(self):
+        self.assertDenied(self.guard("/usr/libexec/git-core/git-push --force origin feature", cwd=self.repo), "F-force-push")
+
     def test_push_denied_whenPlusRefspec(self):
         self.assertDenied(self.guard("git push origin +feature", cwd=self.repo), "F-force-push")
 

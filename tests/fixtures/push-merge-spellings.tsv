@@ -45,6 +45,7 @@ gh pr merge 7 --squash --match-head-commit {head}	gate	merge with the head pinne
 gh -R acme/app pr merge 7 --squash --match-head-commit {head}	gate	repo flag before pr
 gh -Racme/app pr merge 7 --squash --match-head-commit {head}	gate	repo flag before pr, value attached
 R={repo}; git -C "$R" push origin feature	gate	a plain shell variable names the clone
+/usr/libexec/git-core/git-push origin feature	gate	git's own dashed push program, by path
 echo feature | xargs git push origin	deny	xargs appends the refspec from stdin
 xargs git push origin feature < /dev/null	deny	bare xargs wrapper
 xargs -0 git push origin feature < /dev/null	deny	xargs wrapper with options

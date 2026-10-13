@@ -24,6 +24,8 @@ COPY_VERBS = {"cp", "mv", "install", "ln", "rsync"}
 REMOVE_VERBS = {"rm", "rmdir", "unlink", "shred"}
 CREATE_VERBS = {"touch", "truncate", "tee"}
 IN_PLACE_EDITORS = {"sed", "perl"}
+DASHED_GIT_PROGRAM_RE = re.compile(r"git-([a-z0-9][a-z0-9-]*)\Z")  # git's own `git-<subcommand>` programs, e.g. git-push
+RUN_TIME_WORD_RE = re.compile(r"[$`]")
 GIT_VALUE_OPTIONS = {"-C", "-c", "--config-env", "--git-dir", "--work-tree", "--namespace", "--exec-path"}  # global options taking a value
 PUSH_VALUE_OPTIONS = {"--push-option", "--receive-pack", "--exec"}
 PUSH_OPTION_LETTER = "o"  # `-o <value>`, `-o<value>`, `-uo <value>`: the rest of the cluster, else the next word
@@ -315,7 +317,17 @@ def unwrap(command: SimpleCommand) -> Invocation:
         _drop_one_wrapper(invocation)
         if invocation.argv == before:
             break
+    _read_dashed_git_as_git(invocation)
     return invocation
+
+
+def _read_dashed_git_as_git(invocation: Invocation) -> None:
+    """`git-push …` runs as `git push …`; a program word resolved at run time stays as written."""
+    if not invocation.argv or RUN_TIME_WORD_RE.search(invocation.argv[0]):
+        return
+    subcommand = dashed_git_subcommand(invocation.argv[0])
+    if subcommand:
+        invocation.argv = ["git", subcommand] + invocation.argv[1:]
 
 
 def write_targets(command: SimpleCommand) -> WriteTargets:
@@ -367,6 +379,12 @@ def git_subcommand_index(argv: list) -> int | None:
         else:
             return index
     return None
+
+
+def dashed_git_subcommand(word: str) -> str | None:
+    """`push` for git's own `git-push` program at any path; None for any other word."""
+    match = DASHED_GIT_PROGRAM_RE.match(os.path.basename(word))
+    return match.group(1) if match else None
 
 
 def _git_subcommand(argv: list) -> str | None:

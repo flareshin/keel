@@ -26,6 +26,18 @@ CREATE_VERBS = {"touch", "truncate", "tee"}
 IN_PLACE_EDITORS = {"sed", "perl"}
 DASHED_GIT_PROGRAM_RE = re.compile(r"git-([a-z0-9][a-z0-9-]*)\Z")
 RUN_TIME_WORD_RE = re.compile(r"[$`]")
+TIME_FLAGS = {"-p"}
+COMMAND_FLAGS = {"-p"}
+EXEC_FLAGS, EXEC_VALUE_OPTIONS = {"-c", "-l"}, {"-a"}
+NICE_VALUE_OPTIONS = {"-n", "--adjustment"}
+TIMEOUT_FLAGS = {"--preserve-status", "--foreground", "-v", "--verbose"}
+TIMEOUT_VALUE_OPTIONS = {"-k", "-s", "--kill-after", "--signal"}
+# Not -D/--chdir, -R/--chroot or -i/--login: they move the command out of the call's directory, so a sudo that
+# carries one stays a wrapper the hooks cannot attribute.
+SUDO_FLAGS = {"-A", "-b", "-E", "-H", "-k", "-n", "-P", "-S", "-s", "--askpass", "--background", "--preserve-env",
+              "--set-home", "--reset-timestamp", "--non-interactive", "--preserve-groups", "--stdin", "--shell"}
+SUDO_VALUE_OPTIONS = {"-C", "-g", "-h", "-p", "-r", "-T", "-t", "-U", "-u", "--close-from", "--group", "--host",
+                      "--prompt", "--role", "--command-timeout", "--type", "--other-user", "--user"}
 GIT_VALUE_OPTIONS = {"-C", "-c", "--config-env", "--git-dir", "--work-tree", "--namespace", "--exec-path"}  # global options taking a value
 PUSH_VALUE_OPTIONS = {"--push-option", "--receive-pack", "--exec"}
 PUSH_OPTION_LETTER = "o"  # `-o <value>`, `-o<value>`, `-uo <value>`: the rest of the cluster, else the next word
@@ -449,75 +461,99 @@ def _edits_in_place(args: list) -> bool:
 
 
 def _drop_one_wrapper(invocation: Invocation) -> None:
+    """Lay bare the command one wrapper runs; a wrapper carrying an option the parser does not read stays as it is."""
     name = invocation.name
     rest = invocation.argv[1:]
+    command = None
     if name == "time":
-        invocation.argv = _drop_leading(rest, {"-p"})
+        command = _command_after_options(rest, TIME_FLAGS, set())
     elif name == "nohup":
-        invocation.argv = rest
+        command = _command_after_options(rest, set(), set())
     elif name == "command" and not (rest and rest[0] in {"-v", "-V"}):
-        invocation.argv = _drop_leading(rest, {"-p"})
+        command = _command_after_options(rest, COMMAND_FLAGS, set())
     elif name == "exec":
-        invocation.argv = _drop_exec_options(invocation, rest)
+        command = _exec_command(invocation, rest)
     elif name == "nice":
-        invocation.argv = _drop_nice_options(rest)
+        command = _nice_command(rest)
     elif name == "env":
-        invocation.argv = _drop_env_options(invocation, rest)
+        command = _env_command(invocation, rest)
     elif name in {"timeout", "gtimeout"}:
-        invocation.argv = _drop_options(rest, {"-k", "-s", "--kill-after", "--signal"})[1:]  # then the duration
+        command = _timeout_command(rest)
     elif name == "sudo":
+        command = _command_after_options(rest, SUDO_FLAGS, SUDO_VALUE_OPTIONS)
+        invocation.clears_env = invocation.clears_env or command is not None
+    if command is not None:
+        invocation.argv = command
+
+
+def _command_after_options(args: list, flags: set, value_options: set) -> list | None:
+    """`args` after the options a wrapper puts before its command; None at an option outside `flags` and
+    `value_options` (a cluster such as `-iu` included), so the caller keeps the wrapper rather than guess."""
+    while args and args[0].startswith("-") and args[0] != "-":
+        word = args[0]
+        name, has_value, _ = word.partition("=")
+        if word == "--":
+            return args[1:]
+        if word in flags:
+            args = args[1:]
+        elif word in value_options:
+            args = args[2:]
+        elif has_value and name.startswith("--") and name in value_options:
+            args = args[1:]
+        else:
+            return None
+    return args
+
+
+def _exec_command(invocation: Invocation, args: list) -> list | None:
+    command = _command_after_options(args, EXEC_FLAGS, EXEC_VALUE_OPTIONS)
+    if command is not None and "-c" in args[:len(args) - len(command)]:
         invocation.clears_env = True
-        invocation.argv = _drop_options(rest, {"-u", "-g", "-C", "-h", "-p"})
+        invocation.assignments = []
+    return command
 
 
-def _drop_leading(args: list, flags: set) -> list:
-    while args and args[0] in flags:
-        args = args[1:]
-    return args
-
-
-def _drop_options(args: list, value_options: set) -> list:
-    """`args` after its leading options; one in `value_options` also takes the next word."""
-    while args and args[0].startswith("-"):
-        args = args[2:] if args[0] in value_options else args[1:]
-    return args
-
-
-def _drop_exec_options(invocation: Invocation, args: list) -> list:
-    while args and args[0].startswith("-"):
-        if args[0] == "-c":
-            invocation.clears_env = True
-            invocation.assignments = []
-        args = args[2:] if args[0] == "-a" else args[1:]
-    return args
-
-
-def _drop_nice_options(args: list) -> list:
-    if args and args[0] == "-n":
-        return args[2:]
+def _nice_command(args: list) -> list | None:
     if args and re.fullmatch(r"--?\d+", args[0]):
         return args[1:]
-    return args
+    return _command_after_options(args, set(), NICE_VALUE_OPTIONS)
 
 
-def _drop_env_options(invocation: Invocation, args: list) -> list:
+def _timeout_command(args: list) -> list | None:
+    after_options = _command_after_options(args, TIMEOUT_FLAGS, TIMEOUT_VALUE_OPTIONS)
+    return None if after_options is None else after_options[1:]  # then the duration
+
+
+def _env_command(invocation: Invocation, args: list) -> list | None:
+    """env's command after its assignments and the options the parser reads; None at any other option
+    (`--chdir`, `-S`), leaving the invocation untouched."""
+    clears, assignments, removed = False, [], set()
     while args:
         word = args[0]
         if word in {"-i", "-", "--ignore-environment"}:
-            invocation.clears_env = True
-            invocation.assignments = []
+            clears, assignments = True, []
             args = args[1:]
         elif word == "-u" and len(args) > 1:
-            invocation.removed_names.add(args[1])
+            removed.add(args[1])
             args = args[2:]
         elif word.startswith("-u") and len(word) > 2:
-            invocation.removed_names.add(word[2:])
+            removed.add(word[2:])
             args = args[1:]
+        elif word == "--":
+            args = args[1:]
+            break
+        elif word.startswith("-"):
+            return None
         elif "=" in word and IDENTIFIER_RE.match(word.split("=", 1)[0]):
-            invocation.assignments.append(tuple(word.split("=", 1)))
+            assignments.append(tuple(word.split("=", 1)))
             args = args[1:]
         else:
             break
+    if clears:
+        invocation.clears_env = True
+        invocation.assignments = []
+    invocation.assignments.extend(assignments)
+    invocation.removed_names |= removed
     return args
 
 

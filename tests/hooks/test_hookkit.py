@@ -263,6 +263,20 @@ class UnwrapTest(unittest.TestCase):
     def test_unwrap_leavesLookup_whenCommandDashV(self):
         self.assertEqual(["command", "-v", "mvn"], unwrap(parse_commands("command -v mvn")[0]).argv)
 
+    def test_unwrap_keepsTheWrapper_whenItMeetsAnOptionItDoesNotRead(self):
+        for command in ("sudo --chdir /tmp git push", "sudo -D /tmp git push", "sudo -iu bob git push",
+                        "exec -la foo git push", "env --chdir=/x git push", "timeout --bogus 5 git push",
+                        "nice --bogus git push", "nohup --bogus git push", "time -v git push", "command -x git"):
+            with self.subTest(command=command):
+                self.assertEqual(parse_commands(command)[0].argv, unwrap(parse_commands(command)[0]).argv)
+
+    def test_unwrap_readsTheOptionsItKnows_beforeTheCommand(self):
+        for command in ("sudo -E -u bob git push", "sudo --user=bob -- git push", "nice -n 5 git push",
+                        "nice -5 git push", "exec -a name git push", "timeout --preserve-status -s TERM 30s git push",
+                        "env -i -u HOME A=1 git push", "command -p git push", "time -p git push"):
+            with self.subTest(command=command):
+                self.assertEqual(["git", "push"], unwrap(parse_commands(command)[0]).argv)
+
     def test_unwrap_readsGitsOwnDashedProgram_asGitAndItsSubcommand(self):
         for command, argv in (("/usr/libexec/git-core/git-push origin x", ["git", "push", "origin", "x"]),
                               ("timeout 5 git-commit --no-verify -m m", ["git", "commit", "--no-verify", "-m", "m"]),

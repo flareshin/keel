@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 from dataclasses import dataclass, field
 
 SHELLS = {"bash", "sh", "zsh", "dash", "ksh"}
@@ -36,8 +37,9 @@ TIMEOUT_VALUE_OPTIONS = {"-k", "-s", "--kill-after", "--signal"}
 # unattributable options, read as SUDO_MOVING_OPTIONS.
 SUDO_MOVING_OPTIONS = {"-D", "--chdir", "-R", "--chroot", "-i", "--login"}
 ENV_UNSET_OPTION = "-u"
-# -S splits its value into words env reads again, so its value may hold -C; -P is BSD env's search path.
-ENV_MOVING_OPTIONS, ENV_VALUE_OPTIONS = {"-C", "--chdir", "-S", "--split-string"}, {ENV_UNSET_OPTION, "-P"}
+ENV_SPLIT_OPTION = "-S"  # env reads its value again as words
+ENV_MOVING_OPTIONS = {"-C", "--chdir"}
+ENV_VALUE_OPTIONS = {ENV_UNSET_OPTION, ENV_SPLIT_OPTION, "-P"}  # -P: BSD env's search path
 SUDO_FLAGS = {"-A", "-b", "-E", "-H", "-k", "-n", "-P", "-S", "-s", "--askpass", "--background", "--preserve-env",
               "--set-home", "--reset-timestamp", "--non-interactive", "--preserve-groups", "--stdin", "--shell"}
 SUDO_VALUE_OPTIONS = {"-C", "-g", "-h", "-p", "-r", "-T", "-t", "-U", "-u", "--close-from", "--group", "--host",
@@ -584,6 +586,7 @@ def _env_command(invocation: Invocation, args: list) -> list:
             return args[1:]
         elif word.startswith("-"):
             _record_unread_option(invocation, word, ENV_MOVING_OPTIONS, ENV_VALUE_OPTIONS)
+            invocation.moves_directory |= _split_string_moves(word)
             args = args[1:]
         elif "=" in word and IDENTIFIER_RE.match(word.split("=", 1)[0]):
             invocation.assignments.append(tuple(word.split("=", 1)))
@@ -591,6 +594,39 @@ def _env_command(invocation: Invocation, args: list) -> list:
         else:
             break
     return args
+
+
+def _split_string_moves(word: str) -> bool:
+    """env reads an -S value again as its own leading options: a move among them (`-S'-C /x'`) moves the command, and so
+    may a value resolved at run time or one that does not split."""
+    value = _split_string_value(word)
+    if value is None:
+        return False
+    if RUN_TIME_WORD_RE.search(value):
+        return True
+    try:
+        words = shlex.split(value)
+    except ValueError:
+        return True
+    options = Invocation(argv=[], assignments=[])
+    for option in words:
+        if not option.startswith("-"):
+            break
+        _record_unread_option(options, option, ENV_MOVING_OPTIONS, ENV_VALUE_OPTIONS)
+    return options.moves_directory
+
+
+def _split_string_value(word: str) -> str | None:
+    """The value env's -S or --split-string carries in this word (`-S'-C /x'`, `-iSA=1`, `--split-string=…`)."""
+    if word.startswith("--"):
+        name, has_value, value = word.partition("=")
+        return value if has_value and name == "--split-string" else None
+    for index, letter in enumerate(word[1:], start=2):
+        if "-" + letter == ENV_SPLIT_OPTION:
+            return word[index:]
+        if "-" + letter in ENV_VALUE_OPTIONS:
+            return None
+    return None
 
 
 def _expand_code_strings(commands: list) -> None:

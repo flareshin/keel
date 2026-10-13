@@ -293,6 +293,8 @@ class UnwrapTest(unittest.TestCase):
                                ("sudo -nuDavid git push", False), ("env -iv git push", False), ("sudo -nE git push", False),
                                ("env -P/opt/homebrew/Cellar/x git push", False), ("env -S-C/tmp git push", True),
                                ("env --split-string='-C /tmp' git push", True), ("env -S'--chdir=/tmp' git push", True),
+                               ("env -SX=1 git push", False), ("env -S'A=1 -C /x' git push", False), ("env -S\"$X\" git push", True),
+                               ("env -S\"'\" git push", True), ("env -iuXS-C/x git push", False),
                                ("timeout --bogus 5 git push", False)):
             with self.subTest(command=command):
                 self.assertEqual(moves, unwrap(parse_commands(command)[0]).moves_directory)

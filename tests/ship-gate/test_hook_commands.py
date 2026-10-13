@@ -136,8 +136,16 @@ class CommandParsingTest(unittest.TestCase):
                 action, = self.actions(command)
                 self.assertIsInstance(action, self.hook.Unattributable)
         self.assertEqual(self.actions("$EDITOR notes.md && git status"), [])
-        self.assertEqual(self.actions("eval \"$(ssh-agent -s)\" && git log --oneline | grep push"), [])
         self.assertEqual(self.actions("GIT=git; S=status; $GIT $S"), [])
+
+    def test_runtimeProgramWord_isUnattributable_whenThePushOrMergeWordSitsElsewhereInTheCall(self):
+        for command in ("GP=\"$(git --exec-path)/git-push\"; $GP origin main",
+                        "P=push; GP=\"$(git --exec-path)/git-$P\"; $GP origin main",
+                        "for GP in \"$(git --exec-path)/git-push\"; do $GP origin main; done",
+                        "GH=gh; $GH api -X PATCH repos/acme/app/git/refs/heads/main -f sha=abc",
+                        "eval \"$(ssh-agent -s)\" && git log --oneline | grep push"):
+            with self.subTest(command=command):
+                self.assertTrue(any(isinstance(action, self.hook.Unattributable) for action in self.actions(command)))
 
     def test_runtimeProgramWord_isUnattributable_whenItsOwnTextHoldsAPushOrMergeWord(self):
         for command in ("$CORE/git-push origin main", "\"$(git --exec-path)\"/git-push origin main",

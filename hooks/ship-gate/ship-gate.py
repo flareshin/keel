@@ -32,7 +32,6 @@ HOOK = "ship-gate"
 FIRES_DETAIL_LIMIT = 200
 F_IRREVERSIBLE = "F-irreversible"
 DECISION_HINT = re.compile(r"\b(git|gh|push|merge)\b")
-SPELLED_PUSH_OR_MERGE = re.compile(r"\bgit\s+push\b|\bgh\s+pr\s+merge\b|/pulls/\d+/merge\b")
 PUSH_OR_MERGE_WORD = re.compile(r"\b(push|merge)\b")
 PUSH_OR_MERGE_WORDS = {"push", "merge"}
 PUSH_OR_MERGE_WITHOUT_THE_WORD = re.compile(r"\bsend-pack\b|/merges\b|\bgit/refs\b")
@@ -327,16 +326,10 @@ def _gh_api_method(args: List[str]) -> Optional[str]:
 
 
 def _runtime_name_may_push_or_merge(words: List[str], call: str) -> bool:
-    """A command name the shell resolves at run time may push or merge when its own text holds a push or merge
-    word (`$CORE/git-push`), the call spells one anywhere, an argument is a push/merge word, or an argument is
-    resolved at run time too (`$GIT $S …`) while the call holds a push or merge word anywhere (`S=push`)."""
-    program, args = words[0], words[1:]
-    unquoted = _unquoted(call)
-    if PUSH_OR_MERGE_WORD.search(_unquoted(program)):
-        return True
-    if SPELLED_PUSH_OR_MERGE.search(unquoted) or PUSH_OR_MERGE_WORDS.intersection(args):
-        return True
-    return any(RUNTIME_NAME.search(arg) for arg in args) and bool(PUSH_OR_MERGE_WORD.search(unquoted))
+    """A command name the shell resolves at run time may be any program, so it may push or merge whenever the call
+    spells a push or merge anywhere (its own path, an assignment, a loop list, another command's argument) or an
+    argument is a push/merge word."""
+    return _spells_push_or_merge(call) or bool(PUSH_OR_MERGE_WORDS.intersection(words[1:]))
 
 
 def _hides_push_or_merge(program: str, words: List[str]) -> bool:

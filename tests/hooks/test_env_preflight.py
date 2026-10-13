@@ -88,7 +88,7 @@ class DenyTest(EnvPreflightTestCase):
 
     def test_mvn_deniedWithFire_whenAWrapperOptionTheParserReadsPastKeepsTheDirectory(self):
         for command in ("sudo -nE mvn test", "timeout --bogus 60 mvn test", "sudo -nC3 mvn test", "sudo -nuDavid mvn test",
-                        "env -iv mvn test", "env -iuCFLAGS mvn test"):
+                        "env -iv mvn test", "env -iuCFLAGS mvn test", "env -P/opt/homebrew/Cellar/maven/bin mvn test"):
             with self.subTest(command=command):
                 self.assertDenied(self.check(command))
         self.assertFired("S-jdk", "deny", "env-preflight")

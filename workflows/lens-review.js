@@ -299,7 +299,7 @@ function buildRuleChecksLens(reviewed) {
   const deltaNote = reviewed.some((target) => target.since) ? ' In a delta review, only a line the delta changes is a candidate.' : ''
   return {
     key: RULE_CHECKS_KEY,
-    prompt: `Lens: rule-checks. Run each command below and quote its \`summary\` line in your notes:\n${commands.join('\n')}\nEach \`signal K5.<n> <file:line> <text>\` line is a candidate, not a finding.${deltaNote} Read the line in context with /readable-code rule K5.<n>. Report it only when the rule is broken and its own exception does not cover it. Exit 2 or a \`blocked=\` value other than none means that repo was not checked: report that as a finding, never as clean. \`unscanned=\` names submodules the diff adds or removes and untracked nested repos: list them in your notes, not as findings.`,
+    prompt: `Lens: rule-checks. Run each command below and quote its \`summary\` line in your notes exactly once:\n${commands.join('\n')}\nNever quote a \`summary\` line from any other run you make; the review counts one quoted summary per listed command. Each \`signal K5.<n> <file:line> <text>\` line is a candidate, not a finding.${deltaNote} Read the line in context with /readable-code rule K5.<n>. Report it only when the rule is broken and its own exception does not cover it. Exit 2 or a \`blocked=\` value other than none means that repo was not checked: report that as a finding, never as clean. \`unscanned=\` names submodules the diff adds or removes and untracked nested repos: list them in your notes, not as findings.`,
   }
 }
 

@@ -697,6 +697,17 @@ test('lensReview_namesSkillRulesByK5Label_inEveryBuiltInLensPrompt', async () =>
   for (const lens of lenses) assert.doesNotMatch(lens.prompt, /\bR(?:\d+|<n>)\b/)
 })
 
+test('lensReview_tellsRuleChecksToQuoteEachListedSummaryOnce_whenItMakesExtraRuns', async () => {
+  // given
+  const rt = createRuntime({ respond: responder() })
+  // when
+  await rt.run('lens-review', { diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
+  // then
+  const prompt = auditChildArgs(rt).lenses.find((lens) => lens.key === 'rule-checks').prompt
+  assert.match(prompt, /quote its `summary` line in your notes exactly once/)
+  assert.match(prompt, /Never quote a `summary` line from any other run you make/)
+})
+
 test('lensReview_runsReview_whenRequirementStatesAGoalInTestWords', async () => {
   // given
   const rt = createRuntime({ respond: responder() })

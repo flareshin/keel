@@ -341,13 +341,11 @@ def _read_gh_api(args: List[str]) -> tuple:
     options, operands = [], []
     words = iter(args)
     for word in words:
-        if word == "--":
-            operands.extend(words)
-        elif word.startswith("--"):
+        if word.startswith("--"):
             option, has_value, value = word.partition("=")
             takes_next = not has_value and option in GH_API_VALUE_OPTIONS
             options.append((option, next(words, "") if takes_next else value))
-        elif word.startswith("-") and word != "-":
+        elif word.startswith("-"):
             options.extend(_read_gh_api_cluster(word[1:], words))
         else:
             operands.append(word)

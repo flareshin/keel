@@ -279,6 +279,7 @@ class UnwrapTest(unittest.TestCase):
                                       ("exec -a $A git origin x", ["git", "origin", "x"], ["-a"]),
                                       ("exec -agit-push git origin x", ["git", "origin", "x"], ["-a"]),
                                       ("exec -a git-merge /usr/bin/git x", ["/usr/bin/git", "x"], ["-a"]),
+                                      ("exec -a git-push sh -c x", ["sh", "-c", "x"], ["-a"]),
                                       ("timeout --bogus=5 30 git push", ["git", "push"], ["--bogus=5"]),
                                       ("exec - git push", ["git", "push"], ["-"]),
                                       ("sudo -i env -S x git push", ["x", "git", "push"], ["-i", "-S"])):

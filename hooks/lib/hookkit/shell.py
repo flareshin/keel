@@ -530,8 +530,7 @@ def _exec_command(invocation: Invocation, args: list) -> list:
         invocation.clears_env = True
         invocation.assignments = []
     argv0 = options.get("-a", "")
-    names_a_subcommand = dashed_git_subcommand(argv0) or RUN_TIME_WORD_RE.search(argv0)
-    if command and os.path.basename(command[0]) == "git" and names_a_subcommand:
+    if dashed_git_subcommand(argv0) or RUN_TIME_WORD_RE.search(argv0):
         # A git binary runs the subcommand its argv[0] names (`exec -a git-push git …` pushes); a shim such as
         # macOS /usr/bin/git drops argv[0]. Either may run, so the words stay as written and -a is recorded.
         invocation.unattributable_options.append("-a")

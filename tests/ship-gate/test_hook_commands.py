@@ -123,7 +123,7 @@ class CommandParsingTest(unittest.TestCase):
     def test_opaqueWrappers_areUnattributable_whenTheirArgumentsSpellAPushOrMerge(self):
         for command in ("xargs git push origin feature < /dev/null", "echo feature | xargs git push origin",
                         "xargs -0 git push origin feature < /dev/null", "env --chdir=/elsewhere git push origin feature",
-                        "parallel -j1 gh pr merge 7 ::: x"):
+                        "parallel -j1 gh pr merge 7 ::: x", "xargs git pu\\\nsh origin feature < /dev/null"):
             with self.subTest(command=command):
                 action, = self.actions(command)
                 self.assertIsInstance(action, self.hook.Unattributable)
@@ -139,6 +139,7 @@ class CommandParsingTest(unittest.TestCase):
             with self.subTest(command=command):
                 action, = [action for action in self.actions(command) if isinstance(action, self.hook.Unattributable)]
                 self.assertIn("wraps it", action.why)
+                self.assertEqual("cd /work && " + command, action.user_command)
         for command in ("git log --format=%H | xargs echo push", "find . -name '*.orig' | xargs rm",
                         "xargs grep -l merge < files.txt", "ls .git/refs/heads | xargs -n1 git log -1"):
             with self.subTest(command=command):
@@ -232,7 +233,7 @@ class CommandParsingTest(unittest.TestCase):
                         "gh api -X PATCH repos/acme/app/git/refs/heads/main -f sha=abc",
                         "gh api --method=PATCH https://api.github.com/repos/acme/app/git/refs/heads/main -F force=true",
                         "gh api repos/acme/app/git/refs -f ref=refs/heads/x -f sha=abc",
-                        "gh api -XDELETE repos/acme/app/git/refs/heads/x",
+                        "gh api -XDELETE repos/acme/app/git/refs/heads/x", "gh api --method=DELETE repos/acme/app/git/refs/heads/x",
                         "gh api -X GET -X PATCH repos/acme/app/git/refs/heads/main --input body.json",
                         "R=acme/app; gh api -X PATCH repos/$R/git/refs/heads/main -f sha=abc",
                         "R=acme/app; gh api repos/$R/merges -f base=main -f head=feature",
@@ -243,7 +244,8 @@ class CommandParsingTest(unittest.TestCase):
                 action, = self.actions(command)
                 self.assertIsInstance(action, self.hook.Unattributable)
         for command in ("gh api repos/acme/app/git/refs/heads/main", "gh api -X GET repos/acme/app/git/refs -f per_page=1",
-                        "gh api repos/acme/app/git/refs/heads/main --jq .object.sha"):
+                        "gh api repos/acme/app/git/refs/heads/main --jq .object.sha",
+                        "gh api -X HEAD repos/acme/app/git/refs/heads/main", "gh api -X get repos/acme/app/git/refs/heads/main"):
             with self.subTest(command=command):
                 self.assertEqual(self.actions(command), [])
 

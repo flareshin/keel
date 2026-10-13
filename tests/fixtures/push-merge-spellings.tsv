@@ -60,11 +60,18 @@ gh api graphql -f query='mutation { mergePullRequest(input: {pullRequestId: "PR_
 git send-pack ../app.git feature	deny	plumbing push, no push word
 git http-push https://example.invalid/acme/app.git feature	deny	plumbing push over HTTP
 git subtree push --prefix=lib origin feature	deny	a split subtree pushed to a remote
+git subtree -P lib push origin feature	deny	subtree push with its prefix before push
+git-send-pack ../app.git feature	deny	git's dashed send-pack program
 gh api -X POST repos/acme/app/merges -f base=main -f head=feature	deny	REST branch merge
 gh api -X PATCH repos/acme/app/git/refs/heads/main -f sha={head}	deny	REST ref update
 gh api repos/acme/app/git/refs -f ref=refs/heads/x -f sha={head}	deny	REST ref create, POST implied by its fields
 R=acme/app; gh api -X PATCH repos/$R/git/refs/heads/main -f sha={head}	deny	REST ref update whose repo is a variable
 N=7; gh api -X PUT repos/acme/app/pulls/$N/merge	deny	REST merge whose pull number is a variable
+gh api -XDELETE repos/acme/app/git/refs/heads/x	deny	REST ref delete, method attached
+gh api --method=DELETE repos/acme/app/git/refs/heads/x	deny	REST ref delete, long method option
+gh api graphql -f query='mutation { createRef(input: {}) { clientMutationId } }'	deny	GraphQL ref create
+gh api graphql -f query='mutation { mergeBranch(input: {}) { clientMutationId } }'	deny	GraphQL branch merge
+gh api graphql -f query='mutation { enablePullRequestAutoMerge(input: {}) { clientMutationId } }'	deny	GraphQL auto-merge
 gh api graphql -f query='mutation { updateRefs(input: {repositoryId: "R_1", refUpdates: []}) { clientMutationId } }'	deny	GraphQL ref update
 gh pr merge 7 --squash	deny	merge without --match-head-commit
 gh pr -R acme/app merge 7 --squash	deny	repo flag between pr and merge, no head pinned
@@ -89,6 +96,13 @@ X=/usr/libexec/git-core; $X/git-merge feature	deny	git's dashed merge program at
 GP="$(git --exec-path)/git-push"; $GP origin feature	deny	program path assigned earlier in the call
 P=push; GP="$(git --exec-path)/git-$P"; $GP origin feature	deny	program name built from a variable
 GP=$(git --exec-path)/git-push; timeout 9 $GP origin feature	deny	a run-time program under a wrapper the parser unwraps
+for GP in "$(git --exec-path)/git-push"; do $GP origin feature; done	deny	program path from a loop list
+GH=gh; $GH api -X PATCH repos/acme/app/git/refs/heads/main -f sha={head}	deny	a run-time gh writing a ref
+eval "$(ssh-agent -s)" && git log --oneline | grep push	deny	a run-time program beside a push word, no exemption
+xargs /usr/libexec/git-core/git-push origin feature < /dev/null	deny	xargs runs git's dashed push program by path
+xargs git send-pack ../app.git feature < /dev/null	deny	xargs runs a plumbing push
+S=push; xargs git $S origin feature < /dev/null	deny	xargs runs a subcommand resolved at run time
+GP="$(git --exec-path)/git-push"; xargs $GP origin feature < /dev/null	deny	xargs runs a program path assigned earlier
 root={repo} && base=$(git -C "$root" merge-base main HEAD) && tree=$(cd "${KEEL_DATA_DIR:-$HOME/.claude}" && bin/keel snapshot "$root" | jq -r .tree)	pass	lens-review's working-tree prepare: a literal program after a cd, beside git merge-base
 GIT=git; S=push; $GIT $S origin feature	deny	command name and subcommand both resolved at run time
 sh -c 'GIT=git; S=push; $GIT $S origin feature'	deny	both resolved at run time inside an inline shell
@@ -147,6 +161,8 @@ git merge-base main HEAD; command -v git	pass	command -v only looks git up
 ls .git/refs/heads | xargs -n1 git log -1	pass	a local refs path, not an endpoint
 $EDITOR notes.md && cat .git/refs/heads/main	pass	a local refs path beside a run-time program
 $EDITOR x && cat docs/merges.md	pass	a merges file name beside a run-time program
+(cd "${KEEL_DATA_DIR:-$HOME/.claude}" && bin/keel evidence show --repo {repo}) && git -C {repo} merge-base --is-ancestor main HEAD	pass	overlay's keel call as a literal program beside merge-base
+(cd "${KEEL_DATA_DIR:-$HOME/.claude}" && bin/keel evidence show --repo /work/sg-push-spellings)	pass	overlay's keel call with a repo path holding push
 git config push.default simple	pass	push as a config key
 git -c color.ui=never push	pass	an unrelated config override	fork-origin
 git config --get remote.pushDefault; git push	pass	config read earlier in the call	fork-origin

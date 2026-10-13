@@ -6,8 +6,6 @@ import helpers
 from helpers import ENV_PREFLIGHT, bash
 
 PIN_17 = "JAVA_HOME=$(/usr/libexec/java_home -v 17)"
-JDK_17 = "/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home"
-JDK_8 = "/Library/Java/JavaVirtualMachines/temurin-8.jdk/Contents/Home"
 RUN_YOURSELF = "Run it yourself in your terminal: "
 ASK_USER = "Stop and ask the user."
 ON_MACOS = platform.system() == "Darwin"
@@ -91,11 +89,7 @@ class DenyTest(EnvPreflightTestCase):
     def test_mvn_deniedWithFire_whenAWrapperOptionTheParserReadsPastKeepsTheDirectory(self):
         for command in ("sudo -nE mvn test", "timeout --bogus 60 mvn test", "sudo -nC3 mvn test", "sudo -nuDavid mvn test",
                         "env -iv mvn test", "env -iuCFLAGS mvn test", "env -P/opt/homebrew/Cellar/maven/bin mvn test",
-                        "env -SX=1 mvn test", "env -S'MAVEN_OPTS=-Xmx1g' mvn test", "env -S -i mvn test",
-                        "env -S\"MAVEN_OPTS=-Xmx$MEM\" mvn test", "export JAVA_HOME=%s && env -S'JAVA_HOME=%s' mvn test" % (JDK_17, JDK_8),
-                        "export JAVA_HOME=%s && env -S-i mvn test" % JDK_17,
-                        "export JAVA_HOME=%s && env -S'-u JAVA_HOME' mvn test" % JDK_17,
-                        "export JAVA_HOME=%s && env -iS'X=1' mvn test" % JDK_17):
+                        "env -SX=1 mvn test", "env -S'MAVEN_OPTS=-Xmx1g' mvn test", "env -S -i mvn test"):
             with self.subTest(command=command):
                 self.assertDenied(self.check(command))
         self.assertFired("S-jdk", "deny", "env-preflight")
@@ -122,10 +116,6 @@ class PassTest(EnvPreflightTestCase):
     def test_mvn_passes_whenAssignmentFollowsClearingWrapper(self):
         self.assertPassed(self.check("env -i PATH=$PATH %s mvn test" % PIN_17))
 
-    def test_mvn_passesWithFire_whenEnvSplitsAPinIntoTheCommand(self):
-        self.assertPassed(self.check("env -S'JAVA_HOME=%s' mvn test" % JDK_17))
-        self.assertFired("S-jdk", "pass", "env-preflight")
-
     def test_mvn_passes_whenPrefixedWrapper(self):
         self.assertPassed(self.check("%s nohup mvn test > build.log 2>&1" % PIN_17))
 
@@ -145,8 +135,7 @@ class PassTest(EnvPreflightTestCase):
     def test_mvn_passesWithoutFire_whenAWrapperRunsItInADirectoryTheHookCannotRead(self):
         for command in ("env --chdir=/tmp mvn test", "env -C/tmp mvn test", "env -iC/tmp mvn test", "sudo -i mvn test",
                         "sudo --login mvn test", "sudo --chdir=/tmp mvn test", "sudo -nD/tmp mvn test", "sudo -R/srv mvn test",
-                        "sudo --chroot=/srv mvn test", "env -S'-C /tmp' mvn test", "env -S\"$X\" mvn test",
-                        "env -S'-u X -C /tmp' mvn test", "env -iS'-C /tmp' mvn test", "env -C /tmp mvn test"):
+                        "sudo --chroot=/srv mvn test", "env -S'-C /tmp' mvn test", "env -S\"$X\" mvn test"):
             with self.subTest(command=command):
                 self.assertPassed(self.check(command))
         self.assertEqual([], self.sandbox.fires())

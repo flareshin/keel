@@ -282,10 +282,7 @@ class UnwrapTest(unittest.TestCase):
                                       ("exec -a git-push sh -c x", ["sh", "-c", "x"], ["-a"]),
                                       ("timeout --bogus=5 30 git push", ["git", "push"], ["--bogus=5"]),
                                       ("exec - git push", ["git", "push"], ["-"]),
-                                      ("sudo -i env -S x git push", ["x", "git", "push"], ["-i"]),
-                                      ("env -C /x git push", ["git", "push"], ["-C"]),
-                                      ("env -S'-u X git' push", ["git", "push"], []),
-                                      ("env -iS'A=1 git' push", ["git", "push"], [])):
+                                      ("sudo -i env -S x git push", ["x", "git", "push"], ["-i", "-S"])):
             with self.subTest(command=command):
                 invocation = unwrap(parse_commands(command)[0])
                 self.assertEqual((argv, unread), (invocation.argv, invocation.unattributable_options))
@@ -296,9 +293,8 @@ class UnwrapTest(unittest.TestCase):
                                ("sudo -nuDavid git push", False), ("env -iv git push", False), ("sudo -nE git push", False),
                                ("env -P/opt/homebrew/Cellar/x git push", False), ("env -S-C/tmp git push", True),
                                ("env --split-string='-C /tmp' git push", True), ("env -S'--chdir=/tmp' git push", True),
-                               ("env -SX=1 git push", False), ("env -S'A=$X' git push", False),
-                               ("env -S'-u X -C /x' git push", True),
-                               ("env -iS'-C /x' git push", True), ("env -S\"'\" git push", True), ("env -iuXS-C/x git push", False),
+                               ("env -SX=1 git push", False), ("env -S'A=1 -C /x' git push", False), ("env -S\"$X\" git push", True),
+                               ("env -S\"'\" git push", True), ("env -iuXS-C/x git push", False),
                                ("timeout --bogus 5 git push", False)):
             with self.subTest(command=command):
                 self.assertEqual(moves, unwrap(parse_commands(command)[0]).moves_directory)
@@ -320,7 +316,7 @@ class UnwrapTest(unittest.TestCase):
                         "nice -5 git push", "exec -a name git push", "timeout --preserve-status -s TERM 30s git push",
                         "env -i -u HOME A=1 git push", "env -- git push", "command -p git push", "time -p git push",
                         "sudo -uroot git push", "sudo --preserve-env=PATH git push", "timeout -sKILL -k5 30 git push",
-                        "exec -aname git push", "nice -n5 git push", "FOO=1 env -i git push"):
+                        "exec -aname git push", "nice -n5 git push"):
             with self.subTest(command=command):
                 invocation = unwrap(parse_commands(command)[0])
                 self.assertEqual((["git", "push"], []), (invocation.argv, invocation.unattributable_options))

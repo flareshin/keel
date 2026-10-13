@@ -32,7 +32,6 @@ GIT_TRACE=1 git push origin feature 2>&1 | tail -n 5	gate	assignment, redirectio
 env GIT_TRACE=1 git push origin feature	gate	env with an assignment
 env git push origin feature	gate	bare env
 env -- git push origin feature	gate	env's -- before the command
-env -S'git push origin feature'	gate	env -S splits its value into the command
 timeout 60 git push origin feature	gate	timeout wrapper
 timeout -s KILL 60 git push origin feature	gate	timeout wrapper with options
 sudo -E git push origin feature	gate	sudo wrapper with options

@@ -383,7 +383,7 @@ def _hides_push_or_merge(step: shell.Step, call: str) -> bool:
     kept_forwarder = os.path.basename(step.argv[0]) in ARGV_FORWARDERS and not _only_looks_up(step.argv)
     if not (kept_forwarder or step.unattributable_options):
         return False
-    forwarded = step.command.argv[1:]
+    forwarded = step.command.argv[1:] + step.argv[:1]  # the program itself too, for a script a wrapper runs
     runs_opaque = any(os.path.basename(word) in PROGRAMS_THAT_MAY_PUSH or shell.dashed_git_subcommand(word)
                       or RUNTIME_NAME.search(word) for word in forwarded)
     return runs_opaque and (_spells_push_or_merge(call) or bool(PUSH_OR_MERGE_WORDS.intersection(forwarded)))

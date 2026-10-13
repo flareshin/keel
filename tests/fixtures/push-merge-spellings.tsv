@@ -59,7 +59,7 @@ echo feature | xargs git push origin	deny	xargs appends the refspec from stdin
 xargs git push origin feature < /dev/null	deny	bare xargs wrapper
 xargs -0 git push origin feature < /dev/null	deny	xargs wrapper with options
 env --chdir={tmp} git push origin feature	deny	env option the gate does not read
-sudo --chdir /tmp git push origin feature	deny	a sudo option whose value the parser takes for the program
+sudo --chdir /tmp git push origin feature	deny	sudo runs the push in another directory
 sudo --chdir=/tmp git push origin feature	deny	sudo's directory option with its value attached
 sudo -D /tmp git push origin feature	deny	sudo's short directory option
 exec -la foo git push origin feature	deny	exec's clustered -a takes a value the parser does not skip

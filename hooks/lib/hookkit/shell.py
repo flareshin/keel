@@ -34,7 +34,8 @@ TIMEOUT_FLAGS = {"--preserve-status", "--foreground", "-v", "--verbose"}
 TIMEOUT_VALUE_OPTIONS = {"-k", "-s", "--kill-after", "--signal"}
 # Not -D/--chdir, -R/--chroot or -i/--login: they move the command out of the call's directory, so they stay
 # unattributable options, read as SUDO_MOVING_OPTIONS.
-SUDO_MOVING_OPTIONS = {"-D", "--chdir", "-R", "--chroot", "-i", "--login"}
+SUDO_DIRECTORY_OPTIONS = {"-D", "--chdir", "-R", "--chroot"}  # each takes the directory as its value
+SUDO_MOVING_OPTIONS = SUDO_DIRECTORY_OPTIONS | {"-i", "--login"}
 ENV_UNSET_OPTION = "-u"
 # -S splits its value into words env reads again, so its value may hold -C; -P is BSD env's search path.
 ENV_MOVING_OPTIONS, ENV_VALUE_OPTIONS = {"-C", "--chdir", "-S", "--split-string"}, {ENV_UNSET_OPTION, "-P"}
@@ -180,8 +181,9 @@ def steps(text: str, cwd: str) -> list:
         invocation = unwrap(command)
         environment = {} if invocation.clears_env else dict(scope.exported)
         environment.update(invocation.assignments)
+        inherited = [] if script is None else step_of[script].unattributable_options  # its runner's best guess
         step_of[id(command)] = Step(invocation.argv, environment, scope.directory, command, scope.expansion(),
-                                    invocation.unattributable_options)
+                                    inherited + invocation.unattributable_options)
         scope.follow(invocation)
     return list(step_of.values())
 
@@ -489,16 +491,17 @@ def _drop_one_wrapper(invocation: Invocation) -> None:
         invocation.argv = _command_after_options(invocation, rest, TIMEOUT_FLAGS, TIMEOUT_VALUE_OPTIONS)[1:]  # then the duration
     elif name == "sudo":
         invocation.clears_env = True
-        invocation.argv = _command_after_options(invocation, rest, SUDO_FLAGS, SUDO_VALUE_OPTIONS, SUDO_MOVING_OPTIONS)
+        invocation.argv = _command_after_options(invocation, rest, SUDO_FLAGS, SUDO_VALUE_OPTIONS, SUDO_MOVING_OPTIONS,
+                                                 SUDO_DIRECTORY_OPTIONS)
 
 
 def _command_after_options(invocation: Invocation, args: list, flags: set, value_options: set,
-                           moving_options: set = frozenset()) -> list:
-    return _options_and_command(invocation, args, flags, value_options, moving_options)[1]
+                           moving_options: set = frozenset(), directory_options: set = frozenset()) -> list:
+    return _options_and_command(invocation, args, flags, value_options, moving_options, directory_options)[1]
 
 
 def _options_and_command(invocation: Invocation, args: list, flags: set, value_options: set,
-                         moving_options: set = frozenset()) -> tuple:
+                         moving_options: set = frozenset(), directory_options: set = frozenset()) -> tuple:
     """The known options a wrapper puts before its command, as {option: value, or None for a flag}, and `args` after
     them. An option outside `flags` and `value_options` (a cluster such as `-iu` included) is read past as a flag and
     recorded as unattributable."""
@@ -507,6 +510,10 @@ def _options_and_command(invocation: Invocation, args: list, flags: set, value_o
         word = args[0]
         if word == "--":
             return options, args[1:]
+        if word in directory_options:  # `sudo -D /tmp`: recorded, and its directory is not the command
+            _record_unread_option(invocation, word, moving_options, value_options)
+            args = args[2:]
+            continue
         if word in value_options:
             options[word] = args[1] if len(args) > 1 else ""
             args = args[2:]

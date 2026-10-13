@@ -266,7 +266,9 @@ class UnwrapTest(unittest.TestCase):
     def test_unwrap_readsPastAnOptionItDoesNotRead_andRecordsIt(self):
         for command, argv, unread in (("sudo -i git push", ["git", "push"], ["-i"]),
                                       ("sudo -nE git push", ["git", "push"], ["-nE"]),
-                                      ("sudo --chdir /tmp git push", ["/tmp", "git", "push"], ["--chdir"]),
+                                      ("sudo --chdir /tmp git push", ["git", "push"], ["--chdir"]),
+                                      ("sudo -D /tmp git push", ["git", "push"], ["-D"]),
+                                      ("sudo -R /srv git push", ["git", "push"], ["-R"]),
                                       ("sudo -iu bob git push", ["bob", "git", "push"], ["-iu"]),
                                       ("exec -la foo git push", ["foo", "git", "push"], ["-la"]),
                                       ("env --chdir=/x A=1 git push", ["git", "push"], ["--chdir=/x"]),
@@ -302,6 +304,10 @@ class UnwrapTest(unittest.TestCase):
     def test_steps_carryTheOptionsTheParserReadPast(self):
         sudo, git = steps("sudo -i git push; git status", "/work")
         self.assertEqual((["-i"], []), (sudo.unattributable_options, git.unattributable_options))
+
+    def test_steps_carryTheOptionsOfTheWrapperThatRunsTheirScript(self):
+        sudo, inner = steps("sudo -D /tmp sh -c 'git push'", "/work")
+        self.assertEqual((["-D"], ["-D"]), (sudo.unattributable_options, inner.unattributable_options))
 
     def test_steps_dropTheExportedEnvironment_onlyWhenExecClearsIt(self):
         for command, environment in (("export A=1; exec -c git push", {}),

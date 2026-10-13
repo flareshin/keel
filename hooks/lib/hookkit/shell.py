@@ -35,7 +35,7 @@ TIMEOUT_VALUE_OPTIONS = {"-k", "-s", "--kill-after", "--signal"}
 # Not -D/--chdir, -R/--chroot or -i/--login: they move the command out of the call's directory, so they stay
 # unattributable options, read as SUDO_MOVING_OPTIONS.
 SUDO_MOVING_OPTIONS = {"-D", "--chdir", "-R", "--chroot", "-i", "--login"}
-ENV_MOVING_OPTIONS, ENV_VALUE_OPTIONS = {"-C", "--chdir"}, {"-u", "-S"}
+ENV_MOVING_OPTIONS, ENV_VALUE_OPTIONS = {"-C", "--chdir"}, {"-u"}
 SUDO_FLAGS = {"-A", "-b", "-E", "-H", "-k", "-n", "-P", "-S", "-s", "--askpass", "--background", "--preserve-env",
               "--set-home", "--reset-timestamp", "--non-interactive", "--preserve-groups", "--stdin", "--shell"}
 SUDO_VALUE_OPTIONS = {"-C", "-g", "-h", "-p", "-r", "-T", "-t", "-U", "-u", "--close-from", "--group", "--host",

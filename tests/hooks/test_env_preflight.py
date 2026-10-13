@@ -124,6 +124,10 @@ class PassTest(EnvPreflightTestCase):
         self.assertPassed(self.check("mvn test", cwd=other))
         self.assertEqual([], self.sandbox.fires())
 
+    def test_mvn_passesWithoutFire_whenAWrapperRunsItInADirectoryTheHookCannotRead(self):
+        self.assertPassed(self.check("env --chdir=/tmp mvn test"))
+        self.assertEqual([], self.sandbox.fires())
+
     def test_mvn_passes_whenNoOverlayData(self):
         os.remove(os.path.join(self.sandbox.overlay, "stack-data", "spring-maven", "jdk.tsv"))
         self.assertPassed(self.check("mvn test"))

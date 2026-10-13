@@ -120,7 +120,8 @@ def find_maven_builds(commands: list, cwd: str) -> list:
     top_level_index = 0
     for command in commands:
         invocation = unwrap(command)
-        if invocation.name in MAVEN_COMMANDS and not VERSION_QUERY_FLAGS.intersection(invocation.argv[1:2]):
+        is_build = invocation.name in MAVEN_COMMANDS and not VERSION_QUERY_FLAGS.intersection(invocation.argv[1:2])
+        if is_build and not invocation.unattributable_options:  # `env --chdir=…`, `sudo -i`: its directory is unknown
             builds.append(MavenBuild(command, invocation, copy.deepcopy(state), cwd if command.nested else directory,
                                      is_first=not command.nested and top_level_index == 0))
         if command.nested:

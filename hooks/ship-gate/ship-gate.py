@@ -46,8 +46,8 @@ GRAPHQL_BRANCH_CHANGE = re.compile(r"\b(?:mergePullRequest|mergeBranch|enablePul
 GH_API_METHOD_OPTIONS = {"-X", "--method"}
 GH_API_BODY_OPTIONS = ("-f", "-F", "--field", "--raw-field", "--input")  # any of them makes gh send POST
 READ_METHODS = {"GET", "HEAD"}
-GH_API_VALUE_OPTIONS = {"-X", "--method", "-H", "--header", "-f", "--raw-field", "-F", "--field", "--input", "-q", "--jq",
-                        "-t", "--template", "--hostname", "-p", "--preview", "--cache"}
+GH_API_VALUE_OPTIONS = GH_API_METHOD_OPTIONS | set(GH_API_BODY_OPTIONS) | {
+    "-H", "--header", "-q", "--jq", "-t", "--template", "--hostname", "-p", "--preview", "--cache"}
 RUNTIME_NAME = shell.RUN_TIME_WORD_RE
 URL_FORM = re.compile(r"^[^/]*:")  # scheme://…, scp-like host:path, transport::address; any other word is a path
 PROGRAMS_THAT_MAY_PUSH = {"git", "gh"} | shell.SHELLS
@@ -320,15 +320,8 @@ def _gh_api_hides_its_target(args: List[str]) -> bool:
 
 def _gh_api_endpoint(args: List[str]) -> Optional[str]:
     """The endpoint `gh api` calls: its first argument that is neither an option nor an option's value."""
-    index = 0
-    while index < len(args):
-        if args[index] in GH_API_VALUE_OPTIONS:
-            index += 2
-        elif args[index].startswith("-"):
-            index += 1
-        else:
-            return args[index]
-    return None
+    index = shell.first_operand_index(args, GH_API_VALUE_OPTIONS)
+    return None if index is None else args[index]
 
 
 def _gh_api_writes(args: List[str]) -> bool:
@@ -374,7 +367,8 @@ def _hides_push_or_merge(step: shell.Step, call: str) -> bool:
 
 
 def _only_looks_up(words: List[str]) -> bool:
-    """The parser keeps `command` only for a lookup (`command -v`) or an option command does not take."""
+    """The parser keeps `command` only for a lookup (`command -v`, `command -V`), which names a program without
+    running it."""
     return words[0] == "command"
 
 

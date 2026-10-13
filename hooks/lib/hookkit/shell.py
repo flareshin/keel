@@ -387,11 +387,16 @@ def git_subcommand_index(argv: list) -> int | None:
     """Index of the subcommand word of a `git ...` argv, global options skipped; None for any other command."""
     if not argv or os.path.basename(argv[0]) != "git":
         return None
-    index = 1
-    while index < len(argv):
-        if argv[index] in GIT_VALUE_OPTIONS:
+    return first_operand_index(argv, GIT_VALUE_OPTIONS, start=1)
+
+
+def first_operand_index(args: list, value_options: set, start: int = 0) -> int | None:
+    """Index of the first word from `start` that is neither an option nor the value of one in `value_options`."""
+    index = start
+    while index < len(args):
+        if args[index] in value_options:
             index += 2
-        elif argv[index].startswith("-"):
+        elif args[index].startswith("-"):
             index += 1
         else:
             return index

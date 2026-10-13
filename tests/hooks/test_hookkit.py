@@ -276,6 +276,7 @@ class UnwrapTest(unittest.TestCase):
                                       ("time -v git push", ["git", "push"], ["-v"]),
                                       ("sudo - git push", ["git", "push"], ["-"]),
                                       ("sudo --chdir=/tmp git push", ["git", "push"], ["--chdir=/tmp"]),
+                                      ("exec -a $A git origin x", ["git", "origin", "x"], ["-a"]),
                                       ("timeout --bogus=5 30 git push", ["git", "push"], ["--bogus=5"]),
                                       ("exec - git push", ["git", "push"], ["-"]),
                                       ("sudo -i env -S x git push", ["x", "git", "push"], ["-i", "-S"])):
@@ -315,7 +316,6 @@ class UnwrapTest(unittest.TestCase):
     def test_unwrap_readsExecsArgv0_asTheDashedGitProgramGitRuns(self):
         for command, argv in (("exec -agit-push git origin x", ["git", "push", "origin", "x"]),
                               ("exec -a git-merge /usr/bin/git feature", ["git", "merge", "feature"]),
-                              ("exec -a $A git origin x", ["$A", "origin", "x"]),
                               ("exec -a git-push sh -c x", ["sh", "-c", "x"])):
             with self.subTest(command=command):
                 self.assertEqual(argv, unwrap(parse_commands(command)[0]).argv)

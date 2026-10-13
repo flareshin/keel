@@ -782,7 +782,9 @@ class ForcePushTest(GitGuardTestCase):
                 self.assertDenied(self.guard(command, cwd=self.repo), "F-force-push")
 
     def test_push_deniedWithFForcePush_whenExecNamesGitsPushProgramAsArgv0(self):
-        self.assertDenied(self.guard("exec -a git-push git --force origin feature", cwd=self.repo), "F-force-push")
+        for command in ("exec -a git-push git --force origin feature", "exec -a \"$A\" git push --force origin feature"):
+            with self.subTest(command=command):
+                self.assertDenied(self.guard(command, cwd=self.repo), "F-force-push")
 
     def test_push_denied_whenPlusRefspec(self):
         self.assertDenied(self.guard("git push origin +feature", cwd=self.repo), "F-force-push")

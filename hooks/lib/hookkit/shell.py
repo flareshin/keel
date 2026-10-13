@@ -530,9 +530,11 @@ def _exec_command(invocation: Invocation, args: list) -> list:
         invocation.clears_env = True
         invocation.assignments = []
     argv0 = options.get("-a", "")
-    names_a_subcommand = dashed_git_subcommand(argv0) or RUN_TIME_WORD_RE.search(argv0)
-    if command and os.path.basename(command[0]) == "git" and names_a_subcommand:
-        return [argv0] + command[1:]  # git runs the subcommand its argv[0] names: `exec -a git-push git …`
+    if command and os.path.basename(command[0]) == "git":
+        if dashed_git_subcommand(argv0):
+            return [argv0] + command[1:]  # git runs the subcommand its argv[0] names: `exec -a git-push git …`
+        if RUN_TIME_WORD_RE.search(argv0):
+            invocation.unattributable_options.append("-a")  # the subcommand git runs is known only at run time
     return command
 
 

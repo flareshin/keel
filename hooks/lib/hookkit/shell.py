@@ -33,7 +33,9 @@ NICE_VALUE_OPTIONS = {"-n", "--adjustment"}
 TIMEOUT_FLAGS = {"--preserve-status", "--foreground", "-v", "--verbose"}
 TIMEOUT_VALUE_OPTIONS = {"-k", "-s", "--kill-after", "--signal"}
 # Not -D/--chdir, -R/--chroot or -i/--login: they move the command out of the call's directory, so they stay
-# unattributable options.
+# unattributable options, read as SUDO_MOVING_OPTIONS.
+SUDO_MOVING_OPTIONS = {"-D", "--chdir", "-R", "--chroot", "-i", "--login"}
+ENV_MOVING_OPTIONS, ENV_VALUE_OPTIONS = {"-C", "--chdir"}, {"-u", "-S"}
 SUDO_FLAGS = {"-A", "-b", "-E", "-H", "-k", "-n", "-P", "-S", "-s", "--askpass", "--background", "--preserve-env",
               "--set-home", "--reset-timestamp", "--non-interactive", "--preserve-groups", "--stdin", "--shell"}
 SUDO_VALUE_OPTIONS = {"-C", "-g", "-h", "-p", "-r", "-T", "-t", "-U", "-u", "--close-from", "--group", "--host",
@@ -118,9 +120,10 @@ class Invocation(_Named):
     assignments: list
     clears_env: bool = False
     removed_names: set = field(default_factory=set)
-    # Wrapper options read past as flags: unknown ones, and sudo's -D, -R and -i, which run the command elsewhere.
-    # With any, argv and the directory are a best guess.
+    # Wrapper options read past as flags: unknown ones, sudo's -D, -R and -i, and exec's -a naming a git program or
+    # a run-time word. With any, argv and the directory are a best guess.
     unattributable_options: list = field(default_factory=list)
+    moves_directory: bool = False  # one of them runs the command elsewhere: `sudo -i`, `env --chdir=…`
 
     def drops_inherited(self, variable: str) -> bool:
         return self.clears_env or variable in self.removed_names
@@ -484,14 +487,16 @@ def _drop_one_wrapper(invocation: Invocation) -> None:
         invocation.argv = _command_after_options(invocation, rest, TIMEOUT_FLAGS, TIMEOUT_VALUE_OPTIONS)[1:]  # then the duration
     elif name == "sudo":
         invocation.clears_env = True
-        invocation.argv = _command_after_options(invocation, rest, SUDO_FLAGS, SUDO_VALUE_OPTIONS)
+        invocation.argv = _command_after_options(invocation, rest, SUDO_FLAGS, SUDO_VALUE_OPTIONS, SUDO_MOVING_OPTIONS)
 
 
-def _command_after_options(invocation: Invocation, args: list, flags: set, value_options: set) -> list:
-    return _options_and_command(invocation, args, flags, value_options)[1]
+def _command_after_options(invocation: Invocation, args: list, flags: set, value_options: set,
+                           moving_options: set = frozenset()) -> list:
+    return _options_and_command(invocation, args, flags, value_options, moving_options)[1]
 
 
-def _options_and_command(invocation: Invocation, args: list, flags: set, value_options: set) -> tuple:
+def _options_and_command(invocation: Invocation, args: list, flags: set, value_options: set,
+                         moving_options: set = frozenset()) -> tuple:
     """The known options a wrapper puts before its command, as {option: value, or None for a flag}, and `args` after
     them. An option outside `flags` and `value_options` (a cluster such as `-iu` included) is read past as a flag and
     recorded as unattributable."""
@@ -508,9 +513,24 @@ def _options_and_command(invocation: Invocation, args: list, flags: set, value_o
         if known:
             options[known[0]] = known[1]
         else:
-            invocation.unattributable_options.append(word)
+            _record_unread_option(invocation, word, moving_options, value_options)
         args = args[1:]
     return options, args
+
+
+def _record_unread_option(invocation: Invocation, word: str, moving_options: set, value_options: set) -> None:
+    """Record an option word read past, and whether it runs the command elsewhere: a long option by its name, a
+    short cluster by a moving letter before any letter whose value fills the rest (`-nD/tmp` moves, `-nC3` does not)."""
+    invocation.unattributable_options.append(word)
+    if word.startswith("--"):
+        invocation.moves_directory |= word.partition("=")[0] in moving_options
+        return
+    for letter in word[1:]:
+        if "-" + letter in moving_options:
+            invocation.moves_directory = True
+            return
+        if "-" + letter in value_options:
+            return
 
 
 def _known_option(word: str, flags: set, value_options: set) -> tuple | None:
@@ -561,7 +581,7 @@ def _env_command(invocation: Invocation, args: list) -> list:
         elif word == "--":
             return args[1:]
         elif word.startswith("-"):
-            invocation.unattributable_options.append(word)
+            _record_unread_option(invocation, word, ENV_MOVING_OPTIONS, ENV_VALUE_OPTIONS)
             args = args[1:]
         elif "=" in word and IDENTIFIER_RE.match(word.split("=", 1)[0]):
             invocation.assignments.append(tuple(word.split("=", 1)))

@@ -87,7 +87,8 @@ class DenyTest(EnvPreflightTestCase):
         self.assertDenied(self.check("bash -c 'mvn test'"))
 
     def test_mvn_deniedWithFire_whenAWrapperOptionTheParserReadsPastKeepsTheDirectory(self):
-        for command in ("sudo -nE mvn test", "timeout --bogus 60 mvn test"):
+        for command in ("sudo -nE mvn test", "timeout --bogus 60 mvn test", "sudo -nC3 mvn test", "sudo -nuDavid mvn test",
+                        "env -iv mvn test"):
             with self.subTest(command=command):
                 self.assertDenied(self.check(command))
         self.assertFired("S-jdk", "deny", "env-preflight")
@@ -131,7 +132,8 @@ class PassTest(EnvPreflightTestCase):
         self.assertEqual([], self.sandbox.fires())
 
     def test_mvn_passesWithoutFire_whenAWrapperRunsItInADirectoryTheHookCannotRead(self):
-        for command in ("env --chdir=/tmp mvn test", "sudo -i mvn test", "sudo --chdir=/tmp mvn test", "sudo -nD/tmp mvn test",
+        for command in ("env --chdir=/tmp mvn test", "env -C/tmp mvn test", "env -iC/tmp mvn test", "sudo -i mvn test",
+                        "sudo --login mvn test", "sudo --chdir=/tmp mvn test", "sudo -nD/tmp mvn test", "sudo -R/srv mvn test",
                         "sudo --chroot=/srv mvn test"):
             with self.subTest(command=command):
                 self.assertPassed(self.check(command))

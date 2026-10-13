@@ -287,6 +287,14 @@ class UnwrapTest(unittest.TestCase):
                 invocation = unwrap(parse_commands(command)[0])
                 self.assertEqual((argv, unread), (invocation.argv, invocation.unattributable_options))
 
+    def test_unwrap_marksADirectoryMove_onlyForTheWrappersOwnMovingOption(self):
+        for command, moves in (("sudo -i git push", True), ("sudo -nD/tmp git push", True), ("sudo --chroot=/srv git push", True),
+                               ("env --chdir=/x git push", True), ("env -iC/tmp git push", True), ("sudo -nC3 git push", False),
+                               ("sudo -nuDavid git push", False), ("env -iv git push", False), ("sudo -nE git push", False),
+                               ("timeout --bogus 5 git push", False)):
+            with self.subTest(command=command):
+                self.assertEqual(moves, unwrap(parse_commands(command)[0]).moves_directory)
+
     def test_steps_carryTheOptionsTheParserReadPast(self):
         sudo, git = steps("sudo -i git push; git status", "/work")
         self.assertEqual((["-i"], []), (sudo.unattributable_options, git.unattributable_options))

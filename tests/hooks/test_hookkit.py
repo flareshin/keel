@@ -286,9 +286,12 @@ class UnwrapTest(unittest.TestCase):
         self.assertEqual((["-i"], []), (sudo.unattributable_options, git.unattributable_options))
 
     def test_steps_dropTheExportedEnvironment_onlyWhenExecClearsIt(self):
-        _, cleared = steps("export A=1; exec -c git push", "/work")
-        _, kept = steps("export A=1; exec -l git push", "/work")
-        self.assertEqual(({}, {"A": "1"}), (cleared.environment, kept.environment))
+        for command, environment in (("export A=1; exec -c git push", {}),
+                                     ("export A=1; exec -a -c -c git push", {}),
+                                     ("export A=1; exec -l git push", {"A": "1"}),
+                                     ("export A=1; exec -a -c git push", {"A": "1"})):
+            with self.subTest(command=command):
+                self.assertEqual(environment, steps(command, "/work")[1].environment)
 
     def test_unwrap_readsTheOptionsItKnows_beforeTheCommand(self):
         for command in ("sudo -E -u bob git push", "sudo --user=bob -- git push", "nice -n 5 git push",

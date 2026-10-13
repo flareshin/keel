@@ -493,25 +493,32 @@ def _drop_one_wrapper(invocation: Invocation) -> None:
 
 
 def _command_after_options(invocation: Invocation, args: list, flags: set, value_options: set) -> list:
-    """`args` after the options a wrapper puts before its command. An option outside `flags` and `value_options`
-    (a cluster such as `-iu` included) is read past as a flag and recorded as unattributable."""
+    return _flags_and_command(invocation, args, flags, value_options)[1]
+
+
+def _flags_and_command(invocation: Invocation, args: list, flags: set, value_options: set) -> tuple:
+    """The `flags` a wrapper puts before its command, and `args` after its options. An option outside `flags` and
+    `value_options` (a cluster such as `-iu` included) is read past as a flag and recorded as unattributable."""
+    flags_read = []
     while args and args[0].startswith("-"):
         word = args[0]
         name, has_value, _ = word.partition("=")
         if word == "--":
-            return args[1:]
+            return flags_read, args[1:]
         if word in value_options:
             args = args[2:]
             continue
-        if word not in flags and not (has_value and name.startswith("--") and name in value_options):
+        if word in flags:
+            flags_read.append(word)
+        elif not (has_value and name.startswith("--") and name in value_options):
             invocation.unattributable_options.append(word)
         args = args[1:]
-    return args
+    return flags_read, args
 
 
 def _exec_command(invocation: Invocation, args: list) -> list:
-    command = _command_after_options(invocation, args, EXEC_FLAGS, EXEC_VALUE_OPTIONS)
-    if "-c" in args[:len(args) - len(command)]:
+    flags_read, command = _flags_and_command(invocation, args, EXEC_FLAGS, EXEC_VALUE_OPTIONS)
+    if "-c" in flags_read:
         invocation.clears_env = True
         invocation.assignments = []
     return command

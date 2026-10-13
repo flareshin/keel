@@ -64,6 +64,7 @@ sudo -i git push origin feature	deny	sudo -i runs the push in the target user's 
 sudo -nE git push origin feature	deny	a sudo flag cluster the parser reads past
 sudo - git push origin feature	deny	a lone dash the parser reads past
 exec - git push origin feature	deny	zsh's exec - runs the push as a login command
+export GIT_DIR={tmp}/elsewhere.git; exec -a -c git push origin feature	deny	exec -a's value spelled -c keeps the exported GIT_DIR
 timeout --bogus 60 git push origin feature	deny	an unread timeout option, so the duration is a guess
 xargs git-push origin feature < /dev/null	deny	xargs runs git's dashed push program
 xargs $CORE/git-push origin feature < /dev/null	deny	xargs runs a dashed push program at a run-time path

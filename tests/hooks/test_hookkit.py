@@ -296,7 +296,9 @@ class UnwrapTest(unittest.TestCase):
     def test_unwrap_readsTheOptionsItKnows_beforeTheCommand(self):
         for command in ("sudo -E -u bob git push", "sudo --user=bob -- git push", "nice -n 5 git push",
                         "nice -5 git push", "exec -a name git push", "timeout --preserve-status -s TERM 30s git push",
-                        "env -i -u HOME A=1 git push", "env -- git push", "command -p git push", "time -p git push"):
+                        "env -i -u HOME A=1 git push", "env -- git push", "command -p git push", "time -p git push",
+                        "sudo -uroot git push", "sudo --preserve-env=PATH git push", "timeout -sKILL -k5 30 git push",
+                        "exec -aname git push", "nice -n5 git push"):
             with self.subTest(command=command):
                 invocation = unwrap(parse_commands(command)[0])
                 self.assertEqual((["git", "push"], []), (invocation.argv, invocation.unattributable_options))

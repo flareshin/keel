@@ -502,7 +502,6 @@ def _flags_and_command(invocation: Invocation, args: list, flags: set, value_opt
     flags_read = []
     while args and args[0].startswith("-"):
         word = args[0]
-        name, has_value, _ = word.partition("=")
         if word == "--":
             return flags_read, args[1:]
         if word in value_options:
@@ -510,10 +509,18 @@ def _flags_and_command(invocation: Invocation, args: list, flags: set, value_opt
             continue
         if word in flags:
             flags_read.append(word)
-        elif not (has_value and name.startswith("--") and name in value_options):
+        elif not _carries_its_value(word, flags, value_options):
             invocation.unattributable_options.append(word)
         args = args[1:]
     return flags_read, args
+
+
+def _carries_its_value(word: str, flags: set, value_options: set) -> bool:
+    """A known option with its value attached: `--user=bob`, `--preserve-env=PATH`, `-ubob`."""
+    if word.startswith("--"):
+        name, has_value, _ = word.partition("=")
+        return bool(has_value) and name in flags | value_options
+    return word[:2] in value_options
 
 
 def _exec_command(invocation: Invocation, args: list) -> list:

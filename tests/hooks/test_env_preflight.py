@@ -86,6 +86,12 @@ class DenyTest(EnvPreflightTestCase):
     def test_mvn_denied_whenInsideBashDashC(self):
         self.assertDenied(self.check("bash -c 'mvn test'"))
 
+    def test_mvn_deniedWithFire_whenAWrapperOptionTheParserReadsPastKeepsTheDirectory(self):
+        for command in ("sudo -nE mvn test", "timeout --bogus 60 mvn test"):
+            with self.subTest(command=command):
+                self.assertDenied(self.check(command))
+        self.assertFired("S-jdk", "deny", "env-preflight")
+
     def test_mvn_denied_whenCdIntoListedRepoFromElsewhere(self):
         self.assertDenied(self.check("cd %s && ./mvnw verify" % self.repo, cwd=self.sandbox.root))
 
@@ -125,7 +131,9 @@ class PassTest(EnvPreflightTestCase):
         self.assertEqual([], self.sandbox.fires())
 
     def test_mvn_passesWithoutFire_whenAWrapperRunsItInADirectoryTheHookCannotRead(self):
-        self.assertPassed(self.check("env --chdir=/tmp mvn test"))
+        for command in ("env --chdir=/tmp mvn test", "sudo -i mvn test", "sudo --chdir=/tmp mvn test", "sudo -nD/tmp mvn test"):
+            with self.subTest(command=command):
+                self.assertPassed(self.check(command))
         self.assertEqual([], self.sandbox.fires())
 
     def test_mvn_passes_whenNoOverlayData(self):

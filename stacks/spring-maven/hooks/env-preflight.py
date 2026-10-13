@@ -30,6 +30,7 @@ RULE = "S-jdk"
 JDK_MAP_HEADER = ("origin_glob", "jdk")
 MAVEN_COMMANDS = {"mvn", "mvnw"}
 VERSION_QUERY_FLAGS = {"-v", "--version", "-version"}
+DIRECTORY_MOVING_OPTIONS = {"-C", "--chdir", "-D", "-R", "--chroot", "-i", "--login"}  # env -C, sudo -D/-R/-i
 EXPORT_COMMANDS = {"export", "declare", "typeset"}
 JAVA_HOME = "JAVA_HOME"
 VARIABLE_REFERENCE_RE = re.compile(r"\A\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?\Z")
@@ -121,7 +122,7 @@ def find_maven_builds(commands: list, cwd: str) -> list:
     for command in commands:
         invocation = unwrap(command)
         is_build = invocation.name in MAVEN_COMMANDS and not VERSION_QUERY_FLAGS.intersection(invocation.argv[1:2])
-        if is_build and not invocation.unattributable_options:  # `env --chdir=…`, `sudo -i`: its directory is unknown
+        if is_build and not runs_elsewhere(invocation):
             builds.append(MavenBuild(command, invocation, copy.deepcopy(state), cwd if command.nested else directory,
                                      is_first=not command.nested and top_level_index == 0))
         if command.nested:
@@ -131,6 +132,16 @@ def find_maven_builds(commands: list, cwd: str) -> list:
             directory = os.path.normpath(os.path.join(directory, os.path.expanduser(invocation.argv[1])))
         top_level_index += 1
     return builds
+
+
+def runs_elsewhere(invocation) -> bool:
+    """A wrapper option the parser read past moves the command out of the call's directory (`env --chdir=…`,
+    `sudo -nD/tmp`); any letter of a short cluster counts."""
+    for option in invocation.unattributable_options:
+        names = {option.partition("=")[0]} if option.startswith("--") else {"-" + letter for letter in option[1:]}
+        if names & DIRECTORY_MOVING_OPTIONS:
+            return True
+    return False
 
 
 def required_jdk(directory: str):

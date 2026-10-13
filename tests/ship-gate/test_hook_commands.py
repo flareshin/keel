@@ -160,6 +160,18 @@ class CommandParsingTest(unittest.TestCase):
                 self.assertIsInstance(action, self.hook.Unattributable)
                 self.assertIn("run time", action.why)
 
+    def test_gitPushPlumbing_isUnattributable_whenItPushesWithoutGitPush(self):
+        for command in ("git send-pack ../app.git feature", "git http-push https://example.invalid/app.git feature",
+                        "git subtree push --prefix=lib origin feature", "git subtree -P lib push origin feature",
+                        "git-send-pack ../app.git feature"):
+            with self.subTest(command=command):
+                action, = self.actions(command)
+                self.assertIsInstance(action, self.hook.Unattributable)
+                self.assertIn("outside the gate", action.why)
+        for command in ("git subtree split --prefix=lib", "git send-email x.patch"):
+            with self.subTest(command=command):
+                self.assertEqual(self.actions(command), [])
+
     def test_push_isUnattributable_whenGitIsPointedAtAnotherRepository(self):
         for command in ("git --git-dir=/x/.git --work-tree=/x push origin feature",
                         "git --git-dir /x/.git --work-tree /x push origin feature",

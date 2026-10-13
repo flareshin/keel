@@ -53,6 +53,9 @@ env --chdir={tmp} git push origin feature	deny	env option the gate does not read
 gh api -X PUT repos/acme/app/pulls/7/merge	deny	REST merge
 gh api --method PUT /repos/acme/app/pulls/7/merge -f sha={head}	deny	REST merge, long option
 gh api graphql -f query='mutation { mergePullRequest(input: {pullRequestId: "PR_1"}) { clientMutationId } }'	deny	GraphQL merge
+git send-pack ../app.git feature	deny	plumbing push, no push word
+git http-push https://example.invalid/acme/app.git feature	deny	plumbing push over HTTP
+git subtree push --prefix=lib origin feature	deny	a split subtree pushed to a remote
 gh pr merge 7 --squash	deny	merge without --match-head-commit
 gh pr -R acme/app merge 7 --squash	deny	repo flag between pr and merge, no head pinned
 gh pr -R=acme/app merge 7 --squash	deny	repo flag with =value between pr and merge, no head pinned

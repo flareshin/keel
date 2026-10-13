@@ -35,6 +35,8 @@ DECISION_HINT = re.compile(r"\b(git|gh|push|merge)\b")
 SPELLED_PUSH_OR_MERGE = re.compile(r"\bgit\s+push\b|\bgh\s+pr\s+merge\b|/pulls/\d+/merge\b")
 PUSH_OR_MERGE_WORD = re.compile(r"\b(push|merge)\b")
 PUSH_OR_MERGE_WORDS = {"push", "merge"}
+PUSH_WITHOUT_A_PUSH_WORD = re.compile(r"\bsend-pack\b")
+PUSHES_OUTSIDE_GIT_PUSH = {"send-pack", "http-push"}  # git plumbing that updates a remote's refs
 QUOTING = re.compile(r"""['"\\]""")
 PULL_URL = re.compile(r"^https?://[^/]+/([^/]+/[^/]+)/pull/\d+")
 PULL_MERGE_ENDPOINT = re.compile(r"/pulls/\d+/merge/?$")
@@ -236,10 +238,17 @@ def guard_bash(payload: dict, report: Report) -> None:
 
 def may_push_or_merge(call: str) -> bool:
     """The crash fallback's reading of a call from its text alone, true for every call actions_of reads as a push
-    or merge: a push or merge word anywhere, or git or gh beside a name resolved at run time (`git $S`)."""
+    or merge: a push or merge spelled anywhere, or git or gh beside a name resolved at run time (`git $S`)."""
     unquoted = _unquoted(call)
     runtime_git_or_gh = DECISION_HINT.search(unquoted) and RUNTIME_NAME.search(unquoted)
-    return bool(PUSH_OR_MERGE_WORD.search(unquoted) or GRAPHQL_MERGE.search(call) or runtime_git_or_gh)
+    return bool(_spells_push_or_merge(call) or runtime_git_or_gh)
+
+
+def _spells_push_or_merge(call: str) -> bool:
+    """A push or merge word anywhere in the call, a push program without one (`send-pack`), or a GraphQL merge."""
+    unquoted = _unquoted(call)
+    return bool(PUSH_OR_MERGE_WORD.search(unquoted) or PUSH_WITHOUT_A_PUSH_WORD.search(unquoted)
+                or GRAPHQL_MERGE.search(call))
 
 
 def _unquoted(command: str) -> str:
@@ -314,6 +323,8 @@ def _git_actions(step: shell.Step, call: str, call_cwd: str) -> list:
     if RUNTIME_NAME.search(subcommand):
         return [_resolved_at_run_time(workdir, words, "the git subcommand `%s` is resolved only at run time" % subcommand,
                                       call, call_cwd)]
+    if subcommand in PUSHES_OUTSIDE_GIT_PUSH or (subcommand == "subtree" and "push" in args):
+        return [Unattributable(workdir, words, "`git %s` pushes outside the gate" % subcommand)]
     if subcommand == "push":
         repointed = _repointing(step.argv[1:], step.environment)
         if repointed:

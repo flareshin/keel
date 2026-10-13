@@ -274,8 +274,8 @@ def actions_of(step: shell.Step, call: str = "", call_cwd: str = "") -> list:
         return _git_actions(step, call, call_cwd)
     if program == "gh":
         return _gh_actions(shell.gh_subcommand_argv(words), workdir, step.environment, call, call_cwd)
-    if _hides_push_or_merge(step.command.name, words):
-        return [Unattributable(workdir, words, "`%s` wraps it" % step.command.name)]
+    if _hides_push_or_merge(step.command.name, words, call):
+        return [_resolved_at_run_time(workdir, words, "`%s` wraps it" % step.command.name, call, call_cwd)]
     if RUNTIME_NAME.search(words[0]) and _runtime_name_may_push_or_merge(words, call):
         return [_resolved_at_run_time(workdir, words, "`%s` is resolved only at run time" % words[0], call, call_cwd)]
     return []
@@ -332,13 +332,16 @@ def _runtime_name_may_push_or_merge(words: List[str], call: str) -> bool:
     return _spells_push_or_merge(call) or bool(PUSH_OR_MERGE_WORDS.intersection(words[1:]))
 
 
-def _hides_push_or_merge(program: str, words: List[str]) -> bool:
+def _hides_push_or_merge(program: str, words: List[str], call: str) -> bool:
     """A program that runs its arguments as a command the parser did not unwrap (`xargs git push …`,
-    `env --chdir=… git push …`), when those arguments spell out a push or a merge."""
+    `env --chdir=… git push …`), when those arguments name git or gh (`git-push` too) or a name resolved at run
+    time, in a call that spells a push or merge anywhere."""
     if os.path.basename(program) not in ARGV_FORWARDERS:
         return False
-    names = {os.path.basename(word) for word in words}
-    return {"git", "push"} <= names or {"gh", "pr", "merge"} <= names
+    forwarded = words[1:]
+    runs_opaque_git = any(os.path.basename(word) in {"git", "gh"} or shell.dashed_git_subcommand(word)
+                          or RUNTIME_NAME.search(word) for word in forwarded)
+    return runs_opaque_git and (_spells_push_or_merge(call) or bool(PUSH_OR_MERGE_WORDS.intersection(forwarded)))
 
 
 def _git_actions(step: shell.Step, call: str, call_cwd: str) -> list:

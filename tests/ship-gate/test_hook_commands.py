@@ -128,6 +128,21 @@ class CommandParsingTest(unittest.TestCase):
                 action, = self.actions(command)
                 self.assertIsInstance(action, self.hook.Unattributable)
 
+    def test_opaqueWrappers_areUnattributable_whenTheyRunADashedGitProgramOrARunTimeName(self):
+        for command in ("xargs git-push origin feature < /dev/null", "xargs $CORE/git-push origin feature < /dev/null",
+                        "xargs /usr/libexec/git-core/git-push origin feature < /dev/null",
+                        "xargs git send-pack ../app.git feature < /dev/null",
+                        "xargs gh api -X PATCH repos/acme/app/git/refs/heads/main -f sha=abc < /dev/null",
+                        "GP=\"$(git --exec-path)/git-push\"; xargs $GP origin feature < /dev/null",
+                        "S=push; xargs git $S origin feature < /dev/null"):
+            with self.subTest(command=command):
+                action, = [action for action in self.actions(command) if isinstance(action, self.hook.Unattributable)]
+                self.assertIn("wraps it", action.why)
+        for command in ("git log --format=%H | xargs echo push", "find . -name '*.orig' | xargs rm",
+                        "xargs grep -l merge < files.txt"):
+            with self.subTest(command=command):
+                self.assertEqual(self.actions(command), [])
+
     def test_runtimeCommandName_isUnattributable_onlyWhenTheCallSpellsAPushOrMerge(self):
         for command in ("GIT=git; $GIT push origin feature", "CMD='git push origin feature'; eval \"$CMD\"",
                         "$(which git) push origin feature", "GIT=git; S=push; $GIT $S origin feature",

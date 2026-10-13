@@ -293,7 +293,8 @@ class CommandParsingTest(unittest.TestCase):
                         "T=x; gh api -f title=\"$T\" -X POST repos/acme/app/issues",
                         "gh api -i repos/acme/app/git/refs/heads/main", "gh api -X=GET repos/acme/app/git/refs -f per_page=1",
                         "gh api --jq .object.sha \"$E\"", "gh api -q .sha \"$E\"", "gh api -H 'Accept: application/json' \"$E\"",
-                        "gh api --header 'Accept: application/json' \"$E\""):
+                        "gh api --header 'Accept: application/json' \"$E\"", "gh api -H\"$H\" repos/acme/app/pulls/7",
+                        "gh api --jq=\"$J\" repos/acme/app/pulls/7"):
             with self.subTest(command=command):
                 self.assertEqual(self.actions(command), [])
 

@@ -106,6 +106,7 @@ gh api $F repos/acme/app/git/refs/heads/main	deny	a ref endpoint after a gh api 
 gh api -$O repos/acme/app/git/refs/heads/main	deny	a gh api option whose name is a variable
 gh api --$O repos/acme/app/git/refs/heads/main	deny	a long gh api option whose name is a variable
 gh api graphql -$O	deny	a GraphQL call with an option whose name is a variable
+gh api -i$O repos/acme/app/pulls/7	deny	a gh api option cluster ending in a variable
 Q='mutation { updateRefs(input: {}) { clientMutationId } }'; gh api graphql -f query="$Q"	deny	a GraphQL query held in a variable
 gh api -X PATCH "$E" -f sha={head}	deny	an endpoint resolved at run time
 E=repos/acme/app/git/refs/heads/main; gh api -H 'Accept: application/json' -X PATCH "$E" -f sha={head}	deny	a header before an endpoint resolved at run time
@@ -215,6 +216,8 @@ env LC_ALL=C grep -rn gh docs; git merge-base --is-ancestor main HEAD	pass	an un
 gh api "$E" && git merge-base main HEAD	pass	a gh api read from an endpoint resolved at run time
 gh api --jq .object.sha "$E"	pass	a long value option before a run-time endpoint read
 gh api -H 'Accept: application/json' "$E"	pass	a header before a run-time endpoint read
+gh api -H"$H" repos/acme/app/pulls/7	pass	a run-time header value attached to its option
+gh api --jq="$J" repos/acme/app/pulls/7	pass	a run-time jq filter attached to its long option
 T=x; gh api -f title="$T" -X POST repos/acme/app/issues	pass	a run-time body value before a literal non-branch endpoint
 GH=gh; $GH api repos/acme/app/pulls/7	pass	a run-time gh reading through gh api
 keel="${KEEL_DATA_DIR:-$HOME/.claude}/bin/keel"; python3 "$keel" test -- ./mvnw test -Dtest='*Merge*'	pass	the overlay's keel test step through python3, test names holding merge

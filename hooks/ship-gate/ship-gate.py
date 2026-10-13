@@ -34,8 +34,8 @@ F_IRREVERSIBLE = "F-irreversible"
 DECISION_HINT = re.compile(r"\b(git|gh|push|merge)\b")
 PUSH_OR_MERGE_WORD = re.compile(r"\b(push|merge)\b")
 PUSH_OR_MERGE_WORDS = {"push", "merge"}
-# Not `.git/refs` or `merges.md`: those are local paths, not endpoints.
-PUSH_OR_MERGE_WITHOUT_THE_WORD = re.compile(r"\bsend-pack\b|/merges(?![\w.-])|/git/refs\b")
+# Not `.git/refs`, `merges.md` or `--merges`: local paths and a log option, not endpoints.
+PUSH_OR_MERGE_WITHOUT_THE_WORD = re.compile(r"\bsend-pack\b|(?<![\w.-])merges(?![\w.-])|(?<![\w.])git/refs\b")
 PUSHES_OUTSIDE_GIT_PUSH = {"send-pack", "http-push"}
 QUOTING = re.compile(r"""['"\\]""")
 PULL_URL = re.compile(r"^https?://[^/]+/([^/]+/[^/]+)/pull/\d+")
@@ -335,19 +335,26 @@ def _runtime_name_may_push_or_merge(words: List[str], call: str) -> bool:
 
 
 def _hides_push_or_merge(program: str, words: List[str], call: str) -> bool:
-    """A program that runs its arguments as a command the parser did not unwrap (`xargs git push …`,
-    `env --chdir=… git push …`), when those arguments name git or gh (`git-push` too) or a name resolved at run
-    time, in a call that spells a push or merge anywhere."""
-    if os.path.basename(program) not in ARGV_FORWARDERS or not _forwarder_left_in_place(words):
+    """A wrapper whose command the parser could not lay bare (`xargs git push …`, `env --chdir=… git push …`,
+    `sudo --chdir /d git push …`), when its words name git or gh (`git-push` too), or name something resolved at
+    run time where the parser kept the forwarder, in a call that spells a push or merge anywhere."""
+    if os.path.basename(program) not in ARGV_FORWARDERS or _only_looks_up(words):
         return False
-    runs_opaque_git = any(os.path.basename(word) in {"git", "gh"} or shell.dashed_git_subcommand(word)
-                          or RUNTIME_NAME.search(word) for word in words)
-    return runs_opaque_git and (_spells_push_or_merge(call) or bool(PUSH_OR_MERGE_WORDS.intersection(words)))
+    names_git = any(os.path.basename(word) in {"git", "gh"} or shell.dashed_git_subcommand(word) for word in words)
+    runs_run_time_name = _forwarder_left_in_place(words) and any(RUNTIME_NAME.search(word) for word in words)
+    if not (names_git or runs_run_time_name):
+        return False
+    return _spells_push_or_merge(call) or bool(PUSH_OR_MERGE_WORDS.intersection(words))
+
+
+def _only_looks_up(words: List[str]) -> bool:
+    """The parser keeps `command` only for `command -v`/`-V`, which names a program without running it."""
+    return words[0] == "command"
 
 
 def _forwarder_left_in_place(words: List[str]) -> bool:
     """The parser kept the forwarder (`xargs …`) or stopped at an option it does not read (`env --chdir=…` leaves
-    `--chdir=…` first); `timeout 60 cat "$F"` is already `cat "$F"`, and `command -v git` only looks git up."""
+    `--chdir=…` first); `timeout 60 cat "$F"` is already `cat "$F"`."""
     return os.path.basename(words[0]) in FORWARDERS_THE_PARSER_KEEPS or words[0].startswith("-")
 
 

@@ -52,6 +52,10 @@ echo feature | xargs git push origin	deny	xargs appends the refspec from stdin
 xargs git push origin feature < /dev/null	deny	bare xargs wrapper
 xargs -0 git push origin feature < /dev/null	deny	xargs wrapper with options
 env --chdir={tmp} git push origin feature	deny	env option the gate does not read
+sudo --chdir /tmp git push origin feature	deny	a sudo option whose value the parser takes for the program
+sudo -D /tmp git push origin feature	deny	sudo's short directory option
+exec -la foo git push origin feature	deny	exec's clustered -a takes a value the parser does not skip
+env --chdir=$D true; echo push	deny	a forwarder's own run-time option in a call that spells push
 xargs git-push origin feature < /dev/null	deny	xargs runs git's dashed push program
 xargs $CORE/git-push origin feature < /dev/null	deny	xargs runs a dashed push program at a run-time path
 R=acme/app; echo x | xargs gh api -X PATCH repos/$R/git/refs/heads/main -f sha={head}	deny	xargs runs a ref write whose repo is a variable
@@ -68,6 +72,8 @@ gh api -X PATCH repos/acme/app/git/refs/heads/main -f sha={head}	deny	REST ref u
 gh api repos/acme/app/git/refs -f ref=refs/heads/x -f sha={head}	deny	REST ref create, POST implied by its fields
 R=acme/app; gh api -X PATCH repos/$R/git/refs/heads/main -f sha={head}	deny	REST ref update whose repo is a variable
 N=7; gh api -X PUT repos/acme/app/pulls/$N/merge	deny	REST merge whose pull number is a variable
+GH=gh; X=git/refs/heads/main; $GH api -X PATCH repos/acme/app/$X -f sha={head}	deny	a run-time gh writing a ref whose path tail is a variable
+GH=gh; X=merges; $GH api repos/acme/app/$X -f base=main -f head=feature	deny	a run-time gh merging through an endpoint tail in a variable
 gh api -XDELETE repos/acme/app/git/refs/heads/x	deny	REST ref delete, method attached
 gh api --method=DELETE repos/acme/app/git/refs/heads/x	deny	REST ref delete, long method option
 gh api graphql -f query='mutation { createRef(input: {}) { clientMutationId } }'	deny	GraphQL ref create
@@ -164,6 +170,9 @@ git merge-base main HEAD; command -v git	pass	command -v only looks git up
 ls .git/refs/heads | xargs -n1 git log -1	pass	a local refs path, not an endpoint
 $EDITOR notes.md && cat .git/refs/heads/main	pass	a local refs path beside a run-time program
 $EDITOR x && cat docs/merges.md	pass	a merges file name beside a run-time program
+$EDITOR x && git log --merges	pass	git log's --merges option beside a run-time program
+keel="${KEEL_DATA_DIR:-$HOME/.claude}/bin/keel"; python3 "$keel" test -- ./mvnw test -Dtest='*Merge*'	pass	the overlay's keel test step through python3, test names holding merge
+cd {repo} && pat=$(git diff main...HEAD --no-renames --diff-filter=D --name-only | sort -u) && [ -n "$pat" ] && git grep -nE "$pat" HEAD -- '*.md'	pass	the overlay's pinned-head deletion grep without xargs
 python3 "${KEEL_DATA_DIR:-$HOME/.claude}/bin/keel" evidence show --repo {repo} && git -C {repo} merge-base --is-ancestor main HEAD	pass	overlay's keel call through python3 beside merge-base
 python3 "${KEEL_DATA_DIR:-$HOME/.claude}/bin/keel" evidence show --repo /work/sg-push-spellings	pass	overlay's keel call through python3 with a repo path holding push
 { git diff --merge-base main -U0; git ls-files --others --exclude-standard -z | while IFS= read -r -d '' f; do [ ! -f "$f" ] || git diff --no-index -U0 /dev/null "$f"; done; } | grep -E x	pass	the overlay review skill's body trigger beside --merge-base

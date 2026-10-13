@@ -135,7 +135,8 @@ class CommandParsingTest(unittest.TestCase):
                         "xargs gh api -X PATCH repos/acme/app/git/refs/heads/main -f sha=abc < /dev/null",
                         "GP=\"$(git --exec-path)/git-push\"; xargs $GP origin feature < /dev/null",
                         "S=push; xargs git $S origin feature < /dev/null",
-                        "R=acme/app; echo x | xargs gh api -X PATCH repos/$R/git/refs/heads/main -f sha=abc"):
+                        "R=acme/app; echo x | xargs gh api -X PATCH repos/$R/git/refs/heads/main -f sha=abc",
+                        "env --chdir=$D true; echo push"):
             with self.subTest(command=command):
                 action, = [action for action in self.actions(command) if isinstance(action, self.hook.Unattributable)]
                 self.assertIn("wraps it", action.why)
@@ -144,6 +145,14 @@ class CommandParsingTest(unittest.TestCase):
                         "xargs grep -l merge < files.txt", "ls .git/refs/heads | xargs -n1 git log -1"):
             with self.subTest(command=command):
                 self.assertEqual(self.actions(command), [])
+
+    def test_wrapperWithAnOptionTheParserMisreads_isUnattributable_whenItsWordsNameGit(self):
+        for command in ("sudo --chdir /tmp git push origin feature", "sudo -D /tmp git push origin feature",
+                        "sudo -iu bob git push origin feature", "exec -la foo git push origin feature"):
+            with self.subTest(command=command):
+                action, = self.actions(command)
+                self.assertIsInstance(action, self.hook.Unattributable)
+                self.assertIn("wraps it", action.why)
 
     def test_unwrappedProgram_staysAttributable_besideAPushOrMergeSpelling(self):
         for command in ("git merge-base main HEAD && timeout 60 cat \"$F\"",
@@ -181,7 +190,7 @@ class CommandParsingTest(unittest.TestCase):
                 self.assertIsInstance(action, self.hook.Unattributable)
                 self.assertIn("run time", action.why)
         for command in ("$EDITOR notes.md", "KEEL=k; $KEEL snapshot .", "$EDITOR notes.md && cat .git/refs/heads/main",
-                        "$EDITOR x && cat docs/merges.md"):
+                        "$EDITOR x && cat docs/merges.md", "$EDITOR x && git log --merges"):
             with self.subTest(command=command):
                 self.assertEqual(self.actions(command), [])
 
@@ -238,6 +247,8 @@ class CommandParsingTest(unittest.TestCase):
                         "R=acme/app; gh api -X PATCH repos/$R/git/refs/heads/main -f sha=abc",
                         "R=acme/app; gh api repos/$R/merges -f base=main -f head=feature",
                         "N=7; gh api -X PUT repos/acme/app/pulls/$N/merge",
+                        "GH=gh; X=git/refs/heads/main; $GH api -X PATCH repos/acme/app/$X -f sha=abc",
+                        "GH=gh; X=merges; $GH api repos/acme/app/$X -f base=main -f head=feature",
                         mutation % "updateRefs", mutation % "createRef", mutation % "mergeBranch",
                         mutation % "enablePullRequestAutoMerge"):
             with self.subTest(command=command):

@@ -103,6 +103,9 @@ gh api -iX PATCH repos/acme/app/git/refs/heads/main -f sha={head}	deny	REST ref 
 gh api graphql $F	deny	a gh api option held in a variable
 gh api $F graphql	deny	a gh api option held in a variable before the endpoint
 gh api $F repos/acme/app/git/refs/heads/main	deny	a ref endpoint after a gh api option held in a variable
+gh api -$O repos/acme/app/git/refs/heads/main	deny	a gh api option whose name is a variable
+gh api --$O repos/acme/app/git/refs/heads/main	deny	a long gh api option whose name is a variable
+gh api graphql -$O	deny	a GraphQL call with an option whose name is a variable
 Q='mutation { updateRefs(input: {}) { clientMutationId } }'; gh api graphql -f query="$Q"	deny	a GraphQL query held in a variable
 gh api -X PATCH "$E" -f sha={head}	deny	an endpoint resolved at run time
 E=repos/acme/app/git/refs/heads/main; gh api -H 'Accept: application/json' -X PATCH "$E" -f sha={head}	deny	a header before an endpoint resolved at run time

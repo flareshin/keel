@@ -313,20 +313,23 @@ def _gh_api_changes_a_branch(args: List[str]) -> bool:
 
 def _gh_api_hides_its_target(args: List[str]) -> bool:
     """A writing `gh api` call whose endpoint or GraphQL query is resolved at run time (the query's text, the name of
-    a field that may be `query`, or a word that may expand to options: `gh api graphql $F`), so the gate cannot read
-    what it changes."""
+    a field that may be `query`, a word that may expand to options: `gh api graphql $F`, or an option named at run
+    time: `-$O`), so the gate cannot read what it changes."""
     options, operands = _read_gh_api(args)
     fields = [value.partition("=") for option, value in options if option in GH_API_FIELD_OPTIONS]
     run_time_query = any(RUNTIME_NAME.search(name) or (name == "query" and RUNTIME_NAME.search(value))
                          for name, _, value in fields)
-    run_time_word = any(RUNTIME_NAME.search(word) for word in operands)
+    run_time_word = any(RUNTIME_NAME.search(word) for word in operands + [option for option, _ in options])
     return (run_time_query or run_time_word) and _gh_api_writes(args)
 
 
 def _gh_api_writes(args: List[str]) -> bool:
-    """gh api sends GET unless the last method option names another method or a body option makes it POST. gh takes
-    one endpoint, so beside another word a word resolved at run time holds options and may expand to either."""
+    """gh api sends GET unless the last method option names another method or a body option makes it POST. An option
+    named at run time (`-$O`) may be either, and so may a run-time word beside another word, since gh takes one
+    endpoint and the other word holds options."""
     options, operands = _read_gh_api(args)
+    if any(RUNTIME_NAME.search(option) for option, _ in options):
+        return True
     if len(operands) > 1 and any(RUNTIME_NAME.search(word) for word in operands):
         return True
     methods = [value for option, value in options if option in GH_API_METHOD_OPTIONS]

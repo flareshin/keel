@@ -208,6 +208,8 @@ $EDITOR x && git log --merges	pass	git log's --merges option beside a run-time p
 timeout 120 ls hooks/git-guard && git merge-base main HEAD	pass	an unwrapped wrapper whose argument holds git- beside merge-base
 env LC_ALL=C grep -rn gh docs; git merge-base --is-ancestor main HEAD	pass	an unwrapped env running grep beside merge-base
 gh api "$E" && git merge-base main HEAD	pass	a gh api read from an endpoint resolved at run time
+gh api --jq .object.sha "$E"	pass	a long value option before a run-time endpoint read
+gh api -H 'Accept: application/json' "$E"	pass	a header before a run-time endpoint read
 T=x; gh api -f title="$T" -X POST repos/acme/app/issues	pass	a run-time body value before a literal non-branch endpoint
 GH=gh; $GH api repos/acme/app/pulls/7	pass	a run-time gh reading through gh api
 keel="${KEEL_DATA_DIR:-$HOME/.claude}/bin/keel"; python3 "$keel" test -- ./mvnw test -Dtest='*Merge*'	pass	the overlay's keel test step through python3, test names holding merge

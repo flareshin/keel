@@ -495,7 +495,7 @@ def _drop_one_wrapper(invocation: Invocation) -> None:
 def _command_after_options(invocation: Invocation, args: list, flags: set, value_options: set) -> list:
     """`args` after the options a wrapper puts before its command. An option outside `flags` and `value_options`
     (a cluster such as `-iu` included) is read past as a flag and recorded as unattributable."""
-    while args and args[0].startswith("-") and args[0] != "-":
+    while args and args[0].startswith("-"):
         word = args[0]
         name, has_value, _ = word.partition("=")
         if word == "--":

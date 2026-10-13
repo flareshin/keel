@@ -274,6 +274,8 @@ class UnwrapTest(unittest.TestCase):
                                       ("nice --bogus git push", ["git", "push"], ["--bogus"]),
                                       ("nohup --bogus git push", ["git", "push"], ["--bogus"]),
                                       ("time -v git push", ["git", "push"], ["-v"]),
+                                      ("sudo - git push", ["git", "push"], ["-"]),
+                                      ("exec - git push", ["git", "push"], ["-"]),
                                       ("sudo -i env -S x git push", ["x", "git", "push"], ["-i", "-S"])):
             with self.subTest(command=command):
                 invocation = unwrap(parse_commands(command)[0])

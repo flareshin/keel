@@ -62,6 +62,8 @@ sudo --chdir /tmp sh -c 'git push origin feature'	deny	sudo's unattributable opt
 exec -la foo $GIT push origin feature	deny	exec's unread cluster before a run-time program
 sudo -i git push origin feature	deny	sudo -i runs the push in the target user's home
 sudo -nE git push origin feature	deny	a sudo flag cluster the parser reads past
+sudo - git push origin feature	deny	a lone dash the parser reads past
+exec - git push origin feature	deny	zsh's exec - runs the push as a login command
 timeout --bogus 60 git push origin feature	deny	an unread timeout option, so the duration is a guess
 xargs git-push origin feature < /dev/null	deny	xargs runs git's dashed push program
 xargs $CORE/git-push origin feature < /dev/null	deny	xargs runs a dashed push program at a run-time path

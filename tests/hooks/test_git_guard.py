@@ -797,6 +797,15 @@ class ForcePushTest(GitGuardTestCase):
             with self.subTest(command=command):
                 self.assertDenied(self.guard(command, cwd=self.repo), floor)
 
+    def test_git_deniedWithItsFloor_whenAWrapperClusterEndsInAValueLetter(self):
+        for command, floor in (("sudo -iu bob git push --force origin feature", "F-force-push"),
+                               ("sudo -Hu bob git commit --no-verify -m wip", "F-hookskip"),
+                               ("sudo -Eu root git push --force origin feature", "F-force-push"),
+                               ("exec -la x git push --force origin feature", "F-force-push"),
+                               ("exec -la x git config core.hooksPath /dev/null", "F-hookskip")):
+            with self.subTest(command=command):
+                self.assertDenied(self.guard(command, cwd=self.repo), floor)
+
     def test_push_denied_whenPlusRefspec(self):
         self.assertDenied(self.guard("git push origin +feature", cwd=self.repo), "F-force-push")
 

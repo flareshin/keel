@@ -166,13 +166,21 @@ class CommandParsingTest(unittest.TestCase):
         kinds = {type(action).__name__ for action in self.actions("gh pr merge 7 $(git push origin feature)")}
         self.assertTrue({"Merge", "Push"} <= kinds, kinds)
 
+    def test_wrapperClusterOfKnownOptions_isReadAsTheCommandItRuns(self):
+        for command in ("sudo -nE git push origin feature", "exec -la foo git push origin feature",
+                        "exec -la git sh -c 'git push origin feature'"):
+            with self.subTest(command=command):
+                action, = self.actions(command)
+                self.assertIsInstance(action, self.hook.Push)
+        action, = self.actions("exec -la foo $GIT push origin feature")
+        self.assertIsInstance(action, self.hook.Unattributable)
+
     def test_wrapperWithAnOptionTheParserDoesNotRead_isUnattributable_whenItRunsGitAShellOrARunTimeName(self):
         for command in ("sudo --chdir /tmp git push origin feature", "sudo -D /tmp git push origin feature",
-                        "sudo -iu bob git push origin feature", "exec -la foo git push origin feature",
+                        "sudo -iu bob git push origin feature",
                         "sudo -iu git git push origin feature", "sudo --chdir /srv/git git push origin feature",
-                        "sudo -D /srv/gh gh pr merge 7 --squash", "exec -la foo $GIT push origin feature",
-                        "exec -la git sh -c 'git push origin feature'", "sudo --chdir /tmp sh -c 'git push origin feature'",
-                        "sudo -i git push origin feature", "sudo -nE git push origin feature",
+                        "sudo -D /srv/gh gh pr merge 7 --squash", "sudo --chdir /tmp sh -c 'git push origin feature'",
+                        "sudo -i git push origin feature",
                         "env --chdir=/tmp git push origin feature"):
             with self.subTest(command=command):
                 action = self.actions(command)[0]

@@ -502,13 +502,18 @@ def _command_after_options(invocation: Invocation, args: list, flags: set, value
 def _options_and_command(invocation: Invocation, args: list, flags: set, value_options: set,
                          moving_options: set = frozenset(), directory_options: set = frozenset()) -> tuple:
     """The known options a wrapper puts before its command, as {option: value, or None for a flag}, and `args` after
-    them. An option outside `flags` and `value_options` (a cluster such as `-iu` included) is read past as a flag and
-    recorded as unattributable."""
+    them. An option outside `flags` and `value_options` is read past as a flag and recorded as unattributable; a short
+    cluster is read letter by letter (`-iu bob`)."""
     options = {}
     while args and args[0].startswith("-"):
         word = args[0]
         if word == "--":
             return options, args[1:]
+        if not word.startswith("--") and len(word) > 2:
+            takes_next = _read_cluster(invocation, word, args[1:2], options, flags, value_options, moving_options,
+                                       directory_options)
+            args = args[2:] if takes_next else args[1:]
+            continue
         if word in directory_options:  # `sudo -D /tmp`: recorded, and its directory is not the command
             _record_unread_option(invocation, word, moving_options, value_options)
             args = args[2:]
@@ -524,6 +529,30 @@ def _options_and_command(invocation: Invocation, args: list, flags: set, value_o
             _record_unread_option(invocation, word, moving_options, value_options)
         args = args[1:]
     return options, args
+
+
+def _read_cluster(invocation: Invocation, word: str, next_words: list, options: dict, flags: set, value_options: set,
+                  moving_options: set, directory_options: set) -> bool:
+    """Read a short cluster as getopt does: each letter a flag until one that takes a value, which is the rest of the
+    word or else the next word (`-iu bob`, `-nuroot`, `-la x`). A cluster holding a letter the wrapper does not know
+    or one that moves the command is recorded. True when the value is the next word."""
+    letters = word[1:]
+    record = False
+    for index, letter in enumerate(letters):
+        option = "-" + letter
+        record = record or option in moving_options or option not in flags | value_options
+        if option in value_options or option in directory_options:
+            attached = letters[index + 1:]
+            if option in value_options:
+                options[option] = attached or (next_words[0] if next_words else "")
+            if record:
+                _record_unread_option(invocation, word, moving_options, value_options)
+            return not attached
+        if option in flags:
+            options[option] = None
+    if record:
+        _record_unread_option(invocation, word, moving_options, value_options)
+    return False
 
 
 def _record_unread_option(invocation: Invocation, word: str, moving_options: set, value_options: set) -> None:
@@ -542,14 +571,12 @@ def _record_unread_option(invocation: Invocation, word: str, moving_options: set
 
 
 def _known_option(word: str, flags: set, value_options: set) -> tuple | None:
-    """(option, value) for a flag or a known option with its value attached (`--user=bob`, `--preserve-env=PATH`,
-    `-ubob`); None for any other word."""
+    """(option, value) for a flag or a known long option with its value attached (`--user=bob`,
+    `--preserve-env=PATH`); None for any other word."""
     if word in flags:
         return word, None
-    if word.startswith("--"):
-        name, has_value, value = word.partition("=")
-        return (name, value) if has_value and name in flags | value_options else None
-    return (word[:2], word[2:]) if word[:2] in value_options else None
+    name, has_value, value = word.partition("=")
+    return (name, value) if word.startswith("--") and has_value and name in flags | value_options else None
 
 
 def _exec_command(invocation: Invocation, args: list) -> list:

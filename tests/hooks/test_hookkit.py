@@ -265,12 +265,13 @@ class UnwrapTest(unittest.TestCase):
 
     def test_unwrap_readsPastAnOptionItDoesNotRead_andRecordsIt(self):
         for command, argv, unread in (("sudo -i git push", ["git", "push"], ["-i"]),
-                                      ("sudo -nE git push", ["git", "push"], ["-nE"]),
                                       ("sudo --chdir /tmp git push", ["git", "push"], ["--chdir"]),
                                       ("sudo -D /tmp git push", ["git", "push"], ["-D"]),
                                       ("sudo -R /srv git push", ["git", "push"], ["-R"]),
-                                      ("sudo -iu bob git push", ["bob", "git", "push"], ["-iu"]),
-                                      ("exec -la foo git push", ["foo", "git", "push"], ["-la"]),
+                                      ("sudo -iu bob git push", ["git", "push"], ["-iu"]),
+                                      ("sudo -nD /tmp git push", ["git", "push"], ["-nD"]),
+                                      ("sudo -Zu bob git push", ["git", "push"], ["-Zu"]),
+                                      ("exec -la git-push git origin x", ["git", "origin", "x"], ["-a"]),
                                       ("env --chdir=/x A=1 git push", ["git", "push"], ["--chdir=/x"]),
                                       ("timeout --bogus 5 git push", ["git", "push"], ["--bogus"]),
                                       ("nice --bogus git push", ["git", "push"], ["--bogus"]),
@@ -313,7 +314,7 @@ class UnwrapTest(unittest.TestCase):
                 self.assertEqual((recorded, []), (runner.unattributable_options, inner.unattributable_options))
 
     def test_steps_dropTheExportedEnvironment_onlyWhenExecClearsIt(self):
-        for command, environment in (("export A=1; exec -c git push", {}),
+        for command, environment in (("export A=1; exec -c git push", {}), ("export A=1; exec -cl git push", {}),
                                      ("export A=1; exec -a -c -c git push", {}),
                                      ("export A=1; exec -l git push", {"A": "1"}),
                                      ("export A=1; exec -a -c git push", {"A": "1"})):
@@ -325,7 +326,9 @@ class UnwrapTest(unittest.TestCase):
                         "nice -5 git push", "exec -a name git push", "timeout --preserve-status -s TERM 30s git push",
                         "env -i -u HOME A=1 git push", "env -- git push", "command -p git push", "time -p git push",
                         "sudo -uroot git push", "sudo --preserve-env=PATH git push", "timeout -sKILL -k5 30 git push",
-                        "exec -aname git push", "nice -n5 git push"):
+                        "exec -aname git push", "nice -n5 git push", "sudo -nE git push", "sudo -Hu bob git push",
+                        "sudo -Eu root git push", "sudo -nuroot git push", "exec -la x git push", "exec -cl git push",
+                        "timeout -vs KILL 5 git push"):
             with self.subTest(command=command):
                 invocation = unwrap(parse_commands(command)[0])
                 self.assertEqual((["git", "push"], []), (invocation.argv, invocation.unattributable_options))

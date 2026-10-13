@@ -69,6 +69,7 @@ git push $(git remote | head -1) feature	deny	remote from a substitution
 git push nosuch feature	deny	neither a remote of the clone nor a URL or path
 gh pr merge 7 --squash --match-head-commit {head}	deny	gh may pick the gated upstream of a fork clone	fork
 GIT=git; $GIT push origin feature	deny	command name resolved at run time
+root={repo} && base=$(git -C "$root" merge-base main HEAD) && tree=$(cd "$root" && "${KEEL_DATA_DIR:-$HOME/.claude}"/bin/keel snapshot . | jq -r .tree)	pass	lens-review's since prepare: a run-time program with no run-time argument beside git merge-base
 GIT=git; S=push; $GIT $S origin feature	deny	command name and subcommand both resolved at run time
 sh -c 'GIT=git; S=push; $GIT $S origin feature'	deny	both resolved at run time inside an inline shell
 S=push; git $S origin feature	deny	subcommand from a variable

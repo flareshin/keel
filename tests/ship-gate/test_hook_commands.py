@@ -146,6 +146,12 @@ class CommandParsingTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual(self.actions(command), [])
 
+    def test_argvForwarders_areKeptByTheParser_exactlyWhenListedAsKept(self):
+        for name in sorted(self.hook.ARGV_FORWARDERS):
+            with self.subTest(name=name):
+                argv = self.shell.unwrap(self.shell.parse_commands(name + " git status")[0]).argv
+                self.assertEqual(name in self.hook.FORWARDERS_THE_PARSER_KEEPS, argv[0] == name)
+
     def test_wrapperWithAnOptionTheParserMisreads_isUnattributable_whenItsWordsNameGit(self):
         for command in ("sudo --chdir /tmp git push origin feature", "sudo -D /tmp git push origin feature",
                         "sudo -iu bob git push origin feature", "exec -la foo git push origin feature"):

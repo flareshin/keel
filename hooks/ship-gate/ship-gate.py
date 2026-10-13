@@ -324,10 +324,10 @@ def _gh_api_hides_its_target(args: List[str]) -> bool:
 
 
 def _gh_api_writes(args: List[str]) -> bool:
-    """gh api sends GET unless the last method option names another method or a body option makes it POST; a word
-    after the endpoint resolved at run time may expand to either."""
+    """gh api sends GET unless the last method option names another method or a body option makes it POST. gh takes
+    one endpoint, so beside another word a word resolved at run time holds options and may expand to either."""
     options, operands = _read_gh_api(args)
-    if any(RUNTIME_NAME.search(word) for word in operands[1:]):
+    if len(operands) > 1 and any(RUNTIME_NAME.search(word) for word in operands):
         return True
     methods = [value for option, value in options if option in GH_API_METHOD_OPTIONS]
     if methods:

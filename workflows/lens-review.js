@@ -42,7 +42,6 @@ const DERIVED_RUN_ID = /^rv-\d{8}T\d{6}Z-[0-9a-f]{6}$/
 const SAFE_REF = /^[A-Za-z0-9._\/~^@{}-]+$/
 const CONTROL_CHARS = /[\x00-\x1f\x7f\x85\u2028\u2029]/
 const DATA_DIR = '"${KEEL_DATA_DIR:-$HOME/.claude}"'
-const KEEL_CLI = `${DATA_DIR}/bin/keel`
 const RULE_CHECKS = `${DATA_DIR}/skills/readable-code/scripts/rule-checks.py`
 const DEFAULT_LENSES_FILE = `${DATA_DIR}/workflows/review-lenses.json`
 const DERIVE_RUN_ID_COMMAND = `printf 'rv-%s-%s\\n' "$(date -u +%Y%m%dT%H%M%SZ)" "$(od -An -N3 -tx1 /dev/urandom | tr -d ' \\n')"`
@@ -204,10 +203,10 @@ function buildPrepareCommand(d) {
     return `${root} && head=$(git -C "$root" rev-parse --verify '${d.head}^{commit}') && base=$(git -C "$root" merge-base '${d.base}' "$head") && stat=$(git -C "$root" diff --stat "$base" "$head" | tail -n 1) && jq -cn --arg r "$root" --arg b "$base" --arg h "$head" --arg s "$stat" '{repo_root:$r, review_base:$b, head:$h, snapshot_tree:null, diff_stat:$s}'`
   }
   const from = d.since ? `'${d.since}'` : '"$base"'
-  // Not `snapshot "$root"`: ship-gate reads a run-time program with a run-time argument, in a call that spells
-  // merge-base, as a possible merge and denies it; `.` after the cd keeps every argument literal.
+  // Not `"${KEEL_DATA_DIR:-…}"/bin/keel snapshot`: ship-gate reads a program resolved at run time, in a call that
+  // spells merge-base, as a possible merge and denies it; `bin/keel` after the cd is a literal program.
   const sinceCheck = d.since ? `{ [ "$(git -C "$root" cat-file -t '${d.since}' 2>/dev/null)" = tree ] || { echo "since ${d.since} is not a tree id: pass the snapshot_tree the earlier review named (for a commit, <commit>^{tree})" >&2; false; }; } && ` : ''
-  return `${root} && ${sinceCheck}base=$(git -C "$root" merge-base '${d.base}' HEAD) && tree=$(cd "$root" && ${KEEL_CLI} snapshot . | jq -r .tree) && stat=$(git -C "$root" diff --stat ${from} "$tree" | tail -n 1) && jq -cn --arg r "$root" --arg b "$base" --arg t "$tree" --arg s "$stat" '{repo_root:$r, review_base:$b, head:null, snapshot_tree:$t, diff_stat:$s}'`
+  return `${root} && ${sinceCheck}base=$(git -C "$root" merge-base '${d.base}' HEAD) && tree=$(cd ${DATA_DIR} && bin/keel snapshot "$root" | jq -r .tree) && stat=$(git -C "$root" diff --stat ${from} "$tree" | tail -n 1) && jq -cn --arg r "$root" --arg b "$base" --arg t "$tree" --arg s "$stat" '{repo_root:$r, review_base:$b, head:null, snapshot_tree:$t, diff_stat:$s}'`
 }
 
 function parseReviewedTargets(diffOutputs) {

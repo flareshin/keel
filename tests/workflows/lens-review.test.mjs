@@ -98,7 +98,7 @@ test('lensReview_diffsLensesAgainstSnapshotTree_whenWorkingTreeIsReviewed', asyn
   assert.match(ruleChecks.prompt, /"\$\{KEEL_DATA_DIR:-\$HOME\/\.claude\}"\/skills\/readable-code\/scripts\/rule-checks\.py/)
   assert.match(childArgs.lenses.find((lens) => lens.key === 'readable-code').prompt, /Entry point : a\.py/)
   const prepareCommands = preparePromptCommands(rt.record.agents[0].prompt)
-  assert.match(prepareCommands.diffs[0], /tree=\$\(cd "\$root" && "\$\{KEEL_DATA_DIR:-\$HOME\/\.claude\}"\/bin\/keel snapshot \. \|/)
+  assert.match(prepareCommands.diffs[0], /tree=\$\(cd "\$\{KEEL_DATA_DIR:-\$HOME\/\.claude\}" && bin\/keel snapshot "\$root" \|/)
   assert.match(prepareCommands.runId, /date -u/)
   assert.equal(prepareCommands.lenses, null)
 })

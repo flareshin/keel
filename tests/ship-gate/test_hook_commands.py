@@ -154,10 +154,17 @@ class CommandParsingTest(unittest.TestCase):
                 self.assertIn("`%s` wraps it" % name, action.why)
 
     def test_scriptAWrapperRunsElsewhere_isUnattributable_notAPushFromTheCallsDirectory(self):
-        for command in ("sudo --chdir /tmp sh -c 'git push origin feature'", "sudo -D /tmp bash -c 'gh pr merge 7'"):
+        for command in ("sudo --chdir /tmp sh -c 'git push origin feature'", "sudo -D /tmp bash -c 'gh pr merge 7'",
+                        "sudo -D /tmp sh -c \"sh -c 'git push origin feature'\""):
             with self.subTest(command=command):
                 action, = self.actions(command)
                 self.assertIsInstance(action, self.hook.Unattributable)
+
+    def test_substitutionUnderAnAttributableCommand_isStillJudged(self):
+        pushes = [a for a in self.actions('gh pr create --title "$(git push origin feature)"') if isinstance(a, self.hook.Push)]
+        self.assertEqual([["git", "push", "origin", "feature"]], [push.words for push in pushes])
+        kinds = {type(action).__name__ for action in self.actions("gh pr merge 7 $(git push origin feature)")}
+        self.assertTrue({"Merge", "Push"} <= kinds, kinds)
 
     def test_wrapperWithAnOptionTheParserDoesNotRead_isUnattributable_whenItRunsGitAShellOrARunTimeName(self):
         for command in ("sudo --chdir /tmp git push origin feature", "sudo -D /tmp git push origin feature",

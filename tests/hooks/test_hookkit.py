@@ -306,6 +306,12 @@ class UnwrapTest(unittest.TestCase):
         sudo, git = steps("sudo -i git push; git status", "/work")
         self.assertEqual((["-i"], []), (sudo.unattributable_options, git.unattributable_options))
 
+    def test_steps_leaveTheRunnersOptionsOffItsScriptsAndSubstitutions(self):
+        for command, recorded in (("sudo -D /tmp sh -c 'git push'", ["-D"]), ("sudo -i echo $(git push)", ["-i"])):
+            with self.subTest(command=command):
+                runner, inner = steps(command, "/work")
+                self.assertEqual((recorded, []), (runner.unattributable_options, inner.unattributable_options))
+
     def test_steps_dropTheExportedEnvironment_onlyWhenExecClearsIt(self):
         for command, environment in (("export A=1; exec -c git push", {}),
                                      ("export A=1; exec -a -c -c git push", {}),

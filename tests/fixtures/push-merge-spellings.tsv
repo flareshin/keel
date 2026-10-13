@@ -64,9 +64,9 @@ sudo --chdir=/tmp git push origin feature	deny	sudo's directory option with its 
 sudo -D /tmp git push origin feature	deny	sudo's short directory option
 exec -la foo git push origin feature	gate	exec's clustered -a takes foo as its value
 env --chdir=$D true; echo push	deny	a forwarder's own run-time option in a call that spells push
-sudo -iu git git push origin feature	deny	a sudo option cluster the parser does not read, its value named git
+sudo -iu git git push origin feature	deny	sudo's -i moves the command, so the cluster -iu is recorded
 sudo --chdir /tmp sh -c 'git push origin feature'	deny	sudo's unattributable option before a shell
-exec -la foo $GIT push origin feature	deny	exec's unread cluster before a run-time program
+exec -la foo $GIT push origin feature	deny	exec's cluster read, then a run-time program
 sudo -i git push origin feature	deny	sudo -i runs the push in the target user's home
 sudo -nE git push origin feature	gate	a cluster of sudo flags it knows
 sudo - git push origin feature	deny	a lone dash the parser reads past

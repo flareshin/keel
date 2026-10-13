@@ -271,6 +271,8 @@ class UnwrapTest(unittest.TestCase):
                                       ("sudo -iu bob git push", ["git", "push"], ["-iu"]),
                                       ("sudo -nD /tmp git push", ["git", "push"], ["-nD"]),
                                       ("sudo -Zu bob git push", ["git", "push"], ["-Zu"]),
+                                      ("sudo -ni git push", ["git", "push"], ["-ni"]),
+                                      ("sudo -Zn git push", ["git", "push"], ["-Zn"]),
                                       ("exec -la git-push git origin x", ["git", "origin", "x"], ["-a"]),
                                       ("env --chdir=/x A=1 git push", ["git", "push"], ["--chdir=/x"]),
                                       ("timeout --bogus 5 git push", ["git", "push"], ["--bogus"]),
@@ -292,7 +294,7 @@ class UnwrapTest(unittest.TestCase):
 
     def test_unwrap_marksADirectoryMove_onlyForTheWrappersOwnMovingOption(self):
         for command, moves in (("sudo -i git push", True), ("sudo -nD/tmp git push", True), ("sudo --chroot=/srv git push", True),
-                               ("sudo -D /tmp git push", True), ("sudo --chdir /tmp git push", True), ("sudo -R /srv git push", True),
+                               ("sudo -D /tmp git push", True), ("sudo -ni git push", True), ("sudo --chdir /tmp git push", True), ("sudo -R /srv git push", True),
                                ("env --chdir=/x git push", True), ("env -iC/tmp git push", True), ("sudo -nC3 git push", False),
                                ("sudo -nuDavid git push", False), ("env -iv git push", False), ("sudo -nE git push", False),
                                ("env -P/opt/homebrew/Cellar/x git push", False), ("env -S-C/tmp git push", True),

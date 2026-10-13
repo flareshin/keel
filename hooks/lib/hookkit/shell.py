@@ -35,7 +35,8 @@ TIMEOUT_VALUE_OPTIONS = {"-k", "-s", "--kill-after", "--signal"}
 # Not -D/--chdir, -R/--chroot or -i/--login: they move the command out of the call's directory, so they stay
 # unattributable options, read as SUDO_MOVING_OPTIONS.
 SUDO_MOVING_OPTIONS = {"-D", "--chdir", "-R", "--chroot", "-i", "--login"}
-ENV_MOVING_OPTIONS, ENV_VALUE_OPTIONS = {"-C", "--chdir"}, {"-u", "-P", "-S"}  # -P: BSD env's search path
+ENV_UNSET_OPTION = "-u"
+ENV_MOVING_OPTIONS, ENV_VALUE_OPTIONS = {"-C", "--chdir"}, {ENV_UNSET_OPTION, "-P", "-S"}  # -P: BSD env's search path
 SUDO_FLAGS = {"-A", "-b", "-E", "-H", "-k", "-n", "-P", "-S", "-s", "--askpass", "--background", "--preserve-env",
               "--set-home", "--reset-timestamp", "--non-interactive", "--preserve-groups", "--stdin", "--shell"}
 SUDO_VALUE_OPTIONS = {"-C", "-g", "-h", "-p", "-r", "-T", "-t", "-U", "-u", "--close-from", "--group", "--host",
@@ -572,10 +573,10 @@ def _env_command(invocation: Invocation, args: list) -> list:
             invocation.clears_env = True
             invocation.assignments = []
             args = args[1:]
-        elif word == "-u" and len(args) > 1:
+        elif word == ENV_UNSET_OPTION and len(args) > 1:
             invocation.removed_names.add(args[1])
             args = args[2:]
-        elif word.startswith("-u") and len(word) > 2:
+        elif word.startswith(ENV_UNSET_OPTION) and len(word) > 2:
             invocation.removed_names.add(word[2:])
             args = args[1:]
         elif word == "--":

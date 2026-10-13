@@ -37,6 +37,9 @@ timeout -s KILL 60 git push origin feature	gate	timeout wrapper with options
 sudo -E git push origin feature	gate	sudo wrapper with options
 sudo -uroot git push origin feature	gate	sudo's user option with its value attached
 timeout -sKILL -k5 60 git push origin feature	gate	timeout's options with their values attached
+exec -agit-push git origin feature	gate	exec -a names git's push program as git's argv[0]
+exec -a git-push git origin feature	gate	exec -a names git's push program, value spaced
+A=git-push; exec -a "$A" git origin feature	deny	exec -a names git's argv[0] at run time
 eval 'git push origin feature'	gate	eval string
 bash -c 'git push origin feature'	gate	inline shell
 bash <<'EOF'\ngit push origin feature\nEOF	gate	heredoc fed to a shell
@@ -57,6 +60,7 @@ xargs git push origin feature < /dev/null	deny	bare xargs wrapper
 xargs -0 git push origin feature < /dev/null	deny	xargs wrapper with options
 env --chdir={tmp} git push origin feature	deny	env option the gate does not read
 sudo --chdir /tmp git push origin feature	deny	a sudo option whose value the parser takes for the program
+sudo --chdir=/tmp git push origin feature	deny	sudo's directory option with its value attached
 sudo -D /tmp git push origin feature	deny	sudo's short directory option
 exec -la foo git push origin feature	deny	exec's clustered -a takes a value the parser does not skip
 env --chdir=$D true; echo push	deny	a forwarder's own run-time option in a call that spells push

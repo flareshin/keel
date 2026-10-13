@@ -493,41 +493,51 @@ def _drop_one_wrapper(invocation: Invocation) -> None:
 
 
 def _command_after_options(invocation: Invocation, args: list, flags: set, value_options: set) -> list:
-    return _flags_and_command(invocation, args, flags, value_options)[1]
+    return _options_and_command(invocation, args, flags, value_options)[1]
 
 
-def _flags_and_command(invocation: Invocation, args: list, flags: set, value_options: set) -> tuple:
-    """The `flags` a wrapper puts before its command, and `args` after its options. An option outside `flags` and
-    `value_options` (a cluster such as `-iu` included) is read past as a flag and recorded as unattributable."""
-    flags_read = []
+def _options_and_command(invocation: Invocation, args: list, flags: set, value_options: set) -> tuple:
+    """The known options a wrapper puts before its command, as {option: value, or None for a flag}, and `args` after
+    them. An option outside `flags` and `value_options` (a cluster such as `-iu` included) is read past as a flag and
+    recorded as unattributable."""
+    options = {}
     while args and args[0].startswith("-"):
         word = args[0]
         if word == "--":
-            return flags_read, args[1:]
+            return options, args[1:]
         if word in value_options:
+            options[word] = args[1] if len(args) > 1 else ""
             args = args[2:]
             continue
-        if word in flags:
-            flags_read.append(word)
-        elif not _carries_its_value(word, flags, value_options):
+        known = _known_option(word, flags, value_options)
+        if known:
+            options[known[0]] = known[1]
+        else:
             invocation.unattributable_options.append(word)
         args = args[1:]
-    return flags_read, args
+    return options, args
 
 
-def _carries_its_value(word: str, flags: set, value_options: set) -> bool:
-    """A known option with its value attached: `--user=bob`, `--preserve-env=PATH`, `-ubob`."""
+def _known_option(word: str, flags: set, value_options: set) -> tuple | None:
+    """(option, value) for a flag or a known option with its value attached (`--user=bob`, `--preserve-env=PATH`,
+    `-ubob`); None for any other word."""
+    if word in flags:
+        return word, None
     if word.startswith("--"):
-        name, has_value, _ = word.partition("=")
-        return bool(has_value) and name in flags | value_options
-    return word[:2] in value_options
+        name, has_value, value = word.partition("=")
+        return (name, value) if has_value and name in flags | value_options else None
+    return (word[:2], word[2:]) if word[:2] in value_options else None
 
 
 def _exec_command(invocation: Invocation, args: list) -> list:
-    flags_read, command = _flags_and_command(invocation, args, EXEC_FLAGS, EXEC_VALUE_OPTIONS)
-    if "-c" in flags_read:
+    options, command = _options_and_command(invocation, args, EXEC_FLAGS, EXEC_VALUE_OPTIONS)
+    if "-c" in options:
         invocation.clears_env = True
         invocation.assignments = []
+    argv0 = options.get("-a", "")
+    names_a_subcommand = dashed_git_subcommand(argv0) or RUN_TIME_WORD_RE.search(argv0)
+    if command and os.path.basename(command[0]) == "git" and names_a_subcommand:
+        return [argv0] + command[1:]  # git runs the subcommand its argv[0] names: `exec -a git-push git …`
     return command
 
 

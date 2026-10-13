@@ -151,7 +151,7 @@ class CommandParsingTest(unittest.TestCase):
             with self.subTest(name=name):
                 action = self.actions(name + " --no-such-option git push origin feature")[0]
                 self.assertIsInstance(action, self.hook.Unattributable)
-                self.assertIn("wraps it", action.why)
+                self.assertIn("`%s` wraps it" % name, action.why)
 
     def test_wrapperWithAnOptionTheParserDoesNotRead_isUnattributable_whenItRunsGitAShellOrARunTimeName(self):
         for command in ("sudo --chdir /tmp git push origin feature", "sudo -D /tmp git push origin feature",

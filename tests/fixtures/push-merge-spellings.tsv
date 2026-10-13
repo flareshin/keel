@@ -218,6 +218,7 @@ gh api --jq .object.sha "$E"	pass	a long value option before a run-time endpoint
 gh api -H 'Accept: application/json' "$E"	pass	a header before a run-time endpoint read
 gh api -H"$H" repos/acme/app/pulls/7	pass	a run-time header value attached to its option
 gh api --jq="$J" repos/acme/app/pulls/7	pass	a run-time jq filter attached to its long option
+gh api -H"$H" "$E"	pass	a run-time header value on a read from a run-time endpoint
 T=x; gh api -f title="$T" -X POST repos/acme/app/issues	pass	a run-time body value before a literal non-branch endpoint
 GH=gh; $GH api repos/acme/app/pulls/7	pass	a run-time gh reading through gh api
 keel="${KEEL_DATA_DIR:-$HOME/.claude}/bin/keel"; python3 "$keel" test -- ./mvnw test -Dtest='*Merge*'	pass	the overlay's keel test step through python3, test names holding merge

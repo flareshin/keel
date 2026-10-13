@@ -263,19 +263,38 @@ class UnwrapTest(unittest.TestCase):
     def test_unwrap_leavesLookup_whenCommandDashV(self):
         self.assertEqual(["command", "-v", "mvn"], unwrap(parse_commands("command -v mvn")[0]).argv)
 
-    def test_unwrap_keepsTheWrapper_whenItMeetsAnOptionItDoesNotRead(self):
-        for command in ("sudo --chdir /tmp git push", "sudo -D /tmp git push", "sudo -iu bob git push",
-                        "exec -la foo git push", "env --chdir=/x git push", "timeout --bogus 5 git push",
-                        "nice --bogus git push", "nohup --bogus git push", "time -v git push", "command -x git"):
+    def test_unwrap_readsPastAnOptionItDoesNotRead_andRecordsIt(self):
+        for command, argv, unread in (("sudo -i git push", ["git", "push"], ["-i"]),
+                                      ("sudo -nE git push", ["git", "push"], ["-nE"]),
+                                      ("sudo --chdir /tmp git push", ["/tmp", "git", "push"], ["--chdir"]),
+                                      ("sudo -iu bob git push", ["bob", "git", "push"], ["-iu"]),
+                                      ("exec -la foo git push", ["foo", "git", "push"], ["-la"]),
+                                      ("env --chdir=/x A=1 git push", ["git", "push"], ["--chdir=/x"]),
+                                      ("timeout --bogus 5 git push", ["git", "push"], ["--bogus"]),
+                                      ("nice --bogus git push", ["git", "push"], ["--bogus"]),
+                                      ("nohup --bogus git push", ["git", "push"], ["--bogus"]),
+                                      ("time -v git push", ["git", "push"], ["-v"]),
+                                      ("sudo -i env -S x git push", ["x", "git", "push"], ["-i", "-S"])):
             with self.subTest(command=command):
-                self.assertEqual(parse_commands(command)[0].argv, unwrap(parse_commands(command)[0]).argv)
+                invocation = unwrap(parse_commands(command)[0])
+                self.assertEqual((argv, unread), (invocation.argv, invocation.unattributable_options))
+
+    def test_steps_carryTheOptionsTheParserReadPast(self):
+        sudo, git = steps("sudo -i git push; git status", "/work")
+        self.assertEqual((["-i"], []), (sudo.unattributable_options, git.unattributable_options))
+
+    def test_steps_dropTheExportedEnvironment_onlyWhenExecClearsIt(self):
+        _, cleared = steps("export A=1; exec -c git push", "/work")
+        _, kept = steps("export A=1; exec -l git push", "/work")
+        self.assertEqual(({}, {"A": "1"}), (cleared.environment, kept.environment))
 
     def test_unwrap_readsTheOptionsItKnows_beforeTheCommand(self):
         for command in ("sudo -E -u bob git push", "sudo --user=bob -- git push", "nice -n 5 git push",
                         "nice -5 git push", "exec -a name git push", "timeout --preserve-status -s TERM 30s git push",
                         "env -i -u HOME A=1 git push", "command -p git push", "time -p git push"):
             with self.subTest(command=command):
-                self.assertEqual(["git", "push"], unwrap(parse_commands(command)[0]).argv)
+                invocation = unwrap(parse_commands(command)[0])
+                self.assertEqual((["git", "push"], []), (invocation.argv, invocation.unattributable_options))
 
     def test_unwrap_readsGitsOwnDashedProgram_asGitAndItsSubcommand(self):
         for command, argv in (("/usr/libexec/git-core/git-push origin x", ["git", "push", "origin", "x"]),
@@ -299,6 +318,10 @@ class WriteTargetsTest(unittest.TestCase):
         targets = write_targets(parse_commands("mv a b dest/")[0])
         self.assertEqual(["dest/", "dest/a", "dest/b"], targets.written)
         self.assertEqual(["a", "b"], targets.removed)
+
+    def test_writeTargets_namesTheFile_whenAWrapperCarriesAnOptionTheParserDoesNotRead(self):
+        self.assertEqual(["/live/x.txt"], write_targets(parse_commands("sudo -nE tee /live/x.txt")[0]).written)
+        self.assertIn("/live/README.md", write_targets(parse_commands("sudo -i sed -i s/a/b/ /live/README.md")[0]).written)
 
     def test_writeTargets_namesSources_whenCopy(self):
         targets = write_targets(parse_commands("cp -r a b dest/")[0])

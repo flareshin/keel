@@ -58,8 +58,11 @@ sudo -D /tmp git push origin feature	deny	sudo's short directory option
 exec -la foo git push origin feature	deny	exec's clustered -a takes a value the parser does not skip
 env --chdir=$D true; echo push	deny	a forwarder's own run-time option in a call that spells push
 sudo -iu git git push origin feature	deny	a sudo option cluster the parser does not read, its value named git
-sudo --chdir /tmp sh -c 'git push origin feature'	deny	a kept sudo running a shell
-exec -la foo $GIT push origin feature	deny	a kept exec running a run-time program
+sudo --chdir /tmp sh -c 'git push origin feature'	deny	sudo's unattributable option before a shell
+exec -la foo $GIT push origin feature	deny	exec's unread cluster before a run-time program
+sudo -i git push origin feature	deny	sudo -i runs the push in the target user's home
+sudo -nE git push origin feature	deny	a sudo flag cluster the parser reads past
+timeout --bogus 60 git push origin feature	deny	an unread timeout option, so the duration is a guess
 xargs git-push origin feature < /dev/null	deny	xargs runs git's dashed push program
 xargs $CORE/git-push origin feature < /dev/null	deny	xargs runs a dashed push program at a run-time path
 R=acme/app; echo x | xargs gh api -X PATCH repos/$R/git/refs/heads/main -f sha={head}	deny	xargs runs a ref write whose repo is a variable

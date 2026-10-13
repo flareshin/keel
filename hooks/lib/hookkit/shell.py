@@ -32,8 +32,8 @@ EXEC_FLAGS, EXEC_VALUE_OPTIONS = {"-c", "-l"}, {"-a"}
 NICE_VALUE_OPTIONS = {"-n", "--adjustment"}
 TIMEOUT_FLAGS = {"--preserve-status", "--foreground", "-v", "--verbose"}
 TIMEOUT_VALUE_OPTIONS = {"-k", "-s", "--kill-after", "--signal"}
-# Not -D/--chdir, -R/--chroot or -i/--login: they move the command out of the call's directory, so a sudo that
-# carries one stays a wrapper the hooks cannot attribute.
+# Not -D/--chdir, -R/--chroot or -i/--login: they move the command out of the call's directory, so they stay
+# unattributable options.
 SUDO_FLAGS = {"-A", "-b", "-E", "-H", "-k", "-n", "-P", "-S", "-s", "--askpass", "--background", "--preserve-env",
               "--set-home", "--reset-timestamp", "--non-interactive", "--preserve-groups", "--stdin", "--shell"}
 SUDO_VALUE_OPTIONS = {"-C", "-g", "-h", "-p", "-r", "-T", "-t", "-U", "-u", "--close-from", "--group", "--host",
@@ -103,6 +103,7 @@ class Step(_Named):
     directory: str
     command: SimpleCommand
     expansion: dict = field(default_factory=dict)  # shell variables bash expands this command's words with
+    unattributable_options: list = field(default_factory=list)  # see Invocation
 
     @property
     def heredocs(self) -> list:
@@ -117,6 +118,9 @@ class Invocation(_Named):
     assignments: list
     clears_env: bool = False
     removed_names: set = field(default_factory=set)
+    # Wrapper options read past as flags: unknown ones, and sudo's -D, -R and -i, which run the command elsewhere.
+    # With any, argv and the directory are a best guess.
+    unattributable_options: list = field(default_factory=list)
 
     def drops_inherited(self, variable: str) -> bool:
         return self.clears_env or variable in self.removed_names
@@ -171,7 +175,8 @@ def steps(text: str, cwd: str) -> list:
         invocation = unwrap(command)
         environment = {} if invocation.clears_env else dict(scope.exported)
         environment.update(invocation.assignments)
-        step_of[id(command)] = Step(invocation.argv, environment, scope.directory, command, scope.expansion())
+        step_of[id(command)] = Step(invocation.argv, environment, scope.directory, command, scope.expansion(),
+                                    invocation.unattributable_options)
         scope.follow(invocation)
     return list(step_of.values())
 
@@ -461,99 +466,83 @@ def _edits_in_place(args: list) -> bool:
 
 
 def _drop_one_wrapper(invocation: Invocation) -> None:
-    """Lay bare the command one wrapper runs; a wrapper carrying an option the parser does not read stays as it is."""
     name = invocation.name
     rest = invocation.argv[1:]
-    command = None
     if name == "time":
-        command = _command_after_options(rest, TIME_FLAGS, set())
+        invocation.argv = _command_after_options(invocation, rest, TIME_FLAGS, set())
     elif name == "nohup":
-        command = _command_after_options(rest, set(), set())
+        invocation.argv = _command_after_options(invocation, rest, set(), set())
     elif name == "command" and not (rest and rest[0] in {"-v", "-V"}):
-        command = _command_after_options(rest, COMMAND_FLAGS, set())
+        invocation.argv = _command_after_options(invocation, rest, COMMAND_FLAGS, set())
     elif name == "exec":
-        command = _exec_command(invocation, rest)
+        invocation.argv = _exec_command(invocation, rest)
     elif name == "nice":
-        command = _nice_command(rest)
+        invocation.argv = _nice_command(invocation, rest)
     elif name == "env":
-        command = _env_command(invocation, rest)
+        invocation.argv = _env_command(invocation, rest)
     elif name in {"timeout", "gtimeout"}:
-        command = _timeout_command(rest)
+        invocation.argv = _command_after_options(invocation, rest, TIMEOUT_FLAGS, TIMEOUT_VALUE_OPTIONS)[1:]  # then the duration
     elif name == "sudo":
-        command = _command_after_options(rest, SUDO_FLAGS, SUDO_VALUE_OPTIONS)
-        invocation.clears_env = invocation.clears_env or command is not None
-    if command is not None:
-        invocation.argv = command
+        invocation.clears_env = True
+        invocation.argv = _command_after_options(invocation, rest, SUDO_FLAGS, SUDO_VALUE_OPTIONS)
 
 
-def _command_after_options(args: list, flags: set, value_options: set) -> list | None:
-    """`args` after the options a wrapper puts before its command; None at an option outside `flags` and
-    `value_options` (a cluster such as `-iu` included), so the caller keeps the wrapper rather than guess."""
+def _command_after_options(invocation: Invocation, args: list, flags: set, value_options: set) -> list:
+    """`args` after the options a wrapper puts before its command. An option outside `flags` and `value_options`
+    (a cluster such as `-iu` included) is read past as a flag and recorded as unattributable."""
     while args and args[0].startswith("-") and args[0] != "-":
         word = args[0]
         name, has_value, _ = word.partition("=")
         if word == "--":
             return args[1:]
-        if word in flags:
-            args = args[1:]
-        elif word in value_options:
+        if word in value_options:
             args = args[2:]
-        elif has_value and name.startswith("--") and name in value_options:
-            args = args[1:]
-        else:
-            return None
+            continue
+        if word not in flags and not (has_value and name.startswith("--") and name in value_options):
+            invocation.unattributable_options.append(word)
+        args = args[1:]
     return args
 
 
-def _exec_command(invocation: Invocation, args: list) -> list | None:
-    command = _command_after_options(args, EXEC_FLAGS, EXEC_VALUE_OPTIONS)
-    if command is not None and "-c" in args[:len(args) - len(command)]:
+def _exec_command(invocation: Invocation, args: list) -> list:
+    command = _command_after_options(invocation, args, EXEC_FLAGS, EXEC_VALUE_OPTIONS)
+    if "-c" in args[:len(args) - len(command)]:
         invocation.clears_env = True
         invocation.assignments = []
     return command
 
 
-def _nice_command(args: list) -> list | None:
+def _nice_command(invocation: Invocation, args: list) -> list:
     if args and re.fullmatch(r"--?\d+", args[0]):
         return args[1:]
-    return _command_after_options(args, set(), NICE_VALUE_OPTIONS)
+    return _command_after_options(invocation, args, set(), NICE_VALUE_OPTIONS)
 
 
-def _timeout_command(args: list) -> list | None:
-    after_options = _command_after_options(args, TIMEOUT_FLAGS, TIMEOUT_VALUE_OPTIONS)
-    return None if after_options is None else after_options[1:]  # then the duration
-
-
-def _env_command(invocation: Invocation, args: list) -> list | None:
-    """env's command after its assignments and the options the parser reads; None at any other option
-    (`--chdir`, `-S`), leaving the invocation untouched."""
-    clears, assignments, removed = False, [], set()
+def _env_command(invocation: Invocation, args: list) -> list:
+    """env's command after its assignments and options; one it does not read (`--chdir`, `-S`) is read past as a flag
+    and recorded as unattributable."""
     while args:
         word = args[0]
         if word in {"-i", "-", "--ignore-environment"}:
-            clears, assignments = True, []
+            invocation.clears_env = True
+            invocation.assignments = []
             args = args[1:]
         elif word == "-u" and len(args) > 1:
-            removed.add(args[1])
+            invocation.removed_names.add(args[1])
             args = args[2:]
         elif word.startswith("-u") and len(word) > 2:
-            removed.add(word[2:])
+            invocation.removed_names.add(word[2:])
             args = args[1:]
         elif word == "--":
-            args = args[1:]
-            break
+            return args[1:]
         elif word.startswith("-"):
-            return None
+            invocation.unattributable_options.append(word)
+            args = args[1:]
         elif "=" in word and IDENTIFIER_RE.match(word.split("=", 1)[0]):
-            assignments.append(tuple(word.split("=", 1)))
+            invocation.assignments.append(tuple(word.split("=", 1)))
             args = args[1:]
         else:
             break
-    if clears:
-        invocation.clears_env = True
-        invocation.assignments = []
-    invocation.assignments.extend(assignments)
-    invocation.removed_names |= removed
     return args
 
 

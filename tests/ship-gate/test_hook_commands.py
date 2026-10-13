@@ -146,20 +146,23 @@ class CommandParsingTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual(self.actions(command), [])
 
-    def test_argvForwarders_stayFirst_whenTheParserMeetsAnOptionItDoesNotRead(self):
+    def test_everyArgvForwarder_isUnattributable_whenItCarriesAnOptionTheParserDoesNotRead(self):
         for name in sorted(self.hook.ARGV_FORWARDERS):
             with self.subTest(name=name):
-                argv = self.shell.unwrap(self.shell.parse_commands(name + " --no-such-option git status")[0]).argv
-                self.assertEqual(name, argv[0])
+                action = self.actions(name + " --no-such-option git push origin feature")[0]
+                self.assertIsInstance(action, self.hook.Unattributable)
+                self.assertIn("wraps it", action.why)
 
-    def test_wrapperTheParserKeeps_isUnattributable_whenItRunsGitAShellOrARunTimeName(self):
+    def test_wrapperWithAnOptionTheParserDoesNotRead_isUnattributable_whenItRunsGitAShellOrARunTimeName(self):
         for command in ("sudo --chdir /tmp git push origin feature", "sudo -D /tmp git push origin feature",
                         "sudo -iu bob git push origin feature", "exec -la foo git push origin feature",
                         "sudo -iu git git push origin feature", "sudo --chdir /srv/git git push origin feature",
                         "sudo -D /srv/gh gh pr merge 7 --squash", "exec -la foo $GIT push origin feature",
-                        "exec -la git sh -c 'git push origin feature'", "sudo --chdir /tmp sh -c 'git push origin feature'"):
+                        "exec -la git sh -c 'git push origin feature'", "sudo --chdir /tmp sh -c 'git push origin feature'",
+                        "sudo -i git push origin feature", "sudo -nE git push origin feature",
+                        "env --chdir=/tmp git push origin feature"):
             with self.subTest(command=command):
-                action, = self.actions(command)
+                action = self.actions(command)[0]
                 self.assertIsInstance(action, self.hook.Unattributable)
                 self.assertIn("wraps it", action.why)
 

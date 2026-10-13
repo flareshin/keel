@@ -273,13 +273,13 @@ def actions_of(step: shell.Step, call: str = "", call_cwd: str = "") -> list:
     words, workdir = step.argv, step.directory
     if not words:
         return []
+    if _hides_push_or_merge(step, call):
+        return [_resolved_at_run_time(workdir, words, "`%s` wraps it" % os.path.basename(step.command.argv[0]), call, call_cwd)]
     program = os.path.basename(words[0])
     if program == "git":
         return _git_actions(step, call, call_cwd)
     if program == "gh":
         return _gh_actions(shell.gh_subcommand_argv(words), workdir, step.environment, call, call_cwd)
-    if _hides_push_or_merge(words, call):
-        return [_resolved_at_run_time(workdir, words, "`%s` wraps it" % os.path.basename(words[0]), call, call_cwd)]
     if RUNTIME_NAME.search(words[0]) and _runtime_name_may_push_or_merge(words, call):
         return [_resolved_at_run_time(workdir, words, "`%s` is resolved only at run time" % words[0], call, call_cwd)]
     return []
@@ -360,13 +360,14 @@ def _runtime_name_may_push_or_merge(words: List[str], call: str) -> bool:
     return _spells_push_or_merge(call) or bool(PUSH_OR_MERGE_WORDS.intersection(words[1:])) or gh_api_write
 
 
-def _hides_push_or_merge(words: List[str], call: str) -> bool:
-    """A forwarder the parser keeps because it cannot read past it (`xargs …`, or a wrapper with an option the
-    parser does not read such as `env --chdir=…` or `sudo -D …`), when the forwarded words name git, gh or a shell
-    (`git-push` too) or something resolved at run time, in a call that spells a push or merge anywhere."""
-    if os.path.basename(words[0]) not in ARGV_FORWARDERS or _only_looks_up(words):
+def _hides_push_or_merge(step: shell.Step, call: str) -> bool:
+    """A forwarder the parser keeps (`xargs …`), or a wrapper it read past an unattributable option of (`sudo -i`,
+    `env --chdir=…`), when the wrapped words name git, gh or a shell (`git-push` too) or something resolved at run
+    time, in a call that spells a push or merge anywhere."""
+    kept_forwarder = os.path.basename(step.argv[0]) in ARGV_FORWARDERS and not _only_looks_up(step.argv)
+    if not (kept_forwarder or step.unattributable_options):
         return False
-    forwarded = words[1:]
+    forwarded = step.command.argv[1:]
     runs_opaque = any(os.path.basename(word) in PROGRAMS_THAT_MAY_PUSH or shell.dashed_git_subcommand(word)
                       or RUNTIME_NAME.search(word) for word in forwarded)
     return runs_opaque and (_spells_push_or_merge(call) or bool(PUSH_OR_MERGE_WORDS.intersection(forwarded)))

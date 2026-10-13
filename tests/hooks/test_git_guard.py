@@ -177,6 +177,12 @@ class HookSkipTest(GitGuardTestCase):
     def test_push_passes_whenDashNIsADryRun(self):
         self.assertPassed(self.guard("git push -n origin main", cwd=self.repo))
 
+    def test_git_deniedWithFHookskip_whenSudoCarriesAnOptionTheParserDoesNotRead(self):
+        for command in ("sudo -i git commit --no-verify -m wip", "sudo -nE git commit --no-verify -m wip",
+                        "sudo --login git config core.hooksPath /dev/null"):
+            with self.subTest(command=command):
+                self.assertDenied(self.guard(command, cwd=self.repo), "F-hookskip")
+
     def test_git_denied_whenHooksPathOverriddenForTheCommand(self):
         self.assertDenied(self.guard("git -c core.hooksPath=/dev/null commit -m wip", cwd=self.repo), "F-hookskip")
 
@@ -763,6 +769,12 @@ class ForcePushTest(GitGuardTestCase):
 
     def test_push_denied_whenGitsOwnDashedPushProgramForces(self):
         self.assertDenied(self.guard("/usr/libexec/git-core/git-push --force origin feature", cwd=self.repo), "F-force-push")
+
+    def test_push_deniedWithFForcePush_whenSudoCarriesAnOptionTheParserDoesNotRead(self):
+        for command in ("sudo -i git push --force origin feature", "sudo -nE git push --force origin feature",
+                        "sudo --login git push --force origin feature", "sudo -nE bash -c 'git push --force origin feature'"):
+            with self.subTest(command=command):
+                self.assertDenied(self.guard(command, cwd=self.repo), "F-force-push")
 
     def test_push_denied_whenPlusRefspec(self):
         self.assertDenied(self.guard("git push origin +feature", cwd=self.repo), "F-force-push")

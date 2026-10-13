@@ -276,6 +276,9 @@ class CommandParsingTest(unittest.TestCase):
                         "gh api graphql -F \"$KV\"", "gh api graphql --raw-field=\"$KV\"", "gh api graphql -f\"$K=$V\"",
                         "gh api -H 'Accept: application/json' -X PATCH \"$E\" -f sha=abc",
                         "gh api -f sha=abc -X PATCH \"$E\"", "gh api --jq .sha repos/acme/app/$X -f base=main -f head=feature",
+                        "gh api graphql -F=\"$KV\"", "gh api graphql -if \"$KV\"", "gh api graphql $F",
+                        "gh api graphql \"${ARGS[@]}\"", "gh api -iX PATCH repos/acme/app/git/refs/heads/main -f sha=abc",
+                        "gh api -iXPATCH repos/acme/app/git/refs/heads/main",
                         mutation % "updateRefs", mutation % "createRef", mutation % "mergeBranch",
                         mutation % "enablePullRequestAutoMerge"):
             with self.subTest(command=command):
@@ -285,7 +288,8 @@ class CommandParsingTest(unittest.TestCase):
                         "gh api repos/acme/app/git/refs/heads/main --jq .object.sha",
                         "gh api -X HEAD repos/acme/app/git/refs/heads/main", "gh api -X get repos/acme/app/git/refs/heads/main",
                         "gh api \"$E\"", "gh api graphql -f query='query { viewer { login } }' -F owner=\"$O\"",
-                        "T=x; gh api -f title=\"$T\" -X POST repos/acme/app/issues"):
+                        "T=x; gh api -f title=\"$T\" -X POST repos/acme/app/issues",
+                        "gh api -i repos/acme/app/git/refs/heads/main", "gh api -X=GET repos/acme/app/git/refs -f per_page=1"):
             with self.subTest(command=command):
                 self.assertEqual(self.actions(command), [])
 

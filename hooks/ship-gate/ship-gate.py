@@ -312,52 +312,59 @@ def _gh_api_changes_a_branch(args: List[str]) -> bool:
 
 
 def _gh_api_hides_its_target(args: List[str]) -> bool:
-    """A writing `gh api` call whose endpoint or GraphQL query is resolved at run time (the query's text, or the name
-    of a field that may be `query`), so the gate cannot read what it changes."""
-    endpoint = _gh_api_endpoint(args) or ""
-    run_time_query = any(RUNTIME_NAME.search(arg.partition("query=")[2]) for arg in args if "query=" in arg)
-    run_time_field_name = any(RUNTIME_NAME.search(field.partition("=")[0]) for field in _gh_api_fields(args))
-    return bool(RUNTIME_NAME.search(endpoint) or run_time_query or run_time_field_name) and _gh_api_writes(args)
-
-
-def _gh_api_fields(args: List[str]) -> List[str]:
-    """The `name=value` fields a `gh api` call sends, as written after -f, -F, --field or --raw-field."""
-    fields = []
-    for index, arg in enumerate(args):
-        if arg in GH_API_FIELD_OPTIONS:
-            fields.append(args[index + 1] if index + 1 < len(args) else "")
-        elif arg.startswith(("--field=", "--raw-field=")):
-            fields.append(arg.partition("=")[2])
-        elif arg.startswith(("-f", "-F")):
-            fields.append(arg[2:])
-    return fields
-
-
-def _gh_api_endpoint(args: List[str]) -> Optional[str]:
-    """The endpoint `gh api` calls: its first argument that is neither an option nor an option's value."""
-    index = shell.first_operand_index(args, GH_API_VALUE_OPTIONS)
-    return None if index is None else args[index]
+    """A writing `gh api` call whose endpoint or GraphQL query is resolved at run time (the query's text, the name of
+    a field that may be `query`, or a word that may expand to options: `gh api graphql $F`), so the gate cannot read
+    what it changes."""
+    options, operands = _read_gh_api(args)
+    fields = [value.partition("=") for option, value in options if option in GH_API_FIELD_OPTIONS]
+    run_time_query = any(RUNTIME_NAME.search(name) or (name == "query" and RUNTIME_NAME.search(value))
+                         for name, _, value in fields)
+    run_time_word = any(RUNTIME_NAME.search(word) for word in operands)
+    return (run_time_query or run_time_word) and _gh_api_writes(args)
 
 
 def _gh_api_writes(args: List[str]) -> bool:
-    """gh api sends GET unless a method option names another method or a body option makes it POST."""
-    method = _gh_api_method(args)
-    if method is not None:
-        return method.upper() not in READ_METHODS
-    return any(arg.startswith(GH_API_BODY_OPTIONS) for arg in args)
+    """gh api sends GET unless the last method option names another method or a body option makes it POST; a word
+    after the endpoint resolved at run time may expand to either."""
+    options, operands = _read_gh_api(args)
+    if any(RUNTIME_NAME.search(word) for word in operands[1:]):
+        return True
+    methods = [value for option, value in options if option in GH_API_METHOD_OPTIONS]
+    if methods:
+        return methods[-1].upper() not in READ_METHODS
+    return any(option in GH_API_BODY_OPTIONS for option, _ in options)
 
 
-def _gh_api_method(args: List[str]) -> Optional[str]:
-    """The method the last `-X`/`--method` option names, as gh reads it; None when there is none."""
-    method = None
-    for index, arg in enumerate(args):
-        if arg in GH_API_METHOD_OPTIONS:
-            method = args[index + 1] if index + 1 < len(args) else ""
-        elif arg.startswith("--method="):
-            method = arg.split("=", 1)[1]
-        elif arg.startswith("-X"):
-            method = arg[2:]
-    return method
+def _read_gh_api(args: List[str]) -> tuple:
+    """The options of a `gh api` call as (option, value), "" for a flag, and its other words, read the way gh's flag
+    parser reads them: `-XPATCH`, `-X=PATCH`, `--method=PATCH`, a cluster after `-i` (`-iX PATCH`)."""
+    options, operands = [], []
+    words = iter(args)
+    for word in words:
+        if word == "--":
+            operands.extend(words)
+        elif word.startswith("--"):
+            option, has_value, value = word.partition("=")
+            takes_next = not has_value and option in GH_API_VALUE_OPTIONS
+            options.append((option, next(words, "") if takes_next else value))
+        elif word.startswith("-") and word != "-":
+            options.extend(_read_gh_api_cluster(word[1:], words))
+        else:
+            operands.append(word)
+    return options, operands
+
+
+def _read_gh_api_cluster(letters: str, words) -> list:
+    """Each letter of `-iX…` is a flag until one that takes a value: the rest of the cluster after an optional `=`,
+    else the next word."""
+    options = []
+    while letters:
+        option, letters = "-" + letters[0], letters[1:]
+        if option in GH_API_VALUE_OPTIONS:
+            options.append((option, letters[1:] if letters.startswith("=") else (letters or next(words, ""))))
+            break
+        options.append((option, ""))
+    return options
 
 
 def _runtime_name_may_push_or_merge(words: List[str], call: str) -> bool:

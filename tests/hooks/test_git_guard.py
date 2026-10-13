@@ -792,7 +792,8 @@ class ForcePushTest(GitGuardTestCase):
     def test_git_deniedWithItsFloor_whenSudoRunsItInAnotherDirectoryOrRoot(self):
         for command, floor in (("sudo -D /tmp git push --force origin feature", "F-force-push"),
                                ("sudo --chdir /tmp git push --force origin feature", "F-force-push"),
-                               ("sudo --chroot /srv git commit --no-verify -m wip", "F-hookskip")):
+                               ("sudo --chroot /srv git commit --no-verify -m wip", "F-hookskip"),
+                               ("sudo -D git git push --force origin feature", "F-force-push")):
             with self.subTest(command=command):
                 self.assertDenied(self.guard(command, cwd=self.repo), floor)
 

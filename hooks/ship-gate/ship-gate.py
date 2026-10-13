@@ -238,7 +238,7 @@ def guard_bash(payload: dict, report: Report) -> None:
     if not DECISION_HINT.search(command):
         return
     cwd = payload.get("cwd") or os.getcwd()
-    actions = [action for step in shell.steps(command, cwd) for action in actions_of(step, command, cwd)]
+    actions = call_actions(command, cwd)
     for action in actions:
         judge_action(action, report)
     if any(isinstance(action, (Push, Merge)) for action in actions):
@@ -264,6 +264,29 @@ def _spells_push_or_merge(call: str) -> bool:
 def _unquoted(command: str) -> str:
     """Quote characters removed, so `pu''sh` and `"push"` still read as push."""
     return QUOTING.sub("", command)
+
+
+def call_actions(call: str, cwd: str) -> list:
+    """Every step's actions, except those of a script whose runner is already unattributable: the runner's deny covers
+    the call, and the script may run elsewhere (`sudo -D /tmp sh -c 'git push'`)."""
+    actions, unattributable = [], set()
+    for step in shell.steps(call, cwd):
+        if _runs_under(step.command, unattributable):
+            continue
+        step_actions = actions_of(step, call, cwd)
+        if any(isinstance(action, Unattributable) for action in step_actions):
+            unattributable.add(id(step.command))
+        actions += step_actions
+    return actions
+
+
+def _runs_under(command: shell.SimpleCommand, runner_ids: set) -> bool:
+    parent = command.parent
+    while parent is not None:
+        if id(parent) in runner_ids:
+            return True
+        parent = parent.parent
+    return False
 
 
 def actions_of(step: shell.Step, call: str = "", call_cwd: str = "") -> list:
@@ -383,7 +406,7 @@ def _hides_push_or_merge(step: shell.Step, call: str) -> bool:
     kept_forwarder = os.path.basename(step.argv[0]) in ARGV_FORWARDERS and not _only_looks_up(step.argv)
     if not (kept_forwarder or step.unattributable_options):
         return False
-    forwarded = step.command.argv[1:] + step.argv[:1]  # the program itself too, for a script a wrapper runs
+    forwarded = step.command.argv[1:]
     runs_opaque = any(os.path.basename(word) in PROGRAMS_THAT_MAY_PUSH or shell.dashed_git_subcommand(word)
                       or RUNTIME_NAME.search(word) for word in forwarded)
     return runs_opaque and (_spells_push_or_merge(call) or bool(PUSH_OR_MERGE_WORDS.intersection(forwarded)))

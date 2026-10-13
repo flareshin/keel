@@ -33,7 +33,7 @@ NICE_VALUE_OPTIONS = {"-n", "--adjustment"}
 TIMEOUT_FLAGS = {"--preserve-status", "--foreground", "-v", "--verbose"}
 TIMEOUT_VALUE_OPTIONS = {"-k", "-s", "--kill-after", "--signal"}
 # Not -D/--chdir, -R/--chroot or -i/--login: they move the command out of the call's directory, so they stay
-# unattributable options, read as SUDO_MOVING_OPTIONS.
+# unattributable options; -D/-R still skip their directory value.
 SUDO_DIRECTORY_OPTIONS = {"-D", "--chdir", "-R", "--chroot"}  # each takes the directory as its value
 SUDO_MOVING_OPTIONS = SUDO_DIRECTORY_OPTIONS | {"-i", "--login"}
 ENV_UNSET_OPTION = "-u"
@@ -123,8 +123,8 @@ class Invocation(_Named):
     assignments: list
     clears_env: bool = False
     removed_names: set = field(default_factory=set)
-    # Wrapper options read past as flags: unknown ones, sudo's -D, -R and -i, and exec's -a naming a git program or
-    # a run-time word. With any, argv and the directory are a best guess.
+    # Wrapper options recorded as read past: unknown ones, sudo's -D, -R (with their directory) and -i, and exec's -a
+    # naming a git program or a run-time word. With any, argv and the directory are a best guess.
     unattributable_options: list = field(default_factory=list)
     moves_directory: bool = False  # one of them runs the command elsewhere: `sudo -i`, `env --chdir=…`
 
@@ -181,9 +181,8 @@ def steps(text: str, cwd: str) -> list:
         invocation = unwrap(command)
         environment = {} if invocation.clears_env else dict(scope.exported)
         environment.update(invocation.assignments)
-        inherited = [] if script is None else step_of[script].unattributable_options  # its runner's best guess
         step_of[id(command)] = Step(invocation.argv, environment, scope.directory, command, scope.expansion(),
-                                    inherited + invocation.unattributable_options)
+                                    invocation.unattributable_options)
         scope.follow(invocation)
     return list(step_of.values())
 

@@ -132,7 +132,7 @@ class PassTest(EnvPreflightTestCase):
         self.assertEqual([], self.sandbox.fires())
 
     def test_mvn_passesWithoutFire_whenAWrapperRunsItInADirectoryTheHookCannotRead(self):
-        for command in ("env --chdir=/tmp mvn test", "env -C/tmp mvn test", "env -iC/tmp mvn test", "sudo -i mvn test",
+        for command in ("sudo -D /tmp mvn test", "sudo --chdir /tmp mvn test", "env --chdir=/tmp mvn test", "env -C/tmp mvn test", "env -iC/tmp mvn test", "sudo -i mvn test",
                         "sudo --login mvn test", "sudo --chdir=/tmp mvn test", "sudo -nD/tmp mvn test", "sudo -R/srv mvn test",
                         "sudo --chroot=/srv mvn test", "env -S'-C /tmp' mvn test", "env -SX=1 mvn test", "env -S -i mvn test",
                         "env --split-string=X=1 mvn test"):

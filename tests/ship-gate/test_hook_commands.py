@@ -32,7 +32,7 @@ class CommandParsingTest(unittest.TestCase):
         cls.shell = cls.hook.shell
 
     def actions(self, command: str, cwd: str = "/work"):
-        return [action for step in self.shell.steps(command, cwd) for action in self.hook.actions_of(step, command)]
+        return self.hook.call_actions(command, cwd)
 
     def test_parsePush_readsRefspecs_whenSeveralRefspecsGiven(self):
         push, = self.actions("git push origin feature:refs/heads/feature +hotfix")
@@ -156,9 +156,8 @@ class CommandParsingTest(unittest.TestCase):
     def test_scriptAWrapperRunsElsewhere_isUnattributable_notAPushFromTheCallsDirectory(self):
         for command in ("sudo --chdir /tmp sh -c 'git push origin feature'", "sudo -D /tmp bash -c 'gh pr merge 7'"):
             with self.subTest(command=command):
-                actions = self.actions(command)
-                self.assertTrue(actions)
-                self.assertTrue(all(isinstance(action, self.hook.Unattributable) for action in actions), actions)
+                action, = self.actions(command)
+                self.assertIsInstance(action, self.hook.Unattributable)
 
     def test_wrapperWithAnOptionTheParserDoesNotRead_isUnattributable_whenItRunsGitAShellOrARunTimeName(self):
         for command in ("sudo --chdir /tmp git push origin feature", "sudo -D /tmp git push origin feature",

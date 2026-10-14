@@ -1,5 +1,6 @@
 # Train cases: id, kind (ambiguous | clear-change | clear-answer), expect (an identifier only a correct answer contains; - otherwise), prompt.
 # Split by tab; prompts are one line each and keep their quotes verbatim. Holdout cases live in holdout.tsv; never paste them here.
+# Grading sees only ask-or-act, never the brief's slots: d1 and d2 guard the fire boundary for the Depth slot, not its content.
 id	kind	expect	prompt
 a2	ambiguous	-	Clean up the vendor report stuff, you know what I mean.
 a3	ambiguous	-	Fix the failing test in the PR we just opened.

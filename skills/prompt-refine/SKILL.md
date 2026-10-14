@@ -23,6 +23,7 @@ Implements K4 (ask when ambiguous; act when clear): an unclear request becomes a
    | Target | Which repo, path, screen, ticket or data |
    | Deliverable | Code diff, report, ticket, answer, config |
    | Scope / Not doing | What is in, what is explicitly out |
+   | Depth | Analysis, report or diagnosis only: which source (raw or digested) and which method the work rests on |
    | Done when | The check that proves it: tests, command output, a screen |
    | Constraints | Environment (dev or prod), deadline, approval gates |
 
@@ -35,6 +36,7 @@ Implements K4 (ask when ambiguous; act when clear): an unclear request becomes a
    Target      : …
    Deliverable : …
    Scope       : …   Not doing: …
+   Depth       : … (source → method; analysis, report or diagnosis only)
    Done when   : …
    Assumptions : … (each one the user can veto)
    ```
@@ -48,3 +50,4 @@ Implements K4 (ask when ambiguous; act when clear): an unclear request becomes a
 - [K4] Talk to the user in their language; the brief headings stay as above.
 - [K4] Push back in the brief when a simpler reading reaches the same goal.
 - [K4] A creative or feature request with diverging directions gets 2–3 short drafts as the options instead of abstract questions.
+- [K4] Fill Depth only for an analysis, report or diagnosis deliverable, from lookup first; ask only when two sources or methods lead to different work. A code-diff deliverable never gets a Depth slot.

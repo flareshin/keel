@@ -6,3 +6,5 @@ a3	ambiguous	-	Fix the failing test in the PR we just opened.
 c1	clear-change	-	Rename getUserList to findActiveUsers in src/user/UserService.java and update its two callers.
 c2	clear-answer	grandTotalCents	What does the useCart hook in src/hooks/useCart.ts return?
 c4	clear-answer	4317	Which port does the dev server listen on when I run npm run dev?
+d1	ambiguous	-	Our numbers have looked off lately, can you analyze what is going on?
+d2	clear-change	-	In src/screens/DashboardScreen.tsx, leave orders whose status is "cancelled" out of the revenue total.

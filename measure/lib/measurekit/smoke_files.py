@@ -28,7 +28,7 @@ LINKED_DIRS = ("skills", "commands", "agents", "workflows", "bin", "mcp")
 REPO_RULES_HEADER = ("origin_glob", "action", "pattern", "rule_id", "message")
 LINK_CHECK_TIMEOUT_SECONDS = 60
 # What bin/link's plan reports for any valid checkout when KEEL_DATA_DIR is empty (lib/link/plan.py).
-EMPTY_DATA_DIR_KINDS = frozenset({"link-missing", "settings-drift"})
+EMPTY_DATA_DIR_KINDS = frozenset({"link-missing", "copy-missing", "settings-drift"})
 EMPTY_DATA_DIR_CLAUDE_MD = ("claude-md-drift", "generated CLAUDE.md is missing")
 
 

@@ -125,6 +125,19 @@ class CandidateSmokeTest(unittest.TestCase):
         self.assertEqual(item["status"], "FAIL")
         self.assertIn("active stack 'demo-stack' has no", item["detail"])
 
+    def test_candidateSmoke_passesLinkIntegrity_whenCandidateAddsAScheduledTask(self) -> None:
+        # given a scheduled-task row, which an empty data dir always lacks as a copy
+        self.change_candidate({
+            "scheduled-tasks/demo/SKILL.md": "Run the demo.\n",
+            "links.tsv": "source\ttarget\n{{OVERLAY}}/commands/demo.md\tcommands/demo.md\n"
+                         "{{OVERLAY}}/scheduled-tasks/demo/SKILL.md\tscheduled-tasks/demo/SKILL.md\n",
+        })
+        # when
+        _, result = self.run_smoke("--candidate")
+        # then
+        item = self.link_integrity(result)
+        self.assertEqual(item["status"], "PASS", item["detail"])
+
     def test_candidateSmoke_fails_whenAnOverlayLinkSourceIsMissing(self) -> None:
         # given
         self.box.git(self.worktree, "rm", "-q", "commands/demo.md")

@@ -1,4 +1,5 @@
 import os
+import stat
 import unittest
 
 from helpers import LinkTestCase, read_file
@@ -30,6 +31,15 @@ class LinkCopiesScheduledTasksTest(LinkTestCase):
         self.assertEqual(self.box.read_data(TASK), TASK_TEXT)
         self.assertIn({"op": "copy", "path": self.target}, result.json["actions"])
         self.assertTrue(os.path.islink(self.box.data_path("commands/hello.md")))
+
+    def test_write_keepsSourcePermissionBits_whenCopying(self):
+        # given
+        os.chmod(self.source, 0o640)
+        # when
+        result = self.box.run_link("--write")
+        # then
+        self.assertExit(result, 0)
+        self.assertEqual(stat.S_IMODE(os.stat(self.target).st_mode), 0o640)
 
     def test_write_changesNothing_whenCopyMatchesSource(self):
         # given
@@ -107,6 +117,31 @@ class LinkCopiesScheduledTasksTest(LinkTestCase):
         self.assertExit(result, 3)
         self.assertEqual(self.problem_kinds(result), ["target-occupied"])
         self.assertTrue(os.path.isdir(self.target))
+
+    def test_write_movesForeignLinkAsideAndCopies_whenForced(self):
+        # given
+        elsewhere = os.path.join(self.box.root, "elsewhere.md")
+        with open(elsewhere, "w", encoding="utf-8") as f:
+            f.write("not keel\n")
+        os.makedirs(os.path.dirname(self.target))
+        os.symlink(elsewhere, self.target)
+        # when
+        result = self.box.run_link("--write", "--force")
+        # then
+        self.assertExit(result, 0)
+        self.assertFalse(os.path.islink(self.target))
+        self.assertEqual(self.box.read_data(TASK), TASK_TEXT)
+        self.assertEqual(os.readlink(self.only_backup(TASK)), elsewhere)
+
+    def test_write_movesDirectoryAsideAndCopies_whenForced(self):
+        # given
+        self.box.write_data(TASK + "/stray.md", "stray\n")
+        # when
+        result = self.box.run_link("--write", "--force")
+        # then
+        self.assertExit(result, 0)
+        self.assertEqual(self.box.read_data(TASK), TASK_TEXT)
+        self.assertEqual(read_file(os.path.join(self.only_backup(TASK), "stray.md")), "stray\n")
 
     def test_check_reportsCopyDrift_whenSourceChangedAfterCopy(self):
         # given

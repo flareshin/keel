@@ -44,9 +44,11 @@ def copy_file_atomic(source: str, path: str) -> None:
     directory = os.path.dirname(path)
     os.makedirs(directory, exist_ok=True)
     fd, temp_path = tempfile.mkstemp(dir=directory, prefix=_TEMP_PREFIX)
-    os.close(fd)
     try:
-        shutil.copyfile(source, temp_path)
+        with open(source, "rb") as src, os.fdopen(fd, "wb") as dst:
+            shutil.copyfileobj(src, dst)
+            dst.flush()
+            os.fsync(dst.fileno())
         shutil.copymode(source, temp_path)
         os.replace(temp_path, path)
     except BaseException:

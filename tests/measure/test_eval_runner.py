@@ -42,8 +42,7 @@ class RunOnceBlindingTest(unittest.TestCase):
             return json.load(handle)
 
     def fixture_with_readme(self, readme: str | bytes | None) -> str:
-        fixture = os.path.join(self.root, "repo")
-        os.makedirs(fixture)
+        fixture = tempfile.mkdtemp(dir=self.root)
         with open(os.path.join(fixture, "notes.txt"), "w", encoding="utf-8") as handle:
             handle.write("port 4317\n")
         if readme is not None:
@@ -94,6 +93,16 @@ class RunOnceBlindingTest(unittest.TestCase):
         for value in seen["identity"]:
             self.assertNoMetaWord(value)
 
+    def test_runOnce_commitsUnsigned_whenHostConfigSignsCommits(self) -> None:
+        # given
+        host_signing = {"GIT_CONFIG_COUNT": "2", "GIT_CONFIG_KEY_0": "commit.gpgsign", "GIT_CONFIG_VALUE_0": "true",
+                        "GIT_CONFIG_KEY_1": "gpg.program", "GIT_CONFIG_VALUE_1": "false"}
+        # when
+        with mock.patch.dict(os.environ, host_signing):
+            seen = self.run_recorder(K4_FIXTURE)
+        # then
+        self.assertEqual(os.path.basename(seen["cwd"]), "shop-admin")
+
     def test_runOnce_slugsTheReadmeTitle_intoAFolderName(self) -> None:
         # given
         fixture = self.fixture_with_readme("Intro line\n\n# My Shop: Admin!\n")
@@ -136,15 +145,17 @@ class RunOnceBlindingTest(unittest.TestCase):
         # then
         self.assertEqual(os.path.basename(seen["cwd"]), runner.NEUTRAL_PROJECT_NAME)
 
-    def test_runOnce_usesTheNeutralName_whenTheTitleHoldsAMetaWord(self) -> None:
-        # given
-        fixture = self.fixture_with_readme("# Keel Test Harness\n")
-        # when
-        seen = self.run_recorder(fixture)
-        # then
-        self.assertEqual(os.path.basename(seen["cwd"]), runner.NEUTRAL_PROJECT_NAME)
-        for value in seen["identity"]:
-            self.assertNoMetaWord(value)
+    def test_runOnce_usesTheNeutralName_whenTheTitleHoldsAnyOneMetaWord(self) -> None:
+        for word in META_WORDS:
+            with self.subTest(word=word):
+                # given
+                fixture = self.fixture_with_readme("# Shop %s Admin\n" % word.capitalize())
+                # when
+                seen = self.run_recorder(fixture)
+                # then
+                self.assertEqual(os.path.basename(seen["cwd"]), runner.NEUTRAL_PROJECT_NAME)
+                for value in seen["identity"]:
+                    self.assertNoMetaWord(value)
 
     def test_runOnce_usesTheNeutralName_whenTheReadmeIsNotUtf8(self) -> None:
         # given

@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from link.config import KeelPaths, Refused, expand_placeholders
 
 MANIFEST_HEADER = ["source", "target"]
+# Not symlinks: the desktop app refuses to open a scheduled-task file that is a symlink, and skips the run.
+COPIED_TARGET_DIRS = ("scheduled-tasks",)
 
 
 @dataclass(frozen=True)
@@ -25,6 +27,10 @@ def read_link_manifest(paths: KeelPaths) -> list[LinkEntry]:
             declared_in[entry.target] = manifest
             entries.append(entry)
     return entries
+
+
+def is_copied(entry: LinkEntry) -> bool:
+    return entry.target.split("/")[0] in COPIED_TARGET_DIRS
 
 
 def is_keel_link(path: str, paths: KeelPaths) -> bool:

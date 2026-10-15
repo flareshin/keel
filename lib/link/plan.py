@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import filecmp
 import os
 import subprocess
 from dataclasses import dataclass, field
 from typing import Callable
 
 from link import claude_md, links, settings_json
-from link.atomic import move_aside, replace_with_symlink, write_text_atomic
+from link.atomic import copy_file_atomic, move_aside, replace_with_symlink, write_text_atomic
 from link.config import KeelPaths, read_text, run_git
 from link.fragments import OWNED_KEYS, active_stacks, load_merged_fragments
 from measurekit.hook_settings import Registration, iter_registrations
@@ -81,7 +82,10 @@ def build_plan(paths: KeelPaths) -> Plan:
     plan = Plan()
     backup_root = settings_json.new_backup_dir(paths)
     for entry in links.read_link_manifest(paths):
-        _plan_link(plan, entry, paths, backup_root)
+        if links.is_copied(entry):
+            _plan_copy(plan, entry, paths, backup_root)
+        else:
+            _plan_link(plan, entry, paths, backup_root)
     _plan_claude_md(plan, paths, backup_root)
     _plan_settings(plan, paths, backup_root)
     _plan_hooks_path(plan, paths)
@@ -110,6 +114,32 @@ def _plan_link(plan: Plan, entry: links.LinkEntry, paths: KeelPaths, backup_root
         detail = f"foreign link points at {os.readlink(path)}, should be {entry.source}; --force moves it to {backup_path}"
         plan.problems.append(Problem("link-wrong", path, detail, BLOCKS_UNLESS_FORCED))
         plan.changes.append(Change("replace-link", path, _after_moving_aside(path, backup_path, link_now)))
+
+
+def _plan_copy(plan: Plan, entry: links.LinkEntry, paths: KeelPaths, backup_root: str) -> None:
+    path = os.path.join(paths.data_dir, entry.target)
+    backup_path = os.path.join(backup_root, entry.target)
+    copy_now = lambda: copy_file_atomic(entry.source, path)
+    if not os.path.isfile(entry.source):
+        plan.problems.append(Problem("dangling", path, f"source is not a file: {entry.source}", BLOCKS_ALWAYS))
+    elif not os.path.lexists(path):
+        plan.problems.append(Problem("copy-missing", path, f"should be a copy of {entry.source}"))
+        plan.changes.append(Change("copy", path, copy_now))
+    elif links.is_keel_link(path, paths):
+        plan.problems.append(Problem("link-instead-of-copy", path, f"keel link should be a copy of {entry.source}"))
+        plan.changes.append(Change("copy", path, copy_now))
+    elif os.path.islink(path):
+        detail = f"foreign link points at {os.readlink(path)}, should be a copy of {entry.source}; --force moves it to {backup_path}"
+        plan.problems.append(Problem("link-wrong", path, detail, BLOCKS_UNLESS_FORCED))
+        plan.changes.append(Change("copy", path, _after_moving_aside(path, backup_path, copy_now)))
+    elif not os.path.isfile(path):
+        detail = f"a directory is in the way; --force moves it to {backup_path}"
+        plan.problems.append(Problem("target-occupied", path, detail, BLOCKS_UNLESS_FORCED))
+        plan.changes.append(Change("copy", path, _after_moving_aside(path, backup_path, copy_now)))
+    elif not filecmp.cmp(entry.source, path, shallow=False):
+        detail = f"differs from {entry.source}; --force moves it to {backup_path} and copies the source"
+        plan.problems.append(Problem("copy-drift", path, detail, BLOCKS_UNLESS_FORCED))
+        plan.changes.append(Change("copy", path, _after_moving_aside(path, backup_path, copy_now)))
 
 
 def _plan_claude_md(plan: Plan, paths: KeelPaths, backup_root: str) -> None:

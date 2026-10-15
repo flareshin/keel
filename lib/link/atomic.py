@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
 
 _TEMP_PREFIX = ".keel-link-"
@@ -35,6 +36,22 @@ def replace_with_symlink(source: str, path: str) -> None:
         os.replace(temp_path, path)
     except BaseException:
         os.unlink(temp_path)
+        raise
+
+
+def copy_file_atomic(source: str, path: str) -> None:
+    """Replace `path` (file or link) with a regular copy of `source` in one rename."""
+    directory = os.path.dirname(path)
+    os.makedirs(directory, exist_ok=True)
+    fd, temp_path = tempfile.mkstemp(dir=directory, prefix=_TEMP_PREFIX)
+    os.close(fd)
+    try:
+        shutil.copyfile(source, temp_path)
+        shutil.copymode(source, temp_path)
+        os.replace(temp_path, path)
+    except BaseException:
+        if os.path.lexists(temp_path):
+            os.unlink(temp_path)
         raise
 
 

@@ -281,6 +281,15 @@ class LiveCheckoutTest(GitGuardTestCase):
         self.assertIn("merge --ff-only", result.stderr)
         self.assertFired("C-isolation", "deny", "git-guard")
 
+    def test_bash_passes_whenASedScriptLooksLikeAPathInTheLiveCheckout(self):
+        # given: a sed program with # delimiters editing a file outside the live checkout
+        target = os.path.join(self.sandbox.root, "scratch.txt")
+        # when / then
+        self.assertPassed(self.guard("sed -i '' 's#^files=.*#files=x#' %s" % target, cwd=self.live))
+
+    def test_bash_denied_whenSedEditsAFileInTheLiveCheckout(self):
+        self.assertDenied(self.guard("sed -i '' 's#^files=.*#files=x#' PRINCIPLES.md", cwd=self.live), "C-isolation")
+
     def test_bash_denied_whenAWriteFollowsACdTheHookCannotResolve(self):
         result = self.guard('cd "$(git rev-parse --show-toplevel)" && echo x > notes.md', cwd=self.live)
         self.assertDenied(result, "C-isolation")

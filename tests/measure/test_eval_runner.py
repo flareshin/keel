@@ -41,14 +41,14 @@ class RunOnceBlindingTest(unittest.TestCase):
         with open(self.seen_path, encoding="utf-8") as handle:
             return json.load(handle)
 
-    def fixture_with_readme(self, readme: str | None) -> str:
+    def fixture_with_readme(self, readme: str | bytes | None) -> str:
         fixture = os.path.join(self.root, "repo")
         os.makedirs(fixture)
         with open(os.path.join(fixture, "notes.txt"), "w", encoding="utf-8") as handle:
             handle.write("port 4317\n")
         if readme is not None:
-            with open(os.path.join(fixture, "README.md"), "w", encoding="utf-8") as handle:
-                handle.write(readme)
+            with open(os.path.join(fixture, "README.md"), "wb") as handle:
+                handle.write(readme.encode("utf-8") if isinstance(readme, str) else readme)
         return fixture
 
     def assertNoMetaWord(self, text: str) -> None:
@@ -61,11 +61,19 @@ class RunOnceBlindingTest(unittest.TestCase):
         # then
         self.assertEqual(os.path.basename(seen["cwd"]), "shop-admin")
 
-    def test_runOnce_workDirNameCarriesNoMetaWord(self) -> None:
+    def test_runOnce_workDirPathCarriesNoMetaWord_belowTheTempDir(self) -> None:
         # when
         seen = self.run_recorder(K4_FIXTURE)
         # then
-        self.assertNoMetaWord(os.path.basename(seen["cwd"]))
+        below_temp = os.path.relpath(seen["cwd"], os.path.realpath(tempfile.gettempdir()))
+        self.assertFalse(below_temp.startswith(os.pardir), below_temp)
+        self.assertNoMetaWord(below_temp)
+
+    def test_runOnce_removesTheTempParent_afterTheRun(self) -> None:
+        # when
+        seen = self.run_recorder(K4_FIXTURE)
+        # then
+        self.assertFalse(os.path.exists(os.path.dirname(seen["cwd"])), seen["cwd"])
 
     def test_runOnce_commitAuthorAndCommitterCarryNoMetaWord(self) -> None:
         # when
@@ -106,6 +114,50 @@ class RunOnceBlindingTest(unittest.TestCase):
     def test_runOnce_usesTheNeutralName_whenTheReadmeTitleHasNoLetterOrDigit(self) -> None:
         # given
         fixture = self.fixture_with_readme("# !!!\n")
+        # when
+        seen = self.run_recorder(fixture)
+        # then
+        self.assertEqual(os.path.basename(seen["cwd"]), runner.NEUTRAL_PROJECT_NAME)
+
+
+    def test_runOnce_usesTheNeutralName_whenTheReadmeHasNoTitle(self) -> None:
+        # given
+        fixture = self.fixture_with_readme("Just notes, no heading\n")
+        # when
+        seen = self.run_recorder(fixture)
+        # then
+        self.assertEqual(os.path.basename(seen["cwd"]), runner.NEUTRAL_PROJECT_NAME)
+
+    def test_runOnce_usesTheNeutralName_whenTheOnlyHashLineHasNoTitleOnIt(self) -> None:
+        # given
+        fixture = self.fixture_with_readme("#\nshop\n")
+        # when
+        seen = self.run_recorder(fixture)
+        # then
+        self.assertEqual(os.path.basename(seen["cwd"]), runner.NEUTRAL_PROJECT_NAME)
+
+    def test_runOnce_usesTheNeutralName_whenTheTitleHoldsAMetaWord(self) -> None:
+        # given
+        fixture = self.fixture_with_readme("# Keel Test Harness\n")
+        # when
+        seen = self.run_recorder(fixture)
+        # then
+        self.assertEqual(os.path.basename(seen["cwd"]), runner.NEUTRAL_PROJECT_NAME)
+        for value in seen["identity"]:
+            self.assertNoMetaWord(value)
+
+    def test_runOnce_usesTheNeutralName_whenTheReadmeIsNotUtf8(self) -> None:
+        # given
+        fixture = self.fixture_with_readme(b"# Caf\xe9 Admin\n")
+        # when
+        seen = self.run_recorder(fixture)
+        # then
+        self.assertEqual(os.path.basename(seen["cwd"]), runner.NEUTRAL_PROJECT_NAME)
+
+    def test_runOnce_usesTheNeutralName_whenTheReadmeCannotBeOpened(self) -> None:
+        # given
+        fixture = self.fixture_with_readme(None)
+        os.makedirs(os.path.join(fixture, "README.md"))
         # when
         seen = self.run_recorder(fixture)
         # then

@@ -20,6 +20,7 @@ DENIED_TOOLS = "Bash,NotebookEdit,Agent,Task,Workflow,WebFetch,WebSearch"
 TIMEOUT_EXIT = 124  # what GNU timeout would have reported; kept in the raw record only
 UNSIGNED = ["-c", "commit.gpgsign=false"]
 NEUTRAL_PROJECT_NAME = "app"
+HARNESS_WORDS = ("eval", "test", "judge", "fixture", "keel", "candidate")
 README_TITLE = re.compile(r"^#[ \t]+(.+)$", re.MULTILINE)
 NON_SLUG_CHARS = re.compile(r"[^a-z0-9]+")
 OUTSIDE_FIXTURE = [".", ":!.claude"]  # the CLI may write .claude/ into its cwd; that is not the model changing files
@@ -63,16 +64,21 @@ def run_once(prompt: str, fixture: str, command: list[str], config_dir: str, tim
 
 
 def resolve_project_name(fixture: str) -> str:
-    """The README's first `# ` title as a folder name, else NEUTRAL_PROJECT_NAME. The session sees its cwd and git identity."""
+    """The README's first `# ` title as a folder name; NEUTRAL_PROJECT_NAME when there is none or it holds a HARNESS_WORDS entry.
+
+    The session sees its cwd and git identity, so neither may tell it that it is being graded.
+    """
     slug = NON_SLUG_CHARS.sub("-", _readme_title(fixture).lower()).strip("-")
-    return slug or NEUTRAL_PROJECT_NAME
+    if not slug or any(word in slug for word in HARNESS_WORDS):
+        return NEUTRAL_PROJECT_NAME
+    return slug
 
 
 def _readme_title(fixture: str) -> str:
     try:
         with open(os.path.join(fixture, "README.md"), encoding="utf-8") as handle:
             match = README_TITLE.search(handle.read())
-    except FileNotFoundError:
+    except (OSError, UnicodeDecodeError):
         return ""
     return match.group(1) if match else ""
 

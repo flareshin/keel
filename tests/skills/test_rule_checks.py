@@ -52,6 +52,19 @@ class RuleChecksCliTest(IsolatedTestCase):
         for line in lines[:-1]:
             self.assertRegex(line, r'^signal K5\.(?:[1-9]|1[0-6]) \S+ .{1,160}$')
 
+    def test_ruleChecks_reportsSuppressionSignals_forTsDirectiveAndExhaustiveDepsDisable(self):
+        # given
+        repo = self.base_repo()
+        self.write(repo, 'web/a.ts', '// @ts-ignore\nconst v = f(x)\n')
+        self.write(repo, 'web/Panel.jsx', 'useEffect(() => load(id), [])  // eslint-disable-line react-hooks/exhaustive-deps\n')
+        # when
+        code, signals, summary, lines = self.run_rule_checks('--repo', repo, '--base', 'base')
+        # then
+        self.assertEqual((code, signals), (0, {('K5.11', 'web/a.ts:1'), ('K5.9', 'web/Panel.jsx:1')}))
+        self.assertEqual(summary, 'summary repos=1 scanned_lines=3 signals=2 unscanned=none blocked=none')
+        for line in lines[:-1]:
+            self.assertRegex(line, r'^signal K5\.(?:[1-9]|1[0-6]) \S+ .{1,160}$')
+
     def test_ruleChecks_reportsNoSignal_forCleanDiff(self):
         # given
         repo = self.base_repo()

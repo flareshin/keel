@@ -41,8 +41,12 @@ GENERATED_PATH = re.compile(r'(^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yam
 API_LAYER_PATH = re.compile(r'(^|/)api[^/]*/', re.I)
 CODE_EXT = ('.java', '.ts', '.tsx')
 TS_EXT = ('.ts', '.tsx')
+REACT_EXT = ('.ts', '.tsx', '.js', '.jsx')
 
 COMMENT_LINE = re.compile(r'^\s*\*|//|/\*')
+# Only a directive that opens its comment counts: TypeScript ignores `@ts-ignore` later in prose.
+TS_SUPPRESSION = re.compile(r'(?://+|/\*+)\s*@ts-(?:ignore|expect-error)\b')
+EXHAUSTIVE_DEPS_DISABLE = re.compile(r'(?://|/\*)\s*eslint-disable(?:-next-line|-line)?\s.*\breact-hooks/exhaustive-deps\b')
 HISTORY_COMMENT = re.compile(r'20[0-9]{2}-[0-9]{2}-[0-9]{2}|(^|[^a-z])(it|this|that|which|we) used to|used to be|no longer|corrected|previously|design §|STAGE [0-9]', re.I)
 TODO = re.compile(r'\bTODO\b')
 TICKET = re.compile(r'\b[A-Z][A-Z0-9]+-\d+\b')
@@ -53,6 +57,7 @@ JAVA_DECL = re.compile(r'\b[A-Z]\w*(?:<[^>]*>)?(?:\[\])?\s+(' + BANNED_NAMES + r
 
 NAMES = 'K5.5'
 SIZE = 'K5.7'
+HIDDEN_BEHAVIOR = 'K5.9'
 TYPES = 'K5.11'
 ERRORS = 'K5.12'
 COMMENTS = 'K5.14'
@@ -298,6 +303,12 @@ def matching_checks(path, text):
         ids.append(TYPES)
     if is_java and re.search(r'Map<String,\s*Object>', text):
         ids.append(TYPES)
+    if is_ts and TS_SUPPRESSION.search(text):
+        ids.append(TYPES)
+    if is_java and re.search(r'@SuppressWarnings\(.*"unchecked"', text):
+        ids.append(TYPES)
+    if path.endswith(REACT_EXT) and EXHAUSTIVE_DEPS_DISABLE.search(text):
+        ids.append(HIDDEN_BEHAVIOR)
     if (is_ts or is_java) and is_swallowed_error(text):
         ids.append(ERRORS)
     if path.endswith(CODE_EXT) and COMMENT_LINE.search(text) and is_comment_violation(text):
@@ -380,9 +391,20 @@ LINE_FIXTURES = {
         ('const a: any = 1', [TYPES]), ('const c = x as any', [TYPES]), ('const d = <any>y', [TYPES]),
         ('const b = JSON.parse(s)', [TYPES]), ('const data = load()', [NAMES]),
         ('const rows: Row[] = []', []), ('{count > 0 && <Badge />}', []),
+        ('// @ts-ignore', [TYPES]), ('/// @ts-ignore', [TYPES]), ('// @ts-expect-error: legacy prop', [TYPES]),
+        ('{/* @ts-ignore */}', [TYPES]), ('// never add @ts-ignore here', []), ("const tag = '@ts-ignore'", []),
+        ('// eslint-disable-next-line react-hooks/exhaustive-deps', [HIDDEN_BEHAVIOR]),
+        ('}, []) // eslint-disable-line react-hooks/exhaustive-deps', [HIDDEN_BEHAVIOR]),
+        ('/* eslint-disable react-hooks/rules-of-hooks, react-hooks/exhaustive-deps */', [HIDDEN_BEHAVIOR]),
+        ('// eslint-disable-next-line no-console', []), ('/* eslint-enable react-hooks/exhaustive-deps */', []),
+        ('// the exhaustive-deps rule caught a stale closure', []),
+    ],
+    'web/Panel.jsx': [
+        ('{/* eslint-disable-next-line react-hooks/exhaustive-deps */}', [HIDDEN_BEHAVIOR]),
+        ('const a = load() // @ts-ignore', []), ('const a: any = 1', []),
     ],
     'web/api/items.ts': [('export const parse = (s: string) => JSON.parse(s) as Item', [])],
-    'web/Screen.test.tsx': [('const x: any = 1', [])],
+    'web/Screen.test.tsx': [('const x: any = 1', []), ('// @ts-ignore', [])],
     'web/log.ts': [('log.error("x {}", e.getMessage())', [ERRORS]), ('log.warn("skip {}", e.getMessage(), e)', [])],
     'core/Service.java': [
         ('Map<String, Object> m = new HashMap<>();', [TYPES]), ('try { run(); } catch (Exception e) {}', [ERRORS]),
@@ -390,6 +412,8 @@ LINE_FIXTURES = {
         ('// this used to call the old API', [COMMENTS]), ('/* no longer used by the batch */', [COMMENTS]),
         (' * corrected after the outage', [COMMENTS]), ('// TODO clean this', [COMMENTS]), ('// ------', [COMMENTS]),
         ('// TODO ABC-123 drop after migration', []), ('String day = "2026-10-07";', []), ('String data = x;', [NAMES]),
+        ('@SuppressWarnings("unchecked")', [TYPES]), ('@SuppressWarnings({"unchecked", "rawtypes"})', [TYPES]),
+        ('@SuppressWarnings("deprecation")', []),
     ],
     'core/pom.xml': [('<version>${project.version}</version>', [])],
 }
@@ -430,7 +454,8 @@ def check_rule_sources():
     """The thresholds and banned names are copies of SKILL.md; fail when the skill changes them."""
     skill = read_text(os.path.join(SKILL_DIR, 'SKILL.md'))
     pinned = ['`' + BANNED_NAMES.replace('|', ', ') + '`', f'class {CLASS_LINE_SIGNAL}', f'FE component {COMPONENT_LINE_SIGNAL}',
-              f'`useState` per component {USE_STATE_SIGNAL}', f'**{DIFF_LINE_SIGNAL} changed lines**']
+              f'`useState` per component {USE_STATE_SIGNAL}', f'**{DIFF_LINE_SIGNAL} changed lines**',
+              '`@ts-ignore`', '`@ts-expect-error`', '`@SuppressWarnings("unchecked")`', 'a disabled `react-hooks/exhaustive-deps`']
     missing = [p for p in pinned if p not in skill]
     return [expect(not missing, f'readable-code SKILL.md no longer states {missing}: update the constants')]
 

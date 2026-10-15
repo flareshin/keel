@@ -476,8 +476,11 @@ def _edited_files(verb: str, args: list) -> list:
 
 
 def _names_sed_script_option(args: list) -> bool:
-    """True when an option may carry the script; a short cluster holding e or f counts, to keep its files."""
-    return any(arg.startswith(("--expression", "--file")) or re.match(r"-[a-zA-Z]*[ef]", arg) for arg in args)
+    """True when an option may carry the script; a short cluster holding e or f counts, to keep its files.
+
+    GNU sed takes any unambiguous long-option prefix: only --expression starts with --e, only --file with --fi.
+    """
+    return any(arg.startswith(("--e", "--fi")) or re.match(r"-[a-zA-Z]*[ef]", arg) for arg in args)
 
 
 def _edits_in_place(args: list) -> bool:

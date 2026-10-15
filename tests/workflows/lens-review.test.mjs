@@ -314,6 +314,8 @@ test('lensReview_loadsDefaultLensesAndGuardrails_whenCallerGivesNoLenses', async
   const fileLenses = { lenses: [{ key: 'reuse', prompt: 'Lens: reuse.' }], guardrails: 'Not defects here: style.' }
   const prepare = (prompt) => {
     assert.match(preparePromptCommands(prompt).lenses, /jq -c '\{lenses, guardrails\}' "\$\{KEEL_DATA_DIR:-\$HOME\/\.claude\}"\/workflows\/review-lenses\.json/)
+    assert.match(prompt, /Copy the stdout of each diff and run id command verbatim/)
+    assert.doesNotMatch(prompt, /copy its stdout verbatim/)
     return { diff_outputs: [preparedLine()], run_id_output: DERIVED_RUN_ID, lenses_output: fileLenses }
   }
   const rt = createRuntime({ respond: responder({ prepare }) })

@@ -365,7 +365,7 @@ def write_targets(command: SimpleCommand) -> WriteTargets:
     elif verb in CREATE_VERBS:
         targets.written.extend(_operands(verb, args))
     elif verb in IN_PLACE_EDITORS and _edits_in_place(args):
-        targets.written.extend(operand for operand in _operands(verb, args) if operand)
+        targets.written.extend(_edited_files(verb, args))
     elif verb == "dd":
         targets.written.extend(arg[len("of="):] for arg in args if arg.startswith("of="))
     elif verb == "patch" or _git_subcommand(invocation.argv) in {"apply", "am"}:
@@ -465,6 +465,19 @@ def _operands(verb: str, args: list) -> list:
             operands.append(arg)
         index += 1
     return operands
+
+
+def _edited_files(verb: str, args: list) -> list:
+    """The files an in-place edit rewrites: without -e or -f, sed's first operand is its script."""
+    files = [operand for operand in _operands(verb, args) if operand]
+    if verb == "sed" and not _names_sed_script_option(args):
+        return files[1:]
+    return files
+
+
+def _names_sed_script_option(args: list) -> bool:
+    """True when an option may carry the script; a short cluster holding e or f counts, to keep its files."""
+    return any(arg.startswith(("--expression", "--file")) or re.match(r"-[a-zA-Z]*[ef]", arg) for arg in args)
 
 
 def _edits_in_place(args: list) -> bool:

@@ -389,8 +389,13 @@ class WriteTargetsTest(unittest.TestCase):
         self.assertEqual(["a.txt"], write_targets(parse_commands("sed -i --file=prog.sed a.txt")[0]).written)
 
     def test_writeTargets_namesEveryOperand_whenSedAbbreviatesTheLongScriptOption(self):
+        self.assertEqual(["a.txt"], write_targets(parse_commands("sed -i --e=s/a/b/ a.txt")[0]).written)
         self.assertEqual(["a.txt"], write_targets(parse_commands("sed -i --expr=s/a/b/ a.txt")[0]).written)
         self.assertEqual(["a.txt"], write_targets(parse_commands("sed -i --fi=prog.sed a.txt")[0]).written)
+
+    def test_writeTargets_namesOnlyTheFile_whenSedLongOptionsCarryNoScript(self):
+        targets = write_targets(parse_commands("sed --in-place --follow-symlinks 's#^files=.*#x#' cfg.txt")[0])
+        self.assertEqual(["cfg.txt"], targets.written)
 
     def test_writeTargets_namesEveryOperand_whenAShortClusterCarriesTheScriptAttached(self):
         self.assertEqual(["a.txt"], write_targets(parse_commands("sed -i -es/a/b/ a.txt")[0]).written)

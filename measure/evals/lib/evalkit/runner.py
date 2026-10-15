@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -17,7 +18,10 @@ MAX_TURNS = 8
 ALLOWED_TOOLS = "Skill,Read,Grep,Glob,Edit,Write,AskUserQuestion"
 DENIED_TOOLS = "Bash,NotebookEdit,Agent,Task,Workflow,WebFetch,WebSearch"
 TIMEOUT_EXIT = 124  # what GNU timeout would have reported; kept in the raw record only
-FIXTURE_IDENTITY = ["-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false"]
+UNSIGNED = ["-c", "commit.gpgsign=false"]
+NEUTRAL_PROJECT_NAME = "app"
+README_TITLE = re.compile(r"^#[ \t]+(.+)$", re.MULTILINE)
+NON_SLUG_CHARS = re.compile(r"[^a-z0-9]+")
 OUTSIDE_FIXTURE = [".", ":!.claude"]  # the CLI may write .claude/ into its cwd; that is not the model changing files
 QUESTION_PROTOCOL = ("This session is non-interactive and the AskUserQuestion tool is unavailable. To ask the user something, "
                      "write each question on its own line starting with \"%s\"." % QUESTION_MARKER)
@@ -41,9 +45,11 @@ def claude_command(model: str) -> list[str]:
 
 
 def run_once(prompt: str, fixture: str, command: list[str], config_dir: str, timeout_seconds: int) -> RunRecord:
-    work = tempfile.mkdtemp(prefix="keel-eval-")
+    project = resolve_project_name(fixture)
+    parent = tempfile.mkdtemp()
+    work = os.path.join(parent, project)
     try:
-        _prepare_fixture_repo(fixture, work)
+        _prepare_fixture_repo(fixture, work, project)
         exit_code, timed_out, stream_text = _run_claude(command, prompt, work, timeout_seconds)
         changed = bool(run_git(work, ["status", "--porcelain", "--"] + OUTSIDE_FIXTURE).strip())
         leftover = project_dir_for(work, config_dir)
@@ -53,14 +59,35 @@ def run_once(prompt: str, fixture: str, command: list[str], config_dir: str, tim
         )
         return RunRecord(facts, stream_text, _diff_of_changes(work))
     finally:
-        shutil.rmtree(work, ignore_errors=True)
+        shutil.rmtree(parent, ignore_errors=True)
 
 
-def _prepare_fixture_repo(fixture: str, work: str) -> None:
-    shutil.copytree(fixture, work, dirs_exist_ok=True)
+def resolve_project_name(fixture: str) -> str:
+    """The README's first `# ` title as a folder name, else NEUTRAL_PROJECT_NAME. The session sees its cwd and git identity."""
+    slug = NON_SLUG_CHARS.sub("-", _readme_title(fixture).lower()).strip("-")
+    return slug or NEUTRAL_PROJECT_NAME
+
+
+def _readme_title(fixture: str) -> str:
+    try:
+        with open(os.path.join(fixture, "README.md"), encoding="utf-8") as handle:
+            match = README_TITLE.search(handle.read())
+    except FileNotFoundError:
+        return ""
+    return match.group(1) if match else ""
+
+
+def _prepare_fixture_repo(fixture: str, work: str, project: str) -> None:
+    shutil.copytree(fixture, work)
     run_git(work, ["init", "-q"])
     run_git(work, ["add", "-A"])
-    run_git(work, FIXTURE_IDENTITY + ["commit", "-q", "-m", "init"])
+    run_git(work, UNSIGNED + ["commit", "-q", "-m", "init"], extra_env=_project_identity(project))
+
+
+def _project_identity(project: str) -> dict[str, str]:
+    """Set through the environment, not `-c user.*`: a host GIT_AUTHOR_* or GIT_COMMITTER_* would override config."""
+    name, email = project, "dev@%s.invalid" % project
+    return {"GIT_AUTHOR_NAME": name, "GIT_AUTHOR_EMAIL": email, "GIT_COMMITTER_NAME": name, "GIT_COMMITTER_EMAIL": email}
 
 
 def _run_claude(command: list[str], prompt: str, cwd: str, timeout_seconds: int) -> tuple[int, bool, str]:

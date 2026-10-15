@@ -195,7 +195,7 @@ function buildPreparePrompt() {
   const steps = DIFFS.map((d, i) => `diff ${i}:\n${buildPrepareCommand(d)}`)
   const runIdStep = A.runId === undefined ? `run id:\n${DERIVE_RUN_ID_COMMAND}` : 'run id: none, return ""'
   const lensesStep = CALLER_LENSES === undefined ? `lenses:\n${LOAD_LENSES_COMMAND}` : 'lenses: none, return lenses [] and guardrails ""'
-  return `Mechanical step; do not modify any file and do not judge anything. Run each bash command below exactly as written, once, and copy its stdout verbatim (one line, no edits) into the matching field. The lenses command prints a JSON object: copy its lenses and guardrails values into the lenses_output fields, not as text. When a diff command exits non-zero, return "ERROR: " followed by its stderr for that diff instead.
+  return `Mechanical step; do not modify any file and do not judge anything. Run each bash command below exactly as written, once. Copy the stdout of each diff and run id command verbatim (one line, no edits) into the matching field. The lenses command prints a JSON object: copy its lenses and guardrails values into the lenses_output fields, not as text. When a diff command exits non-zero, return "ERROR: " followed by its stderr for that diff instead.
 
 ${steps.join('\n\n')}
 

@@ -337,7 +337,6 @@ test('lensReview_asksPrepareForLensesAsStructuredFields_whenCallerGivesNoLenses'
   assert.deepEqual(lensesField.properties.lenses.items.required, ['key', 'prompt'])
 })
 
-// The shape three prepare agents returned on 2026-10-15: the lenses copied cleanly, then the guardrails key hand-escaped.
 test('lensReview_failsBeforeAudit_whenPrepareReturnsLensesAsHalfEscapedText', async () => {
   // given
   const halfEscaped = '{"lenses":[{"key":"reuse","prompt":"Lens: reuse."}],\\"guardrails\\":\\"Not defects here: style.\\"}'

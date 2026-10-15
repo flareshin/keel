@@ -378,6 +378,13 @@ class WriteTargetsTest(unittest.TestCase):
     def test_writeTargets_namesFiles_whenSedInPlace(self):
         self.assertIn("f.txt", write_targets(parse_commands("sed -i '' s/a/b/ f.txt")[0]).written)
 
+    def test_writeTargets_namesTheFile_whenBsdSedEditsInPlaceWithCapitalI(self):
+        self.assertIn("f", write_targets(parse_commands("sed -I .bak -e s/a/b/ f")[0]).written)
+        self.assertEqual(["f"], write_targets(parse_commands("sed -I '' 's#a#b#' f")[0]).written)
+
+    def test_writeTargets_isEmpty_whenPerlTakesAnIncludePathWithCapitalI(self):
+        self.assertFalse(write_targets(parse_commands("perl -I lib -ne 'print' f")[0]).any())
+
     def test_writeTargets_namesOnlyTheFile_whenSedTakesItsScriptAsTheFirstOperand(self):
         self.assertEqual(["/tmp/notes.txt"], write_targets(parse_commands("sed -i '' 's#^files=.*#files=x#' /tmp/notes.txt")[0]).written)
         self.assertEqual(["f.txt"], write_targets(parse_commands("sed -i s/a/b/ f.txt")[0]).written)

@@ -364,7 +364,7 @@ def write_targets(command: SimpleCommand) -> WriteTargets:
         targets.removed.extend(_operands(verb, args))
     elif verb in CREATE_VERBS:
         targets.written.extend(_operands(verb, args))
-    elif verb in IN_PLACE_EDITORS and _edits_in_place(args):
+    elif verb in IN_PLACE_EDITORS and _edits_in_place(verb, args):
         targets.written.extend(_edited_files(verb, args))
     elif verb == "dd":
         targets.written.extend(arg[len("of="):] for arg in args if arg.startswith("of="))
@@ -483,8 +483,11 @@ def _names_sed_script_option(args: list) -> bool:
     return any(arg.startswith(("--e", "--fi")) or re.match(r"-[a-zA-Z]*[ef]", arg) for arg in args)
 
 
-def _edits_in_place(args: list) -> bool:
-    return any(arg.startswith("--in-place") or (re.match(r"-[a-zA-Z]*i", arg) and not arg.startswith("--")) for arg in args)
+def _edits_in_place(verb: str, args: list) -> bool:
+    """BSD sed also edits in place under -I; perl's -I is an include path."""
+    letters = "iI" if verb == "sed" else "i"
+    return any(arg.startswith("--in-place") or (re.match(r"-[a-zA-Z]*[%s]" % letters, arg) and not arg.startswith("--"))
+               for arg in args)
 
 
 def _drop_one_wrapper(invocation: Invocation) -> None:

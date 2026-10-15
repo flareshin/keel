@@ -290,6 +290,9 @@ class LiveCheckoutTest(GitGuardTestCase):
     def test_bash_denied_whenSedEditsAFileInTheLiveCheckout(self):
         self.assertDenied(self.guard("sed -i '' 's#^files=.*#files=x#' PRINCIPLES.md", cwd=self.live), "C-isolation")
 
+    def test_bash_denied_whenBsdSedEditsAFileInTheLiveCheckoutWithCapitalI(self):
+        self.assertDenied(self.guard("sed -I .bak -e s/a/b/ PRINCIPLES.md", cwd=self.live), "C-isolation")
+
     def test_bash_denied_whenAWriteFollowsACdTheHookCannotResolve(self):
         result = self.guard('cd "$(git rev-parse --show-toplevel)" && echo x > notes.md', cwd=self.live)
         self.assertDenied(result, "C-isolation")

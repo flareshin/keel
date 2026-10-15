@@ -115,9 +115,9 @@ test('lensReview_prepareCommandResolvesCommitRange_whenHeadIsABranch', async () 
 test('lensReviewExamples_passArgsValidation_whenRunWithStubbedAgents', async () => {
   // given
   const examples = JSON.parse(readFileSync(join(KEEL_HOME, 'examples', 'review-engine', 'lens-review-args.example.json'), 'utf8'))
-  const fileLenses = readFileSync(join(WORKFLOWS_DIR, 'review-lenses.json'), 'utf8')
+  const { lenses, guardrails } = JSON.parse(readFileSync(join(WORKFLOWS_DIR, 'review-lenses.json'), 'utf8'))
   const respond = (prompt, opts) => {
-    if (opts.label === 'prepare') return { diff_outputs: [preparedLine()], run_id_output: 'rv-20261011T093000Z-0c1d2e', lenses_output: fileLenses }
+    if (opts.label === 'prepare') return { diff_outputs: [preparedLine()], run_id_output: 'rv-20261011T093000Z-0c1d2e', lenses_output: { lenses, guardrails } }
     if (opts.label === 'report') return reportBetweenMarkers(prompt)
     return { findings: [], notes: opts.label === 'audit:rule-checks' ? cleanRuleChecksNotes(prompt) : 'clean' }
   }
@@ -136,7 +136,7 @@ function shellResponder(box) {
       return {
         diff_outputs: commands.diffs.map((command) => runOrReportError(box, command)),
         run_id_output: commands.runId ? box.bash(commands.runId) : '',
-        lenses_output: commands.lenses ? box.bash(commands.lenses) : '',
+        lenses_output: commands.lenses ? JSON.parse(box.bash(commands.lenses)) : { lenses: [], guardrails: '' },
       }
     }
     if (opts.label === 'report') return reportBetweenMarkers(prompt)

@@ -62,7 +62,15 @@ const PREPARE_SCHEMA = {
   properties: {
     diff_outputs: { type: 'array', items: { type: 'string' }, description: 'per diff command, in order: its exact stdout line, or "ERROR: <stderr>" when it failed' },
     run_id_output: { type: 'string', description: 'exact stdout of the run id command, or "" when none was given' },
-    lenses_output: { type: 'string', description: 'exact stdout of the lenses command, or "" when none was given' },
+    lenses_output: {
+      type: 'object',
+      description: 'the lenses and guardrails of the object the lenses command printed, copied as fields; lenses [] and guardrails "" when none was given',
+      properties: {
+        lenses: { type: 'array', items: { type: 'object', properties: { key: { type: 'string' }, prompt: { type: 'string' } }, required: ['key', 'prompt'] } },
+        guardrails: { type: 'string' },
+      },
+      required: ['lenses', 'guardrails'],
+    },
   },
   required: ['diff_outputs', 'run_id_output', 'lenses_output'],
 }
@@ -186,8 +194,8 @@ async function prepareReview() {
 function buildPreparePrompt() {
   const steps = DIFFS.map((d, i) => `diff ${i}:\n${buildPrepareCommand(d)}`)
   const runIdStep = A.runId === undefined ? `run id:\n${DERIVE_RUN_ID_COMMAND}` : 'run id: none, return ""'
-  const lensesStep = CALLER_LENSES === undefined ? `lenses:\n${LOAD_LENSES_COMMAND}` : 'lenses: none, return ""'
-  return `Mechanical step; do not modify any file and do not judge anything. Run each bash command below exactly as written, once, and copy its stdout verbatim (one line, no edits) into the matching field. When a diff command exits non-zero, return "ERROR: " followed by its stderr for that diff instead.
+  const lensesStep = CALLER_LENSES === undefined ? `lenses:\n${LOAD_LENSES_COMMAND}` : 'lenses: none, return lenses [] and guardrails ""'
+  return `Mechanical step; do not modify any file and do not judge anything. Run each bash command below exactly as written, once, and copy its stdout verbatim (one line, no edits) into the matching field. The lenses command prints a JSON object: copy its lenses and guardrails values into the lenses_output fields, not as text. When a diff command exits non-zero, return "ERROR: " followed by its stderr for that diff instead.
 
 ${steps.join('\n\n')}
 
@@ -252,15 +260,13 @@ function resolveLensSet(lensesOutput, reviewed) {
   }
 }
 
-function resolveBaseLenses(lensesOutput) {
+// Not JSON.parse of a copied stdout line: an agent copying a long JSON line into a string field can hand-escape part of it.
+function resolveBaseLenses(fileLenses) {
   if (CALLER_LENSES !== undefined) return { lenses: CALLER_LENSES, guardrails: A.guardrails || '' }
-  let fileLenses
-  try {
-    fileLenses = JSON.parse(lensesOutput)
-  } catch (e) {
-    return { error: `default lenses did not load from workflows/review-lenses.json: ${String(lensesOutput).slice(0, 200)}` }
+  if (!fileLenses || typeof fileLenses !== 'object' || !Array.isArray(fileLenses.lenses)) {
+    return { error: `default lenses did not load from workflows/review-lenses.json: ${String(JSON.stringify(fileLenses)).slice(0, 200)}` }
   }
-  if (!fileLenses || !Array.isArray(fileLenses.lenses) || fileLenses.lenses.length === 0) return { error: 'workflows/review-lenses.json holds no lenses' }
+  if (fileLenses.lenses.length === 0) return { error: 'workflows/review-lenses.json holds no lenses' }
   return { lenses: fileLenses.lenses, guardrails: A.guardrails !== undefined ? A.guardrails : (fileLenses.guardrails || '') }
 }
 

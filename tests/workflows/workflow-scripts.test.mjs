@@ -63,6 +63,18 @@ test('reviewLenses_holdsKeyedPromptsAndGuardrails_whenParsed', () => {
   assert.equal(typeof file.guardrails, 'string')
 })
 
+// Same literal as the private overlay's own contract-lens test: a caller that passes its own lenses never reads this file.
+const GRADED_SAFETY_FACT = 'In your notes, name the one fact the change is safe because of (for example: the new parser accepts only the format the real files use) and grade it: cited (a file:line), reasoned (the failure case walked step by step and shown not to reach), or run (a command or test that exercises the real code or real data, its output quoted); write unproven when none applies. The graded fact informs the owner and is a finding only when it is shown false.'
+
+test('reviewLenses_contractLensAsksForTheGradedSafetyFactInNotes_whenParsed', () => {
+  // given
+  const file = JSON.parse(readFileSync(join(WORKFLOWS_DIR, 'review-lenses.json'), 'utf8'))
+  // when
+  const contract = file.lenses.find((lens) => lens.key === 'contract')
+  // then
+  assert.ok(contract.prompt.includes(GRADED_SAFETY_FACT), contract.prompt)
+})
+
 test('lensReview_prepareCommandsYieldEvidenceForRealRepo_whenRunInBash', async () => {
   // given
   const box = createSandbox()

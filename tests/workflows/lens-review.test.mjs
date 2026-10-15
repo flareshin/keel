@@ -311,9 +311,11 @@ test('lensReview_writesOneEvidenceLinePerRepoWithOneRunId_whenTwoReposAreReviewe
 
 test('lensReview_loadsDefaultLensesAndGuardrails_whenCallerGivesNoLenses', async () => {
   // given
-  const fileLenses = JSON.stringify({ lenses: [{ key: 'reuse', prompt: 'Lens: reuse.' }], guardrails: 'Not defects here: style.' })
+  const fileLenses = { lenses: [{ key: 'reuse', prompt: 'Lens: reuse.' }], guardrails: 'Not defects here: style.' }
   const prepare = (prompt) => {
     assert.match(preparePromptCommands(prompt).lenses, /jq -c '\{lenses, guardrails\}' "\$\{KEEL_DATA_DIR:-\$HOME\/\.claude\}"\/workflows\/review-lenses\.json/)
+    assert.match(prompt, /Copy the stdout of each diff and run id command verbatim/)
+    assert.doesNotMatch(prompt, /copy its stdout verbatim/)
     return { diff_outputs: [preparedLine()], run_id_output: DERIVED_RUN_ID, lenses_output: fileLenses }
   }
   const rt = createRuntime({ respond: responder({ prepare }) })
@@ -323,6 +325,31 @@ test('lensReview_loadsDefaultLensesAndGuardrails_whenCallerGivesNoLenses', async
   assert.equal(result.verdict, 'PASS')
   assert.deepEqual(result.lensesFired, ['reuse', 'readable-code', 'rule-checks'])
   assert.match(auditChildArgs(rt).guardrails, /Not defects here: style\./)
+})
+
+test('lensReview_asksPrepareForLensesAsStructuredFields_whenCallerGivesNoLenses', async () => {
+  // given
+  const rt = createRuntime({ respond: responder({ prepare: { diff_outputs: [preparedLine()], run_id_output: DERIVED_RUN_ID, lenses_output: { lenses: [{ key: 'reuse', prompt: 'Lens: reuse.' }], guardrails: '' } } }) })
+  // when
+  await rt.run('lens-review', { diffs: [ROOT_DIFF] })
+  // then
+  const lensesField = rt.record.agents[0].opts.schema.properties.lenses_output
+  assert.equal(lensesField.type, 'object')
+  assert.deepEqual(lensesField.required, ['lenses', 'guardrails'])
+  assert.deepEqual(lensesField.properties.lenses.items.required, ['key', 'prompt'])
+})
+
+test('lensReview_failsBeforeAudit_whenPrepareReturnsLensesAsHalfEscapedText', async () => {
+  // given
+  const halfEscaped = '{"lenses":[{"key":"reuse","prompt":"Lens: reuse."}],\\"guardrails\\":\\"Not defects here: style.\\"}'
+  const prepare = { diff_outputs: [preparedLine()], run_id_output: DERIVED_RUN_ID, lenses_output: halfEscaped }
+  const rt = createRuntime({ respond: responder({ prepare }) })
+  // when
+  const result = await rt.run('lens-review', { diffs: [ROOT_DIFF] })
+  // then
+  assert.equal(result.verdict, 'ERROR')
+  assert.match(result.error, /default lenses did not load/)
+  assert.deepEqual(labels(rt), ['prepare'])
 })
 
 test('lensReview_passesCallerGuardrailsToAudit_whenTheyStateNoClaim', async () => {
@@ -411,9 +438,21 @@ for (const [name, prepare, expected] of BAD_PREPARE_OUTPUTS) {
   })
 }
 
-test('lensReview_failsBeforeAudit_whenDefaultLensesDoNotParse', async () => {
+test('lensReview_failsBeforeAudit_whenDefaultLensesAreNotAnObject', async () => {
   // given
   const prepare = { diff_outputs: [preparedLine()], run_id_output: DERIVED_RUN_ID, lenses_output: 'jq: error: No such file' }
+  const rt = createRuntime({ respond: responder({ prepare }) })
+  // when
+  const result = await rt.run('lens-review', { diffs: [ROOT_DIFF] })
+  // then
+  assert.equal(result.verdict, 'ERROR')
+  assert.match(result.error, /default lenses did not load/)
+  assert.deepEqual(labels(rt), ['prepare'])
+})
+
+test('lensReview_failsBeforeAudit_whenPrepareOmitsDefaultLenses', async () => {
+  // given
+  const prepare = { diff_outputs: [preparedLine()], run_id_output: DERIVED_RUN_ID }
   const rt = createRuntime({ respond: responder({ prepare }) })
   // when
   const result = await rt.run('lens-review', { diffs: [ROOT_DIFF] })
@@ -589,7 +628,7 @@ test('lensReview_needsFixesWithLensNotRun_whenAnAuditorThrows', async () => {
 
 test('lensReview_failsBeforeAudit_whenDefaultLensesAreEmpty', async () => {
   // given
-  const prepare = { diff_outputs: [preparedLine()], run_id_output: DERIVED_RUN_ID, lenses_output: '{"lenses":[],"guardrails":""}' }
+  const prepare = { diff_outputs: [preparedLine()], run_id_output: DERIVED_RUN_ID, lenses_output: { lenses: [], guardrails: '' } }
   const rt = createRuntime({ respond: responder({ prepare }) })
   // when
   const result = await rt.run('lens-review', { diffs: [ROOT_DIFF] })

@@ -33,7 +33,7 @@ test('adversarialAudit_returnsErrorWithoutAgents_whenTargetMissing', async () =>
 
   const rt = createRuntime({ respond: () => { throw new Error('no agent expected') } })
 
-  const result = await rt.run('adversarial-audit', { lenses: LENSES })
+  const result = await rt.run('adversarial-audit', { auditMode: 'split', lenses: LENSES })
 
   assert.equal(result.error, 'missing args: target, lenses')
   assert.equal(rt.record.agents.length, 0)
@@ -43,7 +43,7 @@ test('adversarialAudit_returnsErrorWithoutAgents_whenLensShapeIsWrong', async ()
 
   const rt = createRuntime({ respond: () => { throw new Error('no agent expected') } })
 
-  const result = await rt.run('adversarial-audit', { target: '/work/app', lenses: [{ key: 'contract' }] })
+  const result = await rt.run('adversarial-audit', { auditMode: 'split', target: '/work/app', lenses: [{ key: 'contract' }] })
 
   assert.equal(result.error, 'bad lens shape at index 0')
   assert.equal(rt.record.agents.length, 0)
@@ -60,7 +60,7 @@ test('adversarialAudit_partitionsFindingsByVerdict_whenVerifiersAnswer', async (
   }
   const rt = createRuntime({ respond: respondWith({ audits, verdicts }) })
 
-  const result = await rt.run('adversarial-audit', { target: '/work/app', lenses: LENSES })
+  const result = await rt.run('adversarial-audit', { auditMode: 'split', target: '/work/app', lenses: LENSES })
 
   assert.deepEqual(result.confirmed.map((f) => f.id), ['c1', 'c3'])
   assert.deepEqual(result.refuted.map((f) => f.id), ['c2'])
@@ -80,7 +80,7 @@ test('adversarialAudit_demotesAdjustedToRefuted_whenAdjustedFieldsMissing', asyn
   const verdicts = { c1: { verdict: 'ADJUSTED', evidence: 'partly' } }
   const rt = createRuntime({ respond: respondWith({ audits, verdicts }) })
 
-  const result = await rt.run('adversarial-audit', { target: '/work/app', lenses: LENSES })
+  const result = await rt.run('adversarial-audit', { auditMode: 'split', target: '/work/app', lenses: LENSES })
 
   assert.equal(result.confirmed.length, 0)
   assert.equal(result.refuted[0].verdict.verdict, 'REFUTED')
@@ -91,7 +91,7 @@ test('adversarialAudit_reportsFailedLens_whenAuditorReturnsNothing', async () =>
 
   const rt = createRuntime({ respond: respondWith({ audits: { tests: null } }) })
 
-  const result = await rt.run('adversarial-audit', { target: '/work/app', lenses: LENSES })
+  const result = await rt.run('adversarial-audit', { auditMode: 'split', target: '/work/app', lenses: LENSES })
 
   assert.deepEqual(result.failedLenses, ['tests'])
   assert.deepEqual(result.lensNotes, [{ lens: 'contract', notes: 'clean' }])
@@ -103,7 +103,7 @@ test('adversarialAudit_keepsFindingAsUnverified_whenVerifierThrows', async () =>
   const audits = { contract: { findings: [finding('c1')] } }
   const rt = createRuntime({ respond: respondWith({ audits, verdicts: { c1: new Error('api down') } }) })
 
-  const result = await rt.run('adversarial-audit', { target: '/work/app', lenses: LENSES })
+  const result = await rt.run('adversarial-audit', { auditMode: 'split', target: '/work/app', lenses: LENSES })
 
   assert.equal(result.unverified.length, 1)
   assert.equal(result.unverified[0].verifyError, 'api down')
@@ -114,7 +114,7 @@ test('adversarialAudit_namesModelAndEffortOnEveryAgent_whenDefaultsApply', async
   const audits = { contract: { findings: [finding('c1')] } }
   const rt = createRuntime({ respond: respondWith({ audits, verdicts: { c1: { verdict: 'CONFIRMED', evidence: 'reran' } } }) })
 
-  await rt.run('adversarial-audit', { target: '/work/app', lenses: LENSES })
+  await rt.run('adversarial-audit', { auditMode: 'split', target: '/work/app', lenses: LENSES })
 
   assert.deepEqual(rt.record.unnamedModelOrEffort, [])
   assert.deepEqual(rt.record.agents.map((call) => [call.opts.label, call.opts.model, call.opts.effort]), [
@@ -127,7 +127,7 @@ test('adversarialAudit_namesModelAndEffortOnEveryAgent_whenDefaultsApply', async
 test('adversarialAudit_usesCallerModelAndEffort_whenArgsAreAJsonString', async () => {
 
   const rt = createRuntime({ respond: respondWith({}) })
-  const argsText = JSON.stringify({ target: '/work/app', lenses: LENSES.slice(0, 1), model: 'model-x', effort: 'xhigh' })
+  const argsText = JSON.stringify({ auditMode: 'split', target: '/work/app', lenses: LENSES.slice(0, 1), model: 'model-x', effort: 'xhigh' })
 
   const result = await rt.run('adversarial-audit', argsText)
 
@@ -142,7 +142,7 @@ test('adversarialAudit_asksForReproAndRunsIt_whenAuditingAndVerifying', async ()
   const audits = { contract: { findings: [finding('c1')] } }
   const rt = createRuntime({ respond: respondWith({ audits, verdicts: { c1: { verdict: 'CONFIRMED', evidence: 'reran' } } }) })
 
-  await rt.run('adversarial-audit', { target: '/work/app', lenses: LENSES })
+  await rt.run('adversarial-audit', { auditMode: 'split', target: '/work/app', lenses: LENSES })
 
   const auditCall = rt.record.agents.find((call) => call.opts.label === 'audit:contract')
   const findingSchema = auditCall.opts.schema.properties.findings.items
@@ -156,7 +156,7 @@ test('adversarialAudit_reportsFailedLens_whenAuditorThrows', async () => {
 
   const rt = createRuntime({ respond: respondWith({ audits: { tests: new Error('api down') } }) })
 
-  const result = await rt.run('adversarial-audit', { target: '/work/app', lenses: LENSES })
+  const result = await rt.run('adversarial-audit', { auditMode: 'split', target: '/work/app', lenses: LENSES })
 
   assert.deepEqual(result.failedLenses, ['tests'])
   assert.deepEqual(result.lensNotes, [{ lens: 'contract', notes: 'clean' }])
@@ -168,7 +168,7 @@ test('adversarialAudit_putsGuardrailsInAuditAndVerifyPrompts_whenGiven', async (
   const audits = { contract: { findings: [finding('c1')] } }
   const rt = createRuntime({ respond: respondWith({ audits, verdicts: { c1: { verdict: 'CONFIRMED', evidence: 'reran' } } }) })
 
-  await rt.run('adversarial-audit', { target: '/work/app', lenses: LENSES, guardrails: 'GUARD-XYZ: style is not a defect.' })
+  await rt.run('adversarial-audit', { auditMode: 'split', target: '/work/app', lenses: LENSES, guardrails: 'GUARD-XYZ: style is not a defect.' })
 
   assert.deepEqual(rt.record.agents.map((call) => call.opts.label), ['audit:contract', 'audit:tests', 'verify:contract'])
   for (const call of rt.record.agents) assert.match(call.prompt, /GUARD-XYZ: style is not a defect\./)
@@ -180,7 +180,7 @@ for (const [name, partial] of [['OnlySummaryIsGiven', { adjusted_summary: 'narro
     const audits = { contract: { findings: [finding('c1')] } }
     const rt = createRuntime({ respond: respondWith({ audits, verdicts: { c1: { verdict: 'ADJUSTED', evidence: 'partly', ...partial } } }) })
 
-    const result = await rt.run('adversarial-audit', { target: '/work/app', lenses: LENSES })
+    const result = await rt.run('adversarial-audit', { auditMode: 'split', target: '/work/app', lenses: LENSES })
 
     assert.equal(result.confirmed.length, 0)
     assert.match(result.refuted[0].verdict.evidence, /AUTO-DEMOTED/)
@@ -191,7 +191,7 @@ test('adversarialAudit_capsFindingsSchema_whenMaxFindingsPerLensIsGiven', async 
 
   const rt = createRuntime({ respond: respondWith({}) })
 
-  await rt.run('adversarial-audit', { target: '/work/app', lenses: LENSES, maxFindingsPerLens: 3 })
+  await rt.run('adversarial-audit', { auditMode: 'split', target: '/work/app', lenses: LENSES, maxFindingsPerLens: 3 })
 
   assert.deepEqual(rt.record.agents.map((call) => call.opts.schema.properties.findings.maxItems), [3, 3])
 })
@@ -201,7 +201,7 @@ test('adversarialAudit_batchesSameLensFindings_inOneIndependentVerifier', async 
   const verdicts = Object.fromEntries(['c1', 'c2', 'c3'].map((id) => [id, { verdict: 'CONFIRMED', evidence: 'static caller proof' }]))
   const rt = createRuntime({ respond: respondWith({ audits, verdicts }) })
 
-  const result = await rt.run('adversarial-audit', { target: '/work/app', lenses: LENSES })
+  const result = await rt.run('adversarial-audit', { auditMode: 'split', target: '/work/app', lenses: LENSES })
 
   assert.equal(result.confirmed.length, 3)
   assert.equal(rt.record.agents.filter((call) => call.opts.label.startsWith('verify:')).length, 1)
@@ -215,7 +215,7 @@ test('adversarialAudit_leavesMissingOrDuplicateDecisionsUnverified_inBatch', asy
       { id: 'c1', verdict: 'REFUTED', evidence: 'conflicting proof' }] }
   } })
 
-  const result = await rt.run('adversarial-audit', { target: '/work/app', lenses: LENSES.slice(0, 1) })
+  const result = await rt.run('adversarial-audit', { auditMode: 'split', target: '/work/app', lenses: LENSES.slice(0, 1) })
 
   assert.equal(result.confirmed.length, 0)
   assert.deepEqual(result.unverified.map((item) => item.id), ['c1', 'c2'])
@@ -224,7 +224,7 @@ test('adversarialAudit_leavesMissingOrDuplicateDecisionsUnverified_inBatch', asy
 test('adversarialAudit_blocksMalformedAuditAndUnknownDecision_inBatch', async () => {
   const malformed = createRuntime({ respond: () => ({ findings: [finding('c1'), finding('c1')] }) })
 
-  const failed = await malformed.run('adversarial-audit', { target: '/work/app', lenses: LENSES.slice(0, 1) })
+  const failed = await malformed.run('adversarial-audit', { auditMode: 'split', target: '/work/app', lenses: LENSES.slice(0, 1) })
 
   assert.deepEqual(failed.failedLenses, ['contract'])
   assert.equal(malformed.record.agents.length, 1)
@@ -234,8 +234,72 @@ test('adversarialAudit_blocksMalformedAuditAndUnknownDecision_inBatch', async ()
     : { decisions: [{ id: 'c1', verdict: 'CONFIRMED', evidence: 'proof' },
       { id: 'unknown', verdict: 'REFUTED', evidence: 'unrelated proof' }] } })
 
-  const blocked = await unknown.run('adversarial-audit', { target: '/work/app', lenses: LENSES.slice(0, 1) })
+  const blocked = await unknown.run('adversarial-audit', { auditMode: 'split', target: '/work/app', lenses: LENSES.slice(0, 1) })
 
   assert.equal(blocked.confirmed.length, 0)
   assert.equal(blocked.unverified.length, 1)
+})
+
+test('adversarialAudit_defaultSharesOneAuditor_withoutDroppingLenses', async () => {
+  const rt = createRuntime({ respond: (prompt, opts) => ({ audits:
+    opts.schema.properties.audits.items.properties.lens.enum.map((lens) => ({ lens, findings: [], notes: `${lens} inspected` })) }) })
+  const request = { target: '/work/app', lenses: LENSES }
+
+  const result = await rt.run('adversarial-audit', request)
+
+  assert.equal(rt.record.agents.length, 1)
+  assert.deepEqual(result.failedLenses, [])
+  assert.deepEqual(result.lensNotes.map((item) => item.lens), ['contract', 'tests'])
+})
+
+test('adversarialAudit_combinedMissingLens_staysBlocked', async () => {
+  const rt = createRuntime({ respond: () => ({ audits: [{ lens: 'contract', findings: [] }] }) })
+  const request = { target: '/work/app', lenses: LENSES }
+
+  const result = await rt.run('adversarial-audit', request)
+
+  assert.deepEqual(result.failedLenses, ['tests'])
+})
+
+test('adversarialAudit_combinedFindingsUseOneSeparateVerifier_withDistinctLensIds', async () => {
+  const rt = createRuntime({ respond: (prompt, opts) => {
+    if (opts.label === 'audit:combined') return { audits: LENSES.map((lens) => ({ lens: lens.key, findings: [finding('A1')] })) }
+    return { decisions: ['contract:A1', 'tests:A1'].map((id) => ({ id, verdict: 'CONFIRMED', evidence: 'independent caller proof' })) }
+  } })
+  const request = { target: '/work/app', lenses: LENSES }
+
+  const result = await rt.run('adversarial-audit', request)
+
+  assert.deepEqual(rt.record.agents.map((call) => call.opts.label), ['audit:combined', 'verify:combined'])
+  assert.deepEqual(result.confirmed.map((finding) => `${finding.lens}/${finding.id}`), ['contract/A1', 'tests/A1'])
+})
+
+test('adversarialAudit_blocksCollidingCombinedIds_withoutLosingFindingsSilently', async () => {
+  const rt = createRuntime({ respond: () => ({ audits: [
+    { lens: 'contract', findings: [finding('api:A1')] },
+    { lens: 'contract:api', findings: [finding('A1')] },
+  ] }) })
+
+  const result = await rt.run('adversarial-audit', { target: '/work/app', lenses: [
+    { key: 'contract', prompt: 'Contract' }, { key: 'contract:api', prompt: 'API' },
+  ] })
+
+  assert.deepEqual(result.failedLenses, ['contract', 'contract:api'])
+  assert.equal(rt.record.agents.length, 1)
+})
+
+test('adversarialAudit_assignsCombinedFindingsToExactLens_whenKeysSharePrefix', async () => {
+  const rt = createRuntime({ respond: (prompt, opts) => {
+    if (opts.label === 'audit:combined') return { audits: [
+      { lens: 'contract', findings: [finding('A1')] },
+      { lens: 'contract:api', findings: [finding('A1')] },
+    ] }
+    return { decisions: ['contract:A1', 'contract:api:A1'].map((id) => ({ id, verdict: 'CONFIRMED', evidence: 'caller proof' })) }
+  } })
+
+  const result = await rt.run('adversarial-audit', { target: '/work/app', lenses: [
+    { key: 'contract', prompt: 'Contract' }, { key: 'contract:api', prompt: 'API' },
+  ] })
+
+  assert.deepEqual(result.confirmed.map((item) => [item.lens, item.id]), [['contract', 'A1'], ['contract:api', 'A1']])
 })

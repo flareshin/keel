@@ -61,9 +61,27 @@ class CodexReviewTest(unittest.TestCase):
         return path
 
     def register(self):
-        return codex_review.register(self.repo.path, AUDIT, VERIFY)
+        audit_path, audit_bytes = codex_review.locate_session(AUDIT)
+        verifier_path, verifier_bytes = codex_review.locate_session(VERIFY)
+        _, audit = codex_review.completed_report(audit_bytes, AUDIT)
+        _, verification = codex_review.completed_report(verifier_bytes, VERIFY)
+        verdict = codex_review.validate_reports(audit, verification, self.repo.path, AUDIT)
+        root = 'cx-' + VERIFY
+        source = {'via': codex_review.VIA, 'session_id': AUTHOR, 'audit_id': AUDIT, 'agent_id': VERIFY,
+                  'audit_path': str(audit_path), 'agent_transcript_path': str(verifier_path),
+                  'audit_sha256': codex_review.digest(audit_bytes), 'agent_sha256': codex_review.digest(verifier_bytes)}
+        body = {'repo': self.repo.key, 'repo_root': self.repo.path, 'run_id': root, 'root_run_id': root,
+                'since': None, 'since_tree': None, 'review_base': self.base, 'head': None,
+                'snapshot_tree': self.tree, 'reviewed_tree': self.tree, 'review_kind': codex_review.KIND,
+                'verdict': verdict, 'paths': [{'path': entry.path, 'blob': entry.blob, 'mode': entry.mode}
+                                            for entry in gitcmd.diff_entries(self.repo.path, self.base, self.tree)],
+                'source': source, writers.NO_TEST_REASON: None}
+        codex_review.validate_evidence(body)
+        existing = writers._same_review(self.repo.key, root, self.tree)
+        evidence = existing or store.write('review', body, self.repo.key)
+        return {'evidence_id': evidence['evidence_id'], 'root_run_id': root, 'verdict': verdict}
 
-    def test_register_recordsDistinctNativeProvenance_andCanBeApproved(self):
+    def test_reader_recordsDistinctNativeProvenance_andCanBeApproved(self):
         result = self.register()
         evidence = store.load('review', self.repo.key)[0]
         self.assertEqual(result['verdict'], 'PASS')
@@ -74,40 +92,39 @@ class CodexReviewTest(unittest.TestCase):
         approval = writers.write_approval(result['root_run_id'], 'approval')
         self.assertEqual(approval['heads'], {self.repo.key: evidence['evidence_id']})
 
-    def test_register_refusesSameReviewerTwice(self):
-        with self.assertRaises(writers.Refused):
-            codex_review.register(self.repo.path, AUDIT, AUDIT)
-        self.assertEqual(store.load('review', self.repo.key), [])
+    def test_retiredWriter_isUnavailable(self):
+        self.assertFalse(hasattr(codex_review, 'register'))
 
-    def test_register_refusesIncompleteReviewer(self):
+    def test_reader_refusesIncompleteReviewer(self):
         self.write_session(VERIFY, AUTHOR, self.verification, completed=False)
         with self.assertRaises(writers.Refused):
             self.register()
 
-    def test_register_refusesUnrelatedParent(self):
+    def test_reader_refusesUnrelatedParent(self):
         self.write_session(VERIFY, AUDIT, self.verification)
         with self.assertRaises(writers.Refused):
             self.register()
 
-    def test_register_refusesChangedSnapshot(self):
+    def test_reader_acceptsHistoricalEvidence_afterWorkingTreeChanges(self):
+        result = self.register()
         self.repo.write('src/a.py', 'print(3)\n')
-        with self.assertRaises(writers.Refused):
-            self.register()
+        codex_review.validate_evidence(store.load('review', self.repo.key)[0])
+        self.assertEqual(result['verdict'], 'PASS')
 
-    def test_register_refusesMissingOrBlockedLens(self):
+    def test_reader_refusesMissingOrBlockedLens(self):
         for lenses in ({}, dict(self.verification['lenses'], tests={'status': 'blocked', 'evidence': 'unavailable'})):
             with self.subTest(lenses=lenses):
                 self.write_session(VERIFY, AUTHOR, dict(self.verification, lenses=lenses))
                 with self.assertRaises(writers.Refused):
                     self.register()
 
-    def test_register_refusesUnadjudicatedFinding(self):
+    def test_reader_refusesUnadjudicatedFinding(self):
         finding = {'id': 'A1', 'impact': 'medium', 'evidence': 'src/a.py:1', 'scenario': 'input 1 returns 2 instead of 1'}
         self.write_session(AUDIT, AUTHOR, dict(self.report, findings=[finding]))
         with self.assertRaises(writers.Refused):
             self.register()
 
-    def test_register_derivesNeedsFixes_fromConfirmedFinding(self):
+    def test_reader_derivesNeedsFixes_fromConfirmedFinding(self):
         finding = {'id': 'A1', 'impact': 'medium', 'evidence': 'src/a.py:1', 'scenario': 'input 1 returns 2 instead of 1'}
         self.write_session(AUDIT, AUTHOR, dict(self.report, findings=[finding]))
         decision = {'id': 'A1', 'verdict': 'confirmed', 'evidence': 'static: src/a.py:1 returns the wrong constant'}
@@ -123,32 +140,32 @@ class CodexReviewTest(unittest.TestCase):
         with self.assertRaises(writers.Refused):
             writers.write_approval(result['root_run_id'], 'approval')
 
-    def test_register_refusesFinalTextInjectedInUserMessage(self):
+    def test_reader_refusesFinalTextInjectedInUserMessage(self):
         path = self.write_session(VERIFY, AUTHOR, self.verification)
         text = path.read_text().replace('"role": "assistant"', '"role": "user"')
         path.write_text(text)
         with self.assertRaises(writers.Refused):
             self.register()
 
-    def test_register_refusesReviewerResumedAfterFinal(self):
+    def test_reader_refusesReviewerResumedAfterFinal(self):
         path = self.write_session(VERIFY, AUTHOR, self.verification)
         with path.open('a') as stream:
             stream.write(json.dumps({'type': 'event_msg', 'payload': {'type': 'task_started', 'turn_id': 'turn-2'}}) + '\n')
         with self.assertRaises(writers.Refused):
             self.register()
 
-    def test_register_isIdempotentForSameCompletedReview(self):
+    def test_reader_isIdempotentForSameCompletedReview(self):
         first, second = self.register(), self.register()
         self.assertEqual(first['evidence_id'], second['evidence_id'])
         self.assertEqual(len(store.load('review', self.repo.key)), 1)
 
-    def test_register_refusesUnprovenRuleCheck(self):
+    def test_reader_refusesUnprovenRuleCheck(self):
         self.report['lenses']['rule-checks']['evidence'] = 'static: nothing suspicious'
         self.write_session(AUDIT, AUTHOR, self.report)
         with self.assertRaises(writers.Refused):
             self.register()
 
-    def test_register_refusesFailedOrUnscannedRuleCheck(self):
+    def test_reader_refusesFailedOrUnscannedRuleCheck(self):
         cases = [(2, 'summary repos=1 scanned_lines=2 signals=0 unscanned=none blocked=repo'),
                  (0, 'summary repos=0 scanned_lines=0 signals=0 unscanned=none blocked=none'),
                  (0, 'summary repos=1 scanned_lines=2 signals=0 unscanned=submodule blocked=none'),
@@ -165,7 +182,7 @@ class CodexReviewTest(unittest.TestCase):
             with self.assertRaises(writers.Refused):
                 codex_review.run_rule_checks(self.repo.path, self.base, self.tree)
 
-    def test_register_refusesReviewerSummaryForAnotherScan(self):
+    def test_reader_refusesReviewerSummaryForAnotherScan(self):
         self.report['lenses']['rule-checks']['evidence'] = 'summary repos=999 scanned_lines=99 signals=0 unscanned=none blocked=none'
         self.write_session(AUDIT, AUTHOR, self.report)
         with self.assertRaises(writers.Refused):
@@ -209,43 +226,38 @@ class CodexReviewTest(unittest.TestCase):
         self.assertFalse(decision.ok)
         self.assertTrue(any('does not cover' in reason.text for reason in decision.reasons))
 
-    def test_register_refusesTopLevelAuthorAsReviewer(self):
+    def test_reader_refusesTopLevelAuthorAsReviewer(self):
         self.write_session(VERIFY, None, self.verification)
         with self.assertRaises(writers.Refused):
             self.register()
 
-    def test_register_refusesDuplicateRollout(self):
+    def test_reader_refusesDuplicateRollout(self):
         path = self.write_session(VERIFY, AUTHOR, self.verification)
         path.with_name('rollout-copy-' + VERIFY + '.jsonl').write_bytes(path.read_bytes())
         with self.assertRaises(writers.Refused):
             self.register()
 
-    def test_register_refusesMismatchedTarget(self):
+    def test_reader_refusesMismatchedTarget(self):
         self.write_session(VERIFY, AUTHOR, dict(self.verification, tree='a' * 40))
         with self.assertRaises(writers.Refused):
             self.register()
 
-    def test_register_refusesMissingAuditLink(self):
+    def test_reader_refusesMissingAuditLink(self):
         self.write_session(VERIFY, AUTHOR, dict(self.verification, audit_session=None))
         with self.assertRaises(writers.Refused):
             self.register()
 
-    def test_register_derivesPass_whenFindingIsRefutedWithEvidence(self):
+    def test_reader_derivesPass_whenFindingIsRefutedWithEvidence(self):
         finding = {'id': 'A1', 'impact': 'high', 'evidence': 'src/a.py:1', 'scenario': 'suspected wrong value'}
         self.write_session(AUDIT, AUTHOR, dict(self.report, findings=[finding]))
         decision = {'id': 'A1', 'verdict': 'refuted', 'evidence': 'static: caller requires the value 2'}
         self.write_session(VERIFY, AUTHOR, dict(self.verification, decisions=[decision]))
         self.assertEqual(self.register()['verdict'], 'PASS')
 
-    def test_register_derivesNeedsFixes_forNewVerifierFinding(self):
+    def test_reader_derivesNeedsFixes_forNewVerifierFinding(self):
         finding = {'id': 'V1', 'impact': 'high', 'evidence': 'src/a.py:1', 'scenario': 'wrong value'}
         self.write_session(VERIFY, AUTHOR, dict(self.verification, findings=[finding]))
         self.assertEqual(self.register()['verdict'], 'NEEDS_FIXES')
-
-    def test_register_refusesCallerFromOtherAuthor(self):
-        with patch.dict(os.environ, {'CODEX_THREAD_ID': AUDIT}):
-            with self.assertRaises(writers.Refused):
-                self.register()
 
     def test_genericWriter_rejectsNativeEvidenceImport(self):
         request = self.sandbox.review_request(self.repo)

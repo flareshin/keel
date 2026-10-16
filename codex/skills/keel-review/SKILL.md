@@ -20,8 +20,8 @@ whether `docs/codex-review.md` exists under KEEL_HOME. If either is absent, repo
 formal registration as unavailable; never synthesize an evidence record.
 
 Read that document before spawning reviewers. It owns the report schema and
-registration contract. Follow `docs/review-policy.md`: spawn one independent child
-per required lens over the same exact Git base and snapshot. Spawn one different
+registration contract. Follow `docs/review-policy.md`: use one independent child for all required lenses by default; split by lens
+when risk or scope warrants it over the same exact Git base and snapshot. Spawn one different
 verifier for each lens with findings, batching that lens's findings. Clean lenses
 need no verifier. Verifiers settle findings instead of repeating the full audit.
 Each child returns exactly the documented version 2 JSON as its final answer;
@@ -33,8 +33,8 @@ only when findings exist. Inspect the resulting evidence. Native evidence suppor
 the OS user's default local sessions only; custom profiles and archived records
 are unsupported. After a code fix, rerun relevant tests and review the delta from
 the recorded version 2 snapshot, settling every prior unresolved finding with
-evidence. A changed requirement or base needs a new full review. Legacy version 1
-records keep their original rules. Trusted session/evidence guards
+evidence. A changed requirement or base needs a new full review. Historical records are read-only; use the retirement inventory before removing
+the compatibility decoder. Trusted session/evidence guards
 are prerequisites, not proof of a sandbox. Never modify source rollout records.
 
 Explain the result and remaining limits to the owner. Only the owner runs

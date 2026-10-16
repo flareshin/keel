@@ -88,7 +88,7 @@ test('lensReview_prepareCommandsYieldEvidenceForRealRepo_whenRunInBash', async (
   writeFileSync(join(repo, 'b.txt'), 'new\n')
   const rt = createRuntime({ respond: shellResponder(box) })
   // when
-  const result = await rt.run('lens-review', { diffs: [{ repo, base: 'main' }] })
+  const result = await rt.run('lens-review', { auditMode: 'split', diffs: [{ repo, base: 'main' }] })
   // then
   assert.equal(result.verdict, 'PASS')
   const evidence = parseEvidenceLine(evidenceLines(result.report)[0])
@@ -116,7 +116,7 @@ test('lensReview_prepareCommandResolvesCommitRange_whenHeadIsABranch', async () 
   const headSha = box.git(repo, 'rev-parse', 'HEAD')
   const rt = createRuntime({ respond: shellResponder(box) })
   // when
-  const result = await rt.run('lens-review', { diffs: [{ repo, base: 'main', head: 'feature/x' }], runId: 'rv-fixed-0001' })
+  const result = await rt.run('lens-review', { auditMode: 'split', diffs: [{ repo, base: 'main', head: 'feature/x' }], runId: 'rv-fixed-0001' })
   // then
   const evidence = parseEvidenceLine(evidenceLines(result.report)[0])
   assert.deepEqual([evidence.review_base, evidence.head, evidence.snapshot_tree], [baseSha, headSha, null])
@@ -135,7 +135,7 @@ test('lensReviewExamples_passArgsValidation_whenRunWithStubbedAgents', async () 
   }
   // when
   const verdicts = []
-  for (const scriptArgs of [examples.root, examples.delta]) verdicts.push((await createRuntime({ respond }).run('lens-review', scriptArgs)).verdict)
+  for (const scriptArgs of [examples.root, examples.delta]) verdicts.push((await createRuntime({ respond }).run('lens-review', { ...scriptArgs, auditMode: 'split' })).verdict)
   // then
   assert.deepEqual(verdicts, ['PASS', 'PASS'])
 })
@@ -210,7 +210,7 @@ test('lensReview_prepareCommandDiffsFromSinceTree_whenSinceIsATree', async () =>
   writeFileSync(join(repo, 'a.txt'), 'three\n')
   const rt = createRuntime({ respond: shellResponder(box) })
   // when
-  const result = await rt.run('lens-review', { diffs: [{ repo, base: 'HEAD~1', since: sinceTree }], rootRunId: 'rv-root-0001' })
+  const result = await rt.run('lens-review', { auditMode: 'split', diffs: [{ repo, base: 'HEAD~1', since: sinceTree }], rootRunId: 'rv-root-0001' })
   // then
   assert.equal(result.verdict, 'PASS')
   assert.equal(parseEvidenceLine(evidenceLines(result.report)[0]).since, sinceTree)
@@ -224,9 +224,9 @@ test('lensReview_failsInPrepareNamingTheTree_whenSinceIsACommit', async () => {
   const commit = box.git(repo, 'rev-parse', 'HEAD')
   const rt = createRuntime({ respond: shellResponder(box) })
   // when
-  const result = await rt.run('lens-review', { diffs: [{ repo, base: 'HEAD~1', since: commit }], rootRunId: 'rv-root-0001' })
+  const result = await rt.run('lens-review', { auditMode: 'split', diffs: [{ repo, base: 'HEAD~1', since: commit }], rootRunId: 'rv-root-0001' })
   // then
   assert.equal(result.verdict, 'ERROR')
-  assert.match(result.error, new RegExp(`prepare failed for diffs\\[0\\] .*since ${commit} is not a tree id`))
+  assert.match(result.error, new RegExp(`prepare failed for diffs\\[0\\] [\\s\\S]*since ${commit} is not a tree id`))
   assert.deepEqual(rt.record.agents.map((call) => call.opts.label), ['prepare'])
 })

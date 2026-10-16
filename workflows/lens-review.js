@@ -19,7 +19,7 @@ const READABLE_KEY = 'readable-code'
 const RULE_CHECKS_KEY = 'rule-checks'
 const BLOCKING_IMPACT = ['high', 'medium']
 const AUTHOR_TEXT_ARGS = ['readingGuide', 'guardrails']
-const KNOWN_ARGS = ['diffs', 'lenses', 'guardrails', 'requirement', 'readingGuide', 'priorFindings', 'runId', 'rootRunId', 'maxFindingsPerLens', 'model', 'effort']
+const KNOWN_ARGS = ['diffs', 'lenses', 'guardrails', 'requirement', 'readingGuide', 'priorFindings', 'runId', 'rootRunId', 'maxFindingsPerLens', 'model', 'effort', 'auditMode', 'prepared']
 const AUTHOR_CLAIMS = [
   /\btests? (?:all |now )?(?:pass|passes|passed|passing)\b/i,
   /\b(?:all|is|are|now) green\b/i,
@@ -121,6 +121,7 @@ function readArgs() {
 function findArgsProblem() {
   const unknownKey = Object.keys(A).find((key) => !KNOWN_ARGS.includes(key))
   if (unknownKey) return `args.${unknownKey} is not an argument; reviewer briefs take only ${KNOWN_ARGS.join(', ')}`
+  if (A.auditMode !== undefined && !['combined', 'split'].includes(A.auditMode)) return 'args.auditMode must be combined or split'
   if (!Array.isArray(DIFFS) || DIFFS.length === 0) return 'args.diffs ([{repo, base}]) is required; an empty review does not run'
   const badDiffIndex = DIFFS.findIndex((d) => !isDiffShaped(d))
   if (badDiffIndex >= 0) return `diffs[${badDiffIndex}] has the wrong shape: {repo: absolute path without quotes, base: ref, head?: ref} or {repo, base, since: 40-hex tree id}`
@@ -167,7 +168,7 @@ function findRunIdProblem(isDelta) {
 }
 
 async function prepareReview() {
-  const output = await agent(buildPreparePrompt(), {
+  const output = A.prepared !== undefined ? A.prepared : await agent(buildPreparePrompt(), {
     label: 'prepare', phase: 'Prepare', schema: PREPARE_SCHEMA, model: MODEL, effort: MECHANICAL_EFFORT,
   })
   if (!output) return { error: 'prepare agent returned nothing' }
@@ -274,7 +275,7 @@ function withReadingGuide(lens) {
 function buildReadableLens() {
   return {
     key: READABLE_KEY,
-    prompt: `Lens: readable-code. Load the /readable-code skill (Skill tool) in full and judge new and changed lines against its rules, tagged K5.1-K5.16. Exception: K5.14 covers all comments in code files touched by the diff, including pre-existing comments; inspect them at the reviewed end and require an allowed exception for each retained comment. Verify behavior from implementation, callers and tests; comments are not evidence, and an explanatory-comment-only change cannot establish a behavior fix. Tool-consumed directive changes are behavior changes and require failing reproduction and passing tool verification. Check the author's reading guide against the code (Entry point, Flow, Changed, Read first); a guide that misstates the code is a finding.\n${buildReadingGuideBlock()}`,
+    prompt: `Lens: readable-code. Load the /readable-code checklist and relevant full rule sections and judge new and changed lines against its rules, tagged K5.1-K5.16. K5.14 applies to new and changed comments; do not expand the task into unrelated legacy cleanup. Verify behavior from implementation, callers and tests; comments are not evidence, and an explanatory-comment-only change cannot establish a behavior fix. Tool-consumed directive changes are behavior changes and require failing reproduction and passing tool verification. Check the author's reading guide against the code (Entry point, Flow, Changed, Read first); a guide that misstates the code is a finding.\n${buildReadingGuideBlock()}`,
   }
 }
 
@@ -300,6 +301,7 @@ async function runAudit(reviewed, lensSet) {
       maxFindingsPerLens: A.maxFindingsPerLens,
       model: MODEL,
       effort: EFFORT,
+      auditMode: A.auditMode,
     })
     if (!audit || audit.error) return { error: (audit && audit.error) || 'adversarial-audit returned nothing' }
     return audit
@@ -312,7 +314,7 @@ function buildTarget(reviewed) {
   const commands = reviewed.map(buildLensDiffCommand).join('\n')
   const delta = reviewed.some((target) => target.since) ? `\n${describeDelta()}` : ''
   const requirement = A.requirement ? `\nRequirement (the request as stated, not a claim that the diff meets it):\n${A.requirement}` : ''
-  return `the code diff from these commands; review only what it introduces or changes, except K5.14 comment cleanup covers all comments in code files touched by this diff (also in a delta review). Read file content at the reviewed end with \`git show <end>:<path>\`, never from the live working tree, which may have moved on:\n${commands}${delta}${requirement}`
+  return `the code diff from these commands; review only what it introduces or changes, judge new and changed lines; existing-comment cleanup is a separate requested task. Read file content at the reviewed end with \`git show <end>:<path>\`, never from the live working tree, which may have moved on:\n${commands}${delta}${requirement}`
 }
 
 function buildLensDiffCommand(target) {

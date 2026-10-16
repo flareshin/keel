@@ -10,52 +10,13 @@ import sys
 from pathlib import Path
 import uuid
 
-from evidence import gitcmd, store, writers
+from evidence import writers
 
 KIND = 'codex-lens-review'
 VIA = 'CodexSubagents'
 LENSES = {'reuse', 'contract', 'tests', 'readable-code', 'rule-checks'}
 REPORT_KEYS = {'version', 'role', 'repo', 'base', 'tree', 'lenses', 'findings', 'audit_session', 'decisions'}
 SOURCE_KEYS = {'via', 'session_id', 'audit_id', 'agent_id', 'audit_path', 'agent_transcript_path', 'audit_sha256', 'agent_sha256'}
-
-
-def register(repo_path: str, audit_id: str, verifier_id: str) -> dict:
-    repo, key = writers._repo_of(repo_path)
-    audit_path, audit_bytes = locate_session(audit_id)
-    verifier_path, verifier_bytes = locate_session(verifier_id)
-    audit_meta, audit = completed_report(audit_bytes, audit_id)
-    verifier_meta, verification = completed_report(verifier_bytes, verifier_id)
-    author = shared_author(audit_meta, verifier_meta, audit_id, verifier_id)
-    caller = os.environ.get('CODEX_THREAD_ID')
-    if caller and caller != author:
-        raise writers.Refused('review belongs to a different author session')
-    locate_session(author)
-    verdict = validate_reports(audit, verification, repo, audit_id)
-    base, tree = audit['base'], audit['tree']
-    validate_rule_checks(repo, base, tree, audit, verification)
-    if gitcmd.object_type(repo, base) != 'commit' or gitcmd.object_type(repo, tree) != 'tree':
-        raise writers.Refused('review target objects do not exist')
-    if gitcmd.snapshot_tree(repo) != tree:
-        raise writers.Refused('working tree changed after the review')
-    paths = [{'path': entry.path, 'blob': entry.blob, 'mode': entry.mode}
-             for entry in gitcmd.diff_entries(repo, base, tree)]
-    if not paths:
-        raise writers.Refused('review recognized zero changed paths')
-    root = 'cx-' + verifier_id
-    source = {'via': VIA, 'session_id': author, 'audit_id': audit_id, 'agent_id': verifier_id,
-              'audit_path': str(audit_path), 'agent_transcript_path': str(verifier_path),
-              'audit_sha256': digest(audit_bytes), 'agent_sha256': digest(verifier_bytes)}
-    body = {'repo': key, 'repo_root': repo, 'run_id': root, 'root_run_id': root, 'since': None,
-            'since_tree': None, 'review_base': base, 'head': None, 'snapshot_tree': tree, 'reviewed_tree': tree,
-            'review_kind': KIND, 'verdict': verdict, 'paths': paths, 'source': source, writers.NO_TEST_REASON: None}
-    validate_evidence(body)
-    existing = writers._same_review(key, root, tree)
-    if existing:
-        validate_evidence(existing)
-        evidence = existing
-    else:
-        evidence = store.write('review', body, key)
-    return {'evidence_id': evidence['evidence_id'], 'root_run_id': root, 'verdict': verdict, 'paths': len(paths)}
 
 
 def validate_evidence(evidence: dict) -> None:

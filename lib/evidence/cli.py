@@ -14,10 +14,11 @@ USAGE = """usage:
   keel test -- <command…>
   keel approve <root_run_id> [--read]
   keel snapshot <repo>
+  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)
   keel evidence write-review          (stdin: {"keel_evidence":{…},"verdict":…,"source":{…}})
   keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]
   keel evidence show [--repo <path>] [--root <root_run_id>]
-  keel evidence record-codex --repo <path> --audit <session UUID> --verify <session UUID>
+  keel evidence compatibility         (read-only retirement inventory across repos)
   keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]
   keel evidence gc"""
 EXIT_OK = 0
@@ -43,7 +44,7 @@ def main(argv: List[str]) -> int:
 def _dispatch(argv: List[str]) -> int:
     if not argv:
         raise Usage("missing command")
-    command = {"test": _test, "approve": _approve, "snapshot": _snapshot, "evidence": _evidence}.get(argv[0])
+    command = {"test": _test, "approve": _approve, "snapshot": _snapshot, "evidence": _evidence, "review": _review}.get(argv[0])
     if command is None:
         raise Usage("unknown command " + argv[0])
     return command(argv[1:])
@@ -53,6 +54,14 @@ def _test(rest: List[str]) -> int:
     if rest[:1] != ["--"]:
         raise Usage("keel test -- <command…>")
     return testrun.run(rest[1:], os.getcwd())
+
+
+def _review(rest: List[str]) -> int:
+    if rest != ['prepare']:
+        raise Usage('keel review prepare reads workflow args from stdin')
+    from evidence import prepare
+    _print(prepare.review(_stdin_json()))
+    return EXIT_OK
 
 
 def _approve(rest: List[str]) -> int:
@@ -78,25 +87,23 @@ def _snapshot(rest: List[str]) -> int:
 def _evidence(rest: List[str]) -> int:
     if not rest:
         raise Usage("keel evidence <write-review|write-smoke|show|gc>")
-    subcommand, options = rest[0], _options(rest[1:], {"--repo", "--run", "--root", "--audit", "--verify", "--audits", "--verifiers"})
+    subcommand, options = rest[0], _options(rest[1:], {"--repo", "--run", "--root", "--audits", "--verifiers"})
     if subcommand == "record-codex":
-        from evidence import codex_review
-        if '--audits' in options:
-            from evidence import codex_lenses
-            if not {'--repo', '--audits'} <= set(options) or set(options) - {'--repo', '--audits', '--verifiers'}:
-                raise Usage('lens registration requires --repo, --audits and optional --verifiers')
-            verifiers = options['--verifiers'].split(',') if '--verifiers' in options else []
-            _print(codex_lenses.register(options['--repo'], options['--audits'].split(','), verifiers))
-            return EXIT_OK
-        if set(options) != {"--repo", "--audit", "--verify"}:
-            raise Usage("record-codex requires --repo, --audit and --verify")
-        _print(codex_review.register(options["--repo"], options["--audit"], options["--verify"]))
+        from evidence import codex_lenses
+        if not {'--repo', '--audits'} <= set(options) or set(options) - {'--repo', '--audits', '--verifiers'}:
+            raise Usage('registration requires --repo, --audits and optional --verifiers')
+        verifiers = options['--verifiers'].split(',') if '--verifiers' in options else []
+        _print(codex_lenses.register(options['--repo'], options['--audits'].split(','), verifiers))
     elif subcommand == "write-review":
         _print(writers.write_review(_stdin_json()))
     elif subcommand == "write-smoke":
         _print(writers.write_smoke(options.get("--repo") or os.getcwd(), options.get("--run")))
     elif subcommand == "show":
         _print(show(options.get("--repo") or os.getcwd(), options.get("--root")))
+    elif subcommand == 'compatibility':
+        if options:
+            raise Usage('compatibility inventories all repositories; it takes no options')
+        _print(compatibility())
     elif subcommand == "gc":
         _print({"deleted": gc.collect()})
     else:
@@ -123,6 +130,20 @@ def show(repo_path: str, root_run_id: Optional[str]) -> dict:
     return {"repo": repo_key, "chains": chains,
             "tests": [evidence["evidence_id"] for evidence in store.load("tests", repo_key)],
             "smoke": [evidence["evidence_id"] for evidence in store.load("smoke", repo_key)]}
+
+
+def compatibility() -> dict:
+    from evidence import codex_review
+    count, roots = 0, []
+    for key in store.repo_keys('review'):
+        reviews = store.load('review', key)
+        old = {item['evidence_id'] for item in reviews if item.get('review_kind') == codex_review.KIND
+               and (item.get('source') or {}).get('version') != 2}
+        count += len(old)
+        roots.extend(chain.root_run_id for chain in build_chains(reviews)
+                     if any(link['evidence_id'] in old for link in chain.links))
+    return {'read_only_records': count, 'chain_roots': sorted(set(roots)),
+            'reader_removable': count == 0 and not roots}
 
 
 def _options(args: List[str], allowed: set) -> dict:

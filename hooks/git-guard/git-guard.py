@@ -30,6 +30,7 @@ import sys
 from dataclasses import dataclass, field
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..", "lib"))
 
 from hookkit import knownvalues, protocol  # noqa: E402
 from hookkit.env import boundary_scanner, data_dir, keel_home, overlay_dir, overlay_path  # noqa: E402
@@ -256,14 +257,23 @@ def check_live_checkouts(call: list) -> list:
         index = git_subcommand_index(step.argv)
         if index is not None and step.argv[index] in LIVE_MOVING_SUBCOMMANDS:
             toplevel = find_toplevel(git_directory(step.argv, step.directory, step.expansion))
+            if toplevel and live.root_of(toplevel) == toplevel and is_approved_fast_forward(step.argv[index:], toplevel):
+                continue
             found.append(("git " + step.argv[index], live.root_of(toplevel) if toplevel else None))
     return [live_violation(what, root) for what, root in found if root]
+
+
+def is_approved_fast_forward(args: list, repo: str) -> bool:
+    if len(args) != 3 or args[:2] != ['merge', '--ff-only']:
+        return False
+    from evidence.activation import approved_fast_forward
+    return approved_fast_forward(repo, args[2])
 
 
 def live_violation(what: str, root: str) -> Violation:
     return Violation(C_ISOLATION, (
         "%s is inside the live checkout %s. Work in a worktree: `git -C %s worktree add ../%s-wt/<topic> -b <topic>`; "
-        "the live checkout moves only when the user runs `git -C %s merge --ff-only <branch>`."
+        "the live checkout needs an exact-commit owner-approved, gate-verified fast-forward; otherwise the user runs `git -C %s merge --ff-only <branch>`."
         % (what, root, root, os.path.basename(root), root)))
 
 
@@ -571,9 +581,6 @@ class ProtectedStore:
 
 
 class LiveCheckouts:
-    """The keel and overlay checkouts the links point at (KEEL_HOME, KEEL_OVERLAY_DIR). Sessions work
-    in worktrees; a live checkout moves only by a fast-forward merge the user runs."""
-
     def __init__(self):
         checkouts = [path for path in (keel_home(), overlay_dir()) if os.path.isdir(path)]
         self.roots = [os.path.realpath(path) for path in checkouts]

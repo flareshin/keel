@@ -94,8 +94,13 @@ def write_approval(root_run_id: str, kind: str) -> dict:
         if head.get("review_kind") == codex_review.KIND or (head.get("source") or {}).get("via") == codex_review.VIA:
             codex_review.validate_evidence(head)
     pinned = {key: head["evidence_id"] for key, head in heads.items()}
+    commits = {}
+    for key, head in heads.items():
+        commit = gitcmd.commit_sha(head['repo_root'], 'HEAD')
+        if commit and gitcmd.tree_of_commit(head['repo_root'], commit) == head['reviewed_tree']:
+            commits[key] = commit
     evidence = store.write(kind, {"root_run_id": root_run_id, "heads": pinned, "source": APPROVAL_SOURCE,
-                                  "session_id": None})
+                                  "session_id": None, "commits": commits})
     return {"evidence_id": evidence["evidence_id"], "kind": kind, "root_run_id": root_run_id, "heads": pinned}
 
 

@@ -32,6 +32,77 @@ class CodexLensesTest(unittest.TestCase):
         from evidence import codex_lenses
         return codex_lenses.register(self.repo.path, self.audits, self.verifiers)
 
+    def combine_audits(self):
+        identity = str(uuid.uuid4())
+        report = copy.deepcopy(self.reports[self.audits[0]])
+        report['lenses'] = {lens: copy.deepcopy(self.reports[audit]['lenses'][lens])
+                            for lens, audit in zip(LENSES, self.audits)}
+        self.audits = [identity]
+        self.reports[identity] = report
+        self.write_session(identity, AUTHOR, report)
+        return identity
+
+    def test_lenses_acceptsOneIndependentAuditor_coveringAllLenses(self):
+        self.combine_audits()
+
+        result = self.register_lenses()
+
+        self.assertEqual(result['verdict'], 'PASS')
+        self.assertEqual(len(store.load('review', self.repo.key)[0]['source']['reviewers']), 1)
+
+    def test_lenses_combinedAuditorStillNeedsEveryLens(self):
+        identity = self.combine_audits()
+        del self.reports[identity]['lenses']['tests']
+        self.write_session(identity, AUTHOR, self.reports[identity])
+
+        with self.assertRaises(writers.Refused):
+            self.register_lenses()
+
+    def test_lenses_combinedFindingsNeedLensIdentity(self):
+        identity = self.combine_audits()
+        self.reports[identity]['findings'] = [{'id': 'A1', 'impact': 'medium',
+            'evidence': 'src/a.py:1', 'scenario': 'caller receives wrong constant'}]
+        self.write_session(identity, AUTHOR, self.reports[identity])
+
+        with self.assertRaises(writers.Refused):
+            self.register_lenses()
+
+    def test_compatibilityInventoryCountsUnexpiredReadOnlyRecords(self):
+        self.assertEqual(cli.compatibility()['read_only_records'], 0)
+        legacy.CodexReviewTest.register(self)
+
+        inventory = cli.compatibility()
+
+        self.assertEqual(inventory['read_only_records'], 1)
+        self.assertFalse(inventory['reader_removable'])
+
+    def test_lenses_combinedFindingGetsSeparateVerifier(self):
+        identity = self.combine_audits()
+        self.reports[identity]['findings'] = [{'id': 'contract:A1', 'impact': 'medium',
+            'evidence': 'src/a.py:1', 'scenario': 'caller receives wrong constant'}]
+        self.write_session(identity, AUTHOR, self.reports[identity])
+        verifier = self.add_verifier(identity, 'confirmed')
+        self.reports[verifier]['decisions'][0]['id'] = 'contract:A1'
+        self.write_session(verifier, AUTHOR, self.reports[verifier])
+
+        self.assertEqual(self.register_lenses()['verdict'], 'NEEDS_FIXES')
+
+    def test_lenses_combinedDeltaSettlesPriorFindingWithLensPrefix(self):
+        self.add_verifier(self.add_finding(), 'confirmed')
+        previous = self.register_lenses()
+        self.start_delta(previous)
+        identity = self.combine_audits()
+        self.reports[identity]['decisions'] = [{'id': 'contract:A1', 'verdict': 'refuted',
+            'evidence': 'src/a.py:1 fixed; caller and regression checked'}]
+        self.write_session(identity, AUTHOR, self.reports[identity])
+
+        self.assertEqual(self.register_lenses()['verdict'], 'PASS')
+
+    def test_lenses_retiredRegistrationFlagsCannotCreateEvidence(self):
+        self.assertEqual(cli.main(['evidence', 'record-codex', '--repo', self.repo.path,
+                                  '--audit', self.audits[0], '--verify', self.audits[1]]), 2)
+        self.assertEqual(store.load('review', self.repo.key), [])
+
     def add_finding(self, lens='contract', impact='medium'):
         identity = self.audits[LENSES.index(lens)]
         finding = {'id': 'A1', 'impact': impact, 'evidence': 'src/a.py:1',

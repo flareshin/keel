@@ -451,13 +451,12 @@ def check_diff_parser():
 
 
 def check_rule_sources():
-    """The thresholds and banned names are copies of SKILL.md; fail when the skill changes them."""
-    skill = read_text(os.path.join(SKILL_DIR, 'SKILL.md'))
+    skill = read_text(os.path.join(SKILL_DIR, 'references', 'rules.md'))
     pinned = ['`' + BANNED_NAMES.replace('|', ', ') + '`', f'class {CLASS_LINE_SIGNAL}', f'FE component {COMPONENT_LINE_SIGNAL}',
               f'`useState` per component {USE_STATE_SIGNAL}', f'**{DIFF_LINE_SIGNAL} changed lines**',
               '`@ts-ignore`', '`@ts-expect-error`', '`@SuppressWarnings("unchecked")`', 'a disabled `react-hooks/exhaustive-deps`']
     missing = [p for p in pinned if p not in skill]
-    return [expect(not missing, f'readable-code SKILL.md no longer states {missing}: update the constants')]
+    return [expect(not missing, f'readable-code references/rules.md no longer states {missing}: update the constants')]
 
 
 def check_crash_contract():

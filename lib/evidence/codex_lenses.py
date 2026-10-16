@@ -75,10 +75,10 @@ def analyze(repo: str, key: str, reviews: list[Review], trail: set[str], previou
         validate_report(review.report, repo, target)
         report = review.report
         if report['role'] == 'audit':
-            lens = next(iter(report['lenses']))
-            if lens in audits:
-                raise writers.Refused('each lens needs exactly one independent auditor')
-            audits[lens] = review
+            for lens in report['lenses']:
+                if lens in audits:
+                    raise writers.Refused('each lens needs exactly one independent auditor')
+                audits[lens] = review
         else:
             identity = report['audit_session']
             if identity in verifiers:
@@ -136,14 +136,19 @@ def validate_report(report: dict, repo: str, target: tuple) -> None:
     if not isinstance(lenses, dict):
         raise writers.Refused('lenses must be an object')
     if report['role'] == 'audit':
-        if len(lenses) != 1 or not set(lenses) <= native.LENSES or report['audit_session'] is not None:
-            raise writers.Refused('each auditor covers exactly one lens')
+        if (len(lenses) != 1 and set(lenses) != native.LENSES) or not set(lenses) <= native.LENSES or report['audit_session'] is not None:
+            raise writers.Refused('an auditor covers one lens or the complete required set')
         for item in lenses.values():
             if not isinstance(item, dict) or set(item) != {'status', 'evidence'} or item['status'] != 'complete' or not native.nonblank(item['evidence']):
                 raise writers.Refused('incomplete or unproven review lens')
     elif lenses or not isinstance(report['audit_session'], str):
         raise writers.Refused('verifiers settle findings instead of repeating lens audits')
     native.validate_findings(report['findings'])
+    if report['role'] == 'audit' and set(lenses) == native.LENSES:
+        for finding in report['findings']:
+            lens, separator, identity = finding['id'].partition(':')
+            if lens not in lenses or not separator or not identity:
+                raise writers.Refused('combined finding ids must start with their lens and a colon')
 
 
 def prior_review(key: str, base: str, since_tree, root, trail: set[str], previous_id: str | None) -> tuple:
@@ -163,6 +168,8 @@ def prior_review(key: str, base: str, since_tree, root, trail: set[str], previou
 
 
 def settle_lenses(audits: dict, verifiers: dict, prior_findings: dict) -> dict:
+    if len({review.identity for review in audits.values()}) == 1:
+        return settle_combined(next(iter(audits.values())), verifiers, prior_findings)
     findings = {}
     for lens, review in audits.items():
         audit = review.report
@@ -173,6 +180,26 @@ def settle_lenses(audits: dict, verifiers: dict, prior_findings: dict) -> dict:
             remaining += verification['findings']
         native.validate_findings(remaining)
         findings[lens] = remaining
+    return findings
+
+
+def settle_combined(review: Review, verifiers: dict, prior_findings: dict) -> dict:
+    audit = review.report
+    prior = [dict(finding, id=lens + ':' + finding['id'])
+             for lens, findings in prior_findings.items() for finding in findings]
+    remaining = native.adjudicated_findings(prior, audit['decisions'])
+    if audit['findings']:
+        verification = verifiers[review.identity].report
+        remaining += native.adjudicated_findings(audit['findings'], verification['decisions'])
+        remaining += verification['findings']
+    findings = {lens: [] for lens in native.LENSES}
+    for finding in remaining:
+        lens, separator, identity = finding['id'].partition(':')
+        if lens not in findings or not separator or not identity:
+            raise writers.Refused('combined finding ids must start with their lens and a colon')
+        findings[lens].append(dict(finding, id=identity))
+    for items in findings.values():
+        native.validate_findings(items)
     return findings
 
 

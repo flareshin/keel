@@ -1,9 +1,9 @@
 export const meta = {
   name: 'adversarial-audit',
-  description: 'Lens fan-out audit plus one finding verifier per nonempty lens; returns confirmed and adjusted findings only',
+  description: 'Independent lens coverage plus batched finding verification; returns confirmed and adjusted findings only',
   phases: [
-    { title: 'Audit', detail: 'one auditor agent per lens over the target' },
-    { title: 'Verify', detail: 'one separate verifier per lens with findings; incomplete decisions stay unverified' },
+    { title: 'Audit', detail: 'one independent auditor covers the lenses; split when the risk warrants it' },
+    { title: 'Verify', detail: 'one separate verifier per nonempty source audit; incomplete decisions stay unverified' },
   ],
 }
 
@@ -14,6 +14,7 @@ const GUARDRAILS = A.guardrails || ''
 const MAX_FINDINGS = A.maxFindingsPerLens || 8
 const MODEL = A.model || 'opus'
 const EFFORT = A.effort || 'high'
+const AUDIT_MODE = A.auditMode || 'combined'
 
 const FINDINGS_SCHEMA = {
   type: 'object',
@@ -81,8 +82,47 @@ if (badLensIndex >= 0) {
 const COMMON = buildCommonPrompt()
 
 phase('Audit')
-const lensResults = await pipeline(LENSES, auditLens, verifyLensFindings)
+const lensResults = AUDIT_MODE === 'split'
+  ? await pipeline(LENSES, auditLens, verifyLensFindings)
+  : await auditCombinedLenses()
 return summarize(lensResults)
+
+async function auditCombinedLenses() {
+  const schema = {
+    type: 'object',
+    properties: {
+      audits: {
+        type: 'array',
+        items: {
+          ...FINDINGS_SCHEMA,
+          properties: { lens: { type: 'string', enum: LENSES.map((lens) => lens.key) }, ...FINDINGS_SCHEMA.properties },
+          required: ['lens', ...FINDINGS_SCHEMA.required],
+        },
+      },
+    },
+    required: ['audits'],
+  }
+  let response
+  try {
+    response = await agent(`${COMMON}\nInspect each required lens and return exactly one audit per lens. Reuse context reads, not conclusions between lenses.\nLenses: ${JSON.stringify(LENSES)}`, {
+      label: 'audit:combined', phase: 'Audit', schema, model: MODEL, effort: EFFORT,
+    })
+  } catch (e) {
+    return LENSES.map((lens) => ({ lens: lens.key, verified: [], notes: '', failed: true }))
+  }
+  const audits = Array.isArray(response?.audits) ? response.audits : []
+  const unknown = audits.some((audit) => !LENSES.some((lens) => lens.key === audit?.lens))
+  const groups = LENSES.map((lens) => {
+    const matching = audits.filter((audit) => audit?.lens === lens.key)
+    const audit = !unknown && matching.length === 1 ? matching[0] : null
+    return { lens: lens.key, findings: audit?.findings, notes: audit?.notes || '', failed: !hasValidFindingIds(audit?.findings) }
+  })
+  const findings = groups.filter((group) => !group.failed).flatMap((group) => group.findings.map((finding) => ({ ...finding, id: `${group.lens}:${finding.id}` })))
+  const batch = await verifyLensFindings({ findings }, { key: 'combined' })
+  return groups.map((group) => ({ lens: group.lens, failed: group.failed || Boolean(batch.failed), notes: group.notes,
+    verified: (batch.verified || []).filter((finding) => group.findings?.some((local) => finding.id === `${group.lens}:${local.id}`)).map((finding) => ({ ...finding, id: finding.id.slice(group.lens.length + 1), lens: group.lens })),
+  }))
+}
 
 function readArgs() {
   const raw = (typeof args !== 'undefined' && args) || {}
@@ -103,7 +143,7 @@ Finding discipline (a violation voids the finding):
 - Every finding needs disk evidence: a file:line quote or the actual output of a command. Distrust counters, labels and claims in documents until you re-check them on disk.
 - No impression critique: report a finding only when it converts into a cost (wrong behavior, bytes, misclassification, double maintenance).
 - Put in evidence and proposal only what the judgment needs, in complete sentences; no arrow chains or abbreviations.
-- Run this audit yourself; do not delegate to subagents. The workflow already fans out per lens.`
+- Run this audit yourself; do not delegate to subagents. Required lens coverage remains complete when lenses share one auditor.`
 }
 
 function auditLens(lens) {
@@ -113,10 +153,9 @@ function auditLens(lens) {
 }
 
 async function verifyLensFindings(audit, lens) {
-  if (!audit || !Array.isArray(audit.findings)) return { lens: lens.key, verified: [], notes: '', failed: true }
+  if (!hasValidFindingIds(audit?.findings)) return { lens: lens.key, verified: [], notes: '', failed: true }
   const findings = audit.findings
   const ids = findings.map((finding) => finding?.id)
-  if (ids.some((id) => typeof id !== 'string' || !id.trim()) || new Set(ids).size !== ids.length) return { lens: lens.key, verified: [], notes: '', failed: true }
   const notes = audit.notes || ''
   if (findings.length === 0) return { lens: lens.key, verified: [], notes }
   try {
@@ -134,6 +173,12 @@ async function verifyLensFindings(audit, lens) {
   } catch (e) {
     return { lens: lens.key, verified: findings.map((finding) => ({ ...finding, lens: lens.key, verdict: null, verifyError: String(e?.message || e) })), notes }
   }
+}
+
+function hasValidFindingIds(findings) {
+  if (!Array.isArray(findings)) return false
+  const ids = findings.map((finding) => finding?.id)
+  return ids.every((id) => typeof id === 'string' && id.trim()) && new Set(ids).size === ids.length
 }
 
 function isEvidencedVerdict(decision) {

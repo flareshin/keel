@@ -1,6 +1,6 @@
-
 from __future__ import annotations
 
+from collections import deque
 from typing import List, NamedTuple, Optional, Tuple
 
 from evidence import codex_review, gitcmd, registry, store, writers
@@ -41,6 +41,7 @@ class Decision(NamedTuple):
     files: int
     lines: int
     k3_waiver: Optional[str]
+    root_run_ids: Tuple[str, ...] = ()
 
 
 def judge(outgoing: Outgoing) -> Decision:
@@ -53,13 +54,13 @@ def judge(outgoing: Outgoing) -> Decision:
     if outgoing.row.gate == GATE_SMOKE or risk.risk_class == SMOKE_ONLY:
         reasons = _smoke_reasons(outgoing, entries)
         return Decision(not reasons, tuple(reasons), risk.risk_class, None, risk.files, risk.lines, None)
-    chain, reasons = _best_chain(outgoing, entries)
+    chain, roots, reasons = _resolve_reviews(outgoing, entries)
     reasons += _test_reasons(outgoing, entries, risk)
     waiver = _no_test_reason(chain)
     reasons += _same_range_test_reasons(risk, waiver)
     root_run_id = chain.root_run_id if chain else None
     used_waiver = waiver if risk.logic_paths() and not risk.has_test_path() else None
-    return Decision(not reasons, tuple(reasons), risk.risk_class, root_run_id, risk.files, risk.lines, used_waiver)
+    return Decision(not reasons, tuple(reasons), risk.risk_class, root_run_id, risk.files, risk.lines, used_waiver, roots)
 
 
 def covers(repo_root: str, tree: str, entries: List[PathEntry]) -> bool:
@@ -77,8 +78,50 @@ def bound_evidence(kind: str, root_run_id: str, repo_key: str, head_id: str) -> 
                  if evidence["root_run_id"] == root_run_id and evidence["heads"].get(repo_key) == head_id), None)
 
 
-def _best_chain(outgoing: Outgoing, entries: List[PathEntry]) -> Tuple[Optional[Chain], List[Reason]]:
+def _resolve_reviews(outgoing: Outgoing, entries: List[PathEntry]):
     chains = build_chains(store.load("review", outgoing.repo_key))
+    chain, reasons = _best_chain(outgoing, entries, chains)
+    if not reasons:
+        return chain, (chain.root_run_id,), reasons
+    series = _approved_series(outgoing, chains)
+    if series:
+        return None, series, []
+    return chain, (), reasons
+
+
+def _approved_series(outgoing: Outgoing, chains: List[Chain]) -> Tuple[str, ...]:
+    pending = deque([(outgoing.head, ())])
+    visited = set()
+    while pending:
+        boundary, suffix = pending.popleft()
+        if boundary == outgoing.merge_base:
+            return suffix
+        if boundary in visited:
+            continue
+        visited.add(boundary)
+        for base, root in _approved_predecessors(outgoing, boundary, chains):
+            pending.append((base, (root,) + suffix))
+    return ()
+
+
+def _approved_predecessors(outgoing: Outgoing, boundary: str, chains: List[Chain]):
+    tree = gitcmd.tree_of_commit(outgoing.repo_root, boundary)
+    for chain in chains:
+        base = chain.root["review_base"]
+        if base == boundary or chain.head["reviewed_tree"] != tree:
+            continue
+        if not gitcmd.is_ancestor(outgoing.repo_root, outgoing.merge_base, base):
+            continue
+        if not gitcmd.is_ancestor(outgoing.repo_root, base, boundary):
+            continue
+        interval = outgoing._replace(head=boundary, merge_base=base, needs_approval=True)
+        entries = gitcmd.diff_entries(outgoing.repo_root, base, boundary)
+        if not _chain_reasons(interval, chain, entries):
+            yield base, chain.root_run_id
+
+
+def _best_chain(outgoing: Outgoing, entries: List[PathEntry],
+                chains: List[Chain]) -> Tuple[Optional[Chain], List[Reason]]:
     if not chains:
         return None, [Reason(K1, "no review evidence for %s: run lens-review on this change" % outgoing.repo_key)]
     judged = [(chain, _chain_reasons(outgoing, chain, entries)) for chain in chains]

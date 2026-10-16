@@ -59,6 +59,28 @@ new calls should use the CLI. The reporter remains a low-effort transport requir
 by the current transcript-backed provenance contract; it performs no judgment.
 Do not remove it without replacing that trusted registration path.
 
+Prepare the same request that the workflow will receive, for example in zsh:
+
+```sh
+cat > /tmp/keel-review-request.json <<'JSON'
+{"diffs":[{"repo":"/absolute/repository","base":"origin/develop"}],"requirement":"The requested behavior"}
+JSON
+"$KEEL_HOME/bin/keel" review prepare < /tmp/keel-review-request.json > /tmp/keel-review-prepared.json
+```
+
+Read both JSON files through the agent's file tool and call
+`Workflow({name:'lens-review', args:{...request, prepared}})` with their parsed
+objects. Keep all request fields, including custom lenses and delta identifiers.
+The CLI pins the candidate without an agent; review reads the pinned Git objects.
+
+Claude audit and verification default to `opus` / `high`. Fallback preparation
+and report transport default to `sonnet` / `low`; `mechanicalModel` overrides
+their model independently of `model` and `effort`. Exact report/evidence checks
+still reject altered reporter output. Review findings contain diagnosis, evidence,
+reproduction and a concise fix direction; replacement patches belong to the
+implementation step. Legacy supplied patches retain their existing adjustment
+invalidation. Start a fresh Claude session after changing workflow files.
+
 Use concise reviewer briefs with request, target and contracts. Load the code
 checklist and relevant full sections, not every reference or legacy manual. Tests
 judge regression sensitivity and meaningful failure boundaries, not a fixed count

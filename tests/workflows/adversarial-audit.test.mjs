@@ -152,6 +152,32 @@ test('adversarialAudit_asksForReproAndRunsIt_whenAuditingAndVerifying', async ()
   assert.match(verifyCall.prompt, /a repro that does not show the observed failure refutes the finding/)
 })
 
+for (const auditMode of ['combined', 'split']) {
+  test(`adversarialAudit_requestsDiagnosisWithoutReplacementPatch_whenModeIs${auditMode}`, async () => {
+    const diagnosis = { id: 'c1', summary: 'Missing cap', evidence: 'a.py:1 caller proof', proposal: 'Apply the per-line cap',
+      repro: 'static: caller at a.py:1', impact: 'medium', file: '/work/app/a.py', quote: 'a.py:1 total = price' }
+    const rt = createRuntime({ respond: (prompt, opts) => {
+      if (opts.label === 'audit:combined') return { audits: [{ lens: 'contract', findings: [diagnosis] }] }
+      if (opts.label === 'audit:contract') return { findings: [diagnosis] }
+      const sent = JSON.parse(prompt.split('\nFindings: ')[1])
+      assert.equal('change' in sent[0], false)
+      return { decisions: [{ id: sent[0].id, verdict: 'CONFIRMED', evidence: 'independent caller proof' }] }
+    } })
+
+    const result = await rt.run('adversarial-audit', { target: '/work/app', lenses: LENSES.slice(0, 1), auditMode })
+
+    const schema = rt.record.agents[0].opts.schema.properties
+    const findingSchema = (schema.audits ? schema.audits.items.properties : schema).findings.items
+    assert.equal('change' in findingSchema.properties, false)
+    assert.equal(findingSchema.required.includes('change'), false)
+    assert.ok(findingSchema.required.includes('evidence'))
+    assert.ok(findingSchema.required.includes('repro'))
+    assert.equal(result.confirmed.length, 1)
+    assert.equal(result.confirmed[0].proposal, diagnosis.proposal)
+    assert.deepEqual(result.failedLenses, [])
+  })
+}
+
 test('adversarialAudit_reportsFailedLens_whenAuditorThrows', async () => {
 
   const rt = createRuntime({ respond: respondWith({ audits: { tests: new Error('api down') } }) })

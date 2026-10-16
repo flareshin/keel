@@ -104,6 +104,37 @@ test('lensReview_runsReporterWithoutSchemaAfterEveryLens_whenReviewCompletes', a
   assert.deepEqual(rt.record.phases, ['Prepare', 'Audit', 'Report'])
 })
 
+test('lensReview_usesSonnetForTransportAndOpusForJudgment_whenModelsAreOmitted', async () => {
+  const audits = { contract: { findings: [finding('c1', 'medium')] } }
+  const verdicts = { c1: { verdict: 'CONFIRMED', evidence: 'static caller proof' } }
+  const rt = createRuntime({ respond: responder({ audits, verdicts }) })
+
+  const result = await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
+
+  assert.equal(result.verdict, 'NEEDS_FIXES')
+  assert.deepEqual(rt.record.agents.map(({ opts }) => [opts.label, opts.model, opts.effort]), [
+    ['prepare', 'sonnet', 'low'],
+    ['audit:contract', 'opus', 'high'],
+    ['audit:readable-code', 'opus', 'high'],
+    ['audit:rule-checks', 'opus', 'high'],
+    ['verify:contract', 'opus', 'high'],
+    ['report', 'sonnet', 'low'],
+  ])
+  assert.equal(evidenceLines(result.report).length, 1)
+})
+
+test('lensReview_separatesMechanicalOverrideFromAuditModel_whenBothAreGiven', async () => {
+  const rt = createRuntime({ respond: responder() })
+
+  const result = await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES,
+    model: 'review-model', effort: 'medium', mechanicalModel: 'opus' })
+
+  assert.equal(result.verdict, 'PASS')
+  assert.deepEqual(rt.record.agents.map(({ opts }) => [opts.model, opts.effort]), [
+    ['opus', 'low'], ['review-model', 'medium'], ['review-model', 'medium'], ['review-model', 'medium'], ['opus', 'low'],
+  ])
+})
+
 test('lensReview_diffsLensesAgainstSnapshotTree_whenWorkingTreeIsReviewed', async () => {
   const rt = createRuntime({ respond: responder() })
   await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES, readingGuide: 'Entry point : a.py' })
@@ -335,6 +366,9 @@ test('lensReview_keepsCallerBuiltInLens_whenCallerAlreadyGivesReadableCode', asy
 })
 
 const INVALID_ARGS = [
+  ['empty mechanical model', { diffs: [ROOT_DIFF], mechanicalModel: '' }, /args\.mechanicalModel is nonempty text/],
+  ['blank mechanical model', { diffs: [ROOT_DIFF], mechanicalModel: '  ' }, /args\.mechanicalModel is nonempty text/],
+  ['non-text mechanical model', { diffs: [ROOT_DIFF], mechanicalModel: 7 }, /args\.mechanicalModel is nonempty text/],
   ['no diffs', { lenses: CALLER_LENSES }, /args\.diffs/],
   ['relative repo', { diffs: [{ repo: 'work/app', base: 'main' }] }, /diffs\[0\] has the wrong shape/],
   ['quote in repo', { diffs: [{ repo: "/work/it's", base: 'main' }] }, /diffs\[0\] has the wrong shape/],

@@ -13,13 +13,14 @@ const CALLER_LENSES = A.lenses
 const PRIOR_FINDINGS = A.priorFindings
 const MODEL = A.model || 'opus'
 const EFFORT = A.effort || 'high'
+const MECHANICAL_MODEL = A.mechanicalModel || 'sonnet'
 const MECHANICAL_EFFORT = 'low'
 const REVIEW_KIND = 'lens-review'
 const READABLE_KEY = 'readable-code'
 const RULE_CHECKS_KEY = 'rule-checks'
 const BLOCKING_IMPACT = ['high', 'medium']
 const AUTHOR_TEXT_ARGS = ['readingGuide', 'guardrails']
-const KNOWN_ARGS = ['diffs', 'lenses', 'guardrails', 'requirement', 'readingGuide', 'priorFindings', 'runId', 'rootRunId', 'maxFindingsPerLens', 'model', 'effort', 'auditMode', 'prepared']
+const KNOWN_ARGS = ['diffs', 'lenses', 'guardrails', 'requirement', 'readingGuide', 'priorFindings', 'runId', 'rootRunId', 'maxFindingsPerLens', 'model', 'effort', 'mechanicalModel', 'auditMode', 'prepared']
 const AUTHOR_CLAIMS = [
   /\btests? (?:all |now )?(?:pass|passes|passed|passing)\b/i,
   /\b(?:all|is|are|now) green\b/i,
@@ -121,6 +122,7 @@ function readArgs() {
 function findArgsProblem() {
   const unknownKey = Object.keys(A).find((key) => !KNOWN_ARGS.includes(key))
   if (unknownKey) return `args.${unknownKey} is not an argument; reviewer briefs take only ${KNOWN_ARGS.join(', ')}`
+  if (A.mechanicalModel !== undefined && (typeof A.mechanicalModel !== 'string' || !A.mechanicalModel.trim())) return 'args.mechanicalModel is nonempty text'
   if (A.auditMode !== undefined && !['combined', 'split'].includes(A.auditMode)) return 'args.auditMode must be combined or split'
   if (!Array.isArray(DIFFS) || DIFFS.length === 0) return 'args.diffs ([{repo, base}]) is required; an empty review does not run'
   const badDiffIndex = DIFFS.findIndex((d) => !isDiffShaped(d))
@@ -169,7 +171,7 @@ function findRunIdProblem(isDelta) {
 
 async function prepareReview() {
   const output = A.prepared !== undefined ? A.prepared : await agent(buildPreparePrompt(), {
-    label: 'prepare', phase: 'Prepare', schema: PREPARE_SCHEMA, model: MODEL, effort: MECHANICAL_EFFORT,
+    label: 'prepare', phase: 'Prepare', schema: PREPARE_SCHEMA, model: MECHANICAL_MODEL, effort: MECHANICAL_EFFORT,
   })
   if (!output) return { error: 'prepare agent returned nothing' }
   const reviewed = parseReviewedTargets(output.diff_outputs)
@@ -413,7 +415,7 @@ function handBackReport(report) {
 ${REPORT_START}
 ${report}
 ${REPORT_END}`
-  return agent(prompt, { label: 'report', phase: 'Report', model: MODEL, effort: MECHANICAL_EFFORT })
+  return agent(prompt, { label: 'report', phase: 'Report', model: MECHANICAL_MODEL, effort: MECHANICAL_EFFORT })
 }
 
 function findHandBackProblem(message, expectedReport, evidenceLines) {

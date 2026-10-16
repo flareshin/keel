@@ -101,6 +101,39 @@ test('lensReview_prepareCommandsYieldEvidenceForRealRepo_whenRunInBash', async (
   assert.deepEqual(result.lensesFired, ['reuse', 'contract', 'tests', 'readable-code', 'rule-checks'])
 })
 
+test('lensReview_cliPreparedSnapshotRunsWithoutPrepareAgent_whenCandidateMovesLater', async () => {
+  const box = createSandbox()
+  const repo = join(box.root, 'app')
+  execFileSync('git', ['init', '-q', repo], { env: box.env })
+  writeFileSync(join(repo, 'a.txt'), 'one\n')
+  box.git(repo, 'add', '-A')
+  box.git(repo, 'commit', '-qm', 'base')
+  writeFileSync(join(repo, 'a.txt'), 'two\n')
+  const request = { diffs: [{ repo, base: 'main' }] }
+  const prepared = JSON.parse(execFileSync(join(KEEL_HOME, 'bin', 'keel'), ['review', 'prepare'], {
+    env: box.env, input: JSON.stringify(request), encoding: 'utf8',
+  }))
+  const target = JSON.parse(prepared.diff_outputs[0])
+  writeFileSync(join(repo, 'a.txt'), 'three\n')
+  const rt = createRuntime({ respond: (prompt, opts) => {
+    if (opts.label === 'report') return reportBetweenMarkers(prompt)
+    assert.equal(opts.label, 'audit:combined')
+    return { audits: opts.schema.properties.audits.items.properties.lens.enum.map((lens) => ({
+      lens, findings: [], notes: lens === 'rule-checks' ? cleanRuleChecksNotes(prompt) : 'inspected',
+    })) }
+  } })
+
+  const result = await rt.run('lens-review', { ...request, prepared })
+
+  assert.equal(result.verdict, 'PASS')
+  assert.deepEqual(rt.record.agents.map(({ opts }) => opts.label), ['audit:combined', 'report'])
+  const evidence = parseEvidenceLine(evidenceLines(result.report)[0])
+  assert.equal(evidence.snapshot_tree, target.snapshot_tree)
+  assert.equal(box.git(repo, 'show', `${evidence.snapshot_tree}:a.txt`), 'two')
+  assert.deepEqual(result.lensesFired, ['reuse', 'contract', 'tests', 'readable-code', 'rule-checks'])
+  assert.equal(box.git(repo, 'diff', '--cached', '--name-only'), '')
+})
+
 test('lensReview_prepareCommandResolvesCommitRange_whenHeadIsABranch', async () => {
   // given
   const box = createSandbox()

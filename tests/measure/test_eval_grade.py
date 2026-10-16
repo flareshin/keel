@@ -227,7 +227,6 @@ class FaultTest(unittest.TestCase):
         self.assertIsNone(fault_reason(facts(denied=("Edit", "Write", "AskUserQuestion", "Read", "Grep", "Glob")), TIMEOUT))
 
     def test_noFault_whenASkillCallIsDenied_soTheRunIsGradedOnWhatItDid(self) -> None:
-        # Workflow is denied, so the config refuses a Skill call for a workflow-backed skill such as lens-review.
         run = facts(changed=True, denied=("Skill",))
         self.assertEqual((fault_reason(run, TIMEOUT), run_passes(CHANGE_CASE, run)), (None, True))
 

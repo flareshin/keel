@@ -14,6 +14,7 @@ QUESTION_LINE = re.compile(r"^[ \t]*(?:(?:[-*+>#]|\d+[.)])[ \t]*)*(?:\*\*|__)?" 
 REFINED_REQUEST_HEADER = "Refined request"
 REFINED_REQUEST_HEADING = re.compile(r"^#+[ \t]*" + re.escape(REFINED_REQUEST_HEADER), re.MULTILINE)
 FENCED_CODE = re.compile(r"```.*?(?:```|\Z)", re.S)
+LEFTOVER_FAULT = "session left a project directory behind: "
 # Skill: the runner denies Workflow, so a call to a workflow-backed skill (lens-review) is refused; grade what the run did.
 GRADED_DENIALS = EDIT_TOOLS + (ASK_TOOL,) + LOOKUP_TOOLS + (SKILL_TOOL,)
 
@@ -62,5 +63,5 @@ def fault_reason(facts: RunFacts, timeout_seconds: int) -> str | None:
     if unexpected:
         return "permission denied for %s" % ", ".join(unexpected)
     if facts.leftover_project_dir:
-        return "session left a project directory behind: %s" % facts.leftover_project_dir
+        return LEFTOVER_FAULT + facts.leftover_project_dir
     return None

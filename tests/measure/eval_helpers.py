@@ -105,6 +105,24 @@ class EvalSandbox(MeasureSandbox):
         os.symlink(skill_source, os.path.join(self.data, "skills", SKILL))
         self.write("data/CLAUDE.md", GENERATED_HEADER + "\n# Principles\n")
 
+    def write_raw_dir(self, name: str, runs: List[dict], summary_eval_id: str = EVAL_ID, repeat: int = 1, keel_live: bool = True) -> str:
+        """A raw dir as an earlier run left it; each run is {case, kind, events, changed?, run?, fault?}. Returns its path."""
+        raw = "data/logs/keel-eval-%s" % name
+        cases = list(dict.fromkeys(run["case"] for run in runs))
+        self.write(raw + "/config.json", json.dumps({
+            "eval_id": EVAL_ID, "summary_eval_id": summary_eval_id, "keel_live": keel_live, "config_dir": self.data,
+            "model_requested": MODEL, "model_observed": MODEL, "repeat": repeat, "cases": cases, "command": ["claude", "-p"],
+        }))
+        records = []
+        for run in runs:
+            stem = "%s/%s-%d" % (raw, run["case"], run.get("run", 1))
+            self.write(stem + ".stream.jsonl", "".join(json.dumps(event) + "\n" for event in run["events"]))
+            self.write(stem + ".diff", "")
+            records.append({"case": run["case"], "run": run.get("run", 1), "kind": run["kind"], "exit": 0, "timed_out": False,
+                            "changed": run.get("changed", False), "fault": run.get("fault"), "pass": False})
+        self.write(raw + "/runs.jsonl", "".join(json.dumps(record) + "\n" for record in records))
+        return os.path.join(self.root, raw)
+
     def run_eval(self, *args: str) -> subprocess.CompletedProcess:
         return subprocess.run([EVAL_TOOL] + list(args), capture_output=True, text=True, env=self.env, cwd=self.root)
 

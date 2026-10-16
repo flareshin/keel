@@ -300,6 +300,73 @@ class EvalCliTest(unittest.TestCase):
         self.assertEqual(report["skill"]["ambiguous_fired"], 2)
         self.assertEqual(sorted(name for name in os.listdir(raw) if name.startswith("c1-1")), ["c1-1.diff", "c1-1.final.txt", "c1-1.stream.jsonl"])
 
+    def suite_runs(self, change_denials: tuple = ()) -> list:
+        """One run per case of seed_suite's four cases; the clear-change runs edit, the ambiguous ones ask."""
+        ask = [init_event(), ASK_EVENT, result_event(ASK_TEXT)]
+        edit = [init_event(), EDIT_EVENT, result_event("Renamed it.", denials=change_denials)]
+        return [{"case": "a1", "kind": "ambiguous", "events": ask}, {"case": "c1", "kind": "clear-change", "events": edit, "changed": True},
+                {"case": "h1", "kind": "ambiguous", "events": ask}, {"case": "h2", "kind": "clear-change", "events": edit, "changed": True}]
+
+    def seed_regrade(self) -> str:
+        """seed_suite's cases in a committed keel checkout; returns the commit that names the grader."""
+        self.box.seed_suite("unused", "unused")
+        self.box.init_repo(self.box.keel)
+        return self.box.commit_all(self.box.keel)
+
+    def test_regrade_writesTheSuiteLineWithTheCurrentGrader_andCallsNoClaude(self) -> None:
+        # given: a full run the old grader faulted because the candidate's Skill call was denied
+        grader = self.seed_regrade()
+        runs = self.suite_runs(change_denials=("Skill",))
+        runs[1]["fault"] = "permission denied for Skill"
+        raw = self.box.write_raw_dir("K4-old", runs)
+        # when
+        completed, report = self.box.run_eval_json("K4", "--regrade", raw)
+        # then
+        self.assertEqual((completed.returncode, report["eval_id"], report["pass"], report["written"], report["faults"]), (0, "K4", True, True, []), completed.stderr)
+        self.assertEqual(self.box.stub_calls(), [])
+        suite = [line for line in self.box.eval_lines() if line["eval_id"] == "K4"]
+        self.assertEqual(suite, [{"ts": suite[0]["ts"], "eval_id": "K4", "rule_id": "K4", "case": "suite train=2/2 holdout=2/2", "pass": True,
+                                  "model": MODEL, "regraded_from": "keel-eval-K4-old", "grader": grader}])
+        self.assertEqual([(line["case"], line["regraded_from"]) for line in self.box.eval_lines() if line["eval_id"] == "K4.case"],
+                         [(case, "keel-eval-K4-old") for case in ("a1", "c1", "h1", "h2")])
+
+    def test_regrade_writesPartial_whenTheRawDirMissesARunOrWasASubset(self) -> None:
+        # given
+        self.seed_regrade()
+        short_of_runs = self.box.write_raw_dir("K4-short", self.suite_runs(), repeat=2)
+        subset = self.box.write_raw_dir("K4-subset", self.suite_runs()[:2], summary_eval_id="K4-partial")
+        for raw in (short_of_runs, subset):
+            # when
+            completed, report = self.box.run_eval_json("K4", "--regrade", raw)
+            # then
+            self.assertEqual((completed.returncode, report["eval_id"]), (0, "K4-partial"), completed.stderr)
+        self.assertEqual(self.eval_ids().count("K4"), 0)
+
+    def test_regrade_keepsALeftoverProjectDirFault_thatAnOlderRecordNamesOnlyInItsFault(self) -> None:
+        # given
+        self.seed_regrade()
+        runs = self.suite_runs()
+        runs[0]["fault"] = "session left a project directory behind: /cfg/projects/-tmp-x"
+        raw = self.box.write_raw_dir("K4-leftover", runs)
+        # when
+        completed, report = self.box.run_eval_json("K4", "--regrade", raw)
+        # then
+        self.assertEqual((completed.returncode, report["written"], report["faults"][0]["case"]), (1, False, "a1"), completed.stderr)
+        self.assertEqual(self.box.eval_lines(), [])
+
+    def test_regrade_exitsTwo_whenACaseKindChangedSinceTheRun(self) -> None:
+        # given
+        self.seed_regrade()
+        runs = self.suite_runs()
+        runs[0]["kind"] = "clear-answer"
+        raw = self.box.write_raw_dir("K4-stale", runs)
+        # when
+        completed = self.box.run_eval("K4", "--regrade", raw)
+        # then
+        self.assertEqual(completed.returncode, 2, completed.stderr)
+        self.assertIn("a1", completed.stderr)
+        self.assertEqual(self.box.eval_lines(), [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,4 +1,4 @@
-"""The ship verdict (DESIGN 5.1, 5.4, 5.5): does one evidence bundle cover the outgoing change?"""
+
 from __future__ import annotations
 
 from typing import List, NamedTuple, Optional, Tuple
@@ -30,7 +30,7 @@ class Outgoing(NamedTuple):
     row: GatedRepo
     head: str
     merge_base: str
-    needs_approval: bool  # a merge, or a push in a repo whose pushes deploy (approval is due here)
+    needs_approval: bool
 
 
 class Decision(NamedTuple):
@@ -40,11 +40,11 @@ class Decision(NamedTuple):
     root_run_id: Optional[str]
     files: int
     lines: int
-    k3_waiver: Optional[str]  # the reviewer's no_test_reason that let logic ship without a test
+    k3_waiver: Optional[str]
 
 
 def judge(outgoing: Outgoing) -> Decision:
-    """Reasons the change may not ship; an empty tuple means it may."""
+
     entries = gitcmd.diff_entries(outgoing.repo_root, outgoing.merge_base, outgoing.head)
     if not entries:
         return Decision(True, (), None, None, 0, 0, None)
@@ -63,7 +63,7 @@ def judge(outgoing: Outgoing) -> Decision:
 
 
 def covers(repo_root: str, tree: str, entries: List[PathEntry]) -> bool:
-    """True when `tree` holds every entry with the same blob and mode (deleted paths absent)."""
+
     try:
         return all(gitcmd.tree_entry(repo_root, tree, entry.path) == (None if entry.deleted else (entry.mode, entry.blob))
                    for entry in entries)
@@ -72,7 +72,7 @@ def covers(repo_root: str, tree: str, entries: List[PathEntry]) -> bool:
 
 
 def bound_evidence(kind: str, root_run_id: str, repo_key: str, head_id: str) -> Optional[dict]:
-    """The approval or ack pinned to this chain head, if any."""
+
     return next((evidence for evidence in reversed(store.load(kind))
                  if evidence["root_run_id"] == root_run_id and evidence["heads"].get(repo_key) == head_id), None)
 
@@ -85,8 +85,8 @@ def _best_chain(outgoing: Outgoing, entries: List[PathEntry]) -> Tuple[Optional[
     for chain, reasons in judged:
         if not reasons:
             return chain, []
-    # No chain passes: report the one that at least covers the change (its reasons are the ones to act
-    # on), else the newest; two roots written in the same second would otherwise swap at random.
+
+
     return min(judged, key=lambda item: (bool(_coverage_reasons(item[0], entries)), judged.index(item)))
 
 
@@ -125,7 +125,7 @@ def _coverage_reasons(chain: Chain, entries: List[PathEntry]) -> List[Reason]:
 
 
 def _provenance_reasons(chain: Chain) -> List[Reason]:
-    """Every review in the chain came from a subagent (K1: the author never reviews itself)."""
+
     for link in chain.links:
         if link.get("review_kind") == codex_review.KIND or (link.get("source") or {}).get("via") == codex_review.VIA:
             try:
@@ -138,8 +138,8 @@ def _provenance_reasons(chain: Chain) -> List[Reason]:
 
 
 def _approval_reasons(outgoing: Outgoing, chain: Chain) -> List[Reason]:
-    """Approval is the user's act at the merge; a push asks for it only where the registry says a push
-    itself deploys."""
+
+
     head_id = chain.head["evidence_id"]
     if not outgoing.needs_approval or bound_evidence("approval", chain.root_run_id, outgoing.repo_key, head_id):
         return []
@@ -158,7 +158,7 @@ def _test_reasons(outgoing: Outgoing, entries: List[PathEntry], risk: Risk) -> L
 
 
 def _same_range_test_reasons(risk: Risk, waiver: Optional[str]) -> List[Reason]:
-    """K3 as written: changed logic ships with a test in the same range, unless the reviewer waived it."""
+
     logic = risk.logic_paths()
     if not logic or risk.has_test_path() or waiver:
         return []
@@ -167,7 +167,7 @@ def _same_range_test_reasons(risk: Risk, waiver: Optional[str]) -> List[Reason]:
 
 
 def _no_test_reason(chain: Optional[Chain]) -> Optional[str]:
-    """The reviewer's K3 waiver, read from the chain head: the review that lets the change ship."""
+
     return chain.head.get(NO_TEST_REASON) if chain else None
 
 

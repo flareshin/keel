@@ -6,13 +6,13 @@ from link.claude_md import HEADER
 
 
 class LinkClaudeMdTest(LinkTestCase):
-    def test_write_requiresExplicitPrRequest_inGeneratedSourceGuidance(self):
+    def test_write_requiresOwnerApprovalAndShip1_inGeneratedSourceGuidance(self):
         self.box.write_keel("PRINCIPLES.md", read_file(os.path.join(KEEL_ROOT, "PRINCIPLES.md")))
 
         result = self.box.run_link("--write")
 
         self.assertExit(result, 0)
-        self.assertIn("Create PRs only on explicit user request; PASS is not consent.",
+        self.assertIn("PRs require owner `keel approve` then explicit `/ship1`; PASS is not consent.",
                       self.box.read_data("CLAUDE.md"))
 
     def test_write_generatesHeaderPrinciplesAndPersonal_whenOverlayHasPersonal(self):

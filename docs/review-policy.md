@@ -25,14 +25,16 @@ Keep the required lenses, test obligations, immutable evidence and owner approva
 gates. Batching is an execution change, not an exemption from those requirements.
 Optional improvements remain non-blocking. Confirmed high/medium failures block.
 
-Review and test PASS establish verification evidence, not a request to create a
-pull request. Report completion without creating a PR, including a draft, unless
-the user explicitly requested one. Implementing, fixing, reviewing or approving
-a keel review root does not itself request a PR. An explicitly invoked delivery
-workflow whose stated purpose includes PR creation, such as `/ship1`, is a request
-for that workflow's PR step. This boundary also applies to keel's own changes;
-owner-approved local activation does not require a PR. A PR request does not waive
-the existing review, test or merge-approval gates.
+Review and test PASS establish verification evidence only. Create PRs, including
+drafts, only through an explicitly invoked `/ship1` after the owner has run plain
+`keel approve <root_run_id>` for the current reviewed candidate. Both conditions
+are required: PASS, approval alone, or an ordinary request to create a PR cannot
+substitute for `/ship1`; `/ship1` without approval must stop before delivery.
+`--read` is acknowledgement, not approval. Never run the owner's approval command.
+If `/ship1` is unavailable in the current runtime, report the ready state for the
+owner to invoke it in a supported runtime; do not emulate its PR step. This applies
+to keel's own changes too. Local approved activation does not require a PR, and
+`/ship1` does not waive existing review, test or merge-approval gates.
 
 ## Fixes and later changes
 

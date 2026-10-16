@@ -10,7 +10,7 @@ Five principles, each enforced at the strongest layer that can hold it. Rules en
 - [K5] Change only what the request needs, minimally, in code a person can follow. Load `/readable-code` before writing code or a coding-agent brief.
 
 ## Risk
-- [risk] Follow `docs/review-policy.md` for ready-candidate per-lens audits, batched finding verification and snapshot deltas. smoke-only needs smoke evidence; other tiers need `/lens-review` and tests (light per registry). Merge or deploying/notifying push needs owner's `keel approve <root_run_id>`; `--read` is ack only. Create PRs only on explicit user request; PASS is not consent.
+- [risk] Use `docs/review-policy.md` for ready-candidate per-lens audits, batched finding checks and snapshot deltas. smoke-only needs smoke evidence; other tiers need `/lens-review` and tests (light per registry). Merge or deploying/notifying push needs owner's `keel approve <root_run_id>`; `--read` is ack only. PRs require owner `keel approve` then explicit `/ship1`; PASS is not consent.
 
 ## Floor
 Hook-enforced, not principles.

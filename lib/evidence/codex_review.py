@@ -60,6 +60,10 @@ def register(repo_path: str, audit_id: str, verifier_id: str) -> dict:
 
 def validate_evidence(evidence: dict) -> None:
     source = evidence.get('source') or {}
+    if source.get('version') == 2:
+        from evidence import codex_lenses
+        codex_lenses.validate_evidence(evidence)
+        return
     if set(source) != SOURCE_KEYS or source.get('via') != VIA or evidence.get('review_kind') != KIND:
         raise writers.Refused('invalid Codex review provenance')
     audit_path, audit_bytes = locate_session(source['audit_id'])
@@ -169,10 +173,15 @@ def validate_reports(audit: dict, verification: dict, repo: str, audit_id: str) 
         validate_findings(report.get('findings'))
     if audit['audit_session'] is not None or audit['decisions'] != [] or verification['audit_session'] != audit_id:
         raise writers.Refused('invalid audit linkage')
-    decisions = verification.get('decisions')
+
+    findings = adjudicated_findings(audit['findings'], verification.get('decisions')) + verification['findings']
+    return 'NEEDS_FIXES' if any(finding['impact'] in ('high', 'medium') for finding in findings) else 'PASS'
+
+
+def adjudicated_findings(findings: list, decisions) -> list:
     if not isinstance(decisions, list):
         raise writers.Refused('verifier decisions must be a list')
-    ids = [finding['id'] for finding in audit['findings']]
+    ids = [finding['id'] for finding in findings]
     seen = []
     confirmed = []
     for decision in decisions:
@@ -183,8 +192,7 @@ def validate_reports(audit: dict, verification: dict, repo: str, audit_id: str) 
             confirmed.append(decision['id'])
     if sorted(seen) != sorted(ids):
         raise writers.Refused('verifier must settle every audit finding exactly once')
-    findings = [finding for finding in audit['findings'] if finding['id'] in confirmed] + verification['findings']
-    return 'NEEDS_FIXES' if any(finding['impact'] in ('high', 'medium') for finding in findings) else 'PASS'
+    return [finding for finding in findings if finding['id'] in confirmed]
 
 
 def validate_findings(findings) -> None:
@@ -222,9 +230,10 @@ def run_rule_checks(repo: str, base: str, tree: str) -> str:
     return next(line for line in run.stdout.splitlines() if line.startswith('summary '))
 
 
-def validate_rule_checks(repo: str, base: str, tree: str, audit: dict, verification: dict) -> None:
+def validate_rule_checks(repo: str, base: str, tree: str, audit: dict, verification: dict | None = None) -> None:
     measured = run_rule_checks(repo, base, tree)
-    for report in (audit, verification):
+    reports = (audit, verification) if verification is not None else (audit,)
+    for report in reports:
         cited = re.findall(r'summary repos=[0-9]+ scanned_lines=[0-9]+ signals=[0-9]+ unscanned=\S+ blocked=\S+', report['lenses']['rule-checks']['evidence'])
         if cited != [measured]:
             raise writers.Refused('each reviewer must cite the exact rule-checks summary for the reviewed target')

@@ -10,7 +10,7 @@ Five principles, each enforced at the strongest layer that can hold it. Rules en
 - [K5] Change only what the request needs, minimally, in code a person can follow. Load `/readable-code` before writing code or a coding-agent brief.
 
 ## Risk
-- [risk] Verification weight follows risk. ship-gate classes each push from its paths (smoke-only, light, standard, heavy): smoke-only needs smoke evidence; every other class needs a `/lens-review` chain and tests (light only where the registry requires tests). A merge, or a push that itself deploys, needs the owner's plain `keel approve <root_run_id>`; `--read` only records an optional ack.
+- [risk] Verification weight follows risk. Review a tested, ready candidate once: independent auditors divide the required lenses; only lenses with findings get a separate verifier, batching their findings instead of repeating the audit. Review fixes as deltas against the recorded snapshot, settling prior findings and checking affected contracts; restart a full review when the requirement or base changes. Follow `docs/review-policy.md` in both Claude and Codex. ship-gate classes each push from its paths (smoke-only, light, standard, heavy): smoke-only needs smoke evidence; every other class needs a `/lens-review` chain and tests (light only where the registry requires tests). A merge, or a push that itself deploys, needs the owner's plain `keel approve <root_run_id>`; `--read` only records an optional ack.
 
 ## Floor
 Hook-enforced, not principles.

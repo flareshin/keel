@@ -25,6 +25,14 @@ function responder({ prepare, audits = {}, verdicts = {}, report = reportBetween
       if (audit !== undefined) return audit
       return { findings: [], notes: opts.label === 'audit:rule-checks' ? cleanRuleChecksNotes(prompt) : `${opts.label} ran` }
     }
+    if (opts.schema.properties.decisions) {
+      const findings = JSON.parse(prompt.split('\nFindings: ')[1])
+      return { decisions: findings.flatMap((finding) => {
+        const response = verdicts[finding.id]
+        const verdict = typeof response === 'function' ? response() : response
+        return verdict ? [{ id: finding.id, ...verdict }] : []
+      }) }
+    }
     const verdict = verdicts[opts.label.slice('verify:'.length)]
     return typeof verdict === 'function' ? verdict() : verdict
   }
@@ -174,13 +182,14 @@ test('lensReview_needsFixesWithNothingFixable_whenAVerifierFails', async () => {
   assert.match(result.report, /Unverified \(the verifier failed; re-verify before any PASS\) \(1\):\n- \[high\] contract\/c1/)
 })
 
-test('lensReview_reportsNothingFixable_whenABlockingFindingIsConfirmedButAnotherIsUnverified', async () => {
+test('lensReview_leavesWholeBatchUnverified_whenVerifierCrashes', async () => {
   const audits = { contract: { findings: [finding('c1', 'high'), finding('c2', 'high')] } }
   const verdicts = { c1: { verdict: 'CONFIRMED', evidence: 'reran' }, c2: verifierCrash }
   const rt = createRuntime({ respond: responder({ audits, verdicts }) })
   const result = await rt.run('lens-review', { diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
   assert.equal(result.verdict, 'NEEDS_FIXES')
-  assert.equal(result.blocking.length, 1)
+  assert.equal(result.blocking.length, 0)
+  assert.deepEqual(result.unverified.map((finding) => finding.id), ['c1', 'c2'])
   assert.equal(result.fixableFindings, 0)
 })
 
@@ -517,7 +526,7 @@ test('lensReview_putsGuardrailsInEveryAuditAndVerifyPrompt_whenCallerGivesThem',
   const rt = createRuntime({ respond: responder({ audits, verdicts: { c1: { verdict: 'CONFIRMED', evidence: 'reran' } } }) })
   await rt.run('lens-review', { diffs: [ROOT_DIFF], lenses: CALLER_LENSES, guardrails: 'Not defects here: naming.' })
   const judged = rt.record.agents.filter((call) => /^(audit|verify):/.test(call.opts.label))
-  assert.deepEqual(judged.map((call) => call.opts.label), ['audit:contract', 'audit:readable-code', 'audit:rule-checks', 'verify:c1'])
+  assert.deepEqual(judged.map((call) => call.opts.label), ['audit:contract', 'audit:readable-code', 'audit:rule-checks', 'verify:contract'])
   for (const call of judged) {
     assert.match(call.prompt, /Not defects here: naming\./)
     assert.match(call.prompt, /A merge-blocking finding needs a repro/)

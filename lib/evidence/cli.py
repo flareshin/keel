@@ -18,6 +18,7 @@ USAGE = """usage:
   keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]
   keel evidence show [--repo <path>] [--root <root_run_id>]
   keel evidence record-codex --repo <path> --audit <session UUID> --verify <session UUID>
+  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]
   keel evidence gc"""
 EXIT_OK = 0
 EXIT_USAGE = 2
@@ -77,9 +78,16 @@ def _snapshot(rest: List[str]) -> int:
 def _evidence(rest: List[str]) -> int:
     if not rest:
         raise Usage("keel evidence <write-review|write-smoke|show|gc>")
-    subcommand, options = rest[0], _options(rest[1:], {"--repo", "--run", "--root", "--audit", "--verify"})
+    subcommand, options = rest[0], _options(rest[1:], {"--repo", "--run", "--root", "--audit", "--verify", "--audits", "--verifiers"})
     if subcommand == "record-codex":
         from evidence import codex_review
+        if '--audits' in options:
+            from evidence import codex_lenses
+            if not {'--repo', '--audits'} <= set(options) or set(options) - {'--repo', '--audits', '--verifiers'}:
+                raise Usage('lens registration requires --repo, --audits and optional --verifiers')
+            verifiers = options['--verifiers'].split(',') if '--verifiers' in options else []
+            _print(codex_lenses.register(options['--repo'], options['--audits'].split(','), verifiers))
+            return EXIT_OK
         if set(options) != {"--repo", "--audit", "--verify"}:
             raise Usage("record-codex requires --repo, --audit and --verify")
         _print(codex_review.register(options["--repo"], options["--audit"], options["--verify"]))

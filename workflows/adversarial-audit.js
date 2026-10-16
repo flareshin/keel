@@ -1,13 +1,11 @@
 export const meta = {
   name: 'adversarial-audit',
-  description: 'Lens fan-out audit plus per-finding adversarial verification; returns confirmed and adjusted findings only',
+  description: 'Lens fan-out audit plus one finding verifier per nonempty lens; returns confirmed and adjusted findings only',
   phases: [
     { title: 'Audit', detail: 'one auditor agent per lens over the target' },
-    { title: 'Verify', detail: 'one refuting verifier per finding; insufficient evidence means REFUTED' },
+    { title: 'Verify', detail: 'one separate verifier per lens with findings; incomplete decisions stay unverified' },
   ],
 }
-
-
 
 const A = readArgs()
 const TARGET = A.target || null
@@ -15,7 +13,6 @@ const LENSES = A.lenses || null
 const GUARDRAILS = A.guardrails || ''
 const MAX_FINDINGS = A.maxFindingsPerLens || 8
 const MODEL = A.model || 'opus'
-
 const EFFORT = A.effort || 'high'
 
 const FINDINGS_SCHEMA = {
@@ -54,6 +51,21 @@ const VERDICT_SCHEMA = {
     adjusted_proposal: { type: 'string' },
   },
   required: ['verdict', 'evidence'],
+}
+
+const DECISIONS_SCHEMA = {
+  type: 'object',
+  properties: {
+    decisions: {
+      type: 'array',
+      items: {
+        ...VERDICT_SCHEMA,
+        properties: { id: { type: 'string' }, ...VERDICT_SCHEMA.properties },
+        required: ['id', ...VERDICT_SCHEMA.required],
+      },
+    },
+  },
+  required: ['decisions'],
 }
 
 if (!TARGET || !Array.isArray(LENSES) || LENSES.length === 0) {
@@ -100,28 +112,38 @@ function auditLens(lens) {
   })
 }
 
-
-function verifyLensFindings(audit, lens) {
-  if (!audit) return { lens: lens.key, verified: [], notes: '', failed: true }
-  const findings = audit.findings || []
+async function verifyLensFindings(audit, lens) {
+  if (!audit || !Array.isArray(audit.findings)) return { lens: lens.key, verified: [], notes: '', failed: true }
+  const findings = audit.findings
+  const ids = findings.map((finding) => finding?.id)
+  if (ids.some((id) => typeof id !== 'string' || !id.trim()) || new Set(ids).size !== ids.length) return { lens: lens.key, verified: [], notes: '', failed: true }
   const notes = audit.notes || ''
   if (findings.length === 0) return { lens: lens.key, verified: [], notes }
-  return parallel(findings.map((finding) => () => verifyFinding(finding, lens)))
-    .then((verified) => ({ lens: lens.key, verified, notes }))
+  try {
+    const response = await agent(buildVerifyPrompt(findings), {
+      label: `verify:${lens.key}`, phase: 'Verify', schema: DECISIONS_SCHEMA, model: MODEL, effort: EFFORT,
+    })
+    const decisions = Array.isArray(response?.decisions) ? response.decisions : []
+    const hasUnknownDecision = decisions.some((item) => !ids.includes(item?.id))
+    const verified = findings.map((finding) => {
+      const matching = decisions.filter((item) => item?.id === finding.id)
+      const verdict = !hasUnknownDecision && matching.length === 1 && isEvidencedVerdict(matching[0]) ? matching[0] : null
+      return applyVerdict(finding, lens, demoteIncompleteAdjustment(verdict))
+    })
+    return { lens: lens.key, verified, notes }
+  } catch (e) {
+    return { lens: lens.key, verified: findings.map((finding) => ({ ...finding, lens: lens.key, verdict: null, verifyError: String(e?.message || e) })), notes }
+  }
 }
 
-function verifyFinding(finding, lens) {
-  return agent(buildVerifyPrompt(finding), {
-    label: `verify:${finding.id}`, phase: 'Verify', schema: VERDICT_SCHEMA, model: MODEL, effort: EFFORT,
-  })
-    .then((verdict) => applyVerdict(finding, lens, demoteIncompleteAdjustment(verdict)))
-    .catch((e) => ({ ...finding, lens: lens.key, verdict: null, verifyError: String((e && e.message) || e) }))
+function isEvidencedVerdict(decision) {
+  return ['CONFIRMED', 'ADJUSTED', 'REFUTED'].includes(decision.verdict) && typeof decision.evidence === 'string' && decision.evidence.trim().length > 0
 }
 
-function buildVerifyPrompt(finding) {
+function buildVerifyPrompt(findings) {
   return `${COMMON}
 
-You are an adversarial verifier in a separate context from the finder (author != reviewer). Try to REFUTE the finding below with disk evidence:
+You are an adversarial verifier in a separate context from the finder (author != reviewer). Try to REFUTE each finding below with disk evidence. Do not repeat the full audit. Return one decision per finding id; share relevant reads across these findings, but provide evidence for each decision:
 (a) Does the quote match the actual file:line? Re-measure any numbers.
 (b) Does an alternative explanation hold (by design, already fixed, a different cause, a measurement error)?
 (c) Is the proposal safe (side effects, the other side of a double-maintained surface)?
@@ -129,7 +151,7 @@ You are an adversarial verifier in a separate context from the finder (author !=
 Refutation fails: CONFIRMED. Partial correction: ADJUSTED (adjusted_summary and adjusted_proposal required). Insufficient evidence: lean toward REFUTED.
 A CONFIRMED without a refutation attempt is void; put the commands you ran and their output in evidence.
 
-Finding: ${JSON.stringify(finding)}`
+Findings: ${JSON.stringify(findings)}`
 }
 
 function demoteIncompleteAdjustment(verdict) {
@@ -151,7 +173,6 @@ function applyVerdict(finding, lens, verdict) {
     verdict,
   }
 }
-
 
 function summarize(lensResults) {
   const ranLenses = lensResults.filter((result) => result && !result.failed)

@@ -65,7 +65,7 @@ registered. Existing unrelated user skill links, including an older `ship1`, are
 left alone. This is not full Claude/Codex feature parity. A native review does
 not fabricate the transcript-backed review chain required by ship-gate. If the
 installed core provides `evidence record-codex`, follow its
-`docs/codex-review.md` protocol to register two completed native child reviews.
+`docs/codex-review.md` version 2 protocol: one completed child per lens and one separate finding verifier per nonempty lens, with snapshot deltas for fixes. Legacy version 1 evidence remains supported.
 Otherwise formal native evidence is unavailable. Gated shipping remains blocked
 without supported evidence. Review and test claims in
 Codex responses are instructions, not report-gate enforcement.

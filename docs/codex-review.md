@@ -1,5 +1,116 @@
 # Native Codex review evidence
 
+## Version 2: the Claude review flow
+
+Follow [the shared review policy](review-policy.md). An independent child audits
+one lens; a separate child verifies all findings from that lens only when it has
+findings. The author never fills either role. Do not run a second full-candidate
+review to verify a clean audit.
+
+The importer still reads real completed native child rollouts, validates the
+same author, immutable source hashes and exact Git objects, and derives its own
+verdict. Tests, coverage, freshness and owner approval gates remain required.
+The version 1 runtime prerequisites and trust boundary below still apply.
+
+### Workflow
+
+1. Finish implementation and run relevant tests with `keel test -- <command>`.
+   Pin the requirement, resolve the base to a commit SHA, and run `keel snapshot
+   <repo>` to obtain the candidate tree. Check the installed CLI help contains
+   `record-codex --repo <path> --audits` before using this protocol.
+2. Spawn five fresh audit children of the author, one for each lens: `reuse`,
+   `contract`, `tests`, `readable-code`, `rule-checks`. Pass the requirement and
+   exact Git objects, relevant contracts and applicable public/private review
+   skills, without author verdicts. Each child must inspect the target itself;
+   use `git show <tree>:<path>` and `git diff <base> <tree>`.
+3. For each audit with findings, spawn one different child to verify that audit's
+   findings together. Pass the audit session UUID and findings. The verifier
+   independently checks reproductions, cited code and relevant callers, gives
+   one evidenced decision per finding, and may add newly discovered failures.
+   It does not repeat the five-lens audit. Do not spawn verifiers for clean lenses.
+4. Each child returns exactly the version 2 JSON below as its final answer. Use
+   actual completed session UUIDs; do not resume completed children. Register:
+
+   ```sh
+   "$KEEL_HOME/bin/keel" evidence record-codex --repo /absolute/repository \
+     --audits <reuse-uuid>,<contract-uuid>,<tests-uuid>,<readable-uuid>,<rules-uuid>
+   ```
+
+   Add `--verifiers <uuid>,<uuid>` only for audits with findings. UUIDs in each
+   argument are comma-separated, without spaces. An unverified finding, missing
+   lens, duplicate reviewer or unfinished child refuses registration.
+5. Inspect `keel evidence show --repo <repo> --root <returned root_run_id>`.
+   Explain the result and remaining limits. Only the owner runs
+   `keel approve <root_run_id>`; registration does not approve or ship anything.
+
+### Version 2 report
+
+Audit reports contain exactly one entry in `lenses`; verify reports use `{}`.
+Audit `audit_session` is null; verify `audit_session` is the source audit UUID.
+The `findings` and `decisions` item schemas are unchanged from version 1 below.
+IDs must be unique within a lens's unresolved findings, including new verifier
+findings. Prefix new IDs when necessary to avoid collisions with prior findings.
+
+```json
+{
+  "version": 2,
+  "role": "audit",
+  "repo": "/absolute/repository",
+  "base": "<40-hex commit>",
+  "tree": "<40-hex snapshot tree>",
+  "since_tree": null,
+  "root_run_id": null,
+  "lenses": {
+    "contract": {"status": "complete", "evidence": "<inspected callers and failure boundaries>"}
+  },
+  "findings": [],
+  "audit_session": null,
+  "decisions": []
+}
+```
+
+Unavailable audit checks use `status: "blocked"`; they cannot produce evidence.
+The rule-checks auditor runs the actual `skills/readable-code/scripts/rule-checks.py`
+with `--repo <repo> --base <base> --head <tree>`, and quotes its exact clean summary
+once in its evidence. Other auditors and finding verifiers do not repeat that
+scan merely to satisfy a report field. The importer reruns it to check the claim.
+
+### Delta reviews
+
+After a fix or a bounded follow-up under the same requirement and base, keep the
+original base commit, set `since_tree` to the recorded version 2 snapshot and
+`root_run_id` to its chain root. All children must name those same values and the
+new snapshot tree. Auditors review `git diff <since_tree> <tree>` and affected
+contracts, with context reads as needed. Each required lens still runs.
+
+Include all unresolved findings from that previous review in the corresponding
+lens brief, including remaining findings from earlier deltas and verifier-added
+findings. The new audit's `decisions` must settle each previous finding exactly
+once: `refuted` means resolved with evidence, and `confirmed` means still present.
+An unresolved high/medium finding continues to block even when the delta does
+not touch its line. New audit findings get separate batch verification as above.
+The importer reconstructs prior unresolved findings from the immutable records;
+no author-supplied list can erase them.
+
+New deltas must follow the current chain head. Persisted deltas revalidate their
+exact parent evidence ID, so restoring an older snapshot does not change history.
+The version 2 run ID hashes the complete set of audit and verifier session IDs;
+a replacement verifier cannot silently reuse a different review's PASS record.
+
+The mechanical rule-checks scan still uses the original base and new tree, just
+as in Claude. Judge its signals within the delta's scope. Tests must cover the
+final candidate and the existing gate still checks the complete chain's coverage.
+Changed requirements or bases, invalid evidence or unbounded scope require a new
+full review. Delta chains cannot start from version 1 evidence.
+
+## Compatibility
+
+Version 1 registrations using `--audit` and `--verify` remain readable and keep
+the original strict two-full-review contract. Use version 2 for new reviews.
+Never relabel legacy records or fabricate provenance to migrate them.
+
+## Legacy version 1
+
 Native review uses two fresh Codex child agents in the author's current chat: an audit and a verifier. It does not invoke Claude, execute Workflow JavaScript or translate a Codex report into Claude provenance. `codex-lens-review` is a separate review kind accepted by the same tests, content-coverage and owner-approval gates.
 
 ## Prerequisites and trust boundary

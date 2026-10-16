@@ -5,6 +5,7 @@ import re
 
 from evalkit.cases import AMBIGUOUS, CLEAR_CHANGE, Case
 from evalkit.stream import ASK_TOOL, EDIT_TOOLS, LOOKUP_TOOLS, RESULT_MAX_TURNS, RESULT_SUCCESS, SKILL_TOOL, RunFacts
+from measurekit.gitutil import run_git
 
 QUESTION_MARKER = "QUESTION:"  # the runner's appended system prompt asks for it, since -p disables the ask tool
 QUESTION_LABEL = re.escape(QUESTION_MARKER.rstrip(":"))
@@ -65,3 +66,10 @@ def fault_reason(facts: RunFacts, timeout_seconds: int) -> str | None:
     if facts.leftover_project_dir:
         return LEFTOVER_FAULT + facts.leftover_project_dir
     return None
+
+
+def grader_commit(checkout: str) -> str:
+    """The checkout's HEAD, with -dirty when its measure/evals differs from HEAD: which grader graded a line."""
+    commit = run_git(checkout, ["rev-parse", "HEAD"]).strip()
+    dirty = run_git(checkout, ["status", "--porcelain", "--", "measure/evals"]).strip()
+    return commit + "-dirty" if dirty else commit

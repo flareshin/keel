@@ -3,10 +3,16 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import unittest
 
-from eval_helpers import ASK_EVENT, ASK_TEXT, EDIT_EVENT, MODEL, EvalSandbox, case_row, init_event, read_json, read_jsonl, result_event, tool_use
-from helpers import read_text
+from helpers import CHECKOUT, read_text
+
+sys.path.insert(0, os.path.join(CHECKOUT, "measure", "evals", "lib"))
+sys.path.insert(0, os.path.join(CHECKOUT, "measure", "lib"))
+
+from eval_helpers import ASK_EVENT, ASK_TEXT, EDIT_EVENT, MODEL, EvalSandbox, case_row, init_event, read_json, read_jsonl, result_event, tool_use  # noqa: E402
+from evalkit.grade import grader_commit  # noqa: E402
 
 RUN_ONCE = ("--repeat", "1")
 
@@ -307,15 +313,9 @@ class EvalCliTest(unittest.TestCase):
         return [{"case": "a1", "kind": "ambiguous", "events": ask}, {"case": "c1", "kind": "clear-change", "events": edit, "changed": True},
                 {"case": "h1", "kind": "ambiguous", "events": ask}, {"case": "h2", "kind": "clear-change", "events": edit, "changed": True}]
 
-    def seed_regrade(self) -> str:
-        """seed_suite's cases in a committed keel checkout; returns the commit that names the grader."""
-        self.box.seed_suite("unused", "unused")
-        self.box.init_repo(self.box.keel)
-        return self.box.commit_all(self.box.keel)
-
     def test_regrade_writesTheSuiteLineWithTheCurrentGrader_andCallsNoClaude(self) -> None:
         # given: a full run the old grader faulted because the candidate's Skill call was denied
-        grader = self.seed_regrade()
+        self.box.seed_suite("unused", "unused")
         runs = self.suite_runs(change_denials=("Skill",))
         runs[1]["fault"] = "permission denied for Skill"
         raw = self.box.write_raw_dir("K4-old", runs)
@@ -324,49 +324,123 @@ class EvalCliTest(unittest.TestCase):
         # then
         self.assertEqual((completed.returncode, report["eval_id"], report["pass"], report["written"], report["faults"]), (0, "K4", True, True, []), completed.stderr)
         self.assertEqual(self.box.stub_calls(), [])
+        self.assertEqual(report["leftover_unknown"], ["c1-1"], "the old Skill fault stopped the grader before its leftover check")
         suite = [line for line in self.box.eval_lines() if line["eval_id"] == "K4"]
         self.assertEqual(suite, [{"ts": suite[0]["ts"], "eval_id": "K4", "rule_id": "K4", "case": "suite train=2/2 holdout=2/2", "pass": True,
-                                  "model": MODEL, "regraded_from": "keel-eval-K4-old", "grader": grader}])
+                                  "model": MODEL, "regraded_from": "keel-eval-K4-old", "grader": grader_commit(CHECKOUT)}])
         self.assertEqual([(line["case"], line["regraded_from"]) for line in self.box.eval_lines() if line["eval_id"] == "K4.case"],
                          [(case, "keel-eval-K4-old") for case in ("a1", "c1", "h1", "h2")])
 
-    def test_regrade_writesPartial_whenTheRawDirMissesARunOrWasASubset(self) -> None:
+    def test_regrade_matchesTheRunThatWroteTheRawDir(self) -> None:
         # given
-        self.seed_regrade()
-        short_of_runs = self.box.write_raw_dir("K4-short", self.suite_runs(), repeat=2)
-        subset = self.box.write_raw_dir("K4-subset", self.suite_runs()[:2], summary_eval_id="K4-partial")
-        for raw in (short_of_runs, subset):
-            # when
-            completed, report = self.box.run_eval_json("K4", "--regrade", raw)
-            # then
-            self.assertEqual((completed.returncode, report["eval_id"]), (0, "K4-partial"), completed.stderr)
+        self.box.link_keel()
+        silent = self.box.scenario("silent", [init_event(), result_event("I would rename it, but which one?")])
+        self.box.seed_suite(self.box.ask_scenario(), silent)
+        _, run_report = self.box.run_eval_json("K4", "--model", MODEL, *RUN_ONCE)
+        calls = len(self.box.stub_calls())
+        # when
+        completed, report = self.box.run_eval_json("K4", "--regrade", run_report["raw_dir"])
+        # then
+        self.assertEqual((completed.returncode, report["eval_id"], report["cases"]), (1, "K4", run_report["cases"]), completed.stderr)
+        self.assertEqual(len(self.box.stub_calls()), calls)
+        self.assertTrue(all("leftover_project_dir" in run for run in read_jsonl(os.path.join(run_report["raw_dir"], "runs.jsonl"))))
+
+    def test_regrade_keepsATimeoutFault_withTheRunsTimeout(self) -> None:
+        # given
+        slow = self.box.scenario("slow", [init_event(), result_event("late")], sleep=3)
+        self.box.seed_suite(self.box.ask_scenario(), slow)
+        _, run_report = self.box.run_eval_json("K4", "--model", MODEL, *RUN_ONCE, "--case", "c1", "--timeout-seconds", "1")
+        # when
+        completed, report = self.box.run_eval_json("K4", "--regrade", run_report["raw_dir"])
+        # then
+        self.assertEqual((completed.returncode, report["written"], report["faults"][0]["reason"]), (1, False, "timed out after 1s"), completed.stderr)
+
+    def test_regrade_writesPartial_whenTheRawDirIsNotAFullRunOfTheCurrentCases(self) -> None:
+        moved_h1 = ([case_row("a1", "ambiguous", "u"), case_row("c1", "clear-change", "u"), case_row("h1", "ambiguous", "u")], [case_row("h2", "clear-change", "u")])
+        joined_a9 = ([case_row("a1", "ambiguous", "u"), case_row("c1", "clear-change", "u"), case_row("a9", "ambiguous", "u")],
+                     [case_row("h1", "ambiguous", "u"), case_row("h2", "clear-change", "u")])
+        variants = {"short-of-runs": ({"repeat": 2}, None), "subset-summary": ({"summary_eval_id": "K4-partial"}, None),
+                    "case-joined": ({}, joined_a9), "split-gap": ({}, moved_h1)}
+        for name, (raw_options, case_files) in variants.items():
+            with self.subTest(name):
+                # given
+                self.box.seed_suite("unused", "unused")
+                if case_files:
+                    self.box.write_cases("keel/measure/evals/K4/train.tsv", case_files[0])
+                    self.box.write_cases("keel/measure/evals/K4/holdout.tsv", case_files[1])
+                raw = self.box.write_raw_dir("K4-" + name, self.suite_runs(), **raw_options)
+                # when
+                completed, report = self.box.run_eval_json("K4", "--regrade", raw)
+                # then
+                self.assertEqual((completed.returncode, report["eval_id"]), (0, "K4-partial"), completed.stderr)
         self.assertEqual(self.eval_ids().count("K4"), 0)
 
-    def test_regrade_keepsALeftoverProjectDirFault_thatAnOlderRecordNamesOnlyInItsFault(self) -> None:
-        # given
-        self.seed_regrade()
-        runs = self.suite_runs()
-        runs[0]["fault"] = "session left a project directory behind: /cfg/projects/-tmp-x"
-        raw = self.box.write_raw_dir("K4-leftover", runs)
+    def test_regrade_writesNoCaseLine_forACaseWithoutASavedRun(self) -> None:
+        # given: an interrupted run whose config names four cases but saved runs of two
+        self.box.seed_suite("unused", "unused")
+        raw = self.box.write_raw_dir("K4-interrupted", self.suite_runs()[:2], cases=["a1", "c1", "h1", "h2"])
         # when
         completed, report = self.box.run_eval_json("K4", "--regrade", raw)
         # then
-        self.assertEqual((completed.returncode, report["written"], report["faults"][0]["case"]), (1, False, "a1"), completed.stderr)
+        self.assertEqual((completed.returncode, report["eval_id"]), (0, "K4-partial"), completed.stderr)
+        self.assertEqual([line["case"] for line in self.box.eval_lines() if line["eval_id"] == "K4.case"], ["a1", "c1"])
+
+    def test_regrade_faults_whenTheRecordNamesALeftoverProjectDir(self) -> None:
+        for name, run_fields in {"recorded": {"leftover": "/cfg/projects/-tmp-x"},
+                                 "older-record": {"fault": "session left a project directory behind: /cfg/projects/-tmp-x"}}.items():
+            with self.subTest(name):
+                # given
+                self.box.seed_suite("unused", "unused")
+                runs = self.suite_runs()
+                runs[0].update(run_fields)
+                raw = self.box.write_raw_dir("K4-leftover-" + name, runs)
+                # when
+                completed, report = self.box.run_eval_json("K4", "--regrade", raw)
+                # then
+                self.assertEqual((completed.returncode, report["written"], report["faults"][0]["case"]), (1, False, "a1"), completed.stderr)
         self.assertEqual(self.box.eval_lines(), [])
 
-    def test_regrade_exitsTwo_whenACaseKindChangedSinceTheRun(self) -> None:
+    def test_regrade_exitsTwo_whenTheRawDirDoesNotMatchTheCaseFilesOrIsUnreadable(self) -> None:
+        def kind_changed(runs):
+            runs[0]["kind"] = "clear-answer"
+            return {}
+        variants = {
+            "kind-changed": ("a1", kind_changed),
+            "case-removed": ("z9", lambda runs: runs.append({"case": "z9", "kind": "ambiguous", "events": []}) or {}),
+            "other-eval": ("K5", lambda runs: {"eval_id": "K5"}),
+            "stray-run": ("c1", lambda runs: {"cases": ["a1", "h1", "h2"]}),
+        }
+        for name, (named, change) in variants.items():
+            with self.subTest(name):
+                # given
+                self.box.seed_suite("unused", "unused")
+                runs = self.suite_runs()
+                raw = self.box.write_raw_dir("K4-" + name, runs, **change(runs))
+                # when
+                completed = self.box.run_eval("K4", "--regrade", raw)
+                # then
+                self.assertEqual(completed.returncode, 2, completed.stderr)
+                self.assertIn(named, completed.stderr)
+        for name, damage in {"no-runs-file": lambda path: os.remove(path), "malformed-line": lambda path: open(path, "a").write("{oops\n")}.items():
+            with self.subTest(name):
+                raw = self.box.write_raw_dir("K4-" + name, self.suite_runs())
+                damage(os.path.join(raw, "runs.jsonl"))
+                completed = self.box.run_eval("K4", "--regrade", raw)
+                self.assertEqual(completed.returncode, 2, completed.stderr)
+                self.assertIn("runs.jsonl", completed.stderr)
+        self.assertEqual(self.box.eval_lines(), [])
+
+    def test_exitTwo_whenRegradeIsMixedWithARunOption_orARunLacksAModel(self) -> None:
         # given
-        self.seed_regrade()
-        runs = self.suite_runs()
-        runs[0]["kind"] = "clear-answer"
-        raw = self.box.write_raw_dir("K4-stale", runs)
-        # when
-        completed = self.box.run_eval("K4", "--regrade", raw)
-        # then
-        self.assertEqual(completed.returncode, 2, completed.stderr)
-        self.assertIn("a1", completed.stderr)
-        self.assertEqual(self.box.eval_lines(), [])
-
+        self.box.seed_suite(self.box.ask_scenario(), self.box.edit_scenario())
+        raw = self.box.write_raw_dir("K4-mixed", self.suite_runs())
+        for args in (("K4", "--regrade", raw, "--case", "a1"), ("K4", "--regrade", raw, "--model", MODEL), ("K4",)):
+            with self.subTest(args):
+                # when
+                completed = self.box.run_eval(*args)
+                # then
+                self.assertEqual(completed.returncode, 2, completed.stderr)
+        self.assertEqual((self.box.eval_lines(), self.box.stub_calls()), ([], []))
 
 if __name__ == "__main__":
     unittest.main()

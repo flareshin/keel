@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -14,7 +15,7 @@ sys.path.insert(0, os.path.join(CHECKOUT, "measure", "evals", "lib"))
 sys.path.insert(0, os.path.join(CHECKOUT, "measure", "lib"))
 
 from evalkit.cases import AMBIGUOUS, CLEAR_ANSWER, CLEAR_CHANGE, Case  # noqa: E402
-from evalkit.grade import fault_reason, run_passes, text_answers, text_asks  # noqa: E402
+from evalkit.grade import fault_reason, grader_commit, run_passes, text_answers, text_asks  # noqa: E402
 from evalkit.runner import QUESTION_PROTOCOL, claude_command  # noqa: E402
 from evalkit.liveconfig import GENERATED_CLAUDE_MD_HEADER, is_keel_live, project_dir_for, suite_eval_id  # noqa: E402
 from evalkit.stream import RunFacts, StreamSummary, summarize_stream  # noqa: E402
@@ -235,6 +236,31 @@ class FaultTest(unittest.TestCase):
 
     def test_noFault_onACleanRun(self) -> None:
         self.assertIsNone(fault_reason(facts(), TIMEOUT))
+
+
+class GraderCommitTest(unittest.TestCase):
+    def test_graderCommit_isHead_andMarkedDirty_onlyWhenMeasureEvalsDiffers(self) -> None:
+        # given
+        repo = tempfile.mkdtemp(prefix="keel-grader-test-")
+        self.addCleanup(shutil.rmtree, repo, True)
+        git = ["git", "-C", repo, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false"]
+        os.makedirs(os.path.join(repo, "measure", "evals"))
+        for name in ("measure/evals/grade.py", "README.md"):
+            with open(os.path.join(repo, name), "w", encoding="utf-8") as handle:
+                handle.write("v1\n")
+        subprocess.run(["git", "init", "-q", repo], check=True)
+        subprocess.run(git + ["add", "-A"], check=True)
+        subprocess.run(git + ["commit", "-q", "-m", "init"], check=True)
+        head = subprocess.run(git + ["rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
+        with open(os.path.join(repo, "README.md"), "a", encoding="utf-8") as handle:
+            handle.write("outside the grader\n")
+        clean = grader_commit(repo)
+        with open(os.path.join(repo, "measure", "evals", "grade.py"), "a", encoding="utf-8") as handle:
+            handle.write("v2\n")
+        # when
+        dirty = grader_commit(repo)
+        # then
+        self.assertEqual((clean, dirty), (head, head + "-dirty"))
 
 
 class VerdictTest(unittest.TestCase):

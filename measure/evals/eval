@@ -8,8 +8,9 @@ the overlay's), each run in a fresh git copy of measure/evals/<id>/repo, REPEAT 
 `<id>.case` line per case; a subset run writes `<id>-partial` instead of `<id>`. Any fault writes nothing.
 Hand-run only: it spends tokens. Exit 0 pass, 1 fail or fault, 2 usage or data error.
 --regrade grades an earlier run's raw dir again with the current grader and writes the same lines, each carrying
-`regraded_from` (the raw dir name) and `grader` (keel's HEAD commit); it never calls claude. A raw dir of a full run
-holding every current case REPEAT times writes `<id>`; any other writes `<id>-partial`.
+`regraded_from` (the raw dir name) and `grader` (the running checkout's HEAD); it never calls claude. A raw dir whose
+cases no longer match the case files is refused (exit 2); one of a full run holding every current case REPEAT times
+writes `<id>`; any other writes `<id>-partial` for the cases it holds runs of.
 """
 from __future__ import annotations
 
@@ -28,7 +29,7 @@ sys.path.insert(0, os.path.join(HERE, "lib"))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "lib"))
 
 from evalkit.cases import SPLITS, Case, CaseError, load_cases, select_cases, split_gaps  # noqa: E402
-from evalkit.grade import LEFTOVER_FAULT, fault_reason, run_passes  # noqa: E402
+from evalkit.grade import LEFTOVER_FAULT, fault_reason, grader_commit, run_passes  # noqa: E402
 from evalkit.liveconfig import cli_config_dir, config_fingerprint, is_keel_live, suite_eval_id  # noqa: E402
 from evalkit.runner import CLAUDE_BINARY, RunRecord, claude_command, run_once  # noqa: E402
 from evalkit.stream import RunFacts, summarize_stream  # noqa: E402
@@ -36,7 +37,7 @@ from evalkit.verdict import CaseVerdict, SplitVerdict, split_verdict, suite_pass
 from measurekit import env  # noqa: E402
 from measurekit.cli import EXIT_NEGATIVE, EXIT_OK, EXIT_USAGE, print_json, run_main  # noqa: E402
 from measurekit.datafiles import append_jsonl, read_jsonl  # noqa: E402
-from measurekit.gitutil import GitError, run_git  # noqa: E402
+from measurekit.gitutil import GitError  # noqa: E402
 from measurekit.ledger import all_rows, load_ledgers_from  # noqa: E402
 
 DEFAULT_REPEAT = 3
@@ -100,21 +101,7 @@ def main(argv: list[str]) -> int:
     raw_dir = create_raw_dir(plan)
     results = run_plan(plan, raw_dir)
     save_config(raw_dir, plan, results)
-    return grade_and_write(plan, raw_dir, results, {})
-
-
-def grade_and_write(plan: Plan, raw_dir: str, results: list[RunResult], provenance: dict) -> int:
-    """Case and split verdicts from graded runs; the eval lines (each carrying provenance) unless a run faulted."""
-    verdicts = [CaseVerdict(case, [result.passed for result in results if result.case is case]) for case in plan.cases]
-    splits = [split_verdict(split, verdicts) for split in SPLITS]
-    faults = [result for result in results if result.fault]
-    model = observed_model(results) or plan.model
-    if not faults:
-        append_eval_lines(plan, verdicts, splits, model, provenance)
-    report = build_report(plan, raw_dir, verdicts, splits, faults, model, skill_diagnostic(plan, results))
-    print_json(report)
-    print_summary(report, raw_dir)
-    return EXIT_OK if report["pass"] else EXIT_NEGATIVE
+    return grade_and_write(plan, raw_dir, results, {}, {})
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -222,23 +209,22 @@ def run_plan(plan: Plan, raw_dir: str) -> list[RunResult]:
     return results
 
 
-def graded(case: Case, index: int, record: RunRecord, timeout_seconds: int) -> RunResult:
-    fault = fault_reason(record.facts, timeout_seconds)
-    return RunResult(case, index, record, fault, fault is None and run_passes(case, record.facts))
-
-
 def regrade(eval_id: str, raw_dir: str) -> int:
     try:
-        plan, results = load_raw_dir(eval_id, raw_dir)
-        provenance = {"regraded_from": os.path.basename(os.path.normpath(raw_dir)), "grader": grader_commit()}
-    except PlanError as error:
+        plan, results, leftover_unknown = load_raw_dir(eval_id, raw_dir)
+        grader = grader_commit(env.CHECKOUT_ROOT)
+    except (PlanError, GitError, OSError) as error:
         print("eval: %s" % error, file=sys.stderr)
         return EXIT_USAGE
-    return grade_and_write(plan, raw_dir, results, provenance)
+    if leftover_unknown:
+        print("eval: %s recorded no leftover project dir check for %s; graded without it" % (raw_dir, ", ".join(leftover_unknown)), file=sys.stderr)
+    provenance = {"regraded_from": os.path.basename(os.path.normpath(raw_dir)), "grader": grader}
+    return grade_and_write(plan, raw_dir, results, provenance, {"leftover_unknown": leftover_unknown})
 
 
-def load_raw_dir(eval_id: str, raw_dir: str) -> tuple[Plan, list[RunResult]]:
-    """The plan an earlier run followed, with its cases as the case files define them now, and each saved run graded again."""
+def load_raw_dir(eval_id: str, raw_dir: str) -> tuple[Plan, list[RunResult], list[str]]:
+    """The plan an earlier run followed, with its cases as the case files define them now; each saved run graded again;
+    and the runs whose record cannot say whether they left a project directory behind."""
     config = _read_json(os.path.join(raw_dir, "config.json"))
     if config.get("eval_id") != eval_id:
         raise PlanError("%s holds a %s run, not %s" % (raw_dir, config.get("eval_id"), eval_id))
@@ -250,21 +236,35 @@ def load_raw_dir(eval_id: str, raw_dir: str) -> tuple[Plan, list[RunResult]]:
     missing = [case_id for case_id in config["cases"] if case_id not in by_id]
     if missing:
         raise PlanError("%s: case(s) %s are no longer in the case files" % (raw_dir, ", ".join(missing)))
-    cases = [by_id[case_id] for case_id in config["cases"]]
-    records, _ = read_jsonl(os.path.join(raw_dir, "runs.jsonl"))
+    records = _read_runs(raw_dir)
     strays = sorted({record["case"] for record in records} - set(config["cases"]))
     stale = sorted({record["case"] for record in records if record["case"] in by_id and record["kind"] != by_id[record["case"]].kind})
     if strays or stale:
         raise PlanError("%s: run(s) of case(s) %s do not match the case files" % (raw_dir, ", ".join(strays + stale)))
     runs_per_case = Counter(record["case"] for record in records)
+    configured = [by_id[case_id] for case_id in config["cases"]]
     full_run = (not config["summary_eval_id"].endswith(PARTIAL_SUFFIX) and set(config["cases"]) == set(by_id)
-                and all(runs_per_case[case.id] == config["repeat"] for case in cases) and not split_gaps(cases))
+                and all(runs_per_case[case.id] == config["repeat"] for case in configured) and not split_gaps(configured))
     plan = Plan(
-        eval_id=eval_id, skill=skill_enforcing(eval_id, keel_home, overlay_dir), cases=cases, full_run=full_run, repeat=config["repeat"],
-        model=config.get("model_observed") or config["model_requested"], command=config["command"], fixture="",
-        config_dir=config["config_dir"], keel_live=config["keel_live"], timeout_seconds=config.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS),
+        eval_id=eval_id, skill=skill_enforcing(eval_id, keel_home, overlay_dir), cases=[case for case in configured if runs_per_case[case.id]],
+        full_run=full_run, repeat=config["repeat"], model=config.get("model_observed") or config["model_requested"], command=config["command"],
+        fixture="", config_dir=config["config_dir"], keel_live=config["keel_live"], timeout_seconds=config.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS),
     )
-    return plan, [regraded_run(raw_dir, by_id[record["case"]], record, plan.timeout_seconds) for record in records]
+    results = [regraded_run(raw_dir, by_id[record["case"]], record, plan.timeout_seconds) for record in records]
+    leftover_unknown = ["%s-%d" % (record["case"], record["run"]) for record in records if leftover_unrecorded(record)]
+    return plan, results, leftover_unknown
+
+
+def _read_runs(raw_dir: str) -> list[dict]:
+    path = os.path.join(raw_dir, "runs.jsonl")
+    if not os.path.isfile(path):
+        raise PlanError("no runs.jsonl in %s" % raw_dir)
+    records, malformed = read_jsonl(path)
+    if malformed:
+        raise PlanError("%s has %d malformed line(s)" % (path, malformed))
+    if not records:
+        raise PlanError("%s holds no run" % path)
+    return records
 
 
 def regraded_run(raw_dir: str, case: Case, record: dict, timeout_seconds: int) -> RunResult:
@@ -286,15 +286,30 @@ def recorded_leftover(record: dict) -> str | None:
     return fault[len(LEFTOVER_FAULT):] if fault.startswith(LEFTOVER_FAULT) else None
 
 
-def grader_commit() -> str:
-    """keel's HEAD, marked -dirty when the eval code differs from it: which grader wrote a re-graded line."""
-    keel_home = env.keel_home()
-    try:
-        commit = run_git(keel_home, ["rev-parse", "HEAD"]).strip()
-        dirty = run_git(keel_home, ["status", "--porcelain", "--", "measure/evals"]).strip()
-    except (GitError, OSError) as error:
-        raise PlanError("cannot name the grader commit: %s" % error)
-    return commit + "-dirty" if dirty else commit
+def leftover_unrecorded(record: dict) -> bool:
+    """An older record whose earlier fault stopped the grader before its leftover project dir check."""
+    fault = record.get("fault")
+    return "leftover_project_dir" not in record and fault is not None and not fault.startswith(LEFTOVER_FAULT)
+
+
+def graded(case: Case, index: int, record: RunRecord, timeout_seconds: int) -> RunResult:
+    fault = fault_reason(record.facts, timeout_seconds)
+    return RunResult(case, index, record, fault, fault is None and run_passes(case, record.facts))
+
+
+def grade_and_write(plan: Plan, raw_dir: str, results: list[RunResult], provenance: dict, notes: dict) -> int:
+    """Case and split verdicts from graded runs; the eval lines (each carrying provenance) unless a run faulted; the report (plus notes)."""
+    verdicts = [CaseVerdict(case, [result.passed for result in results if result.case is case]) for case in plan.cases]
+    splits = [split_verdict(split, verdicts) for split in SPLITS]
+    faults = [result for result in results if result.fault]
+    model = observed_model(results) or plan.model
+    if not faults:
+        append_eval_lines(plan, verdicts, splits, model, provenance)
+    report = build_report(plan, raw_dir, verdicts, splits, faults, model, skill_diagnostic(plan, results))
+    report.update(notes)
+    print_json(report)
+    print_summary(report, raw_dir)
+    return EXIT_OK if report["pass"] else EXIT_NEGATIVE
 
 
 def save_run(raw_dir: str, result: RunResult) -> None:

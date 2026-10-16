@@ -15,5 +15,5 @@
       "prompt": "Lens: tests. Look for fake green: tests that are skipped, run zero times, assert nothing, or would still pass with the change reverted. Run the repo's test command when one exists and quote the runner's count (for example 'N pass / 0 fail' or 'Tests run: N'). A new branch without a failure-side test is a finding. Stub-shaped tests are fake green too: a test that would still pass if the imported functions returned undefined, assertions that are only toBeDefined or toBeTruthy (or their equivalents), call-only assertions (the function was called, nothing about what it returned or changed), an expected value computed by the code under test, and assertions on data the test built itself."
     }
   ],
-  "guardrails": "Not defects here: sparse code comments (readable-code K5.14 allows none), a missing test-plan section in a PR body, style preferences, and anything the diff does not introduce or change."
+  "guardrails": "Not defects here: absent code comments (K5.14 requires removal except its three mandatory categories), a missing test-plan section in a PR body, style preferences, and anything the diff does not introduce or change, except K5.14 also requires cleanup of pre-existing comments in touched code files."
 }

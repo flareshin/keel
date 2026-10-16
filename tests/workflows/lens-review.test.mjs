@@ -240,6 +240,7 @@ test('lensReview_reviewsCommitRange_whenHeadIsGiven', async () => {
   const evidence = parseEvidenceLine(evidenceLines(result.report)[0])
   assert.equal(evidence.head, SHA_C)
   assert.equal(evidence.snapshot_tree, null)
+  assert.match(auditChildArgs(rt).guardrails, /K5\.14.*rule-contract violation.*impact medium/)
   assert.match(auditChildArgs(rt).target, new RegExp(`diff ${SHA_A} ${SHA_C}`))
   assert.match(preparePromptCommands(rt.record.agents[0].prompt).diffs[0], /rev-parse --verify 'feature\/x\^\{commit\}'/)
 })
@@ -601,5 +602,20 @@ test('lensReview_runsReview_whenRequirementStatesAGoalInTestWords', async () => 
   const requirement = 'Fix the flaky date parser so the tests pass on CI; no regressions in the import path.'
   const result = await rt.run('lens-review', { diffs: [ROOT_DIFF], lenses: CALLER_LENSES, requirement })
   assert.equal(result.verdict, 'PASS')
+  assert.match(auditChildArgs(rt).guardrails, /K5\.14.*rule-contract violation.*impact medium/)
   assert.match(auditChildArgs(rt).target, /so the tests pass on CI; no regressions/)
+})
+
+
+test('lensReview_requiresCommentCleanupAndExecutableEvidence_inReadableLens', async () => {
+  const rt = createRuntime({ respond: responder() })
+  await rt.run('lens-review', { diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
+  assert.match(auditChildArgs(rt).guardrails, /K5\.14.*rule-contract violation.*impact medium/)
+  assert.match(auditChildArgs(rt).target, /except K5\.14 comment cleanup covers all comments.*also in a delta review/)
+  const prompt = auditChildArgs(rt).lenses.find((lens) => lens.key === 'readable-code').prompt
+  assert.match(prompt, /K5\.14.*all comments in code files touched by the diff/)
+  assert.match(prompt, /including pre-existing comments/)
+  assert.match(prompt, /Verify behavior from implementation, callers and tests; comments are not evidence/)
+  assert.match(prompt, /explanatory-comment-only change cannot establish a behavior fix/)
+  assert.match(prompt, /Tool-consumed directive changes are behavior changes and require failing reproduction and passing tool verification/)
 })

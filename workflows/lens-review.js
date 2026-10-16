@@ -49,7 +49,7 @@ const LINE_BREAKS = /\s*[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]+\s*/g
 const JOINED_LINES = ' / '
 const DELTA_NOTE = 'A `since` diff is a delta review: the branch passed review at that tree, so judge only the change after it (read the surrounding code for context, and say so if the change breaks something the earlier PASS relied on).'
 const FIX_DELTA_NOTE = 'A `since` diff is a delta review of a fix: the review at that tree returned NEEDS_FIXES with the merge-blocking findings below, so judge only the change after it (read the surrounding code for context). Each finding below that the change leaves unresolved is a finding again, impact high, at its file:line.\nPrior merge-blocking findings:'
-const REVIEW_GUARDRAILS = 'Review rules: a finding is valid only as a failure scenario (input leads to wrong output, an exception or a broken caller) with file:line evidence; style or impression critique is void; nothing outside the request. Impact high or medium = merge-blocking (wrong behavior, data loss, security, a broken caller or contract, fake-green tests); low = non-blocking. A merge-blocking finding needs a repro: a command or input with the observed and the expected result, or `static: <caller|contract|security|concurrency|rule> at file:line` when nothing can be run; without one it is reported as non-blocking. Test obligation: changed logic with no test that would fail if the change were reverted is impact high, never low.'
+const REVIEW_GUARDRAILS = 'Review rules: a finding is valid only as a failure scenario (input leads to wrong output, an exception or a broken caller) with file:line evidence; style or impression critique is void; nothing outside the request. Impact high or medium = merge-blocking (wrong behavior, data loss, security, a broken caller or contract, fake-green tests); low = non-blocking. A merge-blocking finding needs a repro: a command or input with the observed and the expected result, or `static: <caller|contract|security|concurrency|rule> at file:line` when nothing can be run; without one it is reported as non-blocking. K5.14 exception: a retained comment outside its three allowed categories is a rule-contract violation, not style; report it at impact medium with `static: rule at file:line`, naming the comment and why no category applies. Test obligation: changed logic with no test that would fail if the change were reverted is impact high, never low.'
 const PREPARE_SCHEMA = {
   type: 'object',
   properties: {
@@ -274,7 +274,7 @@ function withReadingGuide(lens) {
 function buildReadableLens() {
   return {
     key: READABLE_KEY,
-    prompt: `Lens: readable-code. Load the /readable-code skill (Skill tool) in full and judge only the new and changed lines against its rules, tagged K5.1-K5.16. Check the author's reading guide against the code (Entry point, Flow, Changed, Read first); a guide that misstates the code is a finding.\n${buildReadingGuideBlock()}`,
+    prompt: `Lens: readable-code. Load the /readable-code skill (Skill tool) in full and judge new and changed lines against its rules, tagged K5.1-K5.16. Exception: K5.14 covers all comments in code files touched by the diff, including pre-existing comments; inspect them at the reviewed end and require an allowed exception for each retained comment. Verify behavior from implementation, callers and tests; comments are not evidence, and an explanatory-comment-only change cannot establish a behavior fix. Tool-consumed directive changes are behavior changes and require failing reproduction and passing tool verification. Check the author's reading guide against the code (Entry point, Flow, Changed, Read first); a guide that misstates the code is a finding.\n${buildReadingGuideBlock()}`,
   }
 }
 
@@ -312,7 +312,7 @@ function buildTarget(reviewed) {
   const commands = reviewed.map(buildLensDiffCommand).join('\n')
   const delta = reviewed.some((target) => target.since) ? `\n${describeDelta()}` : ''
   const requirement = A.requirement ? `\nRequirement (the request as stated, not a claim that the diff meets it):\n${A.requirement}` : ''
-  return `the code diff from these commands; review only what it introduces or changes. Read file content at the reviewed end with \`git show <end>:<path>\`, never from the live working tree, which may have moved on:\n${commands}${delta}${requirement}`
+  return `the code diff from these commands; review only what it introduces or changes, except K5.14 comment cleanup covers all comments in code files touched by this diff (also in a delta review). Read file content at the reviewed end with \`git show <end>:<path>\`, never from the live working tree, which may have moved on:\n${commands}${delta}${requirement}`
 }
 
 function buildLensDiffCommand(target) {

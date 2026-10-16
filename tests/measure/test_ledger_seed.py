@@ -9,7 +9,7 @@ from helpers import CHECKOUT, LEDGER_COLUMNS, TODAY, MeasureSandbox, read_text
 
 SEED_IDS = [
     "K1", "K2", "K3", "K4", "K5", "risk", "F-irreversible", "F-secrets", "F-attribution",
-    "F-force-push", "F-hookskip", "F-mod-trust", "C-dispatch", "C-handoff", "C-isolation", "S-jdk",
+    "F-force-push", "F-hookskip", "F-mod-trust", "C-dispatch", "C-handoff", "C-isolation", "S-jdk", "C-review-command",
 ]
 SEED_GRACE_UNTIL = date(2026, 12, 10)
 STATUS_WITHOUT_EVIDENCE = "GRACE" if TODAY <= SEED_GRACE_UNTIL else "FAIL"
@@ -37,7 +37,7 @@ class SeedLedgerTest(unittest.TestCase):
         # then
         relevant = [item for item in result["assertions"] if item["check"] in ("ledger-format", "id-unique", "caps")]
         self.assertEqual([item for item in relevant if item["status"] != "PASS"], [])
-        self.assertIn({"check": "caps", "scope": "core", "status": "PASS", "detail": "4/10"}, relevant)
+        self.assertIn({"check": "caps", "scope": "core", "status": "PASS", "detail": "5/10"}, relevant)
 
     def test_seedLedger_isGraceUntilItsGraceDate_forRuleOfTwoAndMetricsWithNoFiresYet(self) -> None:
         # when

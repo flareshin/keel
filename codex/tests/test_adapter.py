@@ -43,6 +43,18 @@ class InstallationTest(unittest.TestCase):
         self.assertIn('PRs require owner `keel approve` then explicit `/ship1`; PASS is not consent.',
                       (self.home / '.codex/AGENTS.md').read_text())
 
+    def test_install_requiresConcreteOwnerCommand_afterEveryReview(self):
+        run = self.run_link('--write')
+
+        self.assertEqual(run.returncode, 0, run.stderr)
+        guidance = (self.home / '.codex/AGENTS.md').read_text()
+        self.assertIn('After every review, include a copyable zsh command in the final response.', guidance)
+        self.assertIn('Use the actual registered root_run_id', guidance)
+        self.assertIn('Never invent an approval ID or offer a placeholder approval command.', guidance)
+        self.assertIn('provide a concrete permitted diagnostic command', guidance)
+        for source in ('docs/codex-review.md', 'codex/skills/keel-review/SKILL.md'):
+            self.assertIn('After every review', (ADAPTER.parent / source).read_text())
+
     def test_install_isIdempotent_andUnlinksOwnedFiles(self):
         run = self.run_link('--write')
         self.assertEqual(run.returncode, 0, run.stderr)

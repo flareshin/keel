@@ -40,3 +40,18 @@ are prerequisites, not proof of a sandbox. Never modify source rollout records.
 Explain the result and remaining limits to the owner. Only the owner runs
 `keel approve <root_run_id>`. Registration alone neither approves nor ships the
 change; tests, content coverage and approval gates still apply.
+
+## Owner command after review
+
+After every review, include a copyable zsh command in the final response. For an
+approvable registered candidate, use its actual current `root_run_id` and the
+absolute keel CLI with explicit `KEEL_HOME`, `KEEL_OVERLAY_DIR`, and
+`KEEL_DATA_DIR` from the active Runtime paths. Give one owner-run plain
+`approve` command for each independent repository; do not use `--read`, run the
+approval yourself, or infer permission to create a PR.
+
+If a valid approval target is unavailable, state the exact limitation and provide
+a concrete permitted diagnostic command, such as `evidence show --repo` with
+the actual repository path and runtime assignments. Never invent an ID, present
+a placeholder approval command, retry a denied command, or route around it.
+This is response guidance, not a deterministic report hook or approval bypass.

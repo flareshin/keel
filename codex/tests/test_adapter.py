@@ -36,6 +36,13 @@ class InstallationTest(unittest.TestCase):
         self.assertFalse((self.home / '.codex').exists())
         self.assertTrue(json.loads(run.stdout)['actions'])
 
+    def test_install_requiresExplicitPrRequest_inGeneratedGuidance(self):
+        run = self.run_link('--write')
+
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertIn('Create PRs only on explicit user request; PASS is not consent.',
+                      (self.home / '.codex/AGENTS.md').read_text())
+
     def test_install_isIdempotent_andUnlinksOwnedFiles(self):
         run = self.run_link('--write')
         self.assertEqual(run.returncode, 0, run.stderr)

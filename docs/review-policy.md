@@ -25,6 +25,15 @@ Keep the required lenses, test obligations, immutable evidence and owner approva
 gates. Batching is an execution change, not an exemption from those requirements.
 Optional improvements remain non-blocking. Confirmed high/medium failures block.
 
+Review and test PASS establish verification evidence, not a request to create a
+pull request. Report completion without creating a PR, including a draft, unless
+the user explicitly requested one. Implementing, fixing, reviewing or approving
+a keel review root does not itself request a PR. An explicitly invoked delivery
+workflow whose stated purpose includes PR creation, such as `/ship1`, is a request
+for that workflow's PR step. This boundary also applies to keel's own changes;
+owner-approved local activation does not require a PR. A PR request does not waive
+the existing review, test or merge-approval gates.
+
 ## Fixes and later changes
 
 Use a delta from the recorded snapshot under the same requirement and base.

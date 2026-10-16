@@ -51,6 +51,10 @@ execution depends on the installed runtime and trust settings.
 
 The hook bridge emits Codex's explicit deny JSON when a guard refuses, input is
 unsupported, or a child guard fails. It accumulates warnings into one JSON output.
+The active profile and OS user's default `.codex` profile have their `sessions/`
+and `archived_sessions/` trees made read-only to
+matched agent edit tools and recognized shell writes, removals and moves. Reads
+remain allowed; runtime-owned logging does not go through these tool callbacks.
 The hook is synchronous. As with Codex hooks generally, a runtime failure before
 that JSON is emitted may not stop the tool. Interactive `write_stdin`, hosted
 tools, or tool paths outside the registered matcher are not enforcement coverage.

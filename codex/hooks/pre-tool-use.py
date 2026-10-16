@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import glob
 import json
 import os
+import pwd
 from pathlib import Path
 import subprocess
 import sys
@@ -79,12 +81,16 @@ def protect_adapter(payload: dict) -> None:
     protected = {profile / name for name in ('AGENTS.md', 'hooks.json', 'keel-codex-state.json')}
     protected |= {agents_home / name for name in ('keel-codex-skills.json', 'keel-codex-skills.lock')}
     protected = {path.resolve() for path in protected}
+    default_profile = Path(pwd.getpwuid(os.getuid()).pw_dir) / '.codex'
+    records = {(root / name).resolve() for root in (profile, default_profile)
+               for name in ('sessions', 'archived_sessions')}
     config = (profile / 'config.toml').resolve()
     cwd = str(payload.get('cwd') or os.getcwd())
     if payload['tool_name'] == 'Bash':
-        protect_shell(payload['tool_input']['command'], cwd, protected | {config})
+        protect_shell(payload['tool_input']['command'], cwd, protected | {config}, records)
         return
     path = (Path(cwd) / payload['tool_input'].get('file_path', '')).resolve()
+    protect_records(path, records)
     if path in protected:
         raise ValueError(f'generated Codex configuration must be changed through codex/bin/link: {path}')
     if path == config:
@@ -92,13 +98,31 @@ def protect_adapter(payload: dict) -> None:
         validate_update(path.read_text() if path.exists() else '', candidate)
 
 
-def protect_shell(command: str, cwd: str, protected: set[Path]) -> None:
+def protect_records(path: Path, roots: set[Path]) -> None:
+    if any(path == root or root in path.parents or path in root.parents for root in roots):
+        raise ValueError('Codex session provenance is read-only to agent tools')
+
+
+def protect_shell(command: str, cwd: str, protected: set[Path], records: set[Path]) -> None:
     for step in steps(command, cwd):
         targets = write_targets(step.command)
         for target in targets.written + targets.removed:
             path = Path(resolve_directory(step.directory, target, step.expansion)).resolve()
+            protect_records(shell_target_prefix(path), records)
+            if glob.has_magic(str(path)):
+                for matched in glob.iglob(str(path)):
+                    protect_records(Path(matched).resolve(), records)
             if path in protected or any(path in item.parents for item in protected):
                 raise ValueError('shell config edits cannot be verified; use codex/bin/config --file <complete TOML>')
+
+
+def shell_target_prefix(path: Path) -> Path:
+    prefix = Path(path.anchor)
+    for part in path.parts[1:]:
+        if any(marker in part for marker in '*?['):
+            return prefix
+        prefix /= part
+    return path
 
 
 def run_guard(name: str, payload: dict) -> list[str]:

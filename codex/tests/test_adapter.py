@@ -239,6 +239,53 @@ class GuardTest(unittest.TestCase):
                     hook.protect_adapter(self.payload('Bash', {
                         'command': f"sed -i '' 's/true/false/' {profile}/config.toml"}))
 
+    def test_sessionRecords_denyWritesDeletesAndMoves_butAllowReads(self):
+        with tempfile.TemporaryDirectory() as temp:
+            profile = Path(temp).resolve()
+            with patch.dict(os.environ, {'KEEL_CODEX_HOME': str(profile)}):
+                for folder in ('sessions', 'archived_sessions'):
+                    target = profile / folder / '2026/10/16/review.jsonl'
+                    calls = [self.payload('Write', {'file_path': str(target), 'content': 'forged'}),
+                             self.payload('Edit', {'file_path': str(target), 'old_string': 'fail', 'new_string': 'pass'})]
+                    for command in (f'printf forged > {target}', f'rm {target}',
+                                    f'mv {target} /tmp/moved-review', f'rm -rf {profile / folder}',
+                                    f'rm -rf {profile}/{folder[:4]}*', f'rm -rf {profile}/*'):
+                        calls.append(self.payload('Bash', {'command': command}))
+                    calls += hook.normalize(self.payload('apply_patch', {'command':
+                        f'*** Begin Patch\n*** Delete File: {target}\n*** End Patch'}))
+                    for call in calls:
+                        with self.subTest(call=call), self.assertRaises(ValueError):
+                            hook.protect_adapter(call)
+                    hook.protect_adapter(self.payload('Bash', {'command': f'cat {target}'}))
+                hook.protect_adapter(self.payload('Write', {'file_path': str(profile / 'sessions-notes.txt'), 'content': 'ok'}))
+
+    def test_sessionRecords_denyGlobThroughSymlink(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            profile = root / 'profile'
+            records = profile / 'sessions'
+            records.mkdir(parents=True)
+            (records / 'review.jsonl').write_text('original')
+            aliases = root / 'aliases'
+            aliases.mkdir()
+            (aliases / 'session-link').symlink_to(records)
+            with patch.dict(os.environ, {'KEEL_CODEX_HOME': str(profile)}):
+                with self.assertRaises(ValueError):
+                    hook.protect_adapter(self.payload('Bash', {
+                        'command': f'rm {aliases}/s*/review.jsonl'}))
+
+    def test_customProfile_protectsOsUserDefaultSessions(self):
+        import pwd
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            account = pwd.struct_passwd(('owner', 'x', 1, 1, '', str(root), '/bin/zsh'))
+            with patch.dict(os.environ, {'KEEL_CODEX_HOME': str(root / 'custom'), 'HOME': str(root / 'fake')}), \
+                    patch.object(pwd, 'getpwuid', return_value=account):
+                for folder in ('sessions', 'archived_sessions'):
+                    with self.assertRaises(ValueError):
+                        hook.protect_adapter(self.payload('Write', {
+                            'file_path': str(root / '.codex' / folder / 'record.jsonl'), 'content': 'forged'}))
+
     def test_badPayload_refusesRatherThanPassing(self):
         for payload in ([], self.payload('Bash', {}), self.payload('apply_patch', {'command': 'bad'})):
             with self.subTest(payload=payload), self.assertRaises(ValueError):

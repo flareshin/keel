@@ -7,15 +7,15 @@ export const meta = {
   ],
 }
 
-// args: { target: '<absolute root path and what to audit>', lenses: [{ key, prompt }], guardrails?: string,
-//         maxFindingsPerLens?: number, model?: string, effort?: string }
+
+
 const A = readArgs()
 const TARGET = A.target || null
 const LENSES = A.lenses || null
 const GUARDRAILS = A.guardrails || ''
 const MAX_FINDINGS = A.maxFindingsPerLens || 8
 const MODEL = A.model || 'opus'
-// Audits are judgment-heavy, so high is the floor; raise to xhigh for the hardest targets, never max (it overthinks).
+
 const EFFORT = A.effort || 'high'
 
 const FINDINGS_SCHEMA = {
@@ -100,7 +100,7 @@ function auditLens(lens) {
   })
 }
 
-// An auditor that died is not the same as "no findings": it is marked failed so the caller cannot read silence as clean.
+
 function verifyLensFindings(audit, lens) {
   if (!audit) return { lens: lens.key, verified: [], notes: '', failed: true }
   const findings = audit.findings || []
@@ -152,7 +152,7 @@ function applyVerdict(finding, lens, verdict) {
   }
 }
 
-// A verifier that died leaves a finding with verdict null: it is reported as unverified, never dropped or counted either way.
+
 function summarize(lensResults) {
   const ranLenses = lensResults.filter((result) => result && !result.failed)
   const failedLenses = LENSES.filter((lens, i) => !lensResults[i] || lensResults[i].failed).map((lens) => lens.key)

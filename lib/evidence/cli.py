@@ -1,4 +1,4 @@
-"""Argument handling for `bin/keel` (Interfaces (e)); the work happens in the sibling modules."""
+
 from __future__ import annotations
 
 import json
@@ -34,7 +34,7 @@ def main(argv: List[str]) -> int:
     except Refused as error:
         print("keel: refused: %s" % error, file=sys.stderr)
         return EXIT_REFUSED
-    except Exception as error:  # the CLI contract turns any other failure into exit 70
+    except Exception as error:
         print("keel: internal error: %s: %s" % (type(error).__name__, error), file=sys.stderr)
         return EXIT_INTERNAL
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 
 from evalkit.cases import AMBIGUOUS, CLEAR_CHANGE, Case
-from evalkit.stream import ASK_TOOL, EDIT_TOOLS, LOOKUP_TOOLS, RESULT_MAX_TURNS, RESULT_SUCCESS, RunFacts
+from evalkit.stream import ASK_TOOL, EDIT_TOOLS, LOOKUP_TOOLS, RESULT_MAX_TURNS, RESULT_SUCCESS, SKILL_TOOL, RunFacts
 
 QUESTION_MARKER = "QUESTION:"  # the runner's appended system prompt asks for it, since -p disables the ask tool
 QUESTION_LABEL = re.escape(QUESTION_MARKER.rstrip(":"))
@@ -14,7 +14,8 @@ QUESTION_LINE = re.compile(r"^[ \t]*(?:(?:[-*+>#]|\d+[.)])[ \t]*)*(?:\*\*|__)?" 
 REFINED_REQUEST_HEADER = "Refined request"
 REFINED_REQUEST_HEADING = re.compile(r"^#+[ \t]*" + re.escape(REFINED_REQUEST_HEADER), re.MULTILINE)
 FENCED_CODE = re.compile(r"```.*?(?:```|\Z)", re.S)
-GRADED_DENIALS = EDIT_TOOLS + (ASK_TOOL,) + LOOKUP_TOOLS
+# Skill: the runner denies Workflow, so a call to a workflow-backed skill (lens-review) is refused; grade what the run did.
+GRADED_DENIALS = EDIT_TOOLS + (ASK_TOOL,) + LOOKUP_TOOLS + (SKILL_TOOL,)
 
 
 def run_passes(case: Case, facts: RunFacts) -> bool:

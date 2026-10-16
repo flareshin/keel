@@ -7,13 +7,6 @@ export const meta = {
   ],
 }
 
-// args: { diffs: [{ repo: '<absolute path>', base: '<ref>', head?: '<ref>', since?: '<40-hex tree id>' }],
-//         lenses?: [{ key, prompt }]   (absent: workflows/review-lenses.json in the data dir),
-//         guardrails?, requirement?: '<the request, as the user stated it>', readingGuide?,
-//         priorFindings?: ['<merge-blocking finding of the NEEDS_FIXES at since>'],
-//         runId?, rootRunId? (required with since), maxFindingsPerLens?, model?, effort? }
-// Reviewer briefs carry no author claims: unknown keys fail, and readingGuide or guardrails text that asserts its own correctness fails.
-// Without head the working tree is reviewed through a `keel snapshot` tree, so every lens reads exactly the content the evidence names.
 const A = readArgs()
 const DIFFS = A.diffs || null
 const CALLER_LENSES = A.lenses
@@ -125,7 +118,6 @@ function readArgs() {
   }
 }
 
-// Every value checked here is later pasted into shell text or an evidence line, so the shapes are strict.
 function findArgsProblem() {
   const unknownKey = Object.keys(A).find((key) => !KNOWN_ARGS.includes(key))
   if (unknownKey) return `args.${unknownKey} is not an argument; reviewer briefs take only ${KNOWN_ARGS.join(', ')}`
@@ -139,7 +131,6 @@ function findArgsProblem() {
   return findAuthorClaimProblem() || findRunIdProblem(deltaCount > 0)
 }
 
-// The requirement is the user's request and may name a goal ("so the tests pass"), so only author-written text is screened.
 function findAuthorClaimProblem() {
   const nonText = ['requirement', ...AUTHOR_TEXT_ARGS].find((key) => A[key] !== undefined && typeof A[key] !== 'string')
   if (nonText) return `args.${nonText} is text`
@@ -158,7 +149,6 @@ function isDiffShaped(d) {
   return d.head === undefined && typeof d.since === 'string' && SHA.test(d.since)
 }
 
-// The path is pasted inside single quotes into shell text and onto a report line, so a quote or line break could escape either.
 function isPastableAbsolutePath(value) {
   return typeof value === 'string' && value.startsWith('/') && !value.includes("'") && !CONTROL_CHARS.test(value)
 }
@@ -167,7 +157,6 @@ function isFindingList(findings) {
   return Array.isArray(findings) && findings.length > 0 && findings.every((f) => typeof f === 'string' && f.trim() !== '')
 }
 
-// A root review starts its own chain (root_run_id == run_id); a delta joins the chain of the root it names.
 function findRunIdProblem(isDelta) {
   const malformedKey = ['runId', 'rootRunId'].find((key) => A[key] !== undefined && !(typeof A[key] === 'string' && RUN_ID.test(A[key])))
   if (malformedKey) return `args.${malformedKey} must match ${RUN_ID.source}`
@@ -204,15 +193,12 @@ ${runIdStep}
 ${lensesStep}`
 }
 
-// One command per diff prints one JSON object, so the agent copies values instead of interpreting git output.
 function buildPrepareCommand(d) {
   const root = `root=$(git -C '${d.repo}' rev-parse --show-toplevel)`
   if (d.head) {
     return `${root} && head=$(git -C "$root" rev-parse --verify '${d.head}^{commit}') && base=$(git -C "$root" merge-base '${d.base}' "$head") && stat=$(git -C "$root" diff --stat "$base" "$head" | tail -n 1) && jq -cn --arg r "$root" --arg b "$base" --arg h "$head" --arg s "$stat" '{repo_root:$r, review_base:$b, head:$h, snapshot_tree:null, diff_stat:$s}'`
   }
   const from = d.since ? `'${d.since}'` : '"$base"'
-  // Not `"${KEEL_DATA_DIR:-…}"/bin/keel snapshot`: ship-gate reads a program resolved at run time, in a call that
-  // spells merge-base, as a possible merge and denies it; `bin/keel` after the cd is a literal program.
   const sinceCheck = d.since ? `{ [ "$(git -C "$root" cat-file -t '${d.since}' 2>/dev/null)" = tree ] || { echo "since ${d.since} is not a tree id: pass the snapshot_tree the earlier review named (for a commit, <commit>^{tree})" >&2; false; }; } && ` : ''
   return `${root} && ${sinceCheck}base=$(git -C "$root" merge-base '${d.base}' HEAD) && tree=$(cd ${DATA_DIR} && bin/keel snapshot "$root" | jq -r .tree) && stat=$(git -C "$root" diff --stat ${from} "$tree" | tail -n 1) && jq -cn --arg r "$root" --arg b "$base" --arg t "$tree" --arg s "$stat" '{repo_root:$r, review_base:$b, head:null, snapshot_tree:$t, diff_stat:$s}'`
 }
@@ -237,7 +223,6 @@ function parseReviewedTarget(line, diff) {
   }
 }
 
-// Exactly one of head and snapshot_tree names the reviewed content, as the KEEL-EVIDENCE contract requires.
 function isPreparedShaped(p) {
   if (!p || !isPastableAbsolutePath(p.repo_root)) return false
   if (!SHA.test(p.review_base) || typeof p.diff_stat !== 'string') return false
@@ -260,7 +245,6 @@ function resolveLensSet(lensesOutput, reviewed) {
   }
 }
 
-// Not JSON.parse of a copied stdout line: an agent copying a long JSON line into a string field can hand-escape part of it.
 function resolveBaseLenses(fileLenses) {
   if (CALLER_LENSES !== undefined) return { lenses: CALLER_LENSES, guardrails: A.guardrails || '' }
   if (!fileLenses || typeof fileLenses !== 'object' || !Array.isArray(fileLenses.lenses)) {
@@ -282,7 +266,6 @@ function hasLens(lenses, key) {
   return lenses.some((lens) => lens && lens.key === key)
 }
 
-// A caller's own readable-code lens still gets the guide: the guide goes to that lens and no other.
 function withReadingGuide(lens) {
   if (!lens || lens.key !== READABLE_KEY || A.readingGuide === undefined) return lens
   return { ...lens, prompt: `${lens.prompt}\n${buildReadingGuideBlock()}` }
@@ -299,7 +282,6 @@ function buildReadingGuideBlock() {
   return `Author's reading guide (claims to check against the code, not evidence):\n${A.readingGuide || 'none provided; for a non-trivial diff, report the missing guide as a finding'}`
 }
 
-// --head is the reviewed commit or snapshot tree, so the scan covers exactly the content the evidence names.
 function buildRuleChecksLens(reviewed) {
   const commands = reviewed.map((target) => `python3 ${RULE_CHECKS} --repo '${target.repo_root}' --base ${target.review_base} --head ${target.head || target.snapshot_tree}`)
   const deltaNote = reviewed.some((target) => target.since) ? ' In a delta review, only a line the delta changes is a candidate.' : ''
@@ -343,7 +325,6 @@ function describeDelta() {
   return PRIOR_FINDINGS ? `${FIX_DELTA_NOTE}\n${PRIOR_FINDINGS.map((f) => `- ${f}`).join('\n')}` : DELTA_NOTE
 }
 
-// A lens that never ran or a finding nobody verified leaves the review incomplete, so it cannot pass.
 function judge(audit, lensSet, repoCount) {
   const failedLenses = [...(audit.failedLenses || []), ...findUnprovenRuleChecks(audit, lensSet, repoCount)]
   const blocking = audit.confirmed.filter(isMergeBlocking)
@@ -351,7 +332,6 @@ function judge(audit, lensSet, repoCount) {
   const isIncomplete = audit.unverified.length > 0 || failedLenses.length > 0
   return {
     verdict: blocking.length || isIncomplete ? 'NEEDS_FIXES' : 'PASS',
-    // Only a complete review gives a delta review of the fix a closed list to settle.
     fixableFindings: isIncomplete ? 0 : blocking.length,
     lensesFired: lensSet.lenses.map((lens) => lens.key).filter((key) => !failedLenses.includes(key)),
     failedLenses,
@@ -360,7 +340,6 @@ function judge(audit, lensSet, repoCount) {
   }
 }
 
-// The built-in rule-checks lens counts as run only when its notes quote one clean scan summary per reviewed repo.
 function findUnprovenRuleChecks(audit, lensSet, repoCount) {
   if (!lensSet.isRuleChecksBuiltIn || (audit.failedLenses || []).includes(RULE_CHECKS_KEY)) return []
   const noted = (audit.lensNotes || []).find((n) => n.lens === RULE_CHECKS_KEY)
@@ -392,7 +371,6 @@ function buildEvidenceLine(target, runId, rootRunId) {
   return `${EVIDENCE_PREFIX}${JSON.stringify(evidence)}`
 }
 
-// Agent text is flattened to one line and never starts a line: report-gate records every KEEL-EVIDENCE line it finds.
 function buildReport(outcome, audit, reviewed, evidenceLines) {
   return [
     `VERDICT: ${outcome.verdict}`,
@@ -418,7 +396,6 @@ function describeFindings(title, findings) {
   return `${title} (${findings.length}):\n${items.join('\n')}`
 }
 
-// Lens notes carry each lens's evidence (commands run, test counts) when it found nothing: a PASS still shows its work.
 function describeLensNotes(lensNotes) {
   const noted = lensNotes.filter((n) => n.notes)
   if (noted.length === 0) return 'Lens notes: none'
@@ -429,7 +406,6 @@ function toOneLine(text) {
   return String(text).replace(LINE_BREAKS, JOINED_LINES)
 }
 
-// The reporter is a separate subagent with no schema: report-gate records review evidence from its final message.
 function handBackReport(report) {
   const prompt = `Your final message must be exactly the report between the two marker lines below, character for character: no text before or after it, no markdown fences, no edits. The two marker lines frame the report and are not part of your message: it starts with the line that begins VERDICT: and ends with the last line before the closing marker. Do not run any tool and do not judge the report.
 ${REPORT_START}
@@ -438,7 +414,6 @@ ${REPORT_END}`
   return agent(prompt, { label: 'report', phase: 'Report', model: MODEL, effort: MECHANICAL_EFFORT })
 }
 
-// The caller gets the reporter's text as the report, so it must be the expected report up to trailing whitespace, blank edge lines and echoed marker lines.
 function findHandBackProblem(message, expectedReport, evidenceLines) {
   if (typeof message !== 'string' || message.trim() === '') return 'returned no message'
   const lines = withoutReportMarkers(toComparableLines(message))
@@ -457,9 +432,6 @@ function toComparableLines(text) {
   return text.replace(/^\s*\n/, '').replace(/\s+$/, '').split('\n').map((line) => line.replace(/\s+$/, ''))
 }
 
-// Same rule as without_report_markers in hooks/report-gate/report-gate.py for ASCII whitespace: toComparableLines
-// drops trailing whitespace per line and blank lines at either end, then a marker line matches with its own
-// whitespace trimmed. Not for U+FEFF or U+0085: JS \s/trim and Python strip disagree on them.
 function withoutReportMarkers(lines) {
   const start = lines[0].trim() === REPORT_START ? 1 : 0
   const end = lines.length > start && lines[lines.length - 1].trim() === REPORT_END ? lines.length - 1 : lines.length

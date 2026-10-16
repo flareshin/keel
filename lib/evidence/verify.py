@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import deque
 from typing import List, NamedTuple, Optional, Tuple
 
-from evidence import codex_review, gitcmd, registry, store, writers
+from evidence import codex_review, comment_cleanup, gitcmd, registry, store, writers
 from evidence.chain import Chain, build_chains
 from evidence.gitcmd import GitError, PathEntry
 from evidence.registry import GatedRepo
@@ -57,7 +57,11 @@ def judge(outgoing: Outgoing) -> Decision:
     chain, roots, reasons = _resolve_reviews(outgoing, entries)
     reasons += _test_reasons(outgoing, entries, risk)
     waiver = _no_test_reason(chain)
-    reasons += _same_range_test_reasons(risk, waiver)
+    unchanged_logic = {entry.path for entry in entries if not entry.deleted
+                       and comment_cleanup.matches_content(outgoing.repo_root, entry.path,
+                           gitcmd.tree_entry(outgoing.repo_root, outgoing.merge_base, entry.path),
+                           (entry.mode, entry.blob))}
+    reasons += _same_range_test_reasons(risk, waiver, unchanged_logic)
     root_run_id = chain.root_run_id if chain else None
     used_waiver = waiver if risk.logic_paths() and not risk.has_test_path() else None
     return Decision(not reasons, tuple(reasons), risk.risk_class, root_run_id, risk.files, risk.lines, used_waiver, roots)
@@ -66,7 +70,8 @@ def judge(outgoing: Outgoing) -> Decision:
 def covers(repo_root: str, tree: str, entries: List[PathEntry]) -> bool:
 
     try:
-        return all(gitcmd.tree_entry(repo_root, tree, entry.path) == (None if entry.deleted else (entry.mode, entry.blob))
+        return all(comment_cleanup.matches_content(repo_root, entry.path, gitcmd.tree_entry(repo_root, tree, entry.path),
+                                                  None if entry.deleted else (entry.mode, entry.blob))
                    for entry in entries)
     except GitError:
         return False
@@ -108,7 +113,10 @@ def _approved_predecessors(outgoing: Outgoing, boundary: str, chains: List[Chain
     tree = gitcmd.tree_of_commit(outgoing.repo_root, boundary)
     for chain in chains:
         base = chain.root["review_base"]
-        if base == boundary or chain.head["reviewed_tree"] != tree:
+        if base == boundary:
+            continue
+        if chain.head["reviewed_tree"] != tree and not covers(outgoing.repo_root, chain.head["reviewed_tree"],
+                gitcmd.diff_entries(outgoing.repo_root, chain.head["reviewed_tree"], tree)):
             continue
         if not gitcmd.is_ancestor(outgoing.repo_root, outgoing.merge_base, base):
             continue
@@ -130,7 +138,7 @@ def _best_chain(outgoing: Outgoing, entries: List[PathEntry],
             return chain, []
 
 
-    return min(judged, key=lambda item: (bool(_coverage_reasons(item[0], entries)), judged.index(item)))
+    return min(judged, key=lambda item: (bool(_coverage_reasons(item[0], entries, outgoing.repo_root)), judged.index(item)))
 
 
 def _chain_reasons(outgoing: Outgoing, chain: Chain, entries: List[PathEntry]) -> List[Reason]:
@@ -141,7 +149,7 @@ def _chain_reasons(outgoing: Outgoing, chain: Chain, entries: List[PathEntry]) -
     if not gitcmd.is_ancestor(outgoing.repo_root, chain.root["review_base"], outgoing.merge_base):
         reasons.append(Reason(K1, "chain %s reviewed from %s, not from the merge base %s or an ancestor of it"
                               % (root, chain.root["review_base"][:10], outgoing.merge_base[:10])))
-    reasons += _coverage_reasons(chain, entries)
+    reasons += _coverage_reasons(chain, entries, outgoing.repo_root)
     if any(link["review_kind"] not in (LENS_REVIEW, codex_review.KIND) for link in chain.links):
         reasons.append(Reason(RISK, "every change needs a lens-review chain; chain %s has a %s link"
                               % (root, "single-lens")))
@@ -150,7 +158,7 @@ def _chain_reasons(outgoing: Outgoing, chain: Chain, entries: List[PathEntry]) -
     return reasons
 
 
-def _coverage_reasons(chain: Chain, entries: List[PathEntry]) -> List[Reason]:
+def _coverage_reasons(chain: Chain, entries: List[PathEntry], repo: str) -> List[Reason]:
     missing = []
     for entry in entries:
         if entry.is_gitlink:
@@ -160,7 +168,8 @@ def _coverage_reasons(chain: Chain, entries: List[PathEntry]) -> List[Reason]:
             missing.append("%s (not in any reviewed diff)" % entry.path)
         elif entry.deleted and reviewed[0] is not None:
             missing.append("%s (deletion not reviewed)" % entry.path)
-        elif not entry.deleted and reviewed != (entry.blob, entry.mode):
+        elif not entry.deleted and not comment_cleanup.matches_content(repo, entry.path,
+                (reviewed[1], reviewed[0]), (entry.mode, entry.blob)):
             missing.append("%s (content or mode changed after review)" % entry.path)
     if not missing:
         return []
@@ -200,9 +209,9 @@ def _test_reasons(outgoing: Outgoing, entries: List[PathEntry], risk: Risk) -> L
     return [Reason(K3, "no tests evidence covers this exact content: run `keel test -- <test command>`")]
 
 
-def _same_range_test_reasons(risk: Risk, waiver: Optional[str]) -> List[Reason]:
+def _same_range_test_reasons(risk: Risk, waiver: Optional[str], unchanged_logic=()) -> List[Reason]:
 
-    logic = risk.logic_paths()
+    logic = [path for path in risk.logic_paths() if path not in unchanged_logic]
     if not logic or risk.has_test_path() or waiver:
         return []
     return [Reason(K3, "logic changed with no test in the same range: %s; add a test, or have the reviewer state "

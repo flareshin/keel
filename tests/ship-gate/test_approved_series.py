@@ -4,6 +4,20 @@ from helpers import LOGIC_WITH_TEST, Sandbox
 
 
 class ApprovedSeriesTest(unittest.TestCase):
+    def test_commentDeletion_reusesApprovedSeries_afterLastReview(self):
+        sandbox, repo = self.stages()
+        boundary = repo.head()
+        repo.commit({'src/second.py': '# Ordinary explanation.\nsecond = 3\n',
+                     'tests/test_second.py': 'assert 3 == 3\n'})
+        sandbox.review(repo, run_id='rv-series-0003', review_base=boundary)
+        sandbox.approve('rv-series-0003')
+        sandbox.tests_evidence(repo)
+        repo.commit({'src/second.py': 'second = 3\n'})
+
+        result = sandbox.push(repo, 'git push origin feature')
+
+        self.assertEqual(result.rc, 0, result.stderr)
+
     def stages(self, approve_first=True, gap=False):
         sandbox = Sandbox(self)
         repo = sandbox.clone('acme', 'app')

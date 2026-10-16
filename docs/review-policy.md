@@ -75,3 +75,27 @@ all pass. Branch names, read acknowledgements, older approvals lacking a commit
 binding, dirty/non-fast-forward targets and ordinary live edits stay blocked.
 The initial installation of this guard change remains owner-run under the old
 policy. Hook trust changes, if any, remain an owner action.
+
+
+## Mechanical comment deletion
+
+A new tree does not require another model review when the only difference from
+reviewed content is a mechanically verified deletion of whole ordinary-comment
+lines. The gate checks this at consumption time for both review and test coverage;
+it does not rewrite evidence, change its timestamp or approve a new chain.
+Existing provenance, approval, expiry, base and mode checks remain in force.
+Verified comment deletion alone adds no changed-logic test-path obligation.
+
+The conservative built-in recognizer supports Python tokenization with matching
+ASTs, and a bounded JavaScript, TypeScript and Java lexical subset. Code and string
+bytes stay identical. It accepts whole ordinary prose comments only. It refuses
+files with detected notices/directives or non-prose comment markers, inline edits,
+docstring deletion, unsupported extensions, JSX, JS/TS slash expressions or angle
+brackets, templates, Java Unicode escapes/text blocks, malformed strings/comments
+or oversized input. Unsupported cases use the existing review path; this is not an arbitrary
+semantic-equivalence waiver. Test code changes and tool-comment changes still
+need independent review and appropriate test evidence. Exact-commit activation
+approval remains a separate constraint and receives no comment-deletion exemption.
+
+Notebook source/cell markers are tool inputs too; see the
+[Databricks source format contract](https://docs.databricks.com/aws/en/notebooks/notebook-export-import).

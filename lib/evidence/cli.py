@@ -17,6 +17,7 @@ USAGE = """usage:
   keel evidence write-review          (stdin: {"keel_evidence":{…},"verdict":…,"source":{…}})
   keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]
   keel evidence show [--repo <path>] [--root <root_run_id>]
+  keel evidence record-codex --repo <path> --audit <session UUID> --verify <session UUID>
   keel evidence gc"""
 EXIT_OK = 0
 EXIT_USAGE = 2
@@ -76,8 +77,13 @@ def _snapshot(rest: List[str]) -> int:
 def _evidence(rest: List[str]) -> int:
     if not rest:
         raise Usage("keel evidence <write-review|write-smoke|show|gc>")
-    subcommand, options = rest[0], _options(rest[1:], {"--repo", "--run", "--root"})
-    if subcommand == "write-review":
+    subcommand, options = rest[0], _options(rest[1:], {"--repo", "--run", "--root", "--audit", "--verify"})
+    if subcommand == "record-codex":
+        from evidence import codex_review
+        if set(options) != {"--repo", "--audit", "--verify"}:
+            raise Usage("record-codex requires --repo, --audit and --verify")
+        _print(codex_review.register(options["--repo"], options["--audit"], options["--verify"]))
+    elif subcommand == "write-review":
         _print(writers.write_review(_stdin_json()))
     elif subcommand == "write-smoke":
         _print(writers.write_smoke(options.get("--repo") or os.getcwd(), options.get("--run")))

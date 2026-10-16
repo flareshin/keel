@@ -89,6 +89,10 @@ def write_approval(root_run_id: str, kind: str) -> dict:
     failing = sorted(key for key, head in heads.items() if head["verdict"] != "PASS")
     if failing:
         raise Refused("chain head is not PASS for %s" % ", ".join(failing))
+    from evidence import codex_review
+    for head in heads.values():
+        if head.get("review_kind") == codex_review.KIND or (head.get("source") or {}).get("via") == codex_review.VIA:
+            codex_review.validate_evidence(head)
     pinned = {key: head["evidence_id"] for key, head in heads.items()}
     evidence = store.write(kind, {"root_run_id": root_run_id, "heads": pinned, "source": APPROVAL_SOURCE,
                                   "session_id": None})

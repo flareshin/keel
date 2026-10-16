@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import List, NamedTuple, Optional, Tuple
 
-from evidence import gitcmd, registry, store
+from evidence import codex_review, gitcmd, registry, store, writers
 from evidence.chain import Chain, build_chains
 from evidence.gitcmd import GitError, PathEntry
 from evidence.registry import GatedRepo
@@ -99,7 +99,7 @@ def _chain_reasons(outgoing: Outgoing, chain: Chain, entries: List[PathEntry]) -
         reasons.append(Reason(K1, "chain %s reviewed from %s, not from the merge base %s or an ancestor of it"
                               % (root, chain.root["review_base"][:10], outgoing.merge_base[:10])))
     reasons += _coverage_reasons(chain, entries)
-    if any(link["review_kind"] != LENS_REVIEW for link in chain.links):
+    if any(link["review_kind"] not in (LENS_REVIEW, codex_review.KIND) for link in chain.links):
         reasons.append(Reason(RISK, "every change needs a lens-review chain; chain %s has a %s link"
                               % (root, "single-lens")))
     reasons += _provenance_reasons(chain)
@@ -127,6 +127,11 @@ def _coverage_reasons(chain: Chain, entries: List[PathEntry]) -> List[Reason]:
 def _provenance_reasons(chain: Chain) -> List[Reason]:
     """Every review in the chain came from a subagent (K1: the author never reviews itself)."""
     for link in chain.links:
+        if link.get("review_kind") == codex_review.KIND or (link.get("source") or {}).get("via") == codex_review.VIA:
+            try:
+                codex_review.validate_evidence(link)
+            except (writers.Refused, OSError, ValueError, KeyError, TypeError) as error:
+                return [Reason(K1, "invalid Codex provenance: %s" % error)]
         if not (link.get("source") or {}).get("agent_id"):
             return [Reason(K1, "review %s has no agent provenance" % link["evidence_id"])]
     return []

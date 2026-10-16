@@ -46,6 +46,7 @@ PARTIAL_SUFFIX = "-partial"
 CASE_SUFFIX = ".case"
 SKILL_ENFORCEMENT = "skill:"
 RAW_DIR_PREFIX = "keel-eval-"
+RUN_RECORD_KEYS = {"case", "run", "kind", "exit", "timed_out", "changed"}  # what --regrade reads from a runs.jsonl record
 
 
 class PlanError(Exception):
@@ -251,7 +252,7 @@ def load_raw_dir(eval_id: str, raw_dir: str) -> tuple[Plan, list[RunResult], lis
         fixture="", config_dir=config["config_dir"], keel_live=config["keel_live"], timeout_seconds=config.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS),
     )
     results = [regraded_run(raw_dir, by_id[record["case"]], record, plan.timeout_seconds) for record in records]
-    leftover_unknown = ["%s-%d" % (record["case"], record["run"]) for record in records if leftover_unrecorded(record)]
+    leftover_unknown = [run_name(record["case"], record["run"]) for record in records if leftover_unrecorded(record)]
     return plan, results, leftover_unknown
 
 
@@ -260,6 +261,7 @@ def _read_runs(raw_dir: str) -> list[dict]:
     if not os.path.isfile(path):
         raise PlanError("no runs.jsonl in %s" % raw_dir)
     records, malformed = read_jsonl(path)
+    malformed += sum(1 for record in records if not RUN_RECORD_KEYS <= record.keys())
     if malformed:
         raise PlanError("%s has %d malformed line(s)" % (path, malformed))
     if not records:
@@ -269,7 +271,7 @@ def _read_runs(raw_dir: str) -> list[dict]:
 
 def regraded_run(raw_dir: str, case: Case, record: dict, timeout_seconds: int) -> RunResult:
     """A saved run's facts: the stream as claude wrote it, the rest from its runs.jsonl record."""
-    stem = os.path.join(raw_dir, "%s-%d" % (case.id, record["run"]))
+    stem = os.path.join(raw_dir, run_name(case.id, record["run"]))
     stream_text, diff = _read_raw_text(stem + ".stream.jsonl"), _read_raw_text(stem + ".diff")
     facts = RunFacts(
         stream=summarize_stream(stream_text.splitlines()), exit_code=record["exit"], timed_out=record["timed_out"],
@@ -313,7 +315,7 @@ def grade_and_write(plan: Plan, raw_dir: str, results: list[RunResult], provenan
 
 
 def save_run(raw_dir: str, result: RunResult) -> None:
-    stem = os.path.join(raw_dir, "%s-%d" % (result.case.id, result.index))
+    stem = os.path.join(raw_dir, run_name(result.case.id, result.index))
     facts = result.record.facts
     _write_text(stem + ".stream.jsonl", result.record.stream_text)
     _write_text(stem + ".diff", result.record.diff)
@@ -381,6 +383,11 @@ def print_summary(report: dict, raw_dir: str) -> None:
     else:
         verdict = "%s; wrote %s" % ("PASS" if report["pass"] else "FAIL", report["eval_id"])
     print("eval %s: %s -> %s; raw: %s" % (report["rule_id"], splits, verdict, raw_dir), file=sys.stderr)
+
+
+def run_name(case_id: str, run: int) -> str:
+    """`<case>-<run>`: the stem of a run's raw files and its name in reports."""
+    return "%s-%d" % (case_id, run)
 
 
 def _read_json(path: str) -> dict:

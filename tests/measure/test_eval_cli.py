@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
 import sys
 import unittest
 
@@ -318,13 +320,14 @@ class EvalCliTest(unittest.TestCase):
         self.box.seed_suite("unused", "unused")
         runs = self.suite_runs(change_denials=("Skill",))
         runs[1]["fault"] = "permission denied for Skill"
+        runs[3].update({"fault": "permission denied for Skill", "leftover": None})
         raw = self.box.write_raw_dir("K4-old", runs)
         # when
         completed, report = self.box.run_eval_json("K4", "--regrade", raw)
         # then
         self.assertEqual((completed.returncode, report["eval_id"], report["pass"], report["written"], report["faults"]), (0, "K4", True, True, []), completed.stderr)
         self.assertEqual(self.box.stub_calls(), [])
-        self.assertEqual(report["leftover_unknown"], ["c1-1"], "the old Skill fault stopped the grader before its leftover check")
+        self.assertEqual(report["leftover_unknown"], ["c1-1"], "c1's old Skill fault stopped the grader before its leftover check; h2 recorded it")
         suite = [line for line in self.box.eval_lines() if line["eval_id"] == "K4"]
         self.assertEqual(suite, [{"ts": suite[0]["ts"], "eval_id": "K4", "rule_id": "K4", "case": "suite train=2/2 holdout=2/2", "pass": True,
                                   "model": MODEL, "regraded_from": "keel-eval-K4-old", "grader": grader_commit(CHECKOUT)}])
@@ -398,6 +401,7 @@ class EvalCliTest(unittest.TestCase):
                 completed, report = self.box.run_eval_json("K4", "--regrade", raw)
                 # then
                 self.assertEqual((completed.returncode, report["written"], report["faults"][0]["case"]), (1, False, "a1"), completed.stderr)
+                self.assertEqual(report["leftover_unknown"], [])
         self.assertEqual(self.box.eval_lines(), [])
 
     def test_regrade_exitsTwo_whenTheRawDirDoesNotMatchTheCaseFilesOrIsUnreadable(self) -> None:
@@ -421,7 +425,9 @@ class EvalCliTest(unittest.TestCase):
                 # then
                 self.assertEqual(completed.returncode, 2, completed.stderr)
                 self.assertIn(named, completed.stderr)
-        for name, damage in {"no-runs-file": lambda path: os.remove(path), "malformed-line": lambda path: open(path, "a").write("{oops\n")}.items():
+        damages = {"no-runs-file": lambda path: os.remove(path), "empty-runs-file": lambda path: open(path, "w").close(),
+                   "malformed-line": lambda path: open(path, "a").write("{oops\n"), "record-missing-a-key": lambda path: open(path, "a").write('{"case": "a1", "run": 2}\n')}
+        for name, damage in damages.items():
             with self.subTest(name):
                 raw = self.box.write_raw_dir("K4-" + name, self.suite_runs())
                 damage(os.path.join(raw, "runs.jsonl"))
@@ -430,11 +436,24 @@ class EvalCliTest(unittest.TestCase):
                 self.assertIn("runs.jsonl", completed.stderr)
         self.assertEqual(self.box.eval_lines(), [])
 
+    def test_regrade_exitsTwo_whenTheGraderCheckoutHasNoCommit(self) -> None:
+        # given: the eval code copied outside any git repository
+        self.box.seed_suite("unused", "unused")
+        raw = self.box.write_raw_dir("K4-uncommitted", self.suite_runs())
+        code = os.path.join(self.box.root, "code")
+        shutil.copytree(os.path.join(CHECKOUT, "measure"), os.path.join(code, "measure"))
+        # when
+        completed = subprocess.run([os.path.join(code, "measure", "evals", "eval"), "K4", "--regrade", raw], capture_output=True, text=True, env=self.box.env, cwd=self.box.root)
+        # then
+        self.assertEqual(completed.returncode, 2, completed.stderr)
+        self.assertEqual(self.box.eval_lines(), [])
+
     def test_exitTwo_whenRegradeIsMixedWithARunOption_orARunLacksAModel(self) -> None:
         # given
         self.box.seed_suite(self.box.ask_scenario(), self.box.edit_scenario())
         raw = self.box.write_raw_dir("K4-mixed", self.suite_runs())
-        for args in (("K4", "--regrade", raw, "--case", "a1"), ("K4", "--regrade", raw, "--model", MODEL), ("K4",)):
+        mixed = [("--case", "a1"), ("--model", MODEL), ("--split", "train"), ("--dry-run",)]
+        for args in [("K4", "--regrade", raw) + option for option in mixed] + [("K4",)]:
             with self.subTest(args):
                 # when
                 completed = self.box.run_eval(*args)

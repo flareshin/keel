@@ -122,7 +122,12 @@ sandbox. Never manufacture provenance, session UUIDs or approval records.
 
 ## Owner command after review
 
-After every review, include a copyable zsh command in the final response. For an
+After every review, explain the candidate in the owner's language before the
+command, following the shared [explanation contract](review-policy.md#explain-before-requesting-approval):
+problem and before/after behavior, concrete flow with file/line links, why the
+structure and decision order were chosen, relevant tradeoffs, actual verification
+evidence and remaining risks. Scale detail to the change; a PASS or file list
+alone is insufficient. Then include a copyable zsh command in the final response. For an
 approvable registered candidate, use its actual current `root_run_id` and the
 absolute keel CLI with explicit `KEEL_HOME`, `KEEL_OVERLAY_DIR`, and
 `KEEL_DATA_DIR` from the active Runtime paths. Give one owner-run plain

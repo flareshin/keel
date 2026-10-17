@@ -43,7 +43,12 @@ change; tests, content coverage and approval gates still apply.
 
 ## Owner command after review
 
-After every review, include a copyable zsh command in the final response. For an
+After every review, explain the candidate in the owner's language before the
+command, following `docs/review-policy.md`'s explanation contract: problem and
+before/after behavior, concrete flow with file/line links, reasons for the
+structure and decision order, relevant tradeoffs, actual verification evidence
+and remaining risks. Scale detail to the change; a PASS or file list alone is
+insufficient. Then include a copyable zsh command in the final response. For an
 approvable registered candidate, use its actual current `root_run_id` and the
 absolute keel CLI with explicit `KEEL_HOME`, `KEEL_OVERLAY_DIR`, and
 `KEEL_DATA_DIR` from the active Runtime paths. Give one owner-run plain

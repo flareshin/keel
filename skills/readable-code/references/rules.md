@@ -74,6 +74,13 @@ Read first  : <the line(s) where money, transactions or contracts are decided>
 
 A person owns the code AI writes; the depth of understanding required follows the ship-gate risk class.
 
+[K5] Before presenting an approval command, follow the explanation contract in
+[review-policy.md](../../../docs/review-policy.md#explain-before-requesting-approval):
+explain the problem, concrete flow, reasons for the structure and decision order,
+relevant tradeoffs, verification evidence and remaining risks in the owner's
+language. Scale detail to the change; a reading guide or PASS alone is not the
+explanation. Give this explanation before asking for the owner's own words.
+
 | Tier | Scope | The owner does |
 |---|---|---|
 | **High** (ship-gate `heavy`) | money, pricing, transaction boundaries, data consistency, schema changes, external contracts, permissions. Code merged behind an off flag keeps the tier of what it does when enabled | Before `keel approve <root_run_id>`, writes 2–3 lines on what the change does, in their own words; if they can't, they ask about that part first |

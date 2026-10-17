@@ -36,6 +36,36 @@ owner to invoke it in a supported runtime; do not emulate its PR step. This appl
 to keel's own changes too. Local approved activation does not require a PR, and
 `/ship1` does not waive existing review, test or merge-approval gates.
 
+## Explain before requesting approval
+
+[K5] Before presenting an owner approval command, explain the candidate in the
+owner's language so they can decide with an understanding of the code. Cover:
+
+- The original problem and the behavior before and after the change.
+- How a concrete input moves through the entry point, key decisions and side
+  effects to its result, with links to the relevant files and lines.
+- Why this structure and decision order were chosen, including the constraints
+  they preserve and a relevant alternative's tradeoff. Do not invent alternatives
+  or claim a comparison was tested when it was not.
+- What the tests and independent review establish, their actual evidence, and
+  remaining risks or unverified behavior.
+
+Scale the explanation to the change: a trivial or documentation-only change
+normally needs two or three sentences on rationale and effect; an ordinary logic
+change needs one concrete example and a brief reason for its structure and
+branches; a high-risk change also needs alternatives, failure conditions and
+verification limits. Prioritize what changes the approval decision. In follow-up
+requests for the same candidate, explain only new changes, changed evidence or
+remaining questions and link the earlier explanation instead of repeating it.
+If the earlier explanation is unavailable, give a brief self-contained recap.
+Do not impose a token cap that would hide a material risk.
+A file list, test PASS or approval command alone is insufficient. Explain
+unfamiliar terms, distinguish intended behavior from verified results, and put
+the explanation before the command. This supplements the readable-code
+human-understanding gate; it does not supply the owner's own explanation or
+grant approval. When no approvable target exists, explain the limitation before
+providing the permitted diagnostic command.
+
 ## Fixes and later changes
 
 Use a delta from the recorded snapshot under the same requirement and base.

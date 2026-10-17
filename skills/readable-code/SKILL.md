@@ -37,6 +37,9 @@ For non-trivial changes, give a concise reading guide: Entry point, Flow, Change
 Unchanged, Decisions, Rejected, Read first. Explain a size signal or deliberate
 exception there. Keep unrelated structural cleanup separate from behavior changes.
 
+Before presenting an approval command, explain the problem, concrete flow, why
+the structure and logic were chosen, tradeoffs, and verification limits in the
+owner's language; follow the shared review policy's explanation contract.
 Before `keel approve <root_run_id>`, high-risk owners explain the behavior in their
 own words; the full human-understanding contract is in rules.md. Do not write the
 owner's explanation for them. Normal changes need the entry/flow guide; trivial

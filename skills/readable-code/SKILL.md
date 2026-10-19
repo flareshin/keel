@@ -21,7 +21,7 @@ Use [rule-checks](scripts/rule-checks.py) for signals; a clean scan is not seman
 - [K5.6] Name meaningful constants; avoid ambiguous sentinels.
 - [K5.7] Split by meaning; size thresholds are signals, not automatic findings.
 - [K5.8] Decide domain rules once; inspect reuse before adding another implementation.
-- [K5.9] Make side effects, transactions and rollback behavior visible and verified.
+- [K5.9] Make side effects, transactions and rollback behavior visible and verified; a state-changing operation converges when it runs twice or after a run that stopped halfway.
 - [K5.10] Give each variable one meaning; prefer immutable state.
 - [K5.11] Carry meaning in types; validate untyped external boundaries.
 - [K5.12] Handle failures explicitly; do not swallow errors or infer exception types from messages.

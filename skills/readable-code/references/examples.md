@@ -62,6 +62,24 @@ A drawer runs one `useEffect([userId, open])` that calls 20 setters to reset sta
 <UserDrawer key={userId} userId={userId} open={open} />
 ```
 
+## K5.9 — retry-safe write
+```java
+// Before: two concurrent retries both see "absent" and both charge
+if (!paymentRequests.existsByKey(key)) {
+    gateway.charge(order.amount());
+    paymentRequests.save(new PaymentRequest(key));
+}
+
+// After: the unique constraint picks one winner; the loser replays, rejects or reports pending
+try {
+    paymentRequests.insertPending(key, payloadHash);
+} catch (DuplicateKeyException duplicate) {
+    return replayRejectMismatchOrReportPending(key, payloadHash);
+}
+paymentRequests.markSucceeded(key, gateway.charge(order.amount()));
+```
+The key is the client's `Idempotency-Key` or `charge:` plus the order id, never `UUID.randomUUID()` made inside the retry loop. Test the repeat (same key, same payload returns the first result), the mismatch (same key, other payload fails), the concurrent pair (one charge) and the halfway stop (a retry that finds a pending row left by a run that stopped after the claim gets "in progress" until the claim's lease expires, then the outcome is checked with the gateway before any new charge).
+
 ## K5.10 — one variable, three meanings
 `accountId` starts as the request value, becomes the parent account, then the billing account; the reader tracks which one applies for 70 lines.
 ```java

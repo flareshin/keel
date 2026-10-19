@@ -11,7 +11,7 @@ from unittest import mock
 from helpers import (GENERATED_HEADER, KEEL_HOME, K5_SUB_IDS, PRINCIPLES, SKILLS_DIR, VALID_IDS, bullet_tags,
                      read, rules_section, skill_paths)
 
-EXPECTED_SKILLS = {'prompt-refine', 'readable-code', 'descend'}
+EXPECTED_SKILLS = {'prompt-refine', 'readable-code', 'descend', 'improve'}
 CLAUDE_MD_CAP = 4096
 PERSONAL_BUDGET = 1024
 SKILL_LINE_CAP = 500

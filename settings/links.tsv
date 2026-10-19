@@ -4,6 +4,7 @@ source	target
 {{KEEL}}/skills/prompt-refine	skills/prompt-refine
 {{KEEL}}/skills/readable-code	skills/readable-code
 {{KEEL}}/skills/descend	skills/descend
+{{KEEL}}/skills/improve	skills/improve
 {{KEEL}}/workflows/lens-review.js	workflows/lens-review.js
 {{KEEL}}/workflows/adversarial-audit.js	workflows/adversarial-audit.js
 {{KEEL}}/workflows/review-lenses.json	workflows/review-lenses.json

@@ -222,7 +222,7 @@ A track writes only its own paths and `examples/<track>/` (overlay-shaped, inven
 | link | `bin/link`, `lib/link/`; `tests/link/` |
 | ship-gate | `bin/keel`, `lib/evidence/`, `hooks/ship-gate/ship-gate.py`; `tests/ship-gate/` |
 | hooks | `hooks/<name>/<name>.py` (report-gate, git-guard, model-assign, handoff); `hooks/lib/hookkit/`; `stacks/spring-maven/` (`hooks/env-preflight.py`, `settings.json`); `tests/hooks/` |
-| skills | `PRINCIPLES.md`; `skills/` (`prompt-refine/` K4, `readable-code/` K5 with `scripts/rule-checks.py`, `descend/`); `tests/skills/` |
+| skills | `PRINCIPLES.md`; `skills/` (`prompt-refine/` K4, `readable-code/` K5 with `scripts/rule-checks.py`, `descend/`, `improve/`); `tests/skills/` |
 | review-engine | `workflows/` (`lens-review.js`, `adversarial-audit.js`, `review-lenses.json`); `tests/workflows/` |
 | integration | `settings/` (`core.json`, `links.tsv`), `README.md`, `docs/incidents/`, `tests/run-all.sh` |
 | spec | `docs/DESIGN.md` |

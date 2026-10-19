@@ -13,7 +13,7 @@ Status: not yet public. No license has been chosen yet, so all rights are reserv
 - Hooks: `ship-gate` (push and merge gate based on review, test and approval evidence), `git-guard` (attribution, secrets, force push, evidence protection), `report-gate` (evidence in done/pass claims, review evidence writing), `model-assign`, `handoff`, plus `env-preflight` for the `spring-maven` stack.
 - `bin/keel`: the evidence CLI (`test`, `approve`, `snapshot`, `evidence …`).
 - `measure/`: the metric runner, smoke checks, demotion proposals, the weekly report and the public-boundary scanner.
-- `skills/`: `prompt-refine` (K4), `readable-code` (K5), `descend`.
+- `skills/`: `prompt-refine` (K4), `readable-code` (K5), `descend`, `improve` (requested legacy cleanup under K5).
 - `workflows/`: `lens-review` and `adversarial-audit`.
 
 ## Layout
@@ -27,7 +27,7 @@ measure/       run, smoke, propose, boundary, weekly
 githooks/      pre-commit, pre-push (boundary scan)
 settings/      core.json (hook registration), links.tsv (link manifest)
 stacks/        spring-maven/ (env-preflight hook, settings fragment)
-skills/        prompt-refine/, readable-code/, descend/
+skills/        prompt-refine/, readable-code/, descend/, improve/
 workflows/     lens-review.js, adversarial-audit.js, review-lenses.json
 examples/      overlay-shaped sample data with invented values
 tests/         one directory per component, plus run-all.sh

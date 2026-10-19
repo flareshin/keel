@@ -10,6 +10,8 @@ from evidence import gitcmd  # noqa: E402
 
 SEED = {'README.md': 'top\n\n\n\n\nbottom\n'}
 SECOND = [{'src/second.py': 'second = 2\n'}]
+OVERLAP_FIRST = {'README.md': 'top changed\n\n\n\n\nbottom\n'}
+OVERLAP_SECOND = [{'README.md': 'top\n\n\n\n\nbottom changed\n'}]
 
 
 class StackedChainsTest(unittest.TestCase):
@@ -93,13 +95,67 @@ class StackedChainsTest(unittest.TestCase):
         self.assertEqual(result.rc, 2)
 
     def test_stacked_chains_editing_one_file_deny(self):
-        sandbox, repo = self.stack(first_files={'README.md': 'top changed\n\n\n\n\nbottom\n'},
-                                   second_commits=[{'README.md': 'top\n\n\n\n\nbottom changed\n'}])
+        sandbox, repo = self.stack(first_files=OVERLAP_FIRST, second_commits=OVERLAP_SECOND)
 
         result = sandbox.push(repo, 'git push origin feature')
 
         self.assertEqual(result.rc, 2)
         self.assertIn('README.md (content or mode changed after review)', result.stderr)
+
+    def test_stacked_overlap_deny_names_the_commit_to_review_again(self):
+        sandbox, repo = self.stack(first_files=OVERLAP_FIRST, second_commits=OVERLAP_SECOND)
+        overlapping = repo.head()
+
+        result = sandbox.push(repo, 'git push origin feature')
+
+        self.assertEqual(result.rc, 2)
+        self.assertIn('README.md: chains rv-stack-0001, rv-stack-0002 each reviewed it, but no review saw the stacked '
+                      'content; review commit %s from its parent %s, then approve that review'
+                      % (overlapping[:10], repo.git('rev-parse', 'HEAD^')[:10]), result.stderr)
+
+    def test_stacked_overlap_with_a_review_of_the_stacked_content_gives_no_hint(self):
+        sandbox, repo = self.stack(first_files=OVERLAP_FIRST, second_commits=OVERLAP_SECOND)
+        self.reviewed_branch(sandbox, repo, 'combined', repo.git('rev-parse', 'origin/main'),
+                             [{'README.md': 'top changed\n\n\n\n\nbottom changed\n'}], 'rv-stack-0006')
+        repo.git('checkout', 'feature')
+        repo.commit({'src/gap.py': 'unreviewed = True\n'})
+        sandbox.tests_evidence(repo)
+
+        result = sandbox.push(repo, 'git push origin feature')
+
+        self.assertEqual(result.rc, 2)
+        self.assertNotIn('no review saw the stacked content', result.stderr)
+
+    def test_reviewed_overlap_gives_no_hint_when_an_unrelated_commit_is_unreviewed(self):
+        sandbox, repo = self.stack(first_files=OVERLAP_FIRST, second_commits=OVERLAP_SECOND)
+        sandbox.review(repo, run_id='rv-stack-0005', review_base=repo.git('rev-parse', 'HEAD^'), head=repo.head())
+        sandbox.approve('rv-stack-0005')
+        repo.commit({'src/gap.py': 'unreviewed = True\n'})
+        sandbox.tests_evidence(repo)
+
+        result = sandbox.push(repo, 'git push origin feature')
+
+        self.assertEqual(result.rc, 2)
+        self.assertIn('src/gap.py', result.stderr)
+        self.assertNotIn('no review saw the stacked content', result.stderr)
+
+    def test_unapproved_review_of_stacked_content_does_not_suppress_the_hint(self):
+        sandbox, repo = self.stack(first_files=OVERLAP_FIRST, second_commits=OVERLAP_SECOND)
+        sandbox.review(repo, run_id='rv-stack-0005', review_base=repo.git('rev-parse', 'HEAD^'), head=repo.head())
+
+        result = sandbox.push(repo, 'git push origin feature')
+
+        self.assertEqual(result.rc, 2)
+        self.assertIn('no review saw the stacked content', result.stderr)
+
+    def test_stacked_overlap_passes_after_the_named_commit_is_reviewed_from_its_parent(self):
+        sandbox, repo = self.stack(first_files=OVERLAP_FIRST, second_commits=OVERLAP_SECOND)
+        sandbox.review(repo, run_id='rv-stack-0005', review_base=repo.git('rev-parse', 'HEAD^'), head=repo.head())
+        sandbox.approve('rv-stack-0005')
+
+        result = sandbox.push(repo, 'git push origin feature')
+
+        self.assertEqual(result.rc, 0, result.stderr)
 
     def test_unreviewed_commit_in_stack_denies(self):
         sandbox, repo = self.stack()
@@ -121,6 +177,7 @@ class StackedChainsTest(unittest.TestCase):
 
         self.assertEqual(result.rc, 2)
         self.assertIn('src/second.py', result.stderr)
+        self.assertNotIn('no review saw the stacked content', result.stderr)
 
     def test_stacked_chain_reviewed_from_above_the_merge_base_denies(self):
         sandbox, repo = self.stack()

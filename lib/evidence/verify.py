@@ -88,14 +88,36 @@ def _resolve_reviews(outgoing: Outgoing, entries: List[PathEntry]):
     chain, reasons = _best_chain(outgoing, entries, chains)
     if not reasons:
         return chain, (chain.root_run_id,), reasons
-    series = _approved_series(outgoing, chains)
+    stackable = _stackable_chains(outgoing, chains)
+    series = _approved_series(outgoing, chains, stackable)
     if series:
         return None, series, []
-    return chain, (), reasons
+    return chain, (), reasons + _stacked_overlap_reasons(outgoing, entries, stackable, chains)
 
 
-def _approved_series(outgoing: Outgoing, chains: List[Chain]) -> Tuple[str, ...]:
-    stackable = _stackable_chains(outgoing, chains)
+def _stacked_overlap_reasons(outgoing: Outgoing, entries: List[PathEntry],
+                             stackable: List[Chain], chains: List[Chain]) -> List[Reason]:
+    reasons = []
+    for entry in entries:
+        reviewers = sorted(chain.root_run_id for chain in stackable if entry.path in chain.reviewed)
+        if entry.is_gitlink or len(reviewers) < 2 or _covered_by_any(outgoing, entry, chains):
+            continue
+        commit = gitcmd.last_commit_touching(outgoing.repo_root, outgoing.merge_base, outgoing.head, entry.path)
+        parent = gitcmd.commit_sha(outgoing.repo_root, commit + "^")
+        reasons.append(Reason(K1, "%s: chains %s each reviewed it, but no review saw the stacked content; review commit "
+                                  "%s from its parent %s, then approve that review"
+                              % (entry.path, ", ".join(reviewers), commit[:10], parent[:10])))
+    return reasons
+
+
+def _covered_by_any(outgoing: Outgoing, entry: PathEntry, chains: List[Chain]) -> bool:
+    approved = outgoing._replace(needs_approval=True)
+    return any(not _coverage_reasons(chain, [entry], outgoing.repo_root)
+               and gitcmd.is_ancestor(outgoing.repo_root, chain.root["review_base"], outgoing.head)
+               and not _chain_level_reasons(approved, chain) for chain in chains)
+
+
+def _approved_series(outgoing: Outgoing, chains: List[Chain], stackable: List[Chain]) -> Tuple[str, ...]:
     changes: Dict[str, List[PathEntry]] = {}
     pending = deque([(outgoing.head, ())])
     visited = set()

@@ -151,6 +151,10 @@ def first_parent_ancestors(repo: str, head: str, stop: str) -> List[str]:
     return line + [stop]
 
 
+def last_commit_touching(repo: str, base: str, head: str, path: str) -> str:
+    return text(repo, "log", "-1", "--format=%H", "%s..%s" % (base, head), "--", path)
+
+
 def fetch(repo: str, *args: str) -> None:
     run(repo, "fetch", "--quiet", *args, timeout=FETCH_TIMEOUT_SECONDS)
 

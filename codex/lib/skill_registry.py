@@ -4,6 +4,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 import fcntl
 import json
+import os
+import tempfile
 from pathlib import Path
 
 from files import read_json, write_atomic
@@ -16,6 +18,7 @@ LOCK_NAME = 'keel-codex-skills.lock'
 class SkillPlan:
     records: dict
     create: dict[Path, str]
+    replace: dict[Path, str]
     remove: list[Path]
     problems: list[str]
     changed: bool
@@ -35,7 +38,7 @@ def installation_lock(agents_home: Path, write: bool):
 def plan_skills(agents_home: Path, profile: Path, desired: dict) -> SkillPlan:
     original = read_registry(agents_home)
     records = json.loads(json.dumps(original))
-    plan = SkillPlan(records, {}, [], [], False)
+    plan = SkillPlan(records, {}, {}, [], [], False)
     profile_name = str(profile)
     desired_names = {path.name for path in desired}
     for name in list(records):
@@ -43,7 +46,7 @@ def plan_skills(agents_home: Path, profile: Path, desired: dict) -> SkillPlan:
             release_skill(plan, agents_home / 'skills' / name, profile_name)
     for path, (_, target) in desired.items():
         register_skill(plan, path, target, profile_name)
-    plan.changed = plan.records != original or bool(plan.create or plan.remove)
+    plan.changed = plan.records != original or bool(plan.create or plan.replace or plan.remove)
     return plan
 
 
@@ -88,7 +91,14 @@ def release_skill(plan: SkillPlan, path: Path, profile: str) -> None:
 def register_skill(plan: SkillPlan, path: Path, target: str, profile: str) -> None:
     entry = plan.records.get(path.name)
     if entry is not None and entry['target'] != target:
-        plan.problems.append(f'shared skill target conflicts with another installation: {path}')
+        completed = same_link(path, target)
+        owned = entry['managed'] and entry['profiles'] == [profile]
+        if owned and (completed or same_link(path, entry['target'])):
+            if not completed:
+                plan.replace[path] = target
+            entry['target'] = target
+        else:
+            plan.problems.append(f'shared skill target conflicts with another installation: {path}')
         return
     exists = path.exists() or path.is_symlink()
     if exists and not same_link(path, target):
@@ -111,7 +121,16 @@ def apply_skill_plan(agents_home: Path, plan: SkillPlan) -> None:
     for path, target in plan.create.items():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.symlink_to(target, target_is_directory=True)
+    for path, target in plan.replace.items():
+        replace_link(path, target)
     if plan.changed:
         write_atomic(agents_home / REGISTRY_NAME, json.dumps({'version': 1, 'skills': plan.records}, indent=2) + '\n')
     for path in plan.remove:
         path.unlink()
+
+
+def replace_link(path: Path, target: str) -> None:
+    with tempfile.TemporaryDirectory(dir=path.parent, prefix=f'.{path.name}.') as temporary:
+        replacement = Path(temporary) / 'link'
+        replacement.symlink_to(target, target_is_directory=True)
+        os.replace(replacement, path)

@@ -2,7 +2,7 @@
 
 This section adapts the shared keel principles above to Codex.
 
-- Load skills as `$prompt-refine`, `$readable-code`, and `$descend`. A `/name` in shared instructions means load that skill; it does not imply a Codex slash command exists.
+- Load skills as `$prompt-refine`, `$readable-code`, `$descend`, and `$improve`. A `/name` in shared instructions means load that skill; it does not imply a Codex slash command exists.
 - `AskUserQuestion` means use Codex's available user-input tool or ask a concise question in chat. Do not wait for approval on an already clear, authorized task.
 - Before editing code, load `$readable-code`. Review changed behavior in a fresh reviewer context; use `$keel-review`. Never call an author's self-review independent evidence.
 - Use the absolute keel CLI path listed below for `test -- <command>` and `snapshot <repo>`. Existing evidence stays in the shared keel data directory. Set `KEEL_HOME`, `KEEL_OVERLAY_DIR`, and `KEEL_DATA_DIR` to the paths below when invoking the CLI.

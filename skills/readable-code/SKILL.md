@@ -11,6 +11,13 @@ to the change or a candidate finding, rather than loading every reference.
 Documentation-only and configuration-only changes do not require code-style review.
 Use [rule-checks](scripts/rule-checks.py) for signals; a clean scan is not semantic review.
 
+## Implementation
+
+Before a non-trivial implementation or coding-agent brief, read
+[implementation.md](references/implementation.md) for caller-first design and
+small behavior slices. Keep existing-code improvement requests in `improve`;
+this reference shapes only the behavior and interfaces the current task needs.
+
 ## Rules
 - [K5] Judge new and changed lines. Existing-comment cleanup is a separate requested task; keep the original requirement bounded.
 - [K5.1] Entry methods tell the top-level story at one abstraction level.

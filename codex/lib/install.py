@@ -78,6 +78,7 @@ def reconcile(desired: dict, skills: dict, agents_home: Path, state_path: Path, 
     changes, problems = plan_files(desired, owned)
     problems.extend(skill_plan.problems)
     actions = [str(path) for path in changes] + [str(path) for path in skill_plan.create]
+    actions += [f'retarget {path}' for path in skill_plan.replace]
     actions += [f'remove {path}' for path in skill_plan.remove]
     if skill_plan.changed:
         actions.append('update shared skill references')
@@ -98,6 +99,9 @@ def reconcile(desired: dict, skills: dict, agents_home: Path, state_path: Path, 
             write_atomic(path, desired[path][1])
             owned[str(path)] = digest(*desired[path])
         apply_skill_plan(agents_home, skill_plan)
+        for path, payload in desired.items():
+            if str(path) in owned:
+                owned[str(path)] = digest(*payload)
         write_atomic(state_path, json.dumps({'owned': owned, 'skills_home': str(agents_home)}, indent=2) + '\n')
     print(json.dumps({'actions': actions, 'problems': []}))
     return 1 if args.check and actions else 0
@@ -119,8 +123,9 @@ def read_profile(state_path: Path, agents_home: Path) -> tuple[dict, bool]:
 
 def plan_files(desired: dict, owned: dict) -> tuple[list, list]:
     changes, problems = [], []
+    expected = {str(path): digest(*payload) for path, payload in desired.items()}
     for name, recorded in owned.items():
-        if fingerprint(Path(name)) not in (None, recorded):
+        if fingerprint(Path(name)) not in (None, recorded, expected.get(name)):
             problems.append(f'managed path edited: {name}')
     for path, (kind, content) in desired.items():
         current = fingerprint(path)

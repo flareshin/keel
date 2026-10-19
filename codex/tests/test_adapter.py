@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -90,6 +91,22 @@ class InstallationTest(unittest.TestCase):
         self.assertEqual(self.run_link('--unlink').returncode, 0)
         self.assertTrue(skill.is_symlink())
 
+    def test_existingEquivalentGeneratedFiles_remainUnownedAndSurviveUnlink(self):
+        profile = self.home / '.codex'
+        agents = self.home / '.agents'
+        desired = install.build_files(profile, self.home / 'overlay', self.home / 'data', agents)
+        for path, (_, content) in desired.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content)
+        self.assertEqual(self.run_link('--write').returncode, 0)
+        state = json.loads((profile / 'keel-codex-state.json').read_text())
+        self.assertEqual(state['owned'], {})
+
+        self.assertEqual(self.run_link('--unlink').returncode, 0)
+
+        for path, (_, content) in desired.items():
+            self.assertEqual(path.read_text(), content)
+
     def test_customCodexHome_preservesConfig_andIncludesPersonal(self):
         profile = self.home / 'custom codex'
         profile.mkdir()
@@ -109,6 +126,178 @@ class InstallationTest(unittest.TestCase):
         (overlay / 'SKILL.md').write_text('duplicate')
         self.assertEqual(self.run_link('--write').returncode, 3)
         self.assertFalse((self.home / '.codex').exists())
+
+    def test_bothInstallers_exposeSameCoreSkillsAndImplementationReference(self):
+        overlay = self.home / 'overlay'
+        overlay.mkdir()
+        run = subprocess.run([sys.executable, str(ADAPTER.parent / 'bin/link'), '--write', '--allow-worktree'],
+                             capture_output=True, text=True,
+                             env=dict(self.env, KEEL_HOME=str(ADAPTER.parent)))
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        self.assertEqual(self.run_link('--write').returncode, 0)
+
+        for name in ('readable-code', 'improve', 'descend', 'prompt-refine'):
+            claude = self.home / 'data/skills' / name
+            codex = self.home / '.agents/skills' / name
+            with self.subTest(skill=name):
+                self.assertEqual(claude.resolve(), codex.resolve())
+                self.assertEqual((claude / 'SKILL.md').read_bytes(), (codex / 'SKILL.md').read_bytes())
+        reference = 'readable-code/references/implementation.md'
+        self.assertEqual((self.home / 'data/skills' / reference).read_bytes(),
+                         (self.home / '.agents/skills' / reference).read_bytes())
+
+    def copy_source(self, name):
+        source = self.home / name
+        source.mkdir()
+        shutil.copyfile(ADAPTER.parent / 'PRINCIPLES.md', source / 'PRINCIPLES.md')
+        for directory in ('skills', 'codex'):
+            shutil.copytree(ADAPTER.parent / directory, source / directory,
+                            ignore=shutil.ignore_patterns('__pycache__'))
+        return source
+
+    def run_source_link(self, source, *args):
+        return subprocess.run([sys.executable, str(source / 'codex/bin/link'), '--home', str(self.home), *args],
+                              capture_output=True, text=True, env=self.env)
+
+    def test_refresh_movesOwnedSkillsToNewSource_andBothHostsReadSameReference(self):
+        first = self.copy_source('old-source')
+        second = self.copy_source('new-source')
+        self.assertEqual(self.run_source_link(first, '--write').returncode, 0)
+        claude_skill = self.home / '.claude/skills/readable-code'
+        claude_skill.parent.mkdir(parents=True)
+        claude_skill.symlink_to(second / 'skills/readable-code')
+
+        refreshed = self.run_source_link(second, '--write')
+
+        self.assertEqual(refreshed.returncode, 0, refreshed.stdout + refreshed.stderr)
+        codex_skill = self.home / '.agents/skills/readable-code'
+        self.assertEqual(codex_skill.resolve(), claude_skill.resolve())
+        reference = 'references/implementation.md'
+        self.assertEqual((codex_skill / reference).read_bytes(), (claude_skill / reference).read_bytes())
+        self.assertTrue((self.home / '.agents/skills/improve/SKILL.md').is_file())
+        self.assertEqual(self.run_source_link(second, '--check').returncode, 0)
+        self.assertEqual(json.loads(self.run_source_link(second, '--write').stdout)['actions'], [])
+
+    def test_refresh_resumesAfterRegistryWriteOrMidwayReplacementFailure(self):
+        from skill_registry import apply_skill_plan, plan_skills, replace_link
+        first = self.copy_source('old-source')
+        second = self.copy_source('new-source')
+        self.assertEqual(self.run_source_link(first, '--write').returncode, 0)
+        agents = self.home / '.agents'
+        registry = agents / 'keel-codex-skills.json'
+        original = registry.read_bytes()
+        records = json.loads(original)['skills']
+        desired = {agents / 'skills' / name: ('link', entry['target'].replace(str(first), str(second), 1))
+                   for name, entry in records.items()}
+        profile = self.home / '.codex'
+
+        for failure in ('registry-write', 'second-link'):
+            with self.subTest(failure=failure):
+                for name, entry in records.items():
+                    replace_link(agents / 'skills' / name, entry['target'])
+                registry.write_bytes(original)
+                plan = plan_skills(agents, profile, desired)
+                self.assertEqual(plan.problems, [])
+                replaced = []
+
+                def fail_second_link(path, target):
+                    if replaced:
+                        raise OSError('interrupted during link refresh')
+                    replace_link(path, target)
+                    replaced.append(path)
+
+                operation = 'write_atomic' if failure == 'registry-write' else 'replace_link'
+                effect = OSError('registry unavailable') if failure == 'registry-write' else fail_second_link
+                with patch(f'skill_registry.{operation}', side_effect=effect), self.assertRaises(OSError):
+                    apply_skill_plan(agents, plan)
+                self.assertEqual(registry.read_bytes(), original)
+                self.assertTrue(any(path.resolve() == Path(target) for path, (_, target) in desired.items()))
+
+                retry = plan_skills(agents, profile, desired)
+                self.assertEqual(retry.problems, [])
+                apply_skill_plan(agents, retry)
+
+                for path, (_, target) in desired.items():
+                    self.assertEqual(path.resolve(), Path(target))
+                persisted = json.loads(registry.read_bytes())['skills']
+                self.assertEqual({name: entry['target'] for name, entry in persisted.items()},
+                                 {path.name: target for path, (_, target) in desired.items()})
+                self.assertFalse(plan_skills(agents, profile, desired).changed)
+
+    def test_refresh_cliResumesAfterRegistryFailure_andRecordsGeneratedFileOwnership(self):
+        first = self.copy_source('old-source')
+        second = self.copy_source('new-source')
+        self.assertEqual(self.run_source_link(first, '--write').returncode, 0)
+        agents = self.home / '.agents'
+        profile = self.home / '.codex'
+        state = profile / 'keel-codex-state.json'
+        original = state.read_bytes()
+        args = unittest.mock.Mock(write=True, unlink=False, check=False)
+        with patch.object(install, 'KEEL', second), patch.object(install, 'ADAPTER', second / 'codex'):
+            desired = install.build_files(profile, self.home / 'overlay', self.home / 'data', agents)
+            skills = install.build_skill_links(self.home, self.home / 'overlay')
+        with patch('skill_registry.write_atomic', side_effect=OSError('registry unavailable')):
+            with self.assertRaises(OSError):
+                install.reconcile(desired, skills, agents, state, args)
+        self.assertEqual(state.read_bytes(), original)
+
+        retry = self.run_source_link(second, '--write')
+
+        self.assertEqual(retry.returncode, 0, retry.stdout + retry.stderr)
+        self.assertEqual(self.run_source_link(second, '--check').returncode, 0)
+        saved = json.loads(state.read_bytes())['owned']
+        for path in (profile / 'AGENTS.md', profile / 'hooks.json'):
+            self.assertEqual(saved[str(path)], install.fingerprint(path))
+
+    def test_refresh_dryRunLeavesOwnedLinksAndRegistryUntouched(self):
+        first = self.copy_source('old-source')
+        second = self.copy_source('new-source')
+        self.assertEqual(self.run_source_link(first, '--write').returncode, 0)
+        registry = self.home / '.agents/keel-codex-skills.json'
+        before = registry.read_bytes()
+
+        checked = self.run_source_link(second, '--check')
+
+        self.assertEqual(checked.returncode, 1, checked.stdout)
+        self.assertEqual(json.loads(checked.stdout)['problems'], [])
+        self.assertEqual(registry.read_bytes(), before)
+        self.assertEqual((self.home / '.agents/skills/readable-code').resolve(), first / 'skills/readable-code')
+
+    def test_refresh_refusesRetargetUsedByAnotherProfile(self):
+        first = self.copy_source('old-source')
+        second = self.copy_source('new-source')
+        self.assertEqual(self.run_source_link(first, '--write').returncode, 0)
+        self.env['CODEX_HOME'] = str(self.home / 'other-profile')
+        self.assertEqual(self.run_source_link(first, '--write').returncode, 0)
+        self.env.pop('CODEX_HOME')
+        registry = self.home / '.agents/keel-codex-skills.json'
+        before = registry.read_bytes()
+
+        refused = self.run_source_link(second, '--write')
+
+        self.assertEqual(refused.returncode, 3, refused.stdout)
+        self.assertEqual(registry.read_bytes(), before)
+        self.assertEqual((self.home / '.agents/skills/readable-code').resolve(), first / 'skills/readable-code')
+
+    def test_refresh_preservesUnmanagedOrEditedSkill(self):
+        for managed in (False, True):
+            with self.subTest(managed=managed), tempfile.TemporaryDirectory() as temp:
+                from skill_registry import plan_skills
+                agents = Path(temp).resolve()
+                skill = agents / 'skills/demo'
+                skill.parent.mkdir()
+                original = agents / 'original'
+                changed = agents / 'owner-choice'
+                skill.symlink_to(changed if managed else original, target_is_directory=True)
+                profile = agents / 'profile'
+                registry = {'version': 1, 'skills': {'demo': {
+                    'target': str(original), 'managed': managed, 'profiles': [str(profile)]}}}
+                (agents / 'keel-codex-skills.json').write_text(json.dumps(registry))
+
+                plan = plan_skills(agents, profile, {skill: ('link', str(agents / 'replacement'))})
+
+                self.assertTrue(plan.problems)
+                self.assertEqual(str(skill.resolve()), str(changed if managed else original))
 
     def test_sharedSkills_surviveUntilLastProfileUnlinks(self):
         first = str(self.home / 'profile-a')

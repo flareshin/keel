@@ -110,3 +110,24 @@ whole document, rejects disabled hooks and changes to the hooks table, then
 atomically replaces the file while preserving its mode. Full Write and exact Edit
 calls receive the same validation; partial patches are refused. Shell target
 recognition is a guardrail, not a sandbox for arbitrary programs.
+
+## Shared implementation guidance and source refresh
+
+Both runtimes consume `skills/readable-code/references/implementation.md` through
+the shared skill. Claude links manifest entries into its skills directory; Codex
+discovers all core, overlay and adapter skills, including `improve`, under
+`~/.agents/skills`. Validate both installers against the same source before
+activation. Host-specific tool and review contracts stay in the adapter.
+
+A managed skill link may move to a new source checkout when it still matches
+its recorded target and the current profile is its only owner. If an interrupted
+refresh already moved a link to the requested source, a retry preserves that
+link and completes the registry update under the same ownership check. Owned
+generated files already equal to this request are also accepted and their
+profile fingerprints are refreshed when installation completes. Other file
+edits still block writes and unlinking. An edited
+link to any other target remains a conflict. Dry-run/check
+reports the proposed retarget without writing. Foreign, edited, unmanaged or
+multi-profile links remain conflicts; reconcile those with their owners rather
+than forcing replacement. Source refresh changes hook command paths too, so
+owner hook trust and a fresh session remain separate runtime checks.

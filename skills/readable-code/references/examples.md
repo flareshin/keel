@@ -87,6 +87,8 @@ BE: `log.warn("lookup failed {}", e.getMessage())` drops the stack trace and eve
 - A comment says a missing key is allowed, but the implementation rejects it. Trace callers and the actual contract; write a failing test for the required behavior, then fix the executable branch. Editing that comment alone does not fix the bug.
 - A comment says two databases disagree on escaping. That claim alone does not qualify for retention. Verify the deployed versions' documented behavior or a reproducible query, cite that evidence in the reading guide, and encode the supported behavior in code/tests. Keep a short comment only for the external constraint code cannot express.
 - Preserve a required copyright/license notice verbatim. Preserve a necessary shebang, encoding declaration or tool-consumed annotation in its required syntax; tool syntax is not permission to disable checks forbidden by another rule.
+- `// skip index 0, it is the header row` above `rows.slice(1)` explains our own surprise. Deleting it alone leaves `slice(1)` unexplained; extract `dataRows(rows)` so the name carries it.
+- `// do not reorder: the audit listener must run first` guards our own constraint. Offer a test that fails when the listener order changes, then delete the comment; if the owner declines, report the constraint open.
 - For intentional error handling, use a name such as `deleteTemporaryFileIfPresent` and test the already-absent case. A why comment does not justify an empty catch.
 
 ## K5.16 — test names as spec

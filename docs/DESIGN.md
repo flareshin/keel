@@ -48,12 +48,13 @@ Gates branch `git push` and `gh pr merge`; both need review and tests evidence, 
 - **C (outgoing):** `git diff --raw -z --no-renames <mb> <head>`, `mb = git merge-base <base> <head>`: `(path, new_blob | deleted, new_mode)`; a rename = delete + add.
 - **E (reviewed):** `(path, blob | deleted, mode)` of the diff a review saw: working tree `review_base` → snapshot tree; commit range (`head:<sha>`, promote) `review_base` → `<sha>`, checked-out tree irrelevant; delta `since` tree → reviewed tree.
 - **Chain:** one root review (`since` null, `root_run_id = run_id`) plus deltas, each pointing at the previous review evidence of the same repo and root, with a new `run_id` and inherited `root_run_id`. A multi-repo run writes one evidence per repo, same `run_id`. E = fold root → head, later wins per path. Head = review evidence with no successor.
-- **Verdict per repo** (one chain MUST cover all of C; unrelated evidence never combines):
+- **Verdict per repo** (one chain covers all of C, else an approved series below; unrelated evidence never combines):
   1. Head verdict `PASS` (earlier links MAY be `NEEDS_FIXES`; a later delta must resolve their findings).
   2. Base scope: the root's `review_base` equals or is an ancestor of `mb` (`git merge-base --is-ancestor`); a narrow base (`HEAD~1`) fails.
   3. Every non-gitlink C entry is in E with the same blob and mode; a deletion needs `(path, deleted)` in E; a missing path fails.
   4. Review kind, tests, smoke, approval per 5.4.
   5. Provenance: every chain review has `source.agent_id`. A reviewer whose transcript shows Edit, Write, NotebookEdit, MultiEdit, or a Bash write outside a temp dir (`/tmp`, `/private/tmp`, `/var/folders`, `$TMPDIR`) is an author: no review evidence, K1 warn with detail starting `reviewer-mutated`.
+- **Approved series:** when no one chain covers C, the range from `mb` to head splits into intervals, each judged by rules 1–5 against one chain with an approval bound to its head (push included): consecutive chains (the interval is the chain's `review_base` → a commit whose tree it reviewed), or chains reviewed in parallel and stacked by rebase (the interval is a run of first-parent commits, from the run's first parent to its last commit, and the root's `review_base` equals or is an ancestor of `mb`). Every interval must be covered; tests still cover the head's content (5.4). Two stacked chains that changed one path fail: the stacked blob is in neither review.
 - Passes: conflict-free rebase, branch rename, one change over several pushes. Fails: any content, mode or path change after review (incl. rename); reverting to an older non-base value.
 - Gitlinks (mode 160000) skip blob matching (5.5).
 

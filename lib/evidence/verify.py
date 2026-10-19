@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import deque
-from typing import List, NamedTuple, Optional, Tuple
+from typing import Dict, List, NamedTuple, Optional, Tuple
 
 from evidence import codex_review, comment_cleanup, gitcmd, registry, store, writers
 from evidence.chain import Chain, build_chains
@@ -95,6 +95,8 @@ def _resolve_reviews(outgoing: Outgoing, entries: List[PathEntry]):
 
 
 def _approved_series(outgoing: Outgoing, chains: List[Chain]) -> Tuple[str, ...]:
+    stackable = _stackable_chains(outgoing, chains)
+    changes: Dict[str, List[PathEntry]] = {}
     pending = deque([(outgoing.head, ())])
     visited = set()
     while pending:
@@ -104,19 +106,50 @@ def _approved_series(outgoing: Outgoing, chains: List[Chain]) -> Tuple[str, ...]
         if boundary in visited:
             continue
         visited.add(boundary)
-        for base, root in _approved_predecessors(outgoing, boundary, chains):
+        for base, root in _approved_predecessors(outgoing, boundary, chains, stackable, changes):
             pending.append((base, (root,) + suffix))
     return ()
 
 
-def _approved_predecessors(outgoing: Outgoing, boundary: str, chains: List[Chain]):
+def _approved_predecessors(outgoing: Outgoing, boundary: str, chains: List[Chain], stackable: List[Chain],
+                           changes: Dict[str, List[PathEntry]]):
+    yield from _consecutive_predecessors(outgoing, boundary, chains)
+    if stackable:
+        yield from _stacked_predecessors(outgoing, boundary, stackable, changes)
+
+
+def _stackable_chains(outgoing: Outgoing, chains: List[Chain]) -> List[Chain]:
+    approved = outgoing._replace(needs_approval=True)
+    return [chain for chain in chains
+            if gitcmd.is_ancestor(outgoing.repo_root, chain.root["review_base"], outgoing.merge_base)
+            and not _chain_level_reasons(approved, chain)]
+
+
+def _stacked_predecessors(outgoing: Outgoing, boundary: str, stackable: List[Chain],
+                          changes: Dict[str, List[PathEntry]]):
+    parents = gitcmd.first_parent_ancestors(outgoing.repo_root, boundary, outgoing.merge_base)
+    at_boundary: Dict[str, PathEntry] = {}
+    at_start: Dict[str, Tuple[Optional[str], str]] = {}
+    for commit, parent in zip([boundary] + parents[:-1], parents):
+        if commit not in changes:
+            changes[commit] = gitcmd.diff_entries(outgoing.repo_root, parent, commit)
+        for entry in changes[commit]:
+            at_boundary.setdefault(entry.path, entry)
+            at_start[entry.path] = (entry.old_blob, entry.old_mode)
+        net = [entry for path, entry in at_boundary.items() if (entry.blob, entry.mode) != at_start[path]]
+        for chain in stackable:
+            if _reviews_every_path(chain, net) and not _coverage_reasons(chain, net, outgoing.repo_root):
+                yield parent, chain.root_run_id
+
+
+def _reviews_every_path(chain: Chain, entries: List[PathEntry]) -> bool:
+    return all(entry.is_gitlink or entry.path in chain.reviewed for entry in entries)
+
+
+def _consecutive_predecessors(outgoing: Outgoing, boundary: str, chains: List[Chain]):
     tree = gitcmd.tree_of_commit(outgoing.repo_root, boundary)
-    for chain in chains:
-        base = chain.root["review_base"]
+    for base, based_chains in _by_review_base(chains).items():
         if base == boundary:
-            continue
-        if chain.head["reviewed_tree"] != tree and not covers(outgoing.repo_root, chain.head["reviewed_tree"],
-                gitcmd.diff_entries(outgoing.repo_root, chain.head["reviewed_tree"], tree)):
             continue
         if not gitcmd.is_ancestor(outgoing.repo_root, outgoing.merge_base, base):
             continue
@@ -124,8 +157,21 @@ def _approved_predecessors(outgoing: Outgoing, boundary: str, chains: List[Chain
             continue
         interval = outgoing._replace(head=boundary, merge_base=base, needs_approval=True)
         entries = gitcmd.diff_entries(outgoing.repo_root, base, boundary)
-        if not _chain_reasons(interval, chain, entries):
-            yield base, chain.root_run_id
+        for chain in based_chains:
+            if not _reviews_every_path(chain, entries):
+                continue
+            if chain.head["reviewed_tree"] != tree and not covers(outgoing.repo_root, chain.head["reviewed_tree"],
+                    gitcmd.diff_entries(outgoing.repo_root, chain.head["reviewed_tree"], tree)):
+                continue
+            if not _chain_reasons(interval, chain, entries):
+                yield base, chain.root_run_id
+
+
+def _by_review_base(chains: List[Chain]) -> Dict[str, List[Chain]]:
+    grouped: Dict[str, List[Chain]] = {}
+    for chain in chains:
+        grouped.setdefault(chain.root["review_base"], []).append(chain)
+    return grouped
 
 
 def _best_chain(outgoing: Outgoing, entries: List[PathEntry],
@@ -142,20 +188,29 @@ def _best_chain(outgoing: Outgoing, entries: List[PathEntry],
 
 
 def _chain_reasons(outgoing: Outgoing, chain: Chain, entries: List[PathEntry]) -> List[Reason]:
-    reasons = []
-    root = chain.root_run_id
-    if chain.head["verdict"] != PASS:
-        reasons.append(Reason(K1, "chain %s ends in %s: a delta review must pass first" % (root, chain.head["verdict"])))
+    reasons = _verdict_reasons(chain)
     if not gitcmd.is_ancestor(outgoing.repo_root, chain.root["review_base"], outgoing.merge_base):
         reasons.append(Reason(K1, "chain %s reviewed from %s, not from the merge base %s or an ancestor of it"
-                              % (root, chain.root["review_base"][:10], outgoing.merge_base[:10])))
+                              % (chain.root_run_id, chain.root["review_base"][:10], outgoing.merge_base[:10])))
     reasons += _coverage_reasons(chain, entries, outgoing.repo_root)
-    if any(link["review_kind"] not in (LENS_REVIEW, codex_review.KIND) for link in chain.links):
-        reasons.append(Reason(RISK, "every change needs a lens-review chain; chain %s has a %s link"
-                              % (root, "single-lens")))
-    reasons += _provenance_reasons(chain)
-    reasons += _approval_reasons(outgoing, chain)
-    return reasons
+    return reasons + _kind_reasons(chain) + _provenance_reasons(chain) + _approval_reasons(outgoing, chain)
+
+
+def _chain_level_reasons(outgoing: Outgoing, chain: Chain) -> List[Reason]:
+    return _verdict_reasons(chain) + _kind_reasons(chain) + _provenance_reasons(chain) + _approval_reasons(outgoing, chain)
+
+
+def _verdict_reasons(chain: Chain) -> List[Reason]:
+    if chain.head["verdict"] == PASS:
+        return []
+    return [Reason(K1, "chain %s ends in %s: a delta review must pass first" % (chain.root_run_id, chain.head["verdict"]))]
+
+
+def _kind_reasons(chain: Chain) -> List[Reason]:
+    if all(link["review_kind"] in (LENS_REVIEW, codex_review.KIND) for link in chain.links):
+        return []
+    return [Reason(RISK, "every change needs a lens-review chain; chain %s has a %s link"
+                   % (chain.root_run_id, "single-lens"))]
 
 
 def _coverage_reasons(chain: Chain, entries: List[PathEntry], repo: str) -> List[Reason]:

@@ -27,6 +27,7 @@ class PathEntry(NamedTuple):
     blob: Optional[str]  # None = deleted
     mode: str
     old_mode: str
+    old_blob: Optional[str] = None
 
     @property
     def deleted(self) -> bool:
@@ -142,6 +143,14 @@ def is_ancestor(repo: str, ancestor: str, descendant: str) -> bool:
     return completed.returncode == 0
 
 
+def first_parent_ancestors(repo: str, head: str, stop: str) -> List[str]:
+    line = text(repo, "rev-list", "--first-parent", head + "^", "^" + stop).split()
+    last = line[-1] if line else head
+    if commit_sha(repo, last + "^") != stop:
+        return []
+    return line + [stop]
+
+
 def fetch(repo: str, *args: str) -> None:
     run(repo, "fetch", "--quiet", *args, timeout=FETCH_TIMEOUT_SECONDS)
 
@@ -153,10 +162,11 @@ def diff_entries(repo: str, old: str, new: str) -> List[PathEntry]:
     for meta, path in zip(fields[0::2], fields[1::2]):
         if not meta.startswith(b":"):
             continue
-        old_mode, new_mode, _old_sha, new_sha, status = meta[1:].decode().split(" ", 4)
+        old_mode, new_mode, old_sha, new_sha, status = meta[1:].decode().split(" ", 4)
         deleted = status.startswith("D")
         entries.append(PathEntry(path.decode("utf-8", "surrogateescape"),
-                                 None if deleted else new_sha, DELETED_MODE if deleted else new_mode, old_mode))
+                                 None if deleted else new_sha, DELETED_MODE if deleted else new_mode, old_mode,
+                                 None if old_mode == DELETED_MODE else old_sha))
     return entries
 
 

@@ -10,10 +10,9 @@ import shlex
 import unittest
 from unittest import mock
 
-from helpers import KEEL_HOME, LOGIC_WITH_TEST, Sandbox, read_json
+from helpers import KEEL_HOME, LOGIC_WITH_TEST, Sandbox, ship_gate_timeout
 
 HOOK_DIR = os.path.join(KEEL_HOME, "hooks", "ship-gate")
-SETTINGS_PATH = os.path.join(KEEL_HOME, "settings", "core.json")
 DECISION_MARGIN_SECONDS = 5  # the local git calls of one verdict, each far below a second
 NOT_GATED_REGISTRY = ["acme/app\toff\tmain\t-\tnone"]
 
@@ -772,8 +771,7 @@ class SubprocessBudgetTest(unittest.TestCase):
 
     def test_subprocessTimeouts_fitUnderTheRegisteredTimeout(self):
         # given the timeout settings/core.json registers for ship-gate
-        registered, = [registration["timeout"] for entry in read_json(SETTINGS_PATH)["hooks"]["PreToolUse"]
-                       for registration in entry["hooks"] if "ship-gate.py" in registration["command"]]
+        registered = ship_gate_timeout()
         hook = load_hook_module()
         # then one git call, and the merge path's two fetches plus its `gh pr view`, end before that
         self.assertLess(hook.gitcmd.GIT_TIMEOUT_SECONDS + DECISION_MARGIN_SECONDS, registered)

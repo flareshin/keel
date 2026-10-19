@@ -15,6 +15,7 @@ TESTS_DIR = os.path.dirname(os.path.realpath(__file__))
 KEEL_HOME = os.path.dirname(os.path.dirname(TESTS_DIR))
 SHIP_GATE = os.path.join(KEEL_HOME, "hooks", "ship-gate", "ship-gate.py")
 KEEL = os.path.join(KEEL_HOME, "bin", "keel")
+SETTINGS_PATH = os.path.join(KEEL_HOME, "settings", "core.json")
 DEFAULT_REGISTRY = ["acme/app\tcode\tmain\tacme\trequired"]
 PUSH_APPROVAL_REGISTRY = ["acme/app\tcode\tmain\tacme\trequired\ttrue"]  # a push itself deploys: approval at push
 REGISTRY_HEADER = "origin\tgate\tintegration_base\trisk_rules\ttests"
@@ -41,6 +42,12 @@ GIT_CONFIG = """[user]
 def read_json(path: str) -> dict:
     with open(path, encoding="utf-8") as stream:
         return json.load(stream)
+
+
+def ship_gate_timeout() -> int:
+    registered, = [registration["timeout"] for entry in read_json(SETTINGS_PATH)["hooks"]["PreToolUse"]
+                   for registration in entry["hooks"] if "ship-gate.py" in registration["command"]]
+    return registered
 
 
 class Run(NamedTuple):

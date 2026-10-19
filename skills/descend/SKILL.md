@@ -1,6 +1,6 @@
 ---
 name: descend
-description: Moving a recurring review finding down to the strongest layer that can decide it (a type, lint rule, architecture test or CI test in the target repo). Trigger; "descend this rule", "make this a lint rule", "this finding keeps coming back", the monthly descend pick after a review cycle, a ledger row whose why_not_stronger no longer holds. Do NOT use for a one-off finding (fix it in place), a rule that needs judgment (it stays a skill or lens), or editing keel's own hooks.
+description: Moving a recurring review finding down to the strongest layer that can decide it (a type, lint rule, architecture test or CI test in the target repo). Trigger; "descend this rule", "make this a lint rule", "this finding keeps coming back", the owner correcting the same agent mistake twice, the monthly descend pick after a review cycle, a ledger row whose why_not_stronger no longer holds. Do NOT use for a one-off finding (fix it in place), a rule that needs judgment (it stays a skill or lens), or editing keel's own hooks.
 ---
 
 # Descend
@@ -13,7 +13,8 @@ The enforcement ladder is `repo` > `hook` > `skill` > `prose`. A finding reviewe
    - reviewer reports (`/lens-review` final reports in subagent transcripts under `$KEEL_DATA_DIR/projects/`), grep for the lens or rule id;
    - `rule-checks.py` signals the rule-checks lens confirmed;
    - PR review comments (`gh pr view <n> --comments`);
-   - `keel-fires.jsonl` deny lines for hook rules.
+   - `keel-fires.jsonl` deny lines for hook rules;
+   - owner corrections in session transcripts: the same mistake corrected twice is a finding even when no reviewer raised it.
 
    Count by finding kind and pick the most frequent one that passes all three tests:
    - **recurring:** at least 2 independent occurrences (the rule of two); each becomes an `incidents` ref;
@@ -26,10 +27,13 @@ The enforcement ladder is `repo` > `hook` > `skill` > `prose`. A finding reviewe
 
    | Form | Fits | Example |
    |---|---|---|
+   | Remove the wrong way | the mistake exists because a second way to do the task is still reachable | delete the old helper the next author would copy; narrow an internal module's visibility; replace a hand-synced list with one source of truth. Each ships with a guard a fixture can make fail: a `no-restricted-imports` entry or CI test on the removed symbol, a compile check that a fixture import outside the module fails, a CI test that fails when a second hand-maintained copy reappears. That guard is the rule path for steps 3 and 6 |
    | Make it unrepresentable | a type or data structure can make the wrong state impossible to write | an enum instead of a status string, a value type whose constructor validates, a required constructor argument instead of a nullable setter |
    | Lint rule | a syntax pattern in one file | ESLint `no-restricted-syntax` / `no-restricted-imports`, Checkstyle or PMD rule, ruff rule selection |
    | Architecture test | a dependency or layering rule across files | an ArchUnit test (`noClasses().that().resideInAPackage("..web..").should().dependOnClassesThat().resideInAPackage("..persistence..")`) |
    | CI test | anything else a test can decide | a test in the repo's suite that scans `git ls-files` output for the forbidden pattern, with an allowlist file |
+
+   When the author of the rule writes its failure message (a lint rule, an architecture test, a CI test, a deprecation annotation), the message names the file, type or function to use instead, so an author who never read the rule can fix the violation from the message alone. A compiler visibility or missing-symbol error cannot carry that message; the module's public entry point names the replacement instead.
 
 3. **Red first.** Before the rule is green, reproduce the original finding:
    - add a fixture (or point the rule at the commit that held the finding) and run it: it fails and names the violation;

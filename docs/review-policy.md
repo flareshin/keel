@@ -77,6 +77,14 @@ Start a full review when the requirement or review base changes, prior evidence
 is missing or invalid, or the new scope cannot be assessed as a bounded delta.
 Do not restart the entire review merely because a small fix was made.
 
+A fix that applies a reviewer's exact replacement text verbatim, and changes
+nothing else, closes that finding without a delta review [C-verbatim-fix]. The
+reviewer chose the text, so the author does not judge it. Record the finding
+and the applied text with the evidence, and do not report the finding as
+unresolved or not re-reviewed. A fix that paraphrases the text, follows only a
+direction, or touches anything else still needs a delta review. Hook gates bound
+to an exact target still apply.
+
 ## Runtime contracts
 
 Claude uses `workflows/lens-review.js` and `workflows/adversarial-audit.js`;

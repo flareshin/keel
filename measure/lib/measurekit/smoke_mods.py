@@ -12,6 +12,7 @@ import subprocess
 from measurekit.datafiles import data_lines
 from measurekit.gitutil import GitError, run_git
 from measurekit.metrics import FAIL, PASS, WARN, stderr_excerpt
+from measurekit.overlay_checkout import main_worktree_overlay
 from measurekit.smoke_context import SmokeContext, assertion, first_items
 
 REVIEWED_MODS_FILE = "reviewed-mods.txt"
@@ -29,7 +30,7 @@ def check_mod_trust(ctx: SmokeContext) -> list[dict]:
         return [assertion("mod-trust", "all", WARN, "mod check could not run: %s" % error)]
     reviewed_file = os.path.join(ctx.overlay_dir, REVIEWED_MODS_FILE)
     reviewed_ids = _reviewed_ids(reviewed_file)
-    main_overlay = _resolve_main_worktree_overlay(ctx.overlay_dir)
+    main_overlay = main_worktree_overlay(ctx.overlay_dir)
     mods = [plugin for plugin in plugins if _is_mod(plugin["installPath"])]
     unreviewed = [
         plugin["id"] for plugin in mods
@@ -97,21 +98,6 @@ def _listed_modules(install_path: str) -> list[str] | None:
     if not (isinstance(modules, list) and all(isinstance(module, str) for module in modules)):
         return None
     return modules
-
-
-def _resolve_main_worktree_overlay(overlay_dir: str) -> str | None:
-    """The overlay's directory in its repo's main worktree, where installed mods link from even when the overlay dir
-    is a linked worktree of it; None when the overlay dir is not in a git repo."""
-    overlay = os.path.realpath(overlay_dir)
-    try:
-        toplevel, git_dir, common_dir = run_git(
-            overlay, ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-dir", "--git-common-dir"]).splitlines()
-    except (GitError, OSError, ValueError):
-        return None
-    if os.path.realpath(git_dir) == os.path.realpath(common_dir):
-        return overlay
-    main_root = os.path.dirname(os.path.realpath(common_dir))
-    return os.path.normpath(os.path.join(main_root, os.path.relpath(overlay, os.path.realpath(toplevel))))
 
 
 def _is_committed_overlay_mod(install_path: str, overlay: str | None) -> bool:

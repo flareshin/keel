@@ -172,19 +172,33 @@ class WiredFiresTest(unittest.TestCase):
         # then
         self.assertEqual(self.wired_fires()["status"], "PASS", self.wired_fires())
 
-    def test_wiredFires_looksForTheGoodFixtureOfAnOverlayHookInTheOverlay(self) -> None:
-        # given an overlay row enforced by a hook whose script lives in the overlay
+    def seed_overlay_hook(self) -> None:
         script = self.box.write("overlay/hooks/odemo/odemo.py", DEMO_HOOK)
         self.box.register_hooks({"PreToolUse": [{"matcher": "Bash", "hooks": [
             {"type": "command", "command": "python3 " + os.path.join(self.box.keel, "hooks", "demo", "demo.py")},
             {"type": "command", "command": "python3 " + script}]}]})
         self.box.write_ledger("overlay/ledger.tsv", [ledger_row("O-demo", scope="overlay", enforced_at="hook:odemo")])
         self.box.write("overlay/tests/hooks/fixtures/O-demo.bad.json", self.box.bash_fixture("bad O-demo", expect="deny"))
-        good = self.box.write("overlay/tests/hooks/fixtures/odemo.good.json", self.box.bash_fixture("ls"))
-        # when
-        item = self.wired_fires()
-        # then
-        self.assertEqual(item["status"], "PASS", item)
+        self.box.write("overlay/tests/hooks/fixtures/odemo.good.json", self.box.bash_fixture("ls"))
+
+    def test_wiredFires_looksForTheGoodFixtureOfAnOverlayHookInTheOverlay(self) -> None:
+        self.seed_overlay_hook()
+
+        self.assertEqual(self.wired_fires()["status"], "PASS", self.wired_fires())
+        good = os.path.join(self.box.overlay, "tests", "hooks", "fixtures", "odemo.good.json")
+        os.remove(good)
+        self.assertIn("odemo: missing fixture " + good, self.wired_fires()["detail"])
+
+    def test_wiredFires_looksForTheGoodFixtureInTheLinkedOverlayWorktree_whenTheHookIsRegisteredFromTheMainOverlay(self) -> None:
+        self.seed_overlay_hook()
+        self.box.init_repo(self.box.overlay, origin="https://example.invalid/example/keel-overlay.git")
+        self.box.commit_all(self.box.overlay)
+        worktree = os.path.join(self.box.root, "overlay-wt")
+        self.box.git(self.box.overlay, "worktree", "add", "-q", "--detach", worktree)
+        self.box.env["KEEL_OVERLAY_DIR"] = worktree
+
+        self.assertEqual(self.wired_fires()["status"], "PASS", self.wired_fires())
+        good = os.path.join(worktree, "tests", "hooks", "fixtures", "odemo.good.json")
         os.remove(good)
         self.assertIn("odemo: missing fixture " + good, self.wired_fires()["detail"])
 

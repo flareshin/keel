@@ -42,6 +42,15 @@ class MultiRepoScenarioTest(unittest.TestCase):
         self.assertEqual(run.rc, 0, run.stderr)
         self.assertEqual([line["repo"] for line in sandbox.fires("risk", "pass")], ["acme/lib", "acme/platform"])
 
+    def test_submodulePush_passes_whenTestsRanOnlyFromTheParent(self):
+        sandbox = Sandbox(self, registry=MULTI_REGISTRY)
+        parent, submodule = self.submodule_change(sandbox)
+        sandbox.review(submodule, run_id="rv-run-0001")
+        sandbox.tests_evidence(parent)
+        sandbox.approve("rv-run-0001")
+        run = sandbox.push(submodule, "git push origin feature")
+        self.assertEqual(run.rc, 0, run.stderr)
+
     # scenario 3
     def test_pushes_pass_whenRootCoversTwoReposAndOneGetsADelta(self):
         sandbox = Sandbox(self, registry=MULTI_REGISTRY)

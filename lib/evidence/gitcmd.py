@@ -195,6 +195,12 @@ def tree_entry(repo: str, tree: str, path: str) -> Optional[Tuple[str, str]]:
     return mode, rest.split("\t", 1)[0]
 
 
+def submodule_roots(repo: str) -> List[str]:
+    """Roots of every checked-out submodule, nested ones included; a superproject's tree holds only their HEADs."""
+    listed = text(repo, "submodule", "foreach", "--quiet", "--recursive", "pwd")
+    return [os.path.realpath(path) for path in listed.splitlines()]
+
+
 def snapshot_tree(repo: str) -> str:
     """Tree id of HEAD plus tracked changes and untracked files, through a temporary index.
     `--work-tree` names the root explicitly: inside a submodule git may otherwise read the

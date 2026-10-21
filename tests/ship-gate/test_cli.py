@@ -49,6 +49,39 @@ class KeelTestCommandTest(unittest.TestCase):
         self.assertEqual(run.rc, 0)
         self.assertEqual(sandbox.evidence_files("tests"), [])
 
+    def test_keelTest_writesSubmoduleEvidence_withItsUncommittedContent(self):
+        sandbox = Sandbox(self)
+        parent, submodule = sandbox.clone_with_submodule()
+        submodule.write("lib.py", "LIB = 2\n")
+        submodule_tree = sandbox.keel("snapshot", submodule.path).json["tree"]
+        run = sandbox.keel("test", "--", "bash", "-c", "echo 'Ran 2 tests'", cwd=parent.path)
+        self.assertEqual(run.rc, 0, run.stderr)
+        by_repo = {evidence["repo"]: evidence for evidence in map(read_json, sandbox.evidence_files("tests"))}
+        self.assertEqual(sorted(by_repo), ["acme/lib", "acme/platform"])
+        lib = by_repo["acme/lib"]
+        self.assertEqual((lib["tree"], lib["head"], lib["count"]), (submodule_tree, submodule.head(), 2))
+        self.assertEqual(lib["superproject"], "acme/platform")
+        summary = json.loads(run.stderr.strip().splitlines()[-1].split(" ", 1)[1])
+        self.assertEqual(summary["submodule_evidence"], {"acme/lib": lib["evidence_id"]})
+
+    def test_keelTest_writesNoSubmoduleEvidence_whenCommandChangesTheSubmodule(self):
+        sandbox = Sandbox(self)
+        parent, _submodule = sandbox.clone_with_submodule()
+        run = sandbox.keel("test", "--", "bash", "-c", "echo changed > lib/generated.txt; echo '4 passed'",
+                           cwd=parent.path)
+        self.assertEqual(run.rc, 0, run.stderr)
+        self.assertEqual([read_json(path)["repo"] for path in sandbox.evidence_files("tests")], ["acme/platform"])
+
+    def test_keelTest_countsTestsOnly_whenVitestOrJestAlsoSummarizesFiles(self):
+        sandbox = Sandbox(self)
+        repo = sandbox.clone("acme", "app")
+        for output, expected in ((" Test Files  7 passed (7)\\n      Tests  67 passed (67)", 67),
+                                 ("Test Suites: 2 passed, 2 total\\nTests:       9 passed, 9 total", 9)):
+            run = sandbox.keel("test", "--", "bash", "-c", "printf '%s\\n'" % output, cwd=repo.path)
+            self.assertEqual(run.rc, 0, run.stderr)
+            summary = json.loads(run.stderr.strip().splitlines()[-1].split(" ", 1)[1])
+            self.assertEqual(summary["count"], expected, output)
+
     def test_keelTest_recognizesSurefireTotals_whenPerClassLinesPrecede(self):
         sandbox = Sandbox(self)
         repo = sandbox.clone("acme", "app")

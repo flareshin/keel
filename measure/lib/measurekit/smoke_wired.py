@@ -58,7 +58,7 @@ def _bad_fixture_problem(row: LedgerRow, ctx: SmokeContext, registrations: list[
 
 
 def _good_fixture_problem(hook: str, ctx: SmokeContext, registrations: list[Registration]) -> str | None:
-    path = os.path.join(ctx.keel_home, FIXTURES_DIR, "%s.good.json" % hook)
+    path = os.path.join(_hook_checkout(hook, ctx, registrations), FIXTURES_DIR, "%s.good.json" % hook)
     try:
         _, exit_code, fires = _run_fixture(path, hook, registrations)
     except _Unproven as unproven:
@@ -68,6 +68,14 @@ def _good_fixture_problem(hook: str, ctx: SmokeContext, registrations: list[Regi
     if exit_code != 0:
         return "%s: good fixture exited %d" % (hook, exit_code)
     return None
+
+
+def _hook_checkout(hook: str, ctx: SmokeContext, registrations: list[Registration]) -> str:
+    overlay = os.path.realpath(ctx.overlay_dir)
+    for registration in registrations:
+        if registration.hook_name == hook and os.path.realpath(registration.script).startswith(overlay + os.sep):
+            return ctx.overlay_dir
+    return ctx.keel_home
 
 
 def _run_fixture(path: str, hook: str, registrations: list[Registration]) -> tuple[dict, int, list[dict]]:

@@ -5,7 +5,7 @@ import os
 import shutil
 import unittest
 
-from helpers import CHECKOUT, MeasureSandbox, charter_row, ledger_row
+from helpers import CHECKOUT, DEMO_HOOK, MeasureSandbox, charter_row, ledger_row
 
 SHIPPED_FRAGMENTS = ("settings/core.json", "stacks/spring-maven/settings.json")
 
@@ -171,6 +171,22 @@ class WiredFiresTest(unittest.TestCase):
         self.box.write("overlay/tests/hooks/fixtures/O-demo.bad.json", self.box.bash_fixture("bad O-demo", expect="deny"))
         # then
         self.assertEqual(self.wired_fires()["status"], "PASS", self.wired_fires())
+
+    def test_wiredFires_looksForTheGoodFixtureOfAnOverlayHookInTheOverlay(self) -> None:
+        # given an overlay row enforced by a hook whose script lives in the overlay
+        script = self.box.write("overlay/hooks/odemo/odemo.py", DEMO_HOOK)
+        self.box.register_hooks({"PreToolUse": [{"matcher": "Bash", "hooks": [
+            {"type": "command", "command": "python3 " + os.path.join(self.box.keel, "hooks", "demo", "demo.py")},
+            {"type": "command", "command": "python3 " + script}]}]})
+        self.box.write_ledger("overlay/ledger.tsv", [ledger_row("O-demo", scope="overlay", enforced_at="hook:odemo")])
+        self.box.write("overlay/tests/hooks/fixtures/O-demo.bad.json", self.box.bash_fixture("bad O-demo", expect="deny"))
+        good = self.box.write("overlay/tests/hooks/fixtures/odemo.good.json", self.box.bash_fixture("ls"))
+        # when
+        item = self.wired_fires()
+        # then
+        self.assertEqual(item["status"], "PASS", item)
+        os.remove(good)
+        self.assertIn("odemo: missing fixture " + good, self.wired_fires()["detail"])
 
     def test_wiredFires_passesForEveryShippedHookRow_withTheShippedSettingsAndFixtures(self) -> None:
         # given this checkout's ledger, fixtures and hook registrations, with the spring-maven stack active

@@ -47,9 +47,9 @@ exception there. Keep unrelated structural cleanup separate from behavior change
 Before presenting an approval command, explain the problem, concrete flow, why
 the structure and logic were chosen, tradeoffs, and verification limits in the
 owner's language; follow the shared review policy's explanation contract.
-Before `keel approve <root_run_id>`, high-risk owners explain the behavior in their
-own words; the full human-understanding contract is in rules.md. Do not write the
-owner's explanation for them. Normal changes need the entry/flow guide; trivial
+Before `keel approve <root_run_id>` on a high-risk change, give the owner the High
+summary; the full human-understanding contract is in rules.md. Do not ask the owner
+to write their own explanation. Normal changes need the entry/flow guide; trivial
 changes need a skim.
 
 For a candidate rule violation, open its full section before deciding it. Reuse

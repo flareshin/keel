@@ -62,8 +62,7 @@ Do not impose a token cap that would hide a material risk.
 A file list, test PASS or approval command alone is insufficient. Explain
 unfamiliar terms, distinguish intended behavior from verified results, and put
 the explanation before the command. This supplements the readable-code
-human-understanding gate; it does not supply the owner's own explanation or
-grant approval. When no approvable target exists, explain the limitation before
+human-understanding gate; it does not grant approval. When no approvable target exists, explain the limitation before
 providing the permitted diagnostic command.
 
 ## Fixes and later changes

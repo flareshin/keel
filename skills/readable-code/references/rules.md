@@ -79,12 +79,12 @@ A person owns the code AI writes; the depth of understanding required follows th
 explain the problem, concrete flow, reasons for the structure and decision order,
 relevant tradeoffs, verification evidence and remaining risks in the owner's
 language. Scale detail to the change; a reading guide or PASS alone is not the
-explanation. Give this explanation before asking for the owner's own words.
+explanation.
 
 | Tier | Scope | The owner does |
 |---|---|---|
-| **High** (ship-gate `heavy`) | money, pricing, transaction boundaries, data consistency, schema changes, external contracts, permissions. Code merged behind an off flag keeps the tier of what it does when enabled | Before `keel approve <root_run_id>`, writes 2–3 lines on what the change does, in their own words; if they can't, they ask about that part first |
+| **High** (ship-gate `heavy`) | money, pricing, transaction boundaries, data consistency, schema changes, external contracts, permissions. Code merged behind an off flag keeps the tier of what it does when enabled | Before `keel approve <root_run_id>`, reads the High summary below and asks about any part that is unclear |
 | **Normal** | other logic changes | Follows the reading guide's Entry point and Flow through the entry methods |
 | **Trivial** | no branch logic, no module boundary crossed, compiler-checkable, reversible | Skims |
 
-For High, the reading guide's `Read first` line is mandatory. Before asking for the owner's lines, give a plain summary in the owner's language — what moved or changed from where to where, what changes when this is merged or deployed, what changes later (flags, follow-ups) — and three guiding questions: *Where does this change, from and to? What changes the moment it is merged or deployed? What must be watched or tested before it is switched on or relied on?* Never write the owner's lines for them. If their answer differs from the reviewer's risk list, record both, and record their stated condition (e.g. "test before enabling") as an open task.
+For High, the reading guide's `Read first` line is mandatory. Before the approval command, give the High summary: a plain summary in the owner's language that answers: *Where does this change, from and to? What changes the moment it is merged or deployed? What changes later (flags, follow-ups)? What must be watched or tested before it is switched on or relied on?* Include the reviewer's remaining risks. Do not ask the owner to write their own explanation. If the owner states a condition (e.g. "test before enabling"), record it as an open task.

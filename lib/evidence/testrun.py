@@ -60,7 +60,6 @@ def _submodule_snapshots(repo_root: str) -> Dict[str, str]:
 
 
 def _write_submodule_evidence(result: dict, before: Dict[str, str], after: Dict[str, str]) -> Dict[str, str]:
-    """Tests evidence under each submodule's own origin, for each submodule the run left unchanged."""
     written = {}
     for root, tree in after.items():
         repo_key = registry.origin_key(root)

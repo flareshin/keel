@@ -273,7 +273,7 @@ Path: `$KEEL_DATA_DIR/state/keel/evidence/<kind>/<owner>__<repo>/<evidence_id>.j
 | Kind | Additional keys |
 |---|---|
 | review | `repo`, `repo_root`, `run_id`, `root_run_id`, `since` (previous review `evidence_id` or null), `since_tree` (or null), `review_base`, `head` (sha or null), `snapshot_tree` (or null), `reviewed_tree`, `review_kind` (`lens-review` \| `single-lens`), `verdict` (`PASS` \| `NEEDS_FIXES`), `no_test_reason` (string or null, (d)), `paths` (`[{"path","blob"(null = deleted),"mode"}]`, deleted mode `000000`), `source` (`{"session_id","agent_id","agent_type","transcript_path","agent_transcript_path","via":"SubagentHandback"\|"SubagentStop"}`) |
-| tests | `repo`, `repo_root`, `run_id`, `head`, `tree`, `cmd` (argv list), `exit` (0), `count`, `framework` |
+| tests | `repo`, `repo_root`, `run_id`, `head`, `tree`, `cmd` (argv list), `exit` (0), `count`, `framework`; `superproject` (the origin `keel test` ran from) on a submodule's evidence only |
 | smoke | `repo`, `repo_root`, `run_id` (smoke run), `tree` |
 | approval, ack | `root_run_id`, `heads` (`{"<owner/repo>": "<review evidence_id>"}`), `source` (`cli`), `session_id` (null) |
 
@@ -336,7 +336,7 @@ smoke checks (kind × scope): ledger-format, id-unique, caps (each), id-tagging 
 | File | Keys |
 |---|---|
 | `keel-fires.jsonl` | `ts, rule_id, hook, outcome` (`deny`\|`warn`\|`pass`\|`record`\|`error`\|`contract-miss`), `session` (session_id or `-`); optional `repo, risk, head, root_run_id, files, lines, detail` (≤ 200 chars, never secrets or prompt text); `files`, `lines` (numstat added+deleted) on every `risk` pass or deny line |
-| `keel-tests.jsonl` | `ts, run_id, repo, repo_root, cmd, exit, count, framework, tree, evidence_id` |
+| `keel-tests.jsonl` | `ts, run_id, repo, repo_root, cmd, exit, count, framework, tree, evidence_id, submodule_evidence` (origin → evidence_id) |
 | `keel-evals.jsonl` | `ts, eval_id, rule_id, case, pass, model`, plus `regraded_from, grader` (raw dir name, HEAD of the checkout running the grader with `-dirty` when its `measure/evals` differs) on `--regrade` lines (`<id>.case`, `<id>-partial`, `<id>-v1baseline` are inert for `evals:<id>`: exact match) |
 | `keel-smoke.jsonl` | `ts, run_id, ok, count, failed:[{check,scope,detail}], trees:{"<owner/repo>":"<tree>"}` (keel and overlay checkouts); `candidate: true` only on a `--candidate` run (not live health) |
 

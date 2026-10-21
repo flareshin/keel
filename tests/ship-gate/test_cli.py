@@ -72,6 +72,41 @@ class KeelTestCommandTest(unittest.TestCase):
         self.assertEqual(run.rc, 0, run.stderr)
         self.assertEqual([read_json(path)["repo"] for path in sandbox.evidence_files("tests")], ["acme/platform"])
 
+    def test_keelTest_writesNoSubmoduleEvidence_whenTheParentRunDoesNotCount(self):
+        sandbox = Sandbox(self)
+        parent, _submodule = sandbox.clone_with_submodule()
+        for command in ("echo 'Ran 2 tests'; exit 1", "echo BUILD SUCCESS", "echo x > touched.txt; echo 'Ran 2 tests'"):
+            run = sandbox.keel("test", "--", "bash", "-c", command, cwd=parent.path)
+            summary = json.loads(run.stderr.strip().splitlines()[-1].split(" ", 1)[1])
+            self.assertEqual(summary["submodule_evidence"], {}, command)
+        self.assertEqual(sandbox.evidence_files("tests"), [])
+
+    def test_keelTest_writesNestedSubmoduleEvidence_underTheInnerOrigin(self):
+        sandbox = Sandbox(self)
+        parent, submodule = sandbox.clone_with_submodule()
+        sandbox.clone("acme", "inner", seed={"inner.py": "INNER = 1\n"})
+        submodule.git("-c", "protocol.file.allow=always", "submodule", "add", "-q", sandbox.remote("acme", "inner"), "inner")
+        submodule.git("commit", "-q", "-m", "add inner submodule")
+        inner_path = os.path.join(submodule.path, "inner")
+        with open(os.path.join(inner_path, "inner.py"), "w") as stream:
+            stream.write("INNER = 2\n")
+        inner_tree = sandbox.keel("snapshot", inner_path).json["tree"]
+        run = sandbox.keel("test", "--", "bash", "-c", "echo 'Ran 2 tests'", cwd=parent.path)
+        self.assertEqual(run.rc, 0, run.stderr)
+        by_repo = {evidence["repo"]: evidence for evidence in map(read_json, sandbox.evidence_files("tests"))}
+        self.assertEqual(sorted(by_repo), ["acme/inner", "acme/lib", "acme/platform"])
+        self.assertEqual(by_repo["acme/inner"]["tree"], inner_tree)
+
+    def test_keelTest_skipsSubmoduleEvidence_whenTheSubmoduleHasNoOrigin(self):
+        sandbox = Sandbox(self)
+        parent, submodule = sandbox.clone_with_submodule()
+        submodule.git("remote", "remove", "origin")
+        run = sandbox.keel("test", "--", "bash", "-c", "echo 'Ran 2 tests'", cwd=parent.path)
+        self.assertEqual(run.rc, 0, run.stderr)
+        summary = json.loads(run.stderr.strip().splitlines()[-1].split(" ", 1)[1])
+        self.assertEqual(summary["submodule_evidence"], {})
+        self.assertEqual([read_json(path)["repo"] for path in sandbox.evidence_files("tests")], ["acme/platform"])
+
     def test_keelTest_countsTestsOnly_whenVitestOrJestAlsoSummarizesFiles(self):
         sandbox = Sandbox(self)
         repo = sandbox.clone("acme", "app")

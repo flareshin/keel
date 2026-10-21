@@ -196,7 +196,6 @@ def tree_entry(repo: str, tree: str, path: str) -> Optional[Tuple[str, str]]:
 
 
 def submodule_roots(repo: str) -> List[str]:
-    """Roots of every checked-out submodule, nested ones included; a superproject's tree holds only their HEADs."""
     listed = text(repo, "submodule", "foreach", "--quiet", "--recursive", "pwd")
     return [os.path.realpath(path) for path in listed.splitlines()]
 

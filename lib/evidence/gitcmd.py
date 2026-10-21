@@ -161,7 +161,8 @@ def fetch(repo: str, *args: str) -> None:
 
 def diff_entries(repo: str, old: str, new: str) -> List[PathEntry]:
     """Changed paths between two tree-ish ids; renames appear as delete + add."""
-    fields = run(repo, "diff-tree", "-r", "-z", "--no-renames", "--no-abbrev", old, new).stdout.split(b"\0")
+    fields = run(repo, "diff-tree", "-r", "-z", "--no-renames", "--no-abbrev",
+                 "--ignore-submodules=none", old, new).stdout.split(b"\0")
     entries = []
     for meta, path in zip(fields[0::2], fields[1::2]):
         if not meta.startswith(b":"):
@@ -175,7 +176,8 @@ def diff_entries(repo: str, old: str, new: str) -> List[PathEntry]:
 
 
 def diff_stats(repo: str, old: str, new: str) -> Dict[str, PathStat]:
-    raw = run(repo, "diff-tree", "-r", "--numstat", "-z", "--no-renames", old, new).stdout
+    raw = run(repo, "diff-tree", "-r", "--numstat", "-z", "--no-renames",
+              "--ignore-submodules=none", old, new).stdout
     stats = {}
     for record in filter(None, raw.split(b"\0")):
         added, deleted, path = record.decode("utf-8", "surrogateescape").split("\t", 2)

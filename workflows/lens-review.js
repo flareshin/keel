@@ -19,6 +19,7 @@ const REVIEW_KIND = 'lens-review'
 const READABLE_KEY = 'readable-code'
 const RULE_CHECKS_KEY = 'rule-checks'
 const BLOCKING_IMPACT = ['high', 'medium']
+const PRE_EXISTING = 'pre-existing'
 const AUTHOR_TEXT_ARGS = ['readingGuide', 'guardrails']
 const KNOWN_ARGS = ['diffs', 'lenses', 'guardrails', 'requirement', 'readingGuide', 'priorFindings', 'runId', 'rootRunId', 'maxFindingsPerLens', 'model', 'effort', 'mechanicalModel', 'auditMode', 'prepared']
 const AUTHOR_CLAIMS = [
@@ -50,7 +51,7 @@ const LINE_BREAKS = /\s*[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]+\s*/g
 const JOINED_LINES = ' / '
 const DELTA_NOTE = 'A `since` diff is a delta review: the branch passed review at that tree, so judge only the change after it (read the surrounding code for context, and say so if the change breaks something the earlier PASS relied on).'
 const FIX_DELTA_NOTE = 'A `since` diff is a delta review of a fix: the review at that tree returned NEEDS_FIXES with the merge-blocking findings below, so judge only the change after it (read the surrounding code for context). Each finding below that the change leaves unresolved is a finding again, impact high, at its file:line.\nPrior merge-blocking findings:'
-const REVIEW_GUARDRAILS = 'Review rules: a finding is valid only as a failure scenario (input leads to wrong output, an exception or a broken caller) with file:line evidence; style or impression critique is void; nothing outside the request. Impact high or medium = merge-blocking (wrong behavior, data loss, security, a broken caller or contract, fake-green tests); low = non-blocking. A merge-blocking finding needs a repro: a command or input with the observed and the expected result, or `static: <caller|contract|security|concurrency|rule> at file:line` when nothing can be run; without one it is reported as non-blocking. K5.14 exception: a retained comment outside its three allowed categories is a rule-contract violation, not style; report it at impact medium with `static: rule at file:line`, naming the comment and why no category applies. Test obligation: changed logic with no test that would fail if the change were reverted is impact high, never low.'
+const REVIEW_GUARDRAILS = 'Review rules: a finding is valid only as a failure scenario (input leads to wrong output, an exception or a broken caller) with file:line evidence; style or impression critique is void; nothing outside the request. Impact high or medium = merge-blocking (wrong behavior, data loss, security, a broken caller or contract, fake-green tests); low = non-blocking. A merge-blocking finding needs a repro: a command or input with the observed and the expected result, or `static: <caller|contract|security|concurrency|rule> at file:line` when nothing can be run; without one it is reported as non-blocking. K5.14 exception: a retained comment outside its three allowed categories is a rule-contract violation, not style; report it at impact medium with `static: rule at file:line`, naming the comment and why no category applies. Test obligation: changed logic with no test that would fail if the change were reverted is impact high, never low. Origin: set origin pre-existing only when the failing lines and the failure they cause are already present at the review base (read them with the review base command); otherwise introduced. A prior merge-blocking finding is introduced.'
 const PREPARE_SCHEMA = {
   type: 'object',
   properties: {
@@ -104,6 +105,7 @@ return {
   failedLenses: outcome.failedLenses,
   blocking: outcome.blocking,
   nonBlocking: outcome.nonBlocking,
+  preExisting: outcome.preExisting,
   unverified: audit.unverified,
   refutedCount: audit.refuted.length,
 }
@@ -313,7 +315,7 @@ async function runAudit(reviewed, lensSet) {
 }
 
 function buildTarget(reviewed) {
-  const commands = reviewed.map(buildLensDiffCommand).join('\n')
+  const commands = reviewed.flatMap((target) => [buildLensDiffCommand(target), buildReviewBaseCommand(target)]).join('\n')
   const delta = reviewed.some((target) => target.since) ? `\n${describeDelta()}` : ''
   const requirement = A.requirement ? `\nRequirement (the request as stated, not a claim that the diff meets it):\n${A.requirement}` : ''
   return `the code diff from these commands; review only what it introduces or changes, judge new and changed lines; existing-comment cleanup is a separate requested task. Read file content at the reviewed end with \`git show <end>:<path>\`, never from the live working tree, which may have moved on:\n${commands}${delta}${requirement}`
@@ -325,14 +327,20 @@ function buildLensDiffCommand(target) {
   return `git -C '${target.repo_root}' diff ${start} ${end}`
 }
 
+function buildReviewBaseCommand(target) {
+  return `Review base for origin: git -C '${target.repo_root}' show ${target.review_base}:<path>`
+}
+
 function describeDelta() {
   return PRIOR_FINDINGS ? `${FIX_DELTA_NOTE}\n${PRIOR_FINDINGS.map((f) => `- ${f}`).join('\n')}` : DELTA_NOTE
 }
 
 function judge(audit, lensSet, repoCount) {
   const failedLenses = [...(audit.failedLenses || []), ...findUnprovenRuleChecks(audit, lensSet, repoCount)]
-  const blocking = audit.confirmed.filter(isMergeBlocking)
-  const nonBlocking = audit.confirmed.filter((f) => !isMergeBlocking(f))
+  const preExisting = audit.confirmed.filter(isPreExisting)
+  const introduced = audit.confirmed.filter((f) => !isPreExisting(f))
+  const blocking = introduced.filter(isMergeBlocking)
+  const nonBlocking = introduced.filter((f) => !isMergeBlocking(f))
   const isIncomplete = audit.unverified.length > 0 || failedLenses.length > 0
   return {
     verdict: blocking.length || isIncomplete ? 'NEEDS_FIXES' : 'PASS',
@@ -341,6 +349,7 @@ function judge(audit, lensSet, repoCount) {
     failedLenses,
     blocking,
     nonBlocking,
+    preExisting,
   }
 }
 
@@ -350,6 +359,10 @@ function findUnprovenRuleChecks(audit, lensSet, repoCount) {
   const blockedValues = [...String((noted && noted.notes) || '').matchAll(RULE_CHECKS_SUMMARY)].map((match) => match[1].replace(TRAILING_QUOTE_OR_PUNCTUATION, ''))
   const isProven = blockedValues.length === repoCount && blockedValues.every((value) => value === 'none')
   return isProven ? [] : [RULE_CHECKS_KEY]
+}
+
+function isPreExisting(finding) {
+  return finding.origin === PRE_EXISTING && finding.verdict?.origin === PRE_EXISTING
 }
 
 function isMergeBlocking(finding) {
@@ -382,6 +395,7 @@ function buildReport(outcome, audit, reviewed, evidenceLines) {
     `Lenses fired: ${toOneLine(outcome.lensesFired.join(', '))}`,
     describeFindings('Merge-blocking', outcome.blocking),
     describeFindings('Non-blocking', outcome.nonBlocking),
+    describeFindings('Pre-existing (present at the review base; not merge-blocking)', outcome.preExisting),
     describeFindings('Unverified (the verifier failed; re-verify before any PASS)', audit.unverified),
     `Lenses that did not run (re-run the review): ${outcome.failedLenses.length ? toOneLine(outcome.failedLenses.join(', ')) : 'none'}`,
     `Refuted: ${audit.refuted.length}`,

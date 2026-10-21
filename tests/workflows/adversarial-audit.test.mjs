@@ -74,6 +74,21 @@ test('adversarialAudit_partitionsFindingsByVerdict_whenVerifiersAnswer', async (
   assert.equal(adjusted.lens, 'contract')
 })
 
+test('adversarialAudit_keepsAuditorAndVerifierOriginApart_whenBothAreGiven', async () => {
+
+  const audits = { contract: { findings: [{ ...finding('c1'), origin: 'pre-existing' }] } }
+  const verdicts = { c1: { verdict: 'CONFIRMED', evidence: 'the line is new', origin: 'introduced' } }
+  const rt = createRuntime({ respond: respondWith({ audits, verdicts }) })
+
+  const result = await rt.run('adversarial-audit', { auditMode: 'split', target: '/work/app', lenses: LENSES })
+
+  assert.equal(result.confirmed[0].origin, 'pre-existing')
+  assert.equal(result.confirmed[0].verdict.origin, 'introduced')
+  const verify = rt.record.agents.find((call) => call.opts.label === 'verify:contract')
+  assert.deepEqual(verify.opts.schema.properties.decisions.items.properties.origin.enum, ['introduced', 'pre-existing'])
+  assert.match(verify.prompt, /set origin from your own read of the review base, not from the finding's origin/)
+})
+
 test('adversarialAudit_demotesAdjustedToRefuted_whenAdjustedFieldsMissing', async () => {
 
   const audits = { contract: { findings: [finding('c1')] } }

@@ -33,6 +33,7 @@ const FINDINGS_SCHEMA = {
           impact: { type: 'string', enum: ['high', 'medium', 'low'] },
           file: { type: 'string', description: 'absolute path of the target file; "N/A - <reason>" for a non-edit action or several files' },
           quote: { type: 'string', description: 'current state quoted verbatim as file:line; "N/A" when file is N/A' },
+          origin: { type: 'string', enum: ['introduced', 'pre-existing'], description: 'for a diff target: pre-existing when the failing lines and the failure are already present at the review base; omitted counts as introduced' },
         },
         required: ['id', 'summary', 'evidence', 'proposal', 'repro', 'impact', 'file', 'quote'],
       },
@@ -49,6 +50,7 @@ const VERDICT_SCHEMA = {
     evidence: { type: 'string', description: 'the commands and quotes you ran to try to refute it, with their results; the verdict is void without them' },
     adjusted_summary: { type: 'string' },
     adjusted_proposal: { type: 'string' },
+    origin: { type: 'string', enum: ['introduced', 'pre-existing'], description: 'for a diff target: your own check of whether the failure is already present at the review base' },
   },
   required: ['verdict', 'evidence'],
 }
@@ -192,6 +194,7 @@ You are an adversarial verifier in a separate context from the finder (author !=
 (b) Does an alternative explanation hold (by design, already fixed, a different cause, a measurement error)?
 (c) Is the proposal safe (side effects, the other side of a double-maintained surface)?
 (d) When the repro is a command or input, run it (temp files only): a repro that does not show the observed failure refutes the finding.
+(e) For a diff target, set origin from your own read of the review base, not from the finding's origin.
 Refutation fails: CONFIRMED. Partial correction: ADJUSTED (adjusted_summary and adjusted_proposal required). Insufficient evidence: lean toward REFUTED.
 A CONFIRMED without a refutation attempt is void; put the commands you ran and their output in evidence.
 

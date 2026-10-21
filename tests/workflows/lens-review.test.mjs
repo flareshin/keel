@@ -182,6 +182,40 @@ test('lensReview_blocksWithReproInReport_whenFindingHasStaticRepro', async () =>
   assert.match(result.report, /- \[medium\] contract\/c1: summary c1\n {2}At: .*\n {2}Repro: static: caller at \/work\/app\/b\.py:9\n/)
 })
 
+test('lensReview_listsFindingAsPreExisting_whenAuditorAndVerifierBothPlaceItAtTheReviewBase', async () => {
+  const audits = { contract: { findings: [{ ...finding('c1', 'high'), origin: 'pre-existing' }, finding('c2', 'low')] } }
+  const verdicts = { c1: { verdict: 'CONFIRMED', evidence: 'git show base:a.py has the same line', origin: 'pre-existing' }, c2: { verdict: 'CONFIRMED', evidence: 'reran' } }
+  const rt = createRuntime({ respond: responder({ audits, verdicts }) })
+
+  const result = await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
+
+  assert.equal(result.verdict, 'PASS')
+  assert.deepEqual(result.preExisting.map((f) => f.id), ['c1'])
+  assert.deepEqual(result.nonBlocking.map((f) => f.id), ['c2'])
+  assert.match(result.report, /Non-blocking \(1\):\n- \[low\] contract\/c2[^]*\n\nPre-existing \(present at the review base; not merge-blocking\) \(1\):\n- \[high\] contract\/c1/)
+})
+
+test('lensReview_keepsFindingMergeBlocking_whenOnlyOneSidePlacesItAtTheReviewBase', async () => {
+  const audits = { contract: { findings: [{ ...finding('c1', 'high'), origin: 'pre-existing' }, finding('c2', 'medium')] } }
+  const verdicts = { c1: { verdict: 'CONFIRMED', evidence: 'the line is new in the diff', origin: 'introduced' }, c2: { verdict: 'CONFIRMED', evidence: 'reran', origin: 'pre-existing' } }
+  const rt = createRuntime({ respond: responder({ audits, verdicts }) })
+
+  const result = await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
+
+  assert.equal(result.verdict, 'NEEDS_FIXES')
+  assert.deepEqual(result.blocking.map((f) => f.id), ['c1', 'c2'])
+  assert.deepEqual(result.preExisting, [])
+  assert.match(result.report, /\n\nPre-existing \(present at the review base; not merge-blocking\): none\n/)
+})
+
+test('lensReview_namesEachRepoReviewBaseForOrigin_inDeltaTarget', async () => {
+  const rt = createRuntime({ respond: responder() })
+  await rt.run('lens-review', { auditMode: 'split', diffs: [{ ...ROOT_DIFF, since: SHA_D }], lenses: CALLER_LENSES, rootRunId: 'rv-20261001T000000Z-aaaaaa' })
+  const childArgs = auditChildArgs(rt)
+  assert.match(childArgs.target, new RegExp(`Review base for origin: git -C '/work/app' show ${SHA_A}:<path>`))
+  assert.match(childArgs.guardrails, /origin pre-existing only when/)
+})
+
 test('lensReview_sendsRequirementToLensesAndGuideOnlyToReadableCode_whenBothAreGiven', async () => {
   const rt = createRuntime({ respond: responder() })
   const scriptArgs = { diffs: [ROOT_DIFF], lenses: CALLER_LENSES, requirement: 'Coupons stack per line.', readingGuide: 'Entry point : a.py' }

@@ -8,6 +8,8 @@ Merge-blocking: none
 
 Non-blocking: none
 
+Pre-existing (present at the review base; not merge-blocking): none
+
 Unverified (the verifier failed; re-verify before any PASS): none
 
 Lenses that did not run (re-run the review): none

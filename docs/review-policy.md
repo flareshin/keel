@@ -94,6 +94,12 @@ Claude uses `workflows/lens-review.js` and `workflows/adversarial-audit.js`;
 the latter batches verification per source audit with findings. Existing snapshot delta and
 report provenance contracts remain in force.
 
+A Claude finding whose failure is already present at the review base is listed as
+pre-existing and does not block, but only when the auditor and the verifier each
+mark it pre-existing on their own read of the base. If either one does not, it
+counts as introduced. A prior merge-blocking finding is introduced. The Codex
+protocol records no origin, so its findings keep the existing blocking rule.
+
 Codex uses the version 2 protocol in [codex-review.md](codex-review.md).
 It records the completed native audit and verifier sessions. Old-format records
 are read-only until their valid references expire; old registration is removed.

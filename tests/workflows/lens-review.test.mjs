@@ -214,6 +214,7 @@ test('lensReview_namesEachRepoReviewBaseForOrigin_inDeltaTarget', async () => {
   const childArgs = auditChildArgs(rt)
   assert.match(childArgs.target, new RegExp(`Review base for origin: git -C '/work/app' show ${SHA_A}:<path>`))
   assert.match(childArgs.guardrails, /origin pre-existing only when/)
+  assert.match(childArgs.guardrails, /A prior merge-blocking finding is introduced\./)
 })
 
 test('lensReview_sendsRequirementToLensesAndGuideOnlyToReadableCode_whenBothAreGiven', async () => {

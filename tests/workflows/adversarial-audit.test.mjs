@@ -84,9 +84,21 @@ test('adversarialAudit_keepsAuditorAndVerifierOriginApart_whenBothAreGiven', asy
 
   assert.equal(result.confirmed[0].origin, 'pre-existing')
   assert.equal(result.confirmed[0].verdict.origin, 'introduced')
+  const audit = rt.record.agents.find((call) => call.opts.label === 'audit:contract')
+  assert.deepEqual(audit.opts.schema.properties.findings.items.properties.origin.enum, ['introduced', 'pre-existing'])
   const verify = rt.record.agents.find((call) => call.opts.label === 'verify:contract')
   assert.deepEqual(verify.opts.schema.properties.decisions.items.properties.origin.enum, ['introduced', 'pre-existing'])
   assert.match(verify.prompt, /set origin from your own read of the review base, not from the finding's origin/)
+})
+
+test('adversarialAudit_asksCombinedAuditorForOrigin_inItsFindingSchema', async () => {
+
+  const rt = createRuntime({ respond: (prompt, opts) => ({ audits: LENSES.map((lens) => ({ lens: lens.key, findings: [] })) }) })
+
+  await rt.run('adversarial-audit', { target: '/work/app', lenses: LENSES })
+
+  const audit = rt.record.agents.find((call) => call.opts.label === 'audit:combined')
+  assert.deepEqual(audit.opts.schema.properties.audits.items.properties.findings.items.properties.origin.enum, ['introduced', 'pre-existing'])
 })
 
 test('adversarialAudit_demotesAdjustedToRefuted_whenAdjustedFieldsMissing', async () => {

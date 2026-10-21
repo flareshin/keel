@@ -13,7 +13,7 @@ from measurekit.datafiles import read_jsonl
 from measurekit.hook_settings import Registration, iter_registrations
 from measurekit.ledger import KEEL_SOURCE, LedgerRow, active_stack_names, hook_rows_in_force
 from measurekit.metrics import FAIL, PASS
-from measurekit.overlay_checkout import main_worktree_overlay
+from measurekit.overlay_checkout import is_under, main_worktree_overlay
 from measurekit.smoke_context import SmokeContext, assertion, first_items
 
 FIXTURES_DIR = os.path.join("tests", "hooks", "fixtures")
@@ -74,8 +74,7 @@ def _good_fixture_problem(hook: str, ctx: SmokeContext, registrations: list[Regi
 def _hook_checkout(hook: str, ctx: SmokeContext, registrations: list[Registration]) -> str:
     overlays = {os.path.realpath(ctx.overlay_dir), main_worktree_overlay(ctx.overlay_dir)} - {None}
     for registration in registrations:
-        script = os.path.realpath(registration.script)
-        if registration.hook_name == hook and any(script.startswith(overlay + os.sep) for overlay in overlays):
+        if registration.hook_name == hook and is_under(registration.script, overlays):
             return ctx.overlay_dir
     return ctx.keel_home
 

@@ -12,7 +12,7 @@ import subprocess
 from measurekit.datafiles import data_lines
 from measurekit.gitutil import GitError, run_git
 from measurekit.metrics import FAIL, PASS, WARN, stderr_excerpt
-from measurekit.overlay_checkout import main_worktree_overlay
+from measurekit.overlay_checkout import is_under, main_worktree_overlay
 from measurekit.smoke_context import SmokeContext, assertion, first_items
 
 REVIEWED_MODS_FILE = "reviewed-mods.txt"
@@ -108,7 +108,7 @@ def _is_committed_overlay_mod(install_path: str, overlay: str | None) -> bool:
     """
     mod = os.path.realpath(install_path)
     modules = _listed_modules(mod)
-    if overlay is None or not mod.startswith(overlay + os.sep) or modules is None:
+    if overlay is None or not is_under(mod, {overlay}) or modules is None:
         return False
     module_files = {os.path.relpath(os.path.realpath(os.path.join(mod, "hooks", module)), overlay) for module in modules}
     pathspec = ":(literal)" + os.path.relpath(mod, overlay)

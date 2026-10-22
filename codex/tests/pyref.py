@@ -181,7 +181,7 @@ def stdin_codec(env):
                             env=full, capture_output=True, text=True)
     if result.returncode:
         return {'error': 'fatal'}
-    encoding, errors = result.stdout.split()
+    encoding, errors = result.stdout.lstrip('\ufeff').split()
     return {'ok': [encoding, errors]}
 
 
@@ -199,6 +199,45 @@ def stdin_decode(env, hex_bytes):
     return json.loads(result.stdout)
 
 
+def codec_table():
+    import codecs
+    import encodings
+    import encodings.aliases
+    import pkgutil
+    names = set(encodings.aliases.aliases) | {module.name for module in pkgutil.iter_modules(encodings.__path__)}
+    accepted = []
+    for name in sorted(names):
+        try:
+            if codecs.lookup(name)._is_text_encoding:
+                accepted.append(name)
+        except LookupError:
+            pass
+    return {'ok': {'accepted': accepted, 'aliases': encodings.aliases.aliases}}
+
+
+def codec_bytes(name):
+    results = []
+    for byte in range(256):
+        try:
+            results.append(bytes([byte]).decode(name))
+        except UnicodeDecodeError:
+            results.append(None)
+    return {'ok': results}
+
+
+def codec_encode(name, text):
+    return {'ok': text.encode(name).hex()}
+
+
+def codec_decode(name, hex_bytes, errors):
+    try:
+        return {'ok': bytes.fromhex(hex_bytes).decode(name, errors)}
+    except UnicodeDecodeError as error:
+        return {'error': str(error)}
+    except (LookupError, TypeError) as error:
+        return {'error': type(error).__name__}
+
+
 def pure(path):
     pure_path = pathlib.PurePosixPath(path)
     return {'ok': [str(pure_path), str(pure_path.parent), pure_path.name]}
@@ -214,7 +253,7 @@ def os_error(path):
 
 FUNCTIONS = {name: function for name, function in globals().items()
              if name in ('json_loads', 'json_dumps', 'float_repr', 'toml_loads', 'toml_equals', 'py_repr',
-                         'decode_utf8', 'shell_quote', 'resolve', 'pure', 'os_error', 'py_str', 'toml_recursion_threshold', 'toml_cold_recursion_threshold', 'stdin_codec', 'stdin_decode')}
+                         'decode_utf8', 'shell_quote', 'resolve', 'pure', 'os_error', 'py_str', 'toml_recursion_threshold', 'toml_cold_recursion_threshold', 'stdin_codec', 'stdin_decode', 'codec_table', 'codec_bytes', 'codec_encode', 'codec_decode')}
 
 
 def main():

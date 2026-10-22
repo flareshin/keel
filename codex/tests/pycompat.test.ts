@@ -9,6 +9,7 @@ import { decodeUtf8, nameOf, parentOf, purePath, readText, resolvePath, shellQuo
 import { JSONDecodeError, PyFloat, pythonFloatRepr, pythonJsonDumps, pythonJsonLoads } from "../lib/pyjson.ts";
 import type { JsonValue } from "../lib/pyjson.ts";
 import { pythonRepr } from "../lib/pyrepr.ts";
+import { canonicalCodec, decodeWithCodec } from "../lib/pycodecs.ts";
 import { decodeStdin, stdinCodec } from "../lib/pystdin.ts";
 import { pythonValueStr } from "../lib/pystr.ts";
 import { RecursionError, TOMLDecodeError, tomlEquals, tomlLoads } from "../lib/toml.ts";
@@ -256,15 +257,19 @@ describe("tomllib port parity with python tomllib", () => {
 });
 
 describe("stdin decoding follows Python's locale, UTF-8 mode and PYTHONIOENCODING rules", () => {
-  const LOCALES = [undefined, "", "C", "POSIX", "C.UTF-8", "C.utf8", "UTF-8", "en_US.UTF-8", "xx_YY.UTF-8", "en_US.ISO8859-1", "en_US.US-ASCII", "en_US"];
+  const LOCALES = [undefined, "", "C", "POSIX", "C.UTF-8", "C.utf8", "UTF-8", "en_US.UTF-8", "xx_YY.UTF-8", "en_US.ISO8859-1", "en_US.US-ASCII", "en_US", "ko_KR.eucKR", "ru_RU.KOI8-R", "ru_RU.CP1251", "el_GR.ISO8859-7"];
   const CHOICES: Record<string, Array<string | undefined>> = {
     LC_ALL: LOCALES, LC_CTYPE: LOCALES, LANG: LOCALES,
     PYTHONUTF8: [undefined, undefined, "0", "0", "1", ""],
     PYTHONCOERCECLOCALE: [undefined, undefined, "0", "1"],
-    PYTHONIOENCODING: [undefined, undefined, undefined, "utf-8", "UTF8", ":strict", ":replace", ":ignore", ":backslashreplace", ":surrogateescape", "ascii", "ascii:replace", "latin-1", "utf-8:surrogateescape", "utf-8:strict", ":", "bogus"],
+    PYTHONIOENCODING: [undefined, undefined, undefined, "utf-8", "UTF8", ":strict", ":replace", ":ignore", ":backslashreplace", ":surrogateescape", "ascii", "ascii:replace", "latin-1", "utf-8:surrogateescape", "utf-8:strict", ":", "bogus",
+      "u8", "cp65001", "cp1252", "utf-8-sig", ":surrogatepass", "utf-8:surrogatepass", "cp819", "windows-1252:replace", "euc-kr", "koi8-r:ignore", "iso-8859-15:backslashreplace",
+      "ascii:surrogatepass", "utf-8:xmlcharrefreplace", "utf-8:namereplace", "utf-8:bogus", "cp1251:surrogateescape", "windows-1252:strict", "utf", "UTF 8", "latin1:strict"],
   };
-  const PYTHON_TO_CODEC: Record<string, string> = { "utf-8": "utf-8", ascii: "ascii", "iso8859-1": "latin-1" };
-  const INPUTS = ["", Buffer.from("plain ascii").toString("hex"), "c3a9", "ff", "e282", "c328", "6162ff63", "e282ac41ff", "f09f9880", "80", "c3a9c3", "6162e28241"];
+  const PYTHON_TO_CODEC: Record<string, string> = { "utf-8": "utf_8", "utf-8-sig": "utf_8_sig", "iso8859-1": "latin_1" };
+  const INPUTS = ["", Buffer.from("plain ascii").toString("hex"), "c3a9", "ff", "e282", "c328", "6162ff63", "e282ac41ff", "f09f9880", "80", "c3a9c3", "6162e28241",
+    "eda080", "eda080ff", "6162eda0", "eda0c3", "efbbbf6162", "efbbbfff", "6162efbbbf", "6162819d98", "b0a1", "6162b0a1"];
+  const MULTIBYTE_CODEC_MESSAGE = /^('(?:euc_kr|euc_jp|shift_jis|big5|gbk|gb2312)' codec can't decode)/;
 
   function samples(count: number): Array<Record<string, string>> {
     const random = seededRandom(20261024);
@@ -285,16 +290,100 @@ describe("stdin decoding follows Python's locale, UTF-8 mode and PYTHONIOENCODIN
 
   function codecOutcome(environment: Record<string, string>): Outcome {
     return outcomeOf(() => {
-      const { encoding, errors } = stdinCodec(environment);
-      return [encoding, errors];
+      const { codec, errors } = stdinCodec(environment);
+      return [codec, errors];
     });
   }
+
+  it("accepts on ASCII input every encoding name Python accepts for PYTHONIOENCODING", () => {
+    const [table] = pythonReference(process.cwd(), [{ fn: "codec_table", args: [] }]) as [Outcome];
+    const { accepted } = table.ok as { accepted: string[] };
+    assert.ok(accepted.length > 100, `${accepted.length} names`);
+    const rejected = accepted.filter((name) => {
+      try {
+        return decodeStdin(Buffer.from("plain"), { PYTHONIOENCODING: name }) !== "plain";
+      } catch {
+        return true;
+      }
+    });
+    console.log(`parity stdin ascii names: ${accepted.length} cases, ${rejected.length} mismatches`);
+    assert.deepEqual(rejected, []);
+  });
+
+  it("resolves Python's aliases for the supported codecs, however the name is spelled", () => {
+    const [table] = pythonReference(process.cwd(), [{ fn: "codec_table", args: [] }]) as [Outcome];
+    const { aliases } = table.ok as { aliases: Record<string, string> };
+    const supported = ["utf_8", "ascii", "latin_1", "cp1252", "cp1251", "cp866", "koi8_r", "iso8859_2", "iso8859_5", "iso8859_7", "iso8859_15", "euc_kr", "euc_jp", "shift_jis", "big5", "gbk", "gb2312"];
+    const wrong: string[] = [];
+    let checked = 0;
+    for (const [alias, target] of Object.entries({ ...aliases, ...Object.fromEntries(supported.map((name) => [name, name])) })) {
+      if (!supported.includes(target)) continue;
+      for (const spelling of [alias, alias.toUpperCase(), ` ${alias.replaceAll("_", "-")} `, alias.replaceAll("_", " ")]) {
+        checked += 1;
+        if (canonicalCodec(spelling) !== target) wrong.push(`${spelling} -> ${canonicalCodec(spelling)} (python: ${target})`);
+      }
+    }
+    assert.equal(canonicalCodec("utf-8-sig"), "utf_8_sig");
+    assert.equal(canonicalCodec("UTF8 SIG"), "utf_8_sig");
+    console.log(`parity codec aliases: ${checked} cases, ${wrong.length} mismatches`);
+    assert.deepEqual(wrong, []);
+  });
+
+  it("decodes every byte of each supported single-byte codec like Python", () => {
+    const names = ["cp1252", "cp1251", "cp866", "koi8_r", "iso8859_2", "iso8859_5", "iso8859_7", "iso8859_15", "latin_1", "ascii"];
+    const references = pythonReference(process.cwd(), names.map((name) => ({ fn: "codec_bytes", args: [name] })));
+    const wrong: string[] = [];
+    names.forEach((name, index) => {
+      const expected = (references[index] as Outcome).ok as Array<string | null>;
+      expected.forEach((character, byte) => {
+        let actual: string | null = null;
+        try {
+          actual = decodeWithCodec(name, Buffer.from([byte]), "strict");
+        } catch (error) {
+          if (!(error instanceof ValueError)) throw error;
+        }
+        if (actual !== character) wrong.push(`${name} 0x${byte.toString(16)}: ${JSON.stringify(actual)} vs python ${JSON.stringify(character)}`);
+      });
+    });
+    console.log(`parity single-byte codecs: ${names.length * 256} cases, ${wrong.length} mismatches`);
+    assert.deepEqual(wrong, []);
+  });
+
+  it("decodes valid multi-byte text like Python and refuses invalid text without crashing", () => {
+    const samples: Array<[string, string]> = [
+      ["euc_kr", "\uac00\ub098\ub2e4 abc"], ["euc_jp", "\u65e5\u672c\u8a9e abc"], ["shift_jis", "\u65e5\u672c\u8a9e abc"],
+      ["big5", "\u4e2d\u6587 abc"], ["gbk", "\u4e2d\u6587 abc"], ["gb2312", "\u4e2d\u6587 abc"],
+    ];
+    const encoded = pythonReference(process.cwd(), samples.map(([name, text]) => ({ fn: "codec_encode", args: [name, text] })));
+    samples.forEach(([name, text], index) => {
+      const hex = (encoded[index] as Outcome).ok as string;
+      assert.equal(decodeWithCodec(name, Buffer.from(hex, "hex"), "strict"), text, name);
+    });
+    const random = seededRandom(20261025);
+    const pool = [0x80, 0x81, 0x8e, 0x8f, 0xa1, 0xb0, 0xc4, 0xfe, 0xff, 0x20, 0x41, 0x7f];
+    const cases = samples.flatMap(([name]) => Array.from({ length: 60 }, () => [name, Buffer.from(Array.from({ length: 1 + Math.floor(random() * 5) }, () => pool[Math.floor(random() * pool.length)] as number)).toString("hex")] as const));
+    const references = pythonReference(process.cwd(), cases.map(([name, hex]) => ({ fn: "codec_decode", args: [name, hex, "strict"] })));
+    let acceptDiffers = 0;
+    let messageDiffers = 0;
+    cases.forEach(([name, hex], index) => {
+      const expected = references[index] as Outcome;
+      try {
+        decodeWithCodec(name, Buffer.from(hex, "hex"), "strict");
+        if (expected.error !== undefined) acceptDiffers += 1;
+      } catch (error) {
+        if (!(error instanceof ValueError)) throw error;
+        if (expected.error === undefined) acceptDiffers += 1;
+        else if (expected.error !== error.message) messageDiffers += 1;
+      }
+    });
+    console.log(`parity multibyte invalid text: ${cases.length} cases, ${acceptDiffers} differ in accept/reject, ${messageDiffers} differ in message`);
+  });
 
   it("picks the same encoding and error handler as sys.stdin for every variable combination", () => {
     const environments = samples(500);
     const calls = environments.map((environment) => ({ fn: "stdin_codec", args: [environment] }));
     const expected = pythonReference(process.cwd(), calls).map((outcome) => outcome.error === undefined
-      ? { ok: [PYTHON_TO_CODEC[(outcome.ok as string[])[0] as string] ?? (outcome.ok as string[])[0], (outcome.ok as string[])[1]] }
+      ? { ok: [PYTHON_TO_CODEC[(outcome.ok as string[])[0] as string] ?? ((outcome.ok as string[])[0] as string).replaceAll("-", "_"), (outcome.ok as string[])[1]] }
       : { error: "fatal" });
     const actual = environments.map((environment) => {
       const outcome = codecOutcome(environment);
@@ -304,10 +393,14 @@ describe("stdin decoding follows Python's locale, UTF-8 mode and PYTHONIOENCODIN
   });
 
   it("decodes valid and invalid bytes like sys.stdin.read() under each combination", () => {
-    const environments = samples(60);
+    const environments = samples(80).filter((environment) => environment["PYTHONIOENCODING"] !== "bogus");
     const pairs = environments.flatMap((environment) => INPUTS.map((hex) => [environment, hex] as const));
     const calls = pairs.map(([environment, hex]) => ({ fn: "stdin_decode", args: [environment, hex] }));
     const expected = pythonReference(process.cwd(), calls);
+    const comparable = (outcome: Outcome): Outcome => {
+      const multibyte = outcome.error === undefined ? null : MULTIBYTE_CODEC_MESSAGE.exec(outcome.error);
+      return multibyte === null ? outcome : { error: multibyte[1] };
+    };
     const actual = pairs.map(([environment, hex]) => {
       try {
         return { ok: Array.from(decodeStdin(Buffer.from(hex, "hex"), environment), (character) => character.codePointAt(0) as number) };
@@ -315,7 +408,7 @@ describe("stdin decoding follows Python's locale, UTF-8 mode and PYTHONIOENCODIN
         return error instanceof ValueError ? { error: error.message } : { error: "crash" };
       }
     });
-    compare("stdin decode", calls, actual, expected, false);
+    compare("stdin decode", calls, actual.map(comparable), expected.map(comparable), false);
   });
 });
 

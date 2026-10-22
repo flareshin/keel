@@ -10,7 +10,7 @@ import { completeEdit, HOOK_CALLER_FRAMES, validateUpdate } from "../lib/config_
 import { osErrorMessage, pythonFailureMessage, ValueError } from "../lib/pyerrors.ts";
 import { childPath, hasGlobMagic, isStrictAncestor, parentOf, pathExists, purePath, readText, resolvePath, translateNewlines } from "../lib/pyfs.ts";
 import { isJsonObject, isTruthy, pythonJsonDumps, pythonJsonLoads } from "../lib/pyjson.ts";
-import { decodeStdin } from "../lib/pystdin.ts";
+import { decodeStdin, encodeStdout } from "../lib/pystdin.ts";
 import { pythonValueStr } from "../lib/pystr.ts";
 import type { JsonValue } from "../lib/pyjson.ts";
 
@@ -181,4 +181,7 @@ export function runGuard(name: string, call: Record<string, unknown>, runner: Gu
   return isTruthy(context) ? [context as string] : [];
 }
 
-if (import.meta.main) emit(main(() => readFileSync(0)));
+if (import.meta.main) {
+  const result = main(() => readFileSync(0));
+  emit({ ...result, stdout: encodeStdout(result.stdout) });
+}

@@ -386,7 +386,9 @@ export function hookCases(paths: Paths): HookCase[] {
   add("integral float cwd beside a decoy integer directory", withCwd("1.0"));
   add("integer cwd", withCwd("1"));
 
-  const textVariables: Array<[string, Record<string, string>]> = [
+  const MULTIBYTE_SAFE_INPUTS = ["ascii only", "euc-kr valid"];
+  const CRASHING_HANDLER_SAFE_INPUTS = ["ascii only", "byte order mark first", "valid non-ascii"];
+  const textVariables: Array<[string, Record<string, string>, string[]?]> = [
     ["default", {}],
     ["utf8 mode off in the C locale via LANG", { PYTHONUTF8: "0", LANG: "C" }],
     ["utf8 mode off, LANG C and LC_CTYPE C.UTF-8 as a Python parent exports it", { PYTHONUTF8: "0", LANG: "C", LC_CTYPE: "C.UTF-8" }],
@@ -415,16 +417,51 @@ export function hookCases(paths: Paths): HookCase[] {
     ["io encoding ascii with replace", { PYTHONIOENCODING: "ascii:replace" }],
     ["io encoding latin-1", { PYTHONIOENCODING: "latin-1" }],
     ["io encoding with an empty spec in the C locale", { PYTHONIOENCODING: ":", PYTHONUTF8: "0", LC_ALL: "C" }],
+    ["io encoding u8", { PYTHONIOENCODING: "u8" }],
+    ["io encoding cp65001", { PYTHONIOENCODING: "cp65001" }],
+    ["io encoding utf alias", { PYTHONIOENCODING: "utf" }],
+    ["io encoding spelled UTF 8", { PYTHONIOENCODING: "UTF 8" }],
+    ["io encoding cp1252", { PYTHONIOENCODING: "cp1252" }],
+    ["io encoding windows-1252 with replace", { PYTHONIOENCODING: "windows-1252:replace" }],
+    ["io encoding cp1251 with surrogateescape", { PYTHONIOENCODING: "cp1251:surrogateescape" }],
+    ["io encoding iso-8859-15 with backslashreplace", { PYTHONIOENCODING: "iso-8859-15:backslashreplace" }],
+    ["io encoding koi8-r with ignore", { PYTHONIOENCODING: "koi8-r:ignore" }],
+    ["io encoding cp819", { PYTHONIOENCODING: "cp819" }],
+    ["io encoding utf-8-sig", { PYTHONIOENCODING: "utf-8-sig" }],
+    ["io errors surrogatepass only", { PYTHONIOENCODING: ":surrogatepass" }],
+    ["io encoding utf-8 with surrogatepass", { PYTHONIOENCODING: "utf-8:surrogatepass" }],
+    ["io encoding ascii with surrogatepass", { PYTHONIOENCODING: "ascii:surrogatepass" }],
+    ["io errors xmlcharrefreplace", { PYTHONIOENCODING: "utf-8:xmlcharrefreplace" }],
+    ["io errors namereplace", { PYTHONIOENCODING: "utf-8:namereplace" }],
+    ["io errors unknown", { PYTHONIOENCODING: "utf-8:bogus" }],
+    ["io encoding euc-kr", { PYTHONIOENCODING: "euc-kr" }, MULTIBYTE_SAFE_INPUTS],
+    ["utf8 mode off in an EUC-KR locale", { PYTHONUTF8: "0", LC_ALL: "ko_KR.eucKR" }, MULTIBYTE_SAFE_INPUTS],
+    ["utf8 mode off in a KOI8-R locale", { PYTHONUTF8: "0", LC_ALL: "ru_RU.KOI8-R" }],
+    ["utf8 mode off in a CP1251 locale", { PYTHONUTF8: "0", LC_CTYPE: "ru_RU.CP1251" }],
   ];
+  const asciiPayload = `{"tool_name": "Bash", "tool_input": {"command": "echo hi"}, "cwd": ${JSON.stringify(repo)}}`;
+  const insideCommand = (middle: number[]): Buffer =>
+    Buffer.concat([Buffer.from('{"tool_name": "Bash", "tool_input": {"command": "echo '), Buffer.from(middle), Buffer.from(`"}, "cwd": ${JSON.stringify(repo)}}`)]);
   const textInputs: Array<[string, Buffer]> = [
+    ["ascii only", Buffer.from(asciiPayload)],
+    ["encoded surrogate", insideCommand([0xed, 0xa0, 0x80])],
+    ["encoded surrogate then invalid byte", insideCommand([0xed, 0xa0, 0x80, 0xff])],
+    ["truncated encoded surrogate", insideCommand([0xed, 0xa0])],
+    ["byte order mark first", Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(asciiPayload)])],
+    ["byte order mark then invalid byte", Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), insideCommand([0xff])])],
+    ["cp1252 undefined byte", insideCommand([0x81, 0x9d])],
+    ["euc-kr valid", insideCommand([0xb0, 0xa1, 0xb3, 0xaa])],
     ["valid non-ascii", Buffer.from(`{"tool_name": "Bash", "tool_input": {"command": "echo héllo 😀"}, "cwd": ${JSON.stringify(repo)}}`)],
     ["invalid start byte", Buffer.concat([Buffer.from('{"tool_name": "Bash", "tool_input": {"command": "echo '), Buffer.from([0xff]), Buffer.from(`"}, "cwd": ${JSON.stringify(repo)}}`)])],
     ["truncated sequence", Buffer.concat([Buffer.from('{"tool_name": "Bash", "tool_input": {"command": "echo '), Buffer.from([0xe2, 0x82]), Buffer.from(`"}, "cwd": ${JSON.stringify(repo)}}`)])],
     ["bad continuation", Buffer.concat([Buffer.from('{"tool_name": "Bash", "tool_input": {"command": "echo '), Buffer.from([0xc3, 0x28]), Buffer.from(`"}, "cwd": ${JSON.stringify(repo)}}`)])],
     ["invalid byte before a protected write", Buffer.concat([Buffer.from(`{"tool_name": "Write", "tool_input": {"file_path": ${JSON.stringify(`${profile}/hooks.json`)}, "content": "`), Buffer.from([0xc3, 0x28]), Buffer.from(`"}, "cwd": ${JSON.stringify(repo)}}`)])],
   ];
-  for (const [variablesName, env] of textVariables) {
-    for (const [inputName, stdin] of textInputs) add(`stdin ${inputName} with ${variablesName}`, stdin, { env });
+  for (const [variablesName, env, only] of textVariables) {
+    for (const [inputName, stdin] of textInputs) {
+      const crashes = /xmlcharrefreplace|namereplace|unknown/.test(variablesName) && !CRASHING_HANDLER_SAFE_INPUTS.includes(inputName);
+      if (only === undefined || only.includes(inputName)) add(`stdin ${inputName} with ${variablesName}`, stdin, { env, crash: crashes });
+    }
   }
 
   return cases;

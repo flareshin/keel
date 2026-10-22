@@ -12,7 +12,7 @@ const UNSAFE_SHELL_CHARACTER = /[^A-Za-z0-9_@%+=:,./-]/;
 const ASCII_LIMIT = 0x80;
 const CONTINUATION_LOW = 0x80;
 const CONTINUATION_HIGH = 0xbf;
-const SURROGATE_ESCAPE_BASE = 0xdc00;
+export const SURROGATE_ESCAPE_BASE = 0xdc00;
 const ESCAPED_BYTE_FIRST = 0xdc80;
 const ESCAPED_BYTE_LAST = 0xdcff;
 const HIGH_SURROGATE_FIRST = 0xd800;
@@ -227,22 +227,35 @@ export function decodeFailure(bytes: Buffer, problem: Utf8Problem): string {
   return `'utf-8' codec can't decode ${where}: ${problem.reason}`;
 }
 
-export function decodeUtf8(bytes: Buffer): string {
-  const problem = utf8Problem(bytes, 0);
-  if (problem !== null) throw new ValueError(decodeFailure(bytes, problem));
-  return bytes.toString("utf8");
+export interface Utf8Replacement {
+  text: string;
+  resumeAt: number;
 }
 
-export function decodeUtf8WithSurrogateEscape(bytes: Buffer): string {
+export function decodeUtf8Handling(bytes: Buffer, onProblem: (problem: Utf8Problem) => string | Utf8Replacement): string {
   let text = "";
   let from = 0;
   for (;;) {
     const problem = utf8Problem(bytes, from);
     if (problem === null) return text + bytes.subarray(from).toString("utf8");
-    text += bytes.subarray(from, problem.start).toString("utf8");
-    for (let index = problem.start; index < problem.end; index += 1) text += String.fromCharCode(SURROGATE_ESCAPE_BASE + (bytes[index] ?? 0));
-    from = problem.end;
+    const replacement = onProblem(problem);
+    text += bytes.subarray(from, problem.start).toString("utf8") + (typeof replacement === "string" ? replacement : replacement.text);
+    from = typeof replacement === "string" ? problem.end : replacement.resumeAt;
   }
+}
+
+export function escapedBytes(bytes: Buffer, start: number, end: number): string {
+  return Array.from(bytes.subarray(start, end), (byte) => String.fromCharCode(SURROGATE_ESCAPE_BASE + byte)).join("");
+}
+
+export function decodeUtf8(bytes: Buffer): string {
+  return decodeUtf8Handling(bytes, (problem) => {
+    throw new ValueError(decodeFailure(bytes, problem));
+  });
+}
+
+export function decodeUtf8WithSurrogateEscape(bytes: Buffer): string {
+  return decodeUtf8Handling(bytes, (problem) => escapedBytes(bytes, problem.start, problem.end));
 }
 
 export function translateNewlines(text: string): string {

@@ -604,7 +604,7 @@ function isClaudeSettingsFile(path: string): boolean {
 function failClosed(raw: string, error: unknown): number {
   const { session, command } = salvage(raw);
   new FireLog(HOOK, session).append(F_ATTRIBUTION, "error", { detail: describeError(error) });
-  if (!testCaseFolded(LOOKS_GUARDED_RE, raw)) return protocol.EXIT_PASS;
+  if (!(error instanceof RecursionError) && !testCaseFolded(LOOKS_GUARDED_RE, raw)) return protocol.EXIT_PASS;
   const bullet: protocol.Bullet = [
     F_ATTRIBUTION, `The guard could not check this commit, push, PR text or protected write (${pythonErrorName(error)}).`,
   ];
@@ -623,16 +623,7 @@ function salvage(raw: string): { session: string | null; command: string | null 
   }
   if (!isRecord(payload)) return unknown;
   const command = getField(protocol.toolInput(payload), "command");
-  return { session: getField(payload, "session_id") as string | null, command: isTruthy(command) ? printableCommand(command) : null };
-}
-
-function printableCommand(command: unknown): string | null {
-  try {
-    return pythonStr(command);
-  } catch (error) {
-    if (error instanceof RecursionError) return null;
-    throw error;
-  }
+  return { session: getField(payload, "session_id") as string | null, command: isTruthy(command) ? pythonStr(command) : null };
 }
 
 function commitMessageTexts(args: readonly string[], step: Step, callHeredocs: readonly string[]): string[] {

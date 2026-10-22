@@ -98,8 +98,9 @@ function payloadFamilyCases(family: PayloadFamily): AdversarialCase[] {
 
 export function jsonLimitCases(sandbox: HookSandbox, repo: string): AdversarialCase[] {
   return [
-    ...payloadFamilyCases({ name: "git-guard denying command", script: GIT_GUARD, cwd: repo, payload: bash("git commit -m 'Co-Authored-By: Claude'", repo), memberOutcome: FAILED_CLOSED_DENY, documentOutcome: LOGGED_AND_PASSED }),
-    ...payloadFamilyCases({ name: "git-guard unguarded command", script: GIT_GUARD, cwd: repo, payload: bash("ls", repo), memberOutcome: LOGGED_AND_PASSED, documentOutcome: LOGGED_AND_PASSED }),
+    ...payloadFamilyCases({ name: "git-guard denying command", script: GIT_GUARD, cwd: repo, payload: bash("git commit -m 'Co-Authored-By: Claude'", repo), memberOutcome: FAILED_CLOSED_DENY, documentOutcome: FAILED_CLOSED_DENY }),
+    ...payloadFamilyCases({ name: "git-guard quoted git word", script: GIT_GUARD, cwd: repo, payload: bash("\"g\"it commit -m 'Co-Authored-By: Claude'", repo), memberOutcome: FAILED_CLOSED_DENY, documentOutcome: FAILED_CLOSED_DENY }),
+    ...payloadFamilyCases({ name: "git-guard unguarded command", script: GIT_GUARD, cwd: repo, payload: bash("ls", repo), memberOutcome: FAILED_CLOSED_DENY, documentOutcome: FAILED_CLOSED_DENY }),
     ...payloadFamilyCases({ name: "model-assign", script: MODEL_ASSIGN, cwd: sandbox.root, payload: modelAssignPayload(sandbox.root), memberOutcome: LOGGED_AND_PASSED, documentOutcome: LOGGED_AND_PASSED }),
     ...payloadFamilyCases({ name: "handoff", script: HANDOFF, cwd: repo, payload: { ...basePayload("PreCompact", repo, "/data/projects/p/t.jsonl", false), trigger: "auto" }, args: ["--auto"], memberOutcome: LOGGED_AND_PASSED, documentOutcome: LOGGED_AND_PASSED }),
     ...payloadFamilyCases({ name: "report-gate handback", script: REPORT_GATE, cwd: sandbox.root, payload: handbackPayload(sandbox, UNPROVEN_REPORT), memberOutcome: HANDBACK_REFUSED, documentOutcome: LOGGED_AND_PASSED }),
@@ -139,6 +140,8 @@ function gitGuardSettingsCases(repo: string): AdversarialCase[] {
     ...DEEP_LEVELS.flatMap((depth): Array<[string, string, number]> => [
       [`${depth}-deep value, hooks disabled`, `{"disableAllHooks": true, "x": ${nestedArrays(depth)}}`, depth],
       [`${depth}-deep value, hooks kept`, `{"disableAllHooks": false, "x": ${nestedArrays(depth)}}`, depth],
+      [`${depth}-deep value, hooks disabled, key spelled with an escape`, `{"disable\\u0041llHooks": true, "x": ${nestedArrays(depth)}}`, depth],
+      [`${depth}-deep value, hooks kept, key spelled with an escape`, `{"disable\\u0041llHooks": false, "x": ${nestedArrays(depth)}}`, depth],
     ]),
   ];
   return settings.map(([label, text, depth]) =>

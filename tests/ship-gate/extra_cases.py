@@ -32,12 +32,13 @@ MERGE_SHAPES: List[dict] = [
 INT_DIGIT_LIMIT = 4300
 OVER_LIMIT_INTEGER = "1" * (INT_DIGIT_LIMIT + 1)
 DEEP_NESTING = 3000
-VERY_DEEP_NESTING = 100000
+BOUND_NESTING = 9999
+OVER_BOUND_NESTINGS = [10001, 200000]
 JSON_EDGE_VALUES = [
     OVER_LIMIT_INTEGER, "-" + OVER_LIMIT_INTEGER, "1" * INT_DIGIT_LIMIT, OVER_LIMIT_INTEGER + ".5", OVER_LIMIT_INTEGER + "e2",
     "[" + OVER_LIMIT_INTEGER + "]", '{"a": ' + OVER_LIMIT_INTEGER + "}",
     "[" * DEEP_NESTING + "1" + "]" * DEEP_NESTING, '{"a": ' * DEEP_NESTING + "1" + "}" * DEEP_NESTING,
-    "[" * VERY_DEEP_NESTING + "1" + "]" * VERY_DEEP_NESTING, "[" * DEEP_NESTING + OVER_LIMIT_INTEGER + "]" * DEEP_NESTING,
+    "[" * BOUND_NESTING + "1" + "]" * BOUND_NESTING, "[" * DEEP_NESTING + OVER_LIMIT_INTEGER + "]" * DEEP_NESTING,
 ]
 RAW_GH_ANSWERS = ["[]", "null", "{}", "NaN", "", "  ", '{"baseRefName": "main", "statusCheckRollup": NaN}',
                   '{"baseRefName": "main", "statusCheckRollup": [{"name": "ci", "conclusion": Infinity}]}',
@@ -50,6 +51,26 @@ RAW_GH_ANSWERS = ["[]", "null", "{}", "NaN", "", "  ", '{"baseRefName": "main", 
 class Holder(unittest.TestCase):
     def runTest(self):
         pass
+
+
+class PendingLabel:
+    value = ""
+
+
+def send_labeled(sandbox: Sandbox, label: str, stdin: str, extra_env: Optional[Dict[str, str]] = None):
+    PendingLabel.value = label
+    try:
+        return sandbox.hook_raw(stdin, extra_env)
+    finally:
+        PendingLabel.value = ""
+
+
+def over_bound_label(kind: str, depth: int) -> str:
+    return "%s-nested-%d" % (kind, depth)
+
+
+def nested_lists(depth: int) -> str:
+    return "[" * depth + "1" + "]" * depth
 
 
 def payload_text(sandbox: Sandbox, repo: Repo, command, **changes) -> str:
@@ -106,6 +127,9 @@ def malformed_payloads(holder: Holder) -> None:
     for command in [push, "ls"]:
         for value in JSON_EDGE_VALUES:
             sandbox.hook_raw(payload_text(sandbox, repo, command)[:-1] + ', "extra": ' + value + "}")
+    for depth in OVER_BOUND_NESTINGS:
+        for kind, command in [("stdin-push", push), ("stdin-ls", "ls")]:
+            send_labeled(sandbox, over_bound_label(kind, depth), payload_text(sandbox, repo, command)[:-1] + ', "extra": ' + nested_lists(depth) + "}")
     for value in JSON_EDGE_VALUES[-4:]:
         sandbox.hook_raw(value + " git push origin feature")
         sandbox.hook_raw(value + " ls")
@@ -280,6 +304,10 @@ def merge_spellings(holder: Holder) -> None:
         with open(sandbox.gh_response, "w", encoding="utf-8", errors="surrogatepass") as stream:
             stream.write(answer)
         sandbox.hook_raw(payload_text(sandbox, repo, merge))
+    for depth in OVER_BOUND_NESTINGS:
+        with open(sandbox.gh_response, "w") as stream:
+            stream.write('{"baseRefName": "main", "number": ' + nested_lists(depth) + "}")
+        send_labeled(sandbox, over_bound_label("gh-answer", depth), payload_text(sandbox, repo, merge))
     for raw in [b"\xff\xfe{}", b'{"baseRefName": "main"}\xff', b"\x00", b'{"baseRefName": "ma\xc3\xafn"}']:
         with open(sandbox.gh_response, "wb") as stream:
             stream.write(raw)
@@ -302,6 +330,19 @@ def merge_spellings(holder: Holder) -> None:
     repo.git("push", "-q", "origin", "HEAD:refs/heads/remote-only")
     sandbox.hook_raw(payload_text(sandbox, repo, merge))
     sandbox.hook_raw(payload_text(sandbox, repo, "gh pr merge 7 --match-head-commit %s" % head))
+
+
+def deep_evidence_file(holder: Holder) -> None:
+    for depth in OVER_BOUND_NESTINGS:
+        sandbox, repo, head = reviewed_feature(holder)
+        directory = os.path.join(sandbox.data, "state", "keel", "evidence", "review", "acme__app")
+        for name in os.listdir(directory):
+            path = os.path.join(directory, name)
+            with open(path, encoding="utf-8") as stream:
+                text = stream.read().rstrip()
+            with open(path, "w", encoding="utf-8") as stream:
+                stream.write(text[:-1] + ', "deep": ' + nested_lists(depth) + "}")
+        send_labeled(sandbox, over_bound_label("evidence-file", depth), payload_text(sandbox, repo, "git push origin feature"))
 
 
 def broken_state(holder: Holder) -> None:
@@ -472,12 +513,12 @@ def record_all(recorder) -> None:
     original_hook_raw = helpers.Sandbox.hook_raw
 
     def recording_hook_raw(self, stdin, extra_env=None):
-        recorder.record(self.root, stdin, dict(self.env, **(extra_env or {})), os.getcwd())
+        recorder.record(self.root, stdin, dict(self.env, **(extra_env or {})), os.getcwd(), PendingLabel.value)
         return original_hook_raw(self, stdin, extra_env)
 
     helpers.Sandbox.hook_raw = recording_hook_raw
-    for scenario in (malformed_payloads, unicode_and_case_spellings, refspec_and_option_spellings, merge_spellings, broken_state,
-                     repository_states):
+    for scenario in (malformed_payloads, unicode_and_case_spellings, refspec_and_option_spellings, merge_spellings, deep_evidence_file,
+                     broken_state, repository_states):
         recorder.current_test = scenario.__name__
         holder = Holder()
         try:

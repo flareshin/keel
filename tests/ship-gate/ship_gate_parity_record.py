@@ -39,13 +39,13 @@ class Recorder:
         self.count = 0
         self.current_test = ""
 
-    def record(self, root: str, stdin: str, env: dict, cwd: str) -> None:
+    def record(self, root: str, stdin: str, env: dict, cwd: str, label: str = "") -> None:
         self.count += 1
         case_dir = os.path.join(self.cases_dir, "%s-%04d" % (self.label, self.count))
         os.makedirs(case_dir)
         shutil.copytree(root, os.path.join(case_dir, SNAPSHOT_DIR), symlinks=True, copy_function=copy_even_if_unreadable)
         with open(os.path.join(case_dir, CASE_FILE), "w", encoding="utf-8") as stream:
-            json.dump({"test": self.current_test, "script": SHIP_GATE, "args": [], "cwd": cwd, "stdin": stdin,
+            json.dump({"test": self.current_test, "label": label, "script": SHIP_GATE, "args": [], "cwd": cwd, "stdin": stdin,
                        "env": env, "python": sys.executable}, stream)
 
 

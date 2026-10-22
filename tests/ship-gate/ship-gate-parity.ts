@@ -17,6 +17,12 @@ const FIRES_LOG_NAME = "keel-fires.jsonl";
 const FIRES_TIMESTAMP = /"ts": "[^"]*"/g;
 const GIT_STATE = new Set(["HEAD", "config", "packed-refs", "FETCH_HEAD", "refs"]);
 const UNREADABLE = "<unreadable>";
+const OVER_BOUND_NESTINGS = [10001, 200000];
+const OVER_BOUND_KINDS = ["gh-answer", "evidence-file", "stdin-push", "stdin-ls"];
+
+export const EXPECTED_DIVERGENCES: ReadonlyMap<string, number> = new Map(
+  OVER_BOUND_NESTINGS.flatMap((depth) => OVER_BOUND_KINDS.map((kind): [string, number] => [`${kind}-nested-${depth}`, DENY_EXIT_CODE])),
+);
 
 type Suite = (typeof SUITES)[number];
 type Runtime = "python" | "node";
@@ -25,6 +31,7 @@ interface Case {
   id: string;
   suite: Suite;
   test: string;
+  label: string;
   script: string;
   args: string[];
   cwd: string;
@@ -54,6 +61,7 @@ interface RecorderSummary {
 export interface ShipGateParityReport {
   cases: number;
   mismatches: number;
+  listedDivergences: number;
   denyToPass: number;
   perSuite: Map<string, number>;
   details: string[];
@@ -67,20 +75,30 @@ export function runShipGateParity(suites: readonly Suite[] = selectedSuites()): 
   try {
     const casesDir = join(base, "cases");
     const sandboxRoot = join(base, "sandbox");
-    const report: ShipGateParityReport = { cases: 0, mismatches: 0, denyToPass: 0, perSuite: new Map(), details: [], recorders: [] };
+    const report: ShipGateParityReport = { cases: 0, mismatches: 0, listedDivergences: 0, denyToPass: 0, perSuite: new Map(), details: [], recorders: [] };
     for (const suite of suites) {
       if (!hasRecorded(casesDir, suite)) report.recorders.push(record(suite, casesDir, sandboxRoot));
     }
+    const seenLabels = new Set<string>();
     for (const testCase of loadCases(casesDir)) {
       const expected = observe(testCase, sandboxRoot, "python");
       const actual = observe(testCase, sandboxRoot, "node");
-      const differences = compare(expected, actual);
+      const verdict = judgeCase(testCase.label, expected, actual);
       report.cases += 1;
       report.perSuite.set(testCase.suite, (report.perSuite.get(testCase.suite) ?? 0) + 1);
+      if (testCase.label) seenLabels.add(testCase.label);
       if (isDenyToPass(expected, actual)) report.denyToPass += 1;
-      if (differences.length > 0) {
+      if (verdict.listed) report.listedDivergences += 1;
+      if (verdict.problems.length > 0) {
         report.mismatches += 1;
-        report.details.push(`case ${testCase.id} (${testCase.test}) stdin ${excerpt(testCase.stdin)}:\n  ${differences.join("\n  ")}`);
+        report.details.push(`case ${testCase.id} (${testCase.test}) stdin ${excerpt(testCase.stdin)}:\n  ${verdict.problems.join("\n  ")}`);
+      }
+    }
+    if (suites.includes("extra") && !process.env["SHIP_GATE_PARITY_CASES"]) {
+      for (const label of EXPECTED_DIVERGENCES.keys()) {
+        if (seenLabels.has(label)) continue;
+        report.mismatches += 1;
+        report.details.push(`expected divergence ${label} was not recorded`);
       }
     }
     return report;
@@ -176,6 +194,19 @@ export function compare(expected: Observation, actual: Observation): string[] {
   return differences;
 }
 
+export interface Verdict {
+  listed: boolean;
+  problems: string[];
+}
+
+export function judgeCase(label: string, expected: Observation, actual: Observation): Verdict {
+  const differences = compare(expected, actual);
+  const required = EXPECTED_DIVERGENCES.get(label);
+  if (required === undefined) return { listed: false, problems: differences };
+  if (actual.code === required) return { listed: true, problems: [] };
+  return { listed: false, problems: [`listed divergence ${label} requires node exit ${required}, got ${actual.code}`, ...differences] };
+}
+
 export function isDenyToPass(expected: Observation, actual: Observation): boolean {
   return expected.code === DENY_EXIT_CODE && actual.code === PASS_EXIT_CODE;
 }
@@ -187,7 +218,7 @@ function excerpt(value: unknown): string {
 }
 
 export function summary(report: ShipGateParityReport): string[] {
-  return [`parity: ${report.cases} cases, ${report.mismatches} mismatches`, `deny-to-pass: ${report.denyToPass}`];
+  return [`parity: ${report.cases} cases, ${report.mismatches} mismatches, ${report.listedDivergences} listed divergences`, `deny-to-pass: ${report.denyToPass}`];
 }
 
 if (import.meta.main) {

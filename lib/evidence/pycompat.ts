@@ -20,6 +20,7 @@ const PYTHON_SPACE_CLASS = `[${PYTHON_SPACE}]`;
 const LINE_BOUNDARY = /\r\n|[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]/;
 const NON_PRINTABLE = /[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Zl}\p{Zp}\p{Zs}]/u;
 const INTEGER_DIGIT_LIMIT = 4300;
+const MAX_JSON_DEPTH = 10000;
 const OVER_LIMIT_DIGITS = new RegExp(`[0-9]{${INTEGER_DIGIT_LIMIT + 1}}`);
 const JSON_WHITESPACE = new Set([' ', '\t', '\n', '\r']);
 const JSON_NUMBER = /-?(?:0|[1-9][0-9]*)(\.[0-9]+)?([eE][-+]?[0-9]+)?/y;
@@ -32,6 +33,8 @@ const JSON_CONSTANTS: Array<[string, JsonValue]> = [
 export const PYTHON_SPACE_PATTERN = PYTHON_SPACE_CLASS;
 
 export class ValueError extends Error {}
+
+export class RecursionError extends Error {}
 
 export class JSONDecodeError extends ValueError {
   constructor(message: string, document: string[], position: number) {
@@ -455,6 +458,9 @@ function scanPythonJson(text: string): JsonValue {
     for (;;) {
       let value: JsonValue;
       const char = document[position];
+      if ((char === '[' || char === '{') && open.length >= MAX_JSON_DEPTH) {
+        throw new RecursionError(`maximum recursion depth exceeded while decoding a JSON ${char === '[' ? 'array' : 'object'} from a unicode string`);
+      }
       if (char === '[') {
         position = skipSpace(position + 1);
         if (document[position] !== ']') {

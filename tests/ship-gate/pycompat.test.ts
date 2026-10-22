@@ -6,7 +6,7 @@ import { constants, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getSystemErrorMap } from 'node:util';
 import {
-  JSONDecodeError, PyFloat, ValueError, decodeSurrogateEscape, fnmatchCase, isDirectory, isFile, isSystemError, pyEquals, pyOsErrorMessage, pyRepr, pySplitLines, pyStr, pyStrip, pyTruthy, pythonJsonDumps, pythonJsonLoads,
+  JSONDecodeError, PyFloat, RecursionError, ValueError, decodeSurrogateEscape, fnmatchCase, isDirectory, isFile, isSystemError, pyEquals, pyOsErrorMessage, pyRepr, pySplitLines, pyStr, pyStrip, pyTruthy, pythonJsonDumps, pythonJsonLoads,
 } from '../../lib/evidence/pycompat.ts';
 import { OSError } from '../../lib/evidence/subprocess.ts';
 import { isInputFailure } from '../../lib/evidence/writers.ts';
@@ -63,7 +63,7 @@ describe('pythonJsonLoads', () => {
   });
 
   test('parses nesting far deeper than the call stack and reports errors in deep documents at python positions', () => {
-    const depth = 100_000;
+    const depth = 9999;
     let arrays = pythonJsonLoads('['.repeat(depth) + '1' + ']'.repeat(depth));
     for (let level = 1; level < depth; level++) arrays = (arrays as unknown[])[0] as never;
     assert.deepEqual(arrays, [1]);
@@ -74,6 +74,23 @@ describe('pythonJsonLoads', () => {
       (error: Error) => error instanceof JSONDecodeError && error.message === `Expecting ',' delimiter: line 1 column ${2 * depth + 1} (char ${2 * depth})`);
     assert.throws(() => pythonJsonLoads('['.repeat(depth) + ']'.repeat(depth) + ']'), { message: `Extra data: line 1 column ${2 * depth + 1} (char ${2 * depth})` });
     assert.throws(() => pythonJsonLoads('['.repeat(depth) + '1' + ',]'), { message: `Illegal trailing comma before end of array: line 1 column ${depth + 2} (char ${depth + 1})` });
+  });
+
+  test('throws a RecursionError that is not a ValueError for nesting past 10000 levels, whatever follows', () => {
+    const recursionMessage = (kind: string) => `maximum recursion depth exceeded while decoding a JSON ${kind} from a unicode string`;
+    assert.ok(Array.isArray(pythonJsonLoads('['.repeat(10_000) + ']'.repeat(10_000))));
+    for (const depth of [10_001, 200_000]) {
+      assert.throws(() => pythonJsonLoads('['.repeat(depth) + '1' + ']'.repeat(depth)),
+        (error: Error) => error instanceof RecursionError && !(error instanceof ValueError) && error.constructor.name === 'RecursionError'
+          && error.message === recursionMessage('array'));
+      assert.throws(() => pythonJsonLoads('{"a": '.repeat(depth) + '1' + '}'.repeat(depth)),
+        (error: Error) => error instanceof RecursionError && error.message === recursionMessage('object'));
+    }
+    assert.throws(() => pythonJsonLoads('['.repeat(10_001)), RecursionError);
+    assert.throws(() => pythonJsonLoads('['.repeat(10_001) + '1'.repeat(4301)), RecursionError);
+    assert.throws(() => pythonJsonLoads('[]'.repeat(2) + '['.repeat(10_001)), JSONDecodeError);
+    assert.equal((pythonJsonLoads('[' + '[],'.repeat(10_000) + '[]]') as unknown[]).length, 10_001);
+    assert.throws(() => pythonJsonLoads('['.repeat(10_000) + '[]' + ']'.repeat(10_000)), RecursionError);
   });
 });
 

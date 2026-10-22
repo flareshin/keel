@@ -15,7 +15,7 @@ import * as gc from "../../lib/evidence/gc.ts";
 import * as gitcmd from "../../lib/evidence/gitcmd.ts";
 import {
   decodeStrict, errorText, isJsonObject, PyFloat, pyRepr, pyStr, pythonJsonLoads, pythonTypeName as errorTypeName, pyStrip, ValueError,
-  pyTruthy, sortedStrings, universalNewlines,
+  pyTruthy, RecursionError, sortedStrings, universalNewlines,
 } from "../../lib/evidence/pycompat.ts";
 import type { JsonValue } from "../../lib/evidence/pycompat.ts";
 import * as registry from "../../lib/evidence/registry.ts";
@@ -256,6 +256,9 @@ function dispatch(payload: unknown): number {
 
 function failClosed(raw: string, error: unknown): number {
   const detail = errorLabel(error);
+  if (error instanceof RecursionError) {
+    return protocol.deny(backslashReplaced(message("internal error; failing closed", [{ ruleId: K1, text: detail }], raw)));
+  }
   const command = bashCommandOf(raw);
   if (!mayPushOrMerge(command)) {
     writeStderr(backslashReplaced(`ship-gate: internal error on a command that is not a push or merge: ${detail}\n`));

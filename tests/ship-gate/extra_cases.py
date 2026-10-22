@@ -1,6 +1,3 @@
-"""Payloads the ship-gate tests do not send but a real Claude Code session or a broken environment can: malformed
-payload shapes, run-time and Unicode spellings, odd gh answers, broken registry and state files, odd repository
-states. ship_gate_parity_record.py records each through Sandbox.hook_raw like a test payload."""
 from __future__ import annotations
 
 import json
@@ -32,11 +29,22 @@ MERGE_SHAPES: List[dict] = [
     {"baseRefName": 5}, {"baseRefName": ""}, {"baseRefName": ["main"]}, {"baseRefName": "nobranch"}, {"baseRefName": None},
     {"baseRefName": True}, {"baseRefName": 1.5}, {"baseRefName": "ma\u00efn"}, {"baseRefName": "mai\U0001f600n"},
 ]
+INT_DIGIT_LIMIT = 4300
+OVER_LIMIT_INTEGER = "1" * (INT_DIGIT_LIMIT + 1)
+DEEP_NESTING = 3000
+VERY_DEEP_NESTING = 100000
+JSON_EDGE_VALUES = [
+    OVER_LIMIT_INTEGER, "-" + OVER_LIMIT_INTEGER, "1" * INT_DIGIT_LIMIT, OVER_LIMIT_INTEGER + ".5", OVER_LIMIT_INTEGER + "e2",
+    "[" + OVER_LIMIT_INTEGER + "]", '{"a": ' + OVER_LIMIT_INTEGER + "}",
+    "[" * DEEP_NESTING + "1" + "]" * DEEP_NESTING, '{"a": ' * DEEP_NESTING + "1" + "}" * DEEP_NESTING,
+    "[" * VERY_DEEP_NESTING + "1" + "]" * VERY_DEEP_NESTING, "[" * DEEP_NESTING + OVER_LIMIT_INTEGER + "]" * DEEP_NESTING,
+]
 RAW_GH_ANSWERS = ["[]", "null", "{}", "NaN", "", "  ", '{"baseRefName": "main", "statusCheckRollup": NaN}',
                   '{"baseRefName": "main", "statusCheckRollup": [{"name": "ci", "conclusion": Infinity}]}',
                   '{"baseRefName": "main",}', '{"baseRefName": "main"} trailing', '[{"baseRefName": "main"}]',
                   '{"baseRefName": "main", "statusCheckRollup": []}\n\n', '\ufeff{"baseRefName": "main"}',
-                  '{"baseRefName": "main", "baseRefName": "other"}', '{"baseRefName": "ma\\ud800in"}']
+                  '{"baseRefName": "main", "baseRefName": "other"}', '{"baseRefName": "ma\\ud800in"}'] + [
+    '{"baseRefName": "main", "number": %s}' % value for value in JSON_EDGE_VALUES]
 
 
 class Holder(unittest.TestCase):
@@ -95,6 +103,12 @@ def malformed_payloads(holder: Holder) -> None:
                 '{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "git push origin \\ud83d\\ude00"}}',
                 '{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "git push origin \\u00e9"}}']:
         sandbox.hook_raw(raw)
+    for command in [push, "ls"]:
+        for value in JSON_EDGE_VALUES:
+            sandbox.hook_raw(payload_text(sandbox, repo, command)[:-1] + ', "extra": ' + value + "}")
+    for value in JSON_EDGE_VALUES[-4:]:
+        sandbox.hook_raw(value + " git push origin feature")
+        sandbox.hook_raw(value + " ls")
     base = sandbox.bash_payload(repo, push)
     variants: Dict[str, object] = {
         "list command": ["git push origin feature"], "number command": 5, "null command": None, "dict command": {"a": "git push"},

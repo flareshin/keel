@@ -6,7 +6,7 @@ import { constants, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getSystemErrorMap } from 'node:util';
 import {
-  JSONDecodeError, PyFloat, decodeSurrogateEscape, fnmatchCase, isDirectory, isFile, isSystemError, pyEquals, pyOsErrorMessage, pyRepr, pySplitLines, pyStr, pyStrip, pyTruthy, pythonJsonDumps, pythonJsonLoads,
+  JSONDecodeError, PyFloat, ValueError, decodeSurrogateEscape, fnmatchCase, isDirectory, isFile, isSystemError, pyEquals, pyOsErrorMessage, pyRepr, pySplitLines, pyStr, pyStrip, pyTruthy, pythonJsonDumps, pythonJsonLoads,
 } from '../../lib/evidence/pycompat.ts';
 import { OSError } from '../../lib/evidence/subprocess.ts';
 import { isInputFailure } from '../../lib/evidence/writers.ts';
@@ -43,6 +43,37 @@ describe('pythonJsonLoads', () => {
   test('keeps float and big int spellings through a dumps round trip', () => {
     assert.equal(pythonJsonDumps(pythonJsonLoads('[1.0, -0.0, 1e16, 2E3, 1e-7, 9007199254740993, 1e400, NaN]')),
       '[1.0, -0.0, 1e+16, 2000.0, 1e-07, 9007199254740993, Infinity, NaN]');
+  });
+
+  test('refuses an integer literal over 4300 digits with the ValueError python raises, and keeps floats of any length', () => {
+    const limitMessage = (digits: number) => `Exceeds the limit (4300 digits) for integer string conversion: value has ${digits} digits; use sys.set_int_max_str_digits() to increase the limit`;
+    assert.equal(typeof pythonJsonLoads('1'.repeat(4300)), 'bigint');
+    assert.equal(typeof pythonJsonLoads('-' + '1'.repeat(4300)), 'bigint');
+    for (const text of ['1'.repeat(4301), '-' + '1'.repeat(4301), '[' + '1'.repeat(4301) + ']', '{"a": ' + '1'.repeat(4301) + '}']) {
+      assert.throws(() => pythonJsonLoads(text), (error: Error) => error instanceof ValueError
+        && !(error instanceof JSONDecodeError) && error.constructor.name === 'ValueError' && error.message === limitMessage(4301));
+    }
+    assert.ok(pythonJsonLoads('1'.repeat(4301) + '.5') instanceof PyFloat);
+    assert.ok(pythonJsonLoads('1'.repeat(4301) + 'e2') instanceof PyFloat);
+  });
+
+  test('reports the first problem in document order when a long integer meets a syntax error', () => {
+    assert.throws(() => pythonJsonLoads('[' + '1'.repeat(4301) + ',]'), (error: Error) => error.constructor === ValueError);
+    assert.throws(() => pythonJsonLoads('[,' + '1'.repeat(4301) + ']'), { message: 'Expecting value: line 1 column 2 (char 1)' });
+  });
+
+  test('parses nesting far deeper than the call stack and reports errors in deep documents at python positions', () => {
+    const depth = 100_000;
+    let arrays = pythonJsonLoads('['.repeat(depth) + '1' + ']'.repeat(depth));
+    for (let level = 1; level < depth; level++) arrays = (arrays as unknown[])[0] as never;
+    assert.deepEqual(arrays, [1]);
+    let objects = pythonJsonLoads('{"a": '.repeat(depth) + '1' + '}'.repeat(depth));
+    for (let level = 1; level < depth; level++) objects = (objects as Record<string, unknown>)['a'] as never;
+    assert.deepEqual(objects, { a: 1 });
+    assert.throws(() => pythonJsonLoads('['.repeat(depth) + '1' + ']'.repeat(depth - 1)),
+      (error: Error) => error instanceof JSONDecodeError && error.message === `Expecting ',' delimiter: line 1 column ${2 * depth + 1} (char ${2 * depth})`);
+    assert.throws(() => pythonJsonLoads('['.repeat(depth) + ']'.repeat(depth) + ']'), { message: `Extra data: line 1 column ${2 * depth + 1} (char ${2 * depth})` });
+    assert.throws(() => pythonJsonLoads('['.repeat(depth) + '1' + ',]'), { message: `Illegal trailing comma before end of array: line 1 column ${depth + 2} (char ${depth + 1})` });
   });
 });
 

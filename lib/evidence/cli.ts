@@ -4,7 +4,7 @@ import * as codexReview from './codex_review.ts';
 import * as gc from './gc.ts';
 import * as gitcmd from './gitcmd.ts';
 import * as prepare from './prepare.ts';
-import { errorText, JSONDecodeError, UnicodeDecodeError, isJsonObject, pyEquals, pythonJsonDumps, pythonJsonLoads, pythonTypeName, sortedStrings } from './pycompat.ts';
+import { errorText, UnicodeDecodeError, ValueError, isJsonObject, pyEquals, pythonJsonDumps, pythonJsonLoads, pythonTypeName, sortedStrings } from './pycompat.ts';
 import type { JsonValue } from './pycompat.ts';
 import * as registry from './registry.ts';
 import { printErrorLine, printLine, readStdinText } from './stdio.ts';
@@ -171,7 +171,7 @@ function stdinJson(): JsonObject {
   try {
     request = pythonJsonLoads(readStdinText());
   } catch (error) {
-    if (error instanceof JSONDecodeError || error instanceof UnicodeDecodeError) {
+    if (error instanceof ValueError || error instanceof UnicodeDecodeError) {
       throw new writers.Usage(`stdin is not JSON: ${(error as Error).message}`);
     }
     throw error;

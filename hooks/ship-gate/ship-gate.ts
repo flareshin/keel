@@ -14,7 +14,7 @@ import { appendLogLine, iso, stateDir, utcNow } from "../../lib/evidence/env.ts"
 import * as gc from "../../lib/evidence/gc.ts";
 import * as gitcmd from "../../lib/evidence/gitcmd.ts";
 import {
-  decodeStrict, errorText, isJsonObject, JSONDecodeError, PyFloat, pyRepr, pyStr, pythonJsonLoads, pythonTypeName as errorTypeName, pyStrip,
+  decodeStrict, errorText, isJsonObject, PyFloat, pyRepr, pyStr, pythonJsonLoads, pythonTypeName as errorTypeName, pyStrip, ValueError,
   pyTruthy, sortedStrings, universalNewlines,
 } from "../../lib/evidence/pycompat.ts";
 import type { JsonValue } from "../../lib/evidence/pycompat.ts";
@@ -269,7 +269,7 @@ function bashCommandOf(raw: string): string {
   try {
     payload = pythonJsonLoads(raw);
   } catch (error) {
-    if (error instanceof JSONDecodeError) return raw;
+    if (error instanceof ValueError) return raw;
     throw error;
   }
   if (!isJsonObject(payload)) return "";

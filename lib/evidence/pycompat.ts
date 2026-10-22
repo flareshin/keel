@@ -19,6 +19,8 @@ const PYTHON_SPACE = '\\t\\n\\v\\f\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u200
 const PYTHON_SPACE_CLASS = `[${PYTHON_SPACE}]`;
 const LINE_BOUNDARY = /\r\n|[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]/;
 const NON_PRINTABLE = /[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Zl}\p{Zp}\p{Zs}]/u;
+const INTEGER_DIGIT_LIMIT = 4300;
+const OVER_LIMIT_DIGITS = new RegExp(`[0-9]{${INTEGER_DIGIT_LIMIT + 1}}`);
 const JSON_WHITESPACE = new Set([' ', '\t', '\n', '\r']);
 const JSON_NUMBER = /-?(?:0|[1-9][0-9]*)(\.[0-9]+)?([eE][-+]?[0-9]+)?/y;
 const JSON_ESCAPES: Record<string, string> = { '"': '"', '\\': '\\', '/': '/', b: '\b', f: '\f', n: '\n', r: '\r', t: '\t' };
@@ -29,7 +31,9 @@ const JSON_CONSTANTS: Array<[string, JsonValue]> = [
 
 export const PYTHON_SPACE_PATTERN = PYTHON_SPACE_CLASS;
 
-export class JSONDecodeError extends Error {
+export class ValueError extends Error {}
+
+export class JSONDecodeError extends ValueError {
   constructor(message: string, document: string[], position: number) {
     const before = document.slice(0, position);
     const lineNumber = before.filter((char) => char === '\n').length + 1;
@@ -314,6 +318,10 @@ export function pyFloatRepr(value: number): string {
 
 export function jsonNumber(source: string): number | bigint | PyFloat {
   if (/[.eE]/.test(source)) return new PyFloat(Number(source));
+  const digits = source.length - (source.startsWith('-') ? 1 : 0);
+  if (digits > INTEGER_DIGIT_LIMIT) {
+    throw new ValueError(`Exceeds the limit (${INTEGER_DIGIT_LIMIT} digits) for integer string conversion: value has ${digits} digits; use sys.set_int_max_str_digits() to increase the limit`);
+  }
   const value = Number(source);
   return Number.isSafeInteger(value) ? value + 0 : BigInt(source);
 }
@@ -336,25 +344,23 @@ function dumpString(value: string): string {
   return '"' + body + '"';
 }
 
-class StopScan extends Error {
-  position: number;
-  constructor(position: number) {
-    super('stop');
-    this.position = position;
-  }
-}
+type OpenContainer =
+  | { kind: 'array'; items: JsonValue[] }
+  | { kind: 'object'; members: { [key: string]: JsonValue }; key: string };
 
 function reviveNumber(_key: string, value: unknown, context?: { source?: string }): unknown {
   return typeof value === 'number' ? jsonNumber(context!.source!) : value;
 }
 
 export function pythonJsonLoads(text: string): JsonValue {
-  try {
-    return JSON.parse(text, reviveNumber) as JsonValue;
-  } catch (error) {
-    if (!(error instanceof SyntaxError)) throw error;
-    return scanPythonJson(text);
+  if (!OVER_LIMIT_DIGITS.test(text)) {
+    try {
+      return JSON.parse(text, reviveNumber) as JsonValue;
+    } catch (error) {
+      if (!(error instanceof SyntaxError || error instanceof RangeError)) throw error;
+    }
   }
+  return scanPythonJson(text);
 }
 
 function scanPythonJson(text: string): JsonValue {
@@ -420,95 +426,97 @@ function scanPythonJson(text: string): JsonValue {
     return parseInt(digits, 16);
   };
 
-  const scanObject = (begin: number): [JsonValue, number] => {
-    const parsedObject: { [key: string]: JsonValue } = {};
-    let position = begin;
-    let next = document[position];
-    if (next !== '"') {
+  const scanKey = (begin: number): [string, number] => {
+    const [key, afterKey] = scanString(begin);
+    let position = afterKey;
+    if (document[position] !== ':') {
       position = skipSpace(position);
-      next = document[position];
-      if (next === '}') return [parsedObject, position + 1];
-      if (next !== '"') throw new JSONDecodeError('Expecting property name enclosed in double quotes', document, position);
+      if (document[position] !== ':') throw new JSONDecodeError("Expecting ':' delimiter", document, position);
     }
-    position++;
-    for (;;) {
-      const [key, afterKey] = scanString(position);
-      position = afterKey;
-      if (document[position] !== ':') {
-        position = skipSpace(position);
-        if (document[position] !== ':') throw new JSONDecodeError("Expecting ':' delimiter", document, position);
-      }
-      position = skipSpace(position + 1);
-      const [value, afterValue] = scanValue(position);
-      Object.defineProperty(parsedObject, key, { value, enumerable: true, writable: true, configurable: true });
-      position = skipSpace(afterValue);
-      next = document[position];
-      position++;
-      if (next === '}') return [parsedObject, position];
-      if (next !== ',') throw new JSONDecodeError("Expecting ',' delimiter", document, position - 1);
-      const commaPosition = position - 1;
-      position = skipSpace(position);
-      next = document[position];
-      position++;
-      if (next !== '"') {
-        if (next === '}') throw new JSONDecodeError('Illegal trailing comma before end of object', document, commaPosition);
-        throw new JSONDecodeError('Expecting property name enclosed in double quotes', document, position - 1);
-      }
-    }
+    return [key, skipSpace(position + 1)];
   };
 
-  const scanArray = (begin: number): [JsonValue, number] => {
-    const parsedArray: JsonValue[] = [];
-    let position = skipSpace(begin);
-    if (document[position] === ']') return [parsedArray, position + 1];
-    for (;;) {
-      const [value, afterValue] = scanValue(position);
-      parsedArray.push(value);
-      position = skipSpace(afterValue);
-      const next = document[position];
-      position++;
-      if (next === ']') return [parsedArray, position];
-      if (next !== ',') throw new JSONDecodeError("Expecting ',' delimiter", document, position - 1);
-      const commaPosition = position - 1;
-      position = skipSpace(position);
-      if (document[position] === ']') throw new JSONDecodeError('Illegal trailing comma before end of array', document, commaPosition);
-    }
-  };
-
-  const scanValue = (position: number): [JsonValue, number] => {
-    try {
-      return scanOnce(position);
-    } catch (error) {
-      if (error instanceof StopScan) throw new JSONDecodeError('Expecting value', document, error.position);
-      throw error;
-    }
-  };
-
-  const scanOnce = (position: number): [JsonValue, number] => {
+  const scanScalar = (position: number): [JsonValue, number] => {
     const char = document[position];
-    if (char === undefined) throw new StopScan(position);
+    if (char === undefined) throw new JSONDecodeError('Expecting value', document, position);
     if (char === '"') return scanString(position + 1);
-    if (char === '{') return scanObject(position + 1);
-    if (char === '[') return scanArray(position + 1);
     const rest = joined(position, position + 9);
     for (const [name, value] of JSON_CONSTANTS) {
       if (rest.startsWith(name)) return [value, position + name.length];
     }
     const match = matchNumber(position);
-    if (match === null) throw new StopScan(position);
+    if (match === null) throw new JSONDecodeError('Expecting value', document, position);
     return [jsonNumber(match), position + match.length];
   };
 
-  const start = skipSpace(0);
-  let value: JsonValue;
-  let end: number;
-  try {
-    [value, end] = scanOnce(start);
-  } catch (error) {
-    if (error instanceof StopScan) throw new JSONDecodeError('Expecting value', document, error.position);
-    throw error;
-  }
-  end = skipSpace(end);
+  const scanDocument = (start: number): [JsonValue, number] => {
+    const open: OpenContainer[] = [];
+    let position = start;
+    for (;;) {
+      let value: JsonValue;
+      const char = document[position];
+      if (char === '[') {
+        position = skipSpace(position + 1);
+        if (document[position] !== ']') {
+          open.push({ kind: 'array', items: [] });
+          continue;
+        }
+        value = [];
+        position++;
+      } else if (char === '{') {
+        const first = skipSpace(position + 1);
+        if (document[first] === '}') {
+          value = {};
+          position = first + 1;
+        } else if (document[first] === '"') {
+          const [key, afterKey] = scanKey(first + 1);
+          open.push({ kind: 'object', members: {}, key });
+          position = afterKey;
+          continue;
+        } else {
+          throw new JSONDecodeError('Expecting property name enclosed in double quotes', document, first);
+        }
+      } else {
+        [value, position] = scanScalar(position);
+      }
+      for (;;) {
+        const container = open.at(-1);
+        if (container === undefined) return [value, position];
+        if (container.kind === 'array') {
+          container.items.push(value);
+        } else {
+          Object.defineProperty(container.members, container.key, { value, enumerable: true, writable: true, configurable: true });
+        }
+        const closer = container.kind === 'array' ? ']' : '}';
+        position = skipSpace(position);
+        const next = document[position];
+        position++;
+        if (next === closer) {
+          value = container.kind === 'array' ? container.items : container.members;
+          open.pop();
+          continue;
+        }
+        if (next !== ',') throw new JSONDecodeError("Expecting ',' delimiter", document, position - 1);
+        const commaPosition = position - 1;
+        position = skipSpace(position);
+        if (container.kind === 'array') {
+          if (document[position] === ']') throw new JSONDecodeError('Illegal trailing comma before end of array', document, commaPosition);
+          break;
+        }
+        const nextKey = document[position];
+        position++;
+        if (nextKey !== '"') {
+          if (nextKey === '}') throw new JSONDecodeError('Illegal trailing comma before end of object', document, commaPosition);
+          throw new JSONDecodeError('Expecting property name enclosed in double quotes', document, position - 1);
+        }
+        [container.key, position] = scanKey(position);
+        break;
+      }
+    }
+  };
+
+  const [value, afterValue] = scanDocument(skipSpace(0));
+  const end = skipSpace(afterValue);
   if (end !== document.length) throw new JSONDecodeError('Extra data', document, end);
   return value;
 }

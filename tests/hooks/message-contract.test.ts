@@ -147,7 +147,15 @@ describe("MessageContractTest", () => {
   });
 
   it("everyFiresLine_namesASeededRuleId", () => {
-    gatedFeatureRepo();
-    for (const fire of sandbox.fires()) assert.ok(SEEDED_RULE_IDS.has(fire.rule_id), JSON.stringify(fire));
+    const repo = gatedFeatureRepo();
+    const denied = sandbox.runHook(SHIP_GATE, { payload: bash("git push origin feature", repo) });
+    const warned = sandbox.runHook(SHIP_GATE, { payload: bash("gh pr create --title t --body b", repo) });
+    const failedClosed = sandbox.runHook(SHIP_GATE, {
+      raw: '{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "git push origin x"',
+    });
+    assert.deepEqual([denied.code, warned.code, failedClosed.code], [2, 0, 2]);
+    const fires = sandbox.fires();
+    assert.ok(fires.length > 0, "the ship-gate runs wrote no fires line");
+    for (const fire of fires) assert.ok(SEEDED_RULE_IDS.has(fire.rule_id), JSON.stringify(fire));
   });
 });

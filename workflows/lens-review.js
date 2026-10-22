@@ -12,7 +12,8 @@ const DIFFS = A.diffs || null
 const CALLER_LENSES = A.lenses
 const PRIOR_FINDINGS = A.priorFindings
 const MODEL = A.model || 'opus'
-const EFFORT = A.effort || 'high'
+const UNTIERED_EFFORT = 'high'
+const TIER_EFFORT = { 'smoke-only': 'medium', light: 'medium', standard: 'medium', heavy: 'high' }
 const MECHANICAL_MODEL = A.mechanicalModel || 'sonnet'
 const MECHANICAL_EFFORT = 'low'
 const REVIEW_KIND = 'lens-review'
@@ -80,9 +81,10 @@ if (argsProblem) {
 phase('Prepare')
 const prepared = await prepareReview()
 if (prepared.error) return failed(prepared.error)
-const { runId, rootRunId, reviewed, lensSet, priorNeedsFixesRounds } = prepared
+const { runId, rootRunId, reviewed, lensSet, priorNeedsFixesRounds, effort } = prepared
+log(`audit effort: ${effort}`)
 
-const audit = await runAudit(reviewed, lensSet)
+const audit = await runAudit(reviewed, lensSet, effort)
 if (audit.error) return failed(audit.error)
 
 const outcome = judge(audit, lensSet, reviewed.length, priorNeedsFixesRounds)
@@ -108,6 +110,7 @@ return {
   nonBlocking: outcome.nonBlocking,
   preExisting: outcome.preExisting,
   needsFixesRound: outcome.needsFixesRound,
+  effort,
   unverified: audit.unverified,
   refutedCount: audit.refuted.length,
 }
@@ -184,7 +187,7 @@ async function prepareReview() {
   if (!runId) return { error: `prepare agent returned no valid run id: ${JSON.stringify(output.run_id_output)}` }
   const lensSet = resolveLensSet(output.lenses_output, reviewed.targets)
   if (lensSet.error) return lensSet
-  return { runId, rootRunId: A.rootRunId || runId, reviewed: reviewed.targets, lensSet, priorNeedsFixesRounds: resolvePriorRounds(output.needs_fixes_rounds) }
+  return { runId, rootRunId: A.rootRunId || runId, reviewed: reviewed.targets, lensSet, priorNeedsFixesRounds: resolvePriorRounds(output.needs_fixes_rounds), effort: resolveEffort(output.risk_class) }
 }
 
 function buildPreparePrompt() {
@@ -238,6 +241,11 @@ function isPreparedShaped(p) {
 
 function resolvePriorRounds(count) {
   return Number.isInteger(count) && count > 0 ? count : 0
+}
+
+function resolveEffort(riskClass) {
+  if (A.effort) return A.effort
+  return Object.hasOwn(TIER_EFFORT, riskClass) ? TIER_EFFORT[riskClass] : UNTIERED_EFFORT
 }
 
 function resolveRunId(runIdOutput) {
@@ -302,7 +310,7 @@ function buildRuleChecksLens(reviewed) {
   }
 }
 
-async function runAudit(reviewed, lensSet) {
+async function runAudit(reviewed, lensSet, effort) {
   try {
     const audit = await workflow('adversarial-audit', {
       target: buildTarget(reviewed),
@@ -310,7 +318,7 @@ async function runAudit(reviewed, lensSet) {
       guardrails: `${REVIEW_GUARDRAILS}\n${lensSet.guardrails}`,
       maxFindingsPerLens: A.maxFindingsPerLens,
       model: MODEL,
-      effort: EFFORT,
+      effort,
       auditMode: A.auditMode,
     })
     if (!audit || audit.error) return { error: (audit && audit.error) || 'adversarial-audit returned nothing' }

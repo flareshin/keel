@@ -136,7 +136,13 @@ Read both JSON files through the agent's file tool and call
 objects. Keep all request fields, including custom lenses and delta identifiers.
 The CLI pins the candidate without an agent; review reads the pinned Git objects.
 
-Claude audit and verification default to `opus` / `high`. Fallback preparation
+Claude audit and verification use `opus`. Their effort follows the change's risk
+tier, which `keel review prepare` reports as `risk_class` from the repo's gated
+row and risk rules (the heaviest across repos): `medium` for smoke-only, light
+and standard, `high` for heavy and `high` when any repo has no gated row or no
+tier was prepared. A caller `effort` overrides the tier. Measured on two
+standard keel diffs, `medium` caught every merge-blocking finding `high` caught
+and dropped only low-impact ones. Fallback preparation
 and report transport default to `sonnet` / `low`; `mechanicalModel` overrides
 their model independently of `model` and `effort`. Exact report/evidence checks
 still reject altered reporter output. Review findings contain diagnosis, evidence,

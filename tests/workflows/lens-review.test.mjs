@@ -135,6 +135,32 @@ test('lensReview_separatesMechanicalOverrideFromAuditModel_whenBothAreGiven', as
   ])
 })
 
+async function runWithRiskClass(riskClass, extraArgs = {}) {
+  const rt = createRuntime({ respond: responder() })
+  const prepared = { diff_outputs: [preparedLine()], run_id_output: DERIVED_RUN_ID, lenses_output: '', ...(riskClass === undefined ? {} : { risk_class: riskClass }) }
+  const result = await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES, prepared, ...extraArgs })
+  const auditEfforts = rt.record.agents.filter(({ opts }) => opts.label.startsWith('audit:')).map(({ opts }) => opts.effort)
+  return { result, auditEfforts }
+}
+
+test('lensReview_scalesAuditEffortWithThePreparedRiskClass_whenNoEffortIsGiven', async () => {
+  const cases = [['smoke-only', 'medium'], ['light', 'medium'], ['standard', 'medium'], ['heavy', 'high'],
+    [undefined, 'high'], [null, 'high'], ['unknown', 'high'], ['__proto__', 'high']]
+  for (const [riskClass, effort] of cases) {
+    const { result, auditEfforts } = await runWithRiskClass(riskClass)
+    assert.equal(result.effort, effort, String(riskClass))
+    assert.deepEqual(auditEfforts, [effort, effort, effort], String(riskClass))
+  }
+})
+
+test('lensReview_keepsTheCallerEffort_whateverTheRiskClass', async () => {
+  for (const riskClass of ['light', 'heavy']) {
+    const { result, auditEfforts } = await runWithRiskClass(riskClass, { effort: 'xhigh' })
+    assert.equal(result.effort, 'xhigh', riskClass)
+    assert.deepEqual(auditEfforts, ['xhigh', 'xhigh', 'xhigh'], riskClass)
+  }
+})
+
 test('lensReview_diffsLensesAgainstSnapshotTree_whenWorkingTreeIsReviewed', async () => {
   const rt = createRuntime({ respond: responder() })
   await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES, readingGuide: 'Entry point : a.py' })

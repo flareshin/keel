@@ -2,20 +2,23 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import List, Optional
 
-from evidence import env, gitcmd, writers
+from evidence import env, gitcmd, registry, risk, writers
 
 
 def review(request: dict) -> dict:
     diffs = request.get('diffs')
     if not isinstance(diffs, list) or not diffs:
         raise writers.Usage('review prepare needs a nonempty diffs list')
-    outputs = [json.dumps(prepare_target(target)) for target in diffs]
+    targets = [prepare_target(target) for target in diffs]
     lenses_path = Path(env.data_dir()) / 'workflows/review-lenses.json'
     lenses = json.loads(lenses_path.read_text()) if 'lenses' not in request else {}
-    return {'diff_outputs': outputs, 'run_id_output': env.new_id('rv', env.utc_now(), env.RUN_ID_RANDOM_BYTES),
+    return {'diff_outputs': [json.dumps(target) for target in targets],
+            'run_id_output': env.new_id('rv', env.utc_now(), env.RUN_ID_RANDOM_BYTES),
             'lenses_output': {'lenses': lenses.get('lenses', []), 'guardrails': lenses.get('guardrails', '')},
-            'needs_fixes_rounds': count_needs_fixes_rounds(request.get('rootRunId'))}
+            'needs_fixes_rounds': count_needs_fixes_rounds(request.get('rootRunId')),
+            'risk_class': review_risk_class(targets)}
 
 
 def count_needs_fixes_rounds(root_run_id) -> int:
@@ -50,3 +53,21 @@ def prepare_target(target: dict) -> dict:
     stat = gitcmd.text(repo, 'diff', '--shortstat', since or start, end)
     return {'repo_root': repo, 'review_base': start, 'head': end if head else None,
             'snapshot_tree': None if head else end, 'diff_stat': stat}
+
+
+def review_risk_class(targets: List[dict]) -> Optional[str]:
+    classes = [repo_risk_class(target) for target in targets]
+    if None in classes:
+        return None
+    return max(classes, key=risk.CLASS_ORDER.index)
+
+
+def repo_risk_class(target: dict) -> Optional[str]:
+    repo = target['repo_root']
+    row = registry.lookup(registry.origin_key(repo))
+    if not registry.is_gated(row):
+        return None
+    end = target['head'] or target['snapshot_tree']
+    entries = gitcmd.diff_entries(repo, target['review_base'], end)
+    stats = gitcmd.diff_stats(repo, target['review_base'], end)
+    return risk.classify(entries, stats, registry.risk_rules(row.risk_rules)).risk_class

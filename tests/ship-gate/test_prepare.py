@@ -65,3 +65,44 @@ class PrepareTest(unittest.TestCase):
         prepared = self.box.keel('review', 'prepare', stdin=json.dumps(request))
 
         self.assertEqual(prepared.json['needs_fixes_rounds'], 1)
+
+    def test_prepare_reportsTheTierOfTheReviewedDiff_byTheRepoRiskRules(self):
+        cases = [({'docs/guide.md': 'x\n'}, 'light'), ({'src/app.py': 'print(2)\n'}, 'standard'),
+                 ({'docs/guide.md': 'x\n', 'src/a/billing/pay.py': 'print(3)\n'}, 'heavy')]
+        for files, risk_class in cases:
+            with self.subTest(risk_class=risk_class):
+                base = self.repo.head()
+                head = self.repo.commit(files, risk_class)
+
+                prepared = self.prepare([{'repo': self.repo.path, 'base': base, 'head': head}])
+
+                self.assertEqual(prepared['risk_class'], risk_class)
+
+    def test_prepare_takesTheHeaviestTier_acrossReviewedRepos(self):
+        lib = self.box.clone('acme', 'lib')
+        self.box.registry(['acme/app\tcode\tmain\tacme\trequired', 'acme/lib\tcode\tmain\tacme\trequired'])
+        app_head = self.repo.commit({'docs/guide.md': 'x\n'}, 'docs')
+        lib_head = lib.commit({'src/lib.py': 'print(2)\n'}, 'logic')
+
+        prepared = self.prepare([{'repo': self.repo.path, 'base': self.base, 'head': app_head},
+                                 {'repo': lib.path, 'base': 'origin/main', 'head': lib_head}])
+
+        self.assertEqual(prepared['risk_class'], 'standard')
+
+    def test_prepare_reportsNoTier_whenAReviewedRepoHasNoGatedRow(self):
+        lib = self.box.clone('acme', 'lib')
+        app_head = self.repo.commit({'docs/guide.md': 'x\n'}, 'docs')
+        lib_head = lib.commit({'docs/guide.md': 'x\n'}, 'docs')
+        app_target = {'repo': self.repo.path, 'base': self.base, 'head': app_head}
+
+        unlisted = self.prepare([app_target, {'repo': lib.path, 'base': 'origin/main', 'head': lib_head}])
+        self.box.registry(['acme/app\toff\tmain\t-\tnone'])
+        off = self.prepare([app_target])
+
+        self.assertIsNone(unlisted['risk_class'])
+        self.assertIsNone(off['risk_class'])
+
+    def prepare(self, diffs):
+        prepared = self.box.keel('review', 'prepare', stdin=json.dumps({'diffs': diffs, 'lenses': []}))
+        self.assertEqual(prepared.rc, 0, prepared.stderr)
+        return prepared.json

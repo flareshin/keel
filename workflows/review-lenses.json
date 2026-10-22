@@ -1,6 +1,6 @@
 {
   "$comment": "Default lens set for lens-review when the caller passes no args.lenses. A private overlay or stack may supply its own lens set through args.lenses. lens-review adds the readable-code and rule-checks lenses itself.",
-  "usage": "First run keel review prepare with the workflow args as JSON on stdin. Parse its stdout as prepared, then Workflow({name:'lens-review', args:{...request, prepared}}) using the same request; do not run a prepare agent as well. See docs/review-policy.md for a shell example. Pass lenses and guardrails only to override this file. Audit and verification default to opus/high; fallback prepare and reporter default to sonnet/low, independently overridden by mechanicalModel. Named workflows are read at session start: start a fresh session after workflow edits.",
+  "usage": "First run keel review prepare with the workflow args as JSON on stdin. Parse its stdout as prepared, then Workflow({name:'lens-review', args:{...request, prepared}}) using the same request; do not run a prepare agent as well. See docs/review-policy.md for a shell example. Pass lenses and guardrails only to override this file. Audit and verification use opus at an effort set by the prepared risk tier (medium up to standard, high for heavy or no tier) unless effort is given; fallback prepare and reporter default to sonnet/low, independently overridden by mechanicalModel. Named workflows are read at session start: start a fresh session after workflow edits.",
   "lenses": [
     {
       "key": "reuse",

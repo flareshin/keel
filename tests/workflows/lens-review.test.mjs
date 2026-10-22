@@ -236,7 +236,11 @@ test('lensReview_asksAuthorToStepBack_whenThisNeedsFixesIsTheThirdOnTheRoot', as
 })
 
 test('lensReview_omitsStepBack_belowTheCapOrOnPassOrWithoutACount', async () => {
-  for (const [name, options, round] of [['second round', { priorRounds: 1 }, 2], ['pass after two', { priorRounds: 2, isClean: true }, 2], ['no count', {}, 1]]) {
+  const cases = [
+    ['second round', { priorRounds: 1 }, 2], ['pass after two', { priorRounds: 2, isClean: true }, 2], ['pass after three', { priorRounds: 3, isClean: true }, 3],
+    ['no count', {}, 1], ['text count', { priorRounds: '2' }, 1], ['negative count', { priorRounds: -1 }, 1],
+  ]
+  for (const [name, options, round] of cases) {
     const result = await runFixDelta(options)
     assert.equal(result.needsFixesRound, round, name)
     assert.doesNotMatch(result.report, /Step back:/, name)

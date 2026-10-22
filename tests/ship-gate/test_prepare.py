@@ -55,3 +55,13 @@ class PrepareTest(unittest.TestCase):
         self.assertEqual((delta.rc, delta.json['needs_fixes_rounds']), (0, 2))
         self.assertEqual(root.json['needs_fixes_rounds'], 0)
         self.assertEqual(other.json['needs_fixes_rounds'], 0)
+
+    def test_prepare_countsTheLongestRepoChain_notTheSumAcrossRepos(self):
+        lib = self.box.clone('acme', 'lib')
+        for repo in (self.repo, lib):
+            self.box.review(repo, verdict='NEEDS_FIXES')
+        request = {'diffs': [{'repo': self.repo.path, 'base': self.base}], 'lenses': [], 'rootRunId': 'rv-root-0001'}
+
+        prepared = self.box.keel('review', 'prepare', stdin=json.dumps(request))
+
+        self.assertEqual(prepared.json['needs_fixes_rounds'], 1)

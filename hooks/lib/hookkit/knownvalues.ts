@@ -1,11 +1,4 @@
-/**
- * Known secret values the agent must never write out (F-secrets; overlay `git-guard/known-values.tsv`).
- *
- * Rows are `source<TAB>pattern`: `file` globs config files whose secret-named keys supply values; `env`
- * names a variable whose value counts. Values stay in memory: a hit names file, line and key, never the value.
- */
-import { globSync, readFileSync } from "node:fs";
-import { basename, codePointLength, expandUser, PY_SPACE, PY_WORD, sortedByCodePoint, splitlines } from "./pycompat.ts";
+import { basename, codePointLength, expandUser, glob, PY_SPACE, PY_WORD, sortedByCodePoint, splitlines, tryReadText } from "./pycompat.ts";
 import { OverlayDataError, readTsv } from "./overlay.ts";
 
 export const HEADER = ["source", "pattern"] as const;
@@ -19,13 +12,11 @@ const KEY_VALUE_RE = new RegExp(
 const TRAILING_COMMENT_RE = new RegExp(`${SPACE}+#[^\\n]*$`, "u");
 const HUNK_RE = new RegExp(`^@@ -[^${PY_SPACE}]+ \\+([0-9]+)`, "u");
 
-/** (path, line number, text) */
 export type Line = readonly [path: string, number: number, text: string];
 
 export interface KnownValue {
   value: string;
   key: string;
-  /** config file basename, or "env" */
   origin: string;
 }
 
@@ -53,7 +44,7 @@ export function load(path: string): KnownValue[] {
     if (source === SOURCE_ENV) {
       values.push({ value: process.env[pattern] ?? "", key: pattern, origin: SOURCE_ENV });
     } else if (source === SOURCE_FILE) {
-      for (const file of sortedByCodePoint(globSync(expandUser(pattern)))) values.push(...fileValues(file));
+      for (const file of sortedByCodePoint(glob(expandUser(pattern)))) values.push(...fileValues(file));
     } else {
       throw new OverlayDataError(`${path}: source must be ${SOURCE_FILE} or ${SOURCE_ENV}, not '${source}'`);
     }
@@ -74,7 +65,6 @@ export function* numberedLines(path: string, text: string): Generator<Line> {
   for (const [index, line] of lines.entries()) yield [path, index + 1, line];
 }
 
-/** Every added line of a unified diff with its path and new line number. */
 export function* addedLines(diff: string): Generator<Line> {
   let path: string | null = null;
   let number = 0;
@@ -97,12 +87,9 @@ export function* addedLines(diff: string): Generator<Line> {
 }
 
 function fileValues(file: string): KnownValue[] {
-  let lines: string[];
-  try {
-    lines = splitlines(readFileSync(file, "utf8"));
-  } catch {
-    return [];
-  }
+  const text = tryReadText(file);
+  if (text === null) return [];
+  const lines = splitlines(text);
   const values: KnownValue[] = [];
   for (const line of lines) {
     const match = KEY_VALUE_RE.exec(line);

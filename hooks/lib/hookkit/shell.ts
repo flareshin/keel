@@ -1,10 +1,3 @@
-/**
- * Read a Bash command line into simple commands without running it: the one parser every hook uses.
- *
- * Covers separators, quoting, `$(...)` and backtick bodies, heredocs and here-strings (code only when a
- * shell reads them), `bash -c` / `eval` strings, prefix assignments, redirects and wrapper words such as
- * `env` or `timeout`. A reader for policy checks, not a shell grammar: what it cannot follow stays words.
- */
 import {
   arraysEqual, basename, codePointLength, expandUser, expandVars, isDigits, joinPath, lstripChar, normalizePath, partition,
   PY_SPACE, PY_WORD, rstripChar,
@@ -34,14 +27,9 @@ const EXEC_VALUE_OPTIONS: ReadonlySet<string> = new Set(["-a"]);
 const NICE_VALUE_OPTIONS: ReadonlySet<string> = new Set(["-n", "--adjustment"]);
 const TIMEOUT_FLAGS: ReadonlySet<string> = new Set(["--preserve-status", "--foreground", "-v", "--verbose"]);
 const TIMEOUT_VALUE_OPTIONS: ReadonlySet<string> = new Set(["-k", "-s", "--kill-after", "--signal"]);
-/**
- * Not -D/--chdir, -R/--chroot or -i/--login: they move the command out of the call's directory, so they stay
- * unattributable options; -D/-R still skip their directory value.
- */
 const SUDO_DIRECTORY_OPTIONS: ReadonlySet<string> = new Set(["-D", "--chdir", "-R", "--chroot"]);
 const SUDO_MOVING_OPTIONS: ReadonlySet<string> = new Set([...SUDO_DIRECTORY_OPTIONS, "-i", "--login"]);
 const ENV_UNSET_OPTION = "-u";
-/** -S splits its value into words env reads again, so its value may hold -C; -P is BSD env's search path. */
 const ENV_MOVING_OPTIONS: ReadonlySet<string> = new Set(["-C", "--chdir", "-S", "--split-string"]);
 const ENV_VALUE_OPTIONS: ReadonlySet<string> = new Set([ENV_UNSET_OPTION, "-P"]);
 const SUDO_FLAGS: ReadonlySet<string> = new Set([
@@ -55,12 +43,10 @@ const SUDO_VALUE_OPTIONS: ReadonlySet<string> = new Set([
 export const GIT_VALUE_OPTIONS: ReadonlySet<string> =
   new Set(["-C", "-c", "--config-env", "--git-dir", "--work-tree", "--namespace", "--exec-path"]);
 const PUSH_VALUE_OPTIONS: ReadonlySet<string> = new Set(["--push-option", "--receive-pack", "--exec"]);
-/** `-o <value>`, `-o<value>`, `-uo <value>`: the rest of the cluster, else the next word. */
 const PUSH_OPTION_LETTER = "o";
 const PUSH_REPO_OPTION = "--repo";
 const WHOLE_REPO_PUSH_OPTIONS: ReadonlySet<string> = new Set(["--all", "--branches", "--mirror"]);
 const GH_REPO_OPTIONS: ReadonlySet<string> = new Set(["-R", "--repo"]);
-/** `pr merge`, `pr create` */
 const GH_SUBCOMMAND_DEPTH = 2;
 const CONFIG_READ_SUBCOMMANDS: ReadonlySet<string> = new Set(["get", "list"]);
 const CONFIG_READ_OPTIONS: ReadonlySet<string> = new Set([
@@ -109,15 +95,11 @@ function commandName(argv: readonly string[]): string {
 
 export class SimpleCommand {
   argv: string[] = [];
-  /** [(name, value)] written before the command word */
   assignments: Assignment[] = [];
   redirects: Redirect[] = [];
-  /** bodies, in order */
   heredocs: string[] = [];
-  /** inside $(...), backticks, bash -c, eval or a shell-fed heredoc */
   nested: boolean;
   pipesToNext = false;
-  /** the command whose code string or substitution this one came from */
   parent: SimpleCommand | null;
 
   constructor(nested: boolean = false, parent: SimpleCommand | null = null) {
@@ -125,22 +107,17 @@ export class SimpleCommand {
     this.parent = parent;
   }
 
-  /** The command word without its directory. */
   get name(): string {
     return commandName(this.argv);
   }
 }
 
-/** One simple command as the hooks judge it: wrappers off, with the directory and environment it runs in. */
 export class Step {
   argv: string[];
-  /** variables exported earlier in the call, then this command's own prefix assignments */
   environment: Variables;
   directory: string;
   command: SimpleCommand;
-  /** shell variables bash expands this command's words with */
   expansion: Variables;
-  /** see Invocation */
   unattributableOptions: string[];
 
   constructor(argv: string[], environment: Variables, directory: string, command: SimpleCommand,
@@ -162,18 +139,12 @@ export class Step {
   }
 }
 
-/** A command with its wrapper words (`env`, `nohup`, `timeout`, ...) taken off. */
 export class Invocation {
   argv: string[];
   assignments: Assignment[];
   clearsEnv = false;
   removedNames: Set<string> = new Set();
-  /**
-   * Wrapper options recorded as read past: unknown ones, sudo's -D, -R (with their directory) and -i, and exec's -a
-   * naming a git program or a run-time word. With any, argv and the directory are a best guess.
-   */
   unattributableOptions: string[] = [];
-  /** one of them runs the command elsewhere: `sudo -i`, `env --chdir=…` */
   movesDirectory = false;
 
   constructor(argv: string[], assignments: Assignment[]) {
@@ -190,15 +161,10 @@ export class Invocation {
   }
 }
 
-/** The words after `git push`, read the way git reads them. */
 export class PushArguments {
-  /** a remote name or URL; null: the current branch's push remote */
   remote: string | null = null;
-  /** as given, `+` and `:` included */
   refspecs: string[] = [];
-  /** `--force`, `--force-with-lease=main`, ... */
   longOptions: string[] = [];
-  /** the letters of every `-xyz` cluster */
   shortFlags = "";
 
   get wholeRepo(): boolean {
@@ -209,9 +175,7 @@ export class PushArguments {
 export class WriteTargets {
   written: string[] = [];
   removed: string[] = [];
-  /** files whose content the written targets receive (cp, mv, ln, ...) */
   sources: string[] = [];
-  /** writes files it does not name (git apply, patch) */
   unknown = false;
 
   constructor(written: string[] = []) {
@@ -223,7 +187,6 @@ export class WriteTargets {
   }
 }
 
-/** Every simple command in `text`: top-level ones first in order, then nested ones (after their parent). */
 export function parseCommands(text: string): SimpleCommand[] {
   const commands: SimpleCommand[] = [];
   new Reader(text, false, commands).read();
@@ -231,12 +194,6 @@ export function parseCommands(text: string): SimpleCommand[] {
   return commands;
 }
 
-/**
- * Every simple command of a Bash call with the directory and environment it runs in.
- *
- * `cd`, `pushd`/`popd` and `export` are followed within each shell; a script a command runs
- * (`bash -c`, `eval`, `$(...)`, a shell-fed heredoc) starts where that command stood.
- */
 export function steps(text: string, cwd: string): Step[] {
   const scopes = new Map<SimpleCommand | null, ShellScope>([[null, new ShellScope(cwd, new Map())]]);
   const stepOf = new Map<SimpleCommand, Step>();
@@ -259,11 +216,9 @@ export function steps(text: string, cwd: string): Step[] {
   return Array.from(stepOf.values());
 }
 
-/** Directory and exported variables of one shell: the call itself, or a script a command runs. */
 class ShellScope {
   directory: string;
   exported: Variables;
-  /** plain `NAME=value` assignments: expanded in later words, never passed to a child */
   variables: Variables = new Map();
   pushed: string[] = [];
 
@@ -293,7 +248,6 @@ class ShellScope {
     }
   }
 
-  /** `export NAME=value` sets and exports; `export NAME` exports the plain variable's current value. */
   private exportAll(args: readonly string[]): void {
     for (const arg of args) {
       const [variable, hasValue, value] = partition(arg, "=");
@@ -306,7 +260,6 @@ class ShellScope {
     }
   }
 
-  /** A plain `NAME=value`: the last assignment wins, so an exported NAME keeps being exported with it. */
   private assign(assignments: readonly Assignment[]): void {
     for (const [variable, value] of assignments) {
       const target = this.exported.has(variable) ? this.exported : this.variables;
@@ -321,11 +274,6 @@ class ShellScope {
   }
 }
 
-/**
- * `target` (a `cd` or `git -C` directory, a file a command writes or reads) as a path from `directory`: `~`,
- * `$VAR` and `${VAR}` spelled out from `environment` over the hook's own; a variable neither knows stays as written.
- * The hook's own PWD/OLDPWD name the hook process's directory, not the step's, so they are not used.
- */
 export function resolveDirectory(directory: string, target: string, environment: Variables): string {
   const lookup = (name: string): string | undefined => {
     if (environment.has(name)) return environment.get(name);
@@ -338,7 +286,6 @@ export function resolveDirectory(directory: string, target: string, environment:
   return normalizePath(joinPath(directory, expandUser(expanded)));
 }
 
-/** The checkout a `git …` argv acts on: `directory` moved by each `-C` before the subcommand. */
 export function gitDirectory(argv: readonly string[], directory: string, environment: Variables): string {
   const words = argv.slice(1, gitSubcommandIndex(argv) ?? undefined).values();
   for (const word of words) {
@@ -347,10 +294,6 @@ export function gitDirectory(argv: readonly string[], directory: string, environ
   return directory;
 }
 
-/**
- * A `gh …` argv with each -R/--repo given before the subcommand words moved behind them, so
- * `gh -R o/r pr merge 7` and `gh pr -R o/r merge 7` both read as `gh pr merge 7 -R o/r`.
- */
 export function ghSubcommandArgv(argv: readonly string[]): string[] {
   let head = argv.slice(0, 1);
   let moved: string[] = [];
@@ -371,7 +314,6 @@ export function ghSubcommandArgv(argv: readonly string[]): string[] {
   return [...head, ...rest, ...moved];
 }
 
-/** The repo of a gh repo flag that carries its value: `--repo=o/r`, `-Ro/r` or `-R=o/r`; null for any other word. */
 export function attachedGhRepo(word: string): string | null {
   if (word.startsWith("--repo=")) return partition(word, "=")[2];
   if (word.startsWith("-R") && codePointLength(word) > 2) {
@@ -381,10 +323,6 @@ export function attachedGhRepo(word: string): string | null {
   return null;
 }
 
-/**
- * The words after `git push`: a value-taking option drops its value; every word after `--` is positional;
- * `--repo` names the remote only when no remote word is given (git-push(1)).
- */
 export function readPushArguments(args: readonly string[]): PushArguments {
   const pushed = new PushArguments();
   const positional: string[] = [];
@@ -419,10 +357,6 @@ export function readPushArguments(args: readonly string[]): PushArguments {
   return pushed;
 }
 
-/**
- * `git config <args>` only reads: the get or list subcommand, a read option, or at most one name with no
- * write subcommand or option (git-config(1)).
- */
 export function isConfigRead(args: readonly string[]): boolean {
   const subcommand = args[0];
   if ((subcommand !== undefined && CONFIG_READ_SUBCOMMANDS.has(subcommand)) || args.some((arg) => CONFIG_READ_OPTIONS.has(arg))) {
@@ -433,17 +367,12 @@ export function isConfigRead(args: readonly string[]): boolean {
   return !writes && configOperands(args).length <= 1;
 }
 
-/**
- * The key (or section) `git config <args>` names: its first operand after a leading subcommand, option values
- * skipped; null when it names none.
- */
 export function configKey(args: readonly string[]): string | null {
   const first = args[0];
   const leadingSubcommand = first !== undefined && (CONFIG_READ_SUBCOMMANDS.has(first) || CONFIG_WRITE_SUBCOMMANDS.has(first));
   return configOperands(leadingSubcommand ? args.slice(1) : args)[0] ?? null;
 }
 
-/** The words of `git config <args>` that are neither an option nor an option's separate value. */
 function configOperands(args: readonly string[]): string[] {
   const operands: string[] = [];
   const words = args.values();
@@ -470,7 +399,6 @@ export function unwrap(command: SimpleCommand): Invocation {
   return invocation;
 }
 
-/** `git-push …` runs as `git push …`; a program word resolved at run time stays as written. */
 function readDashedGitAsGit(invocation: Invocation): void {
   const program = invocation.argv[0];
   if (program === undefined || RUN_TIME_WORD_RE.test(program)) return;
@@ -499,12 +427,6 @@ export function writeTargets(command: SimpleCommand): WriteTargets {
   return targets;
 }
 
-/**
- * True when a Bash command line writes or removes files (report-gate's mutation signal).
- *
- * `exceptUnder` lists directory prefixes whose files do not count; an inline write, a write the
- * parser cannot place (`git apply`, `patch`) or a relative target always counts.
- */
 export function commandWritesFiles(text: string, exceptUnder: readonly string[] = []): boolean {
   if (INLINE_WRITE_RE.test(text)) return true;
   for (const command of parseCommands(text)) {
@@ -515,7 +437,6 @@ export function commandWritesFiles(text: string, exceptUnder: readonly string[] 
   return false;
 }
 
-/** Index of the subcommand word of a `git ...` argv, global options skipped; null for any other command. */
 export function gitSubcommandIndex(argv: readonly string[]): number | null {
   if (argv.length === 0 || basename(argv[0] ?? "") !== "git") return null;
   let index = 1;
@@ -528,7 +449,6 @@ export function gitSubcommandIndex(argv: readonly string[]): number | null {
   return null;
 }
 
-/** `push` for git's own `git-push` program at any path; null for any other word. */
 export function dashedGitSubcommand(word: string): string | null {
   return DASHED_GIT_PROGRAM_RE.exec(basename(word))?.[1] ?? null;
 }
@@ -538,7 +458,6 @@ function gitSubcommand(argv: readonly string[]): string | null {
   return index === null ? null : (argv[index] ?? null);
 }
 
-/** Files the redirects write; `>&` onto a descriptor number or `-` writes none. */
 function redirectTargets(command: SimpleCommand): string[] {
   return command.redirects
     .filter((redirect) => redirect.target !== "/dev/null" && (FILE_WRITE_REDIRECTS.has(redirect.op) || (
@@ -596,22 +515,16 @@ function operands(verb: string, args: readonly string[]): string[] {
   return found;
 }
 
-/** The files an in-place edit rewrites: without -e or -f, sed's first operand is its script. */
 function editedFiles(verb: string, args: readonly string[]): string[] {
   const files = operands(verb, args).filter((operand) => operand !== "");
   if (verb === "sed" && !namesSedScriptOption(args)) return files.slice(1);
   return files;
 }
 
-/**
- * True when an option may carry the script; a short cluster holding e or f counts, to keep its files.
- * GNU sed takes any unambiguous long-option prefix: only --expression starts with --e, only --file with --fi.
- */
 function namesSedScriptOption(args: readonly string[]): boolean {
   return args.some((arg) => arg.startsWith("--e") || arg.startsWith("--fi") || SED_SCRIPT_OPTION_RE.test(arg));
 }
 
-/** BSD sed also edits in place under -I; perl's -I is an include path. */
 function editsInPlace(verb: string, args: readonly string[]): boolean {
   const cluster = verb === "sed" ? /^-[a-zA-Z]*[iI]/ : /^-[a-zA-Z]*[i]/;
   return args.some((arg) => arg.startsWith("--in-place") || (cluster.test(arg) && !arg.startsWith("--")));
@@ -650,11 +563,6 @@ function commandAfterOptions(invocation: Invocation, args: string[], flags: Read
   return optionsAndCommand(invocation, args, flags, valueOptions, movingOptions, directoryOptions)[1];
 }
 
-/**
- * The known options a wrapper puts before its command, as {option: value, or null for a flag}, and `args` after
- * them. An option outside `flags` and `valueOptions` is read past as a flag and recorded as unattributable; a short
- * cluster is read letter by letter (`-iu bob`).
- */
 function optionsAndCommand(invocation: Invocation, args: string[], flags: ReadonlySet<string>,
                            valueOptions: ReadonlySet<string>, movingOptions: ReadonlySet<string> = NO_OPTIONS,
                            directoryOptions: ReadonlySet<string> = NO_OPTIONS): [Map<string, string | null>, string[]] {
@@ -686,11 +594,6 @@ function optionsAndCommand(invocation: Invocation, args: string[], flags: Readon
   return [options, args];
 }
 
-/**
- * Read a short cluster as getopt does: each letter a flag until one that takes a value, which is the rest of the
- * word or else the next word (`-iu bob`, `-nuroot`, `-la x`). A cluster holding a letter the wrapper does not know
- * or one that moves the command is recorded. True when the value is the next word.
- */
 function readCluster(invocation: Invocation, word: string, nextWords: readonly string[], options: Map<string, string | null>,
                      flags: ReadonlySet<string>, valueOptions: ReadonlySet<string>, movingOptions: ReadonlySet<string>,
                      directoryOptions: ReadonlySet<string>): boolean {
@@ -711,10 +614,6 @@ function readCluster(invocation: Invocation, word: string, nextWords: readonly s
   return false;
 }
 
-/**
- * Record an option word read past, and whether it runs the command elsewhere: a long option by its name, a
- * short cluster by a moving letter before any letter whose value fills the rest (`-nD/tmp` moves, `-nC3` does not).
- */
 function recordUnreadOption(invocation: Invocation, word: string, movingOptions: ReadonlySet<string>,
                             valueOptions: ReadonlySet<string>): void {
   invocation.unattributableOptions.push(word);
@@ -731,7 +630,6 @@ function recordUnreadOption(invocation: Invocation, word: string, movingOptions:
   }
 }
 
-/** (option, value) for a flag or a known long option with its value attached (`--user=bob`, `--preserve-env=PATH`); null for any other word. */
 function knownOption(word: string, flags: ReadonlySet<string>, valueOptions: ReadonlySet<string>): [string, string | null] | null {
   if (flags.has(word)) return [word, null];
   const [name, hasValue, value] = partition(word, "=");
@@ -745,12 +643,12 @@ function execCommand(invocation: Invocation, args: string[]): string[] {
     invocation.assignments = [];
   }
   const argv0 = options.get("-a") ?? "";
-  if (dashedGitSubcommand(argv0) || RUN_TIME_WORD_RE.test(argv0)) {
-    // A git binary runs the subcommand its argv[0] names (`exec -a git-push git …` pushes); a shim such as
-    // macOS /usr/bin/git drops argv[0]. Either may run, so the words stay as written and -a is recorded.
-    invocation.unattributableOptions.push("-a");
-  }
+  if (mayChooseGitSubcommand(argv0)) invocation.unattributableOptions.push("-a");
   return command;
+}
+
+function mayChooseGitSubcommand(argv0: string): boolean {
+  return dashedGitSubcommand(argv0) !== null || RUN_TIME_WORD_RE.test(argv0);
 }
 
 function niceCommand(invocation: Invocation, args: string[]): string[] {
@@ -758,10 +656,6 @@ function niceCommand(invocation: Invocation, args: string[]): string[] {
   return commandAfterOptions(invocation, args, NO_OPTIONS, NICE_VALUE_OPTIONS);
 }
 
-/**
- * env's command after its assignments and options; one it does not read (`--chdir`, `-S`) is read past as a flag
- * and recorded as unattributable.
- */
 function envCommand(invocation: Invocation, args: string[]): string[] {
   while (args.length > 0) {
     const word = args[0] ?? "";
@@ -791,7 +685,6 @@ function envCommand(invocation: Invocation, args: string[]): string[] {
   return args;
 }
 
-/** Parse the strings a shell runs (bash -c, eval, a heredoc fed to a shell) as nested commands. */
 function expandCodeStrings(commands: SimpleCommand[]): void {
   let index = 0;
   while (index < commands.length) {
@@ -840,14 +733,12 @@ interface PendingHeredoc {
   stripTabs: boolean;
 }
 
-/** Single pass over one command string; appends finished SimpleCommands to `out`. */
 class Reader {
   text: string;
   position = 0;
   nested: boolean;
   out: SimpleCommand[];
   parent: SimpleCommand | null;
-  /** [(body, the command whose word holds it)] */
   substitutions: Array<[string, SimpleCommand]> = [];
   pendingHeredocs: PendingHeredoc[] = [];
   current: SimpleCommand;
@@ -974,12 +865,10 @@ class Reader {
   }
 }
 
-/** `NAME` when the raw word begins `NAME=` with no quoting before the `=`. */
 function assignmentName(rawWord: string): string | null {
   return ASSIGNMENT_NAME_RE.exec(rawWord)?.[1] ?? null;
 }
 
-/** (word with quotes removed, whether any part was quoted, end index). `$(...)` stays verbatim. */
 function readWord(text: string, start: number, substitutions: string[]): [string, boolean, number] {
   const parts: string[] = [];
   let quoted = false;
@@ -1052,10 +941,6 @@ function readDoubleQuoted(text: string, start: number, substitutions: string[]):
   return [parts.join(""), position];
 }
 
-/**
- * (verbatim text, end index) of the `$(...)` or backtick substitution starting at `position`, its body
- * added to `substitutions`; null when none starts there.
- */
 function readSubstitution(text: string, position: number, substitutions: string[]): [string, number] | null {
   let body: string;
   let verbatim: string;
@@ -1081,7 +966,6 @@ function matchHeredocStart(text: string, position: number): RegExpExecArray | nu
   return HEREDOC_START_RE.exec(text);
 }
 
-/** (body, index after the closing paren) for a `(` opened just before `start`; heredoc-aware. */
 function readBalanced(text: string, start: number): [string, number] {
   let depth = 1;
   let position = start;

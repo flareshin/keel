@@ -1,4 +1,3 @@
-/** `subprocess.run(args, capture_output=True, text=True, timeout=...)`: a failed start or an expired timeout throws. */
 import { spawnSync } from "node:child_process";
 import { constants } from "node:os";
 

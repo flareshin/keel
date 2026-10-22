@@ -1,6 +1,5 @@
-/** Overlay TSV data files (DESIGN Interfaces (a): header must match, `#` and blank lines skipped). */
 import { statSync } from "node:fs";
-import { arraysEqual, fileLines, strip } from "./pycompat.ts";
+import { arraysEqual, universalNewlineLines, isSystemError, strip } from "./pycompat.ts";
 
 export class OverlayDataError extends Error {
   override name = "OverlayDataError";
@@ -9,19 +8,18 @@ export class OverlayDataError extends Error {
 function isFile(path: string): boolean {
   try {
     return statSync(path).isFile();
-  } catch {
-    return false;
+  } catch (error) {
+    if (isSystemError(error)) return false;
+    throw error;
   }
 }
 
-/** Rows as objects keyed by the file's header, which is `header` optionally followed by `optional`;
- * a missing file means no data. */
 export function readTsv(path: string, header: readonly string[], optional: readonly string[] = []): Array<Record<string, string>> {
   if (!isFile(path)) return [];
   const withOptional = [...header, ...optional];
   const rows: Array<Record<string, string>> = [];
   let columns: string[] | null = null;
-  fileLines(path).forEach((line, index) => {
+  universalNewlineLines(path).forEach((line, index) => {
     const number = index + 1;
     if (strip(line) === "" || line.startsWith("#")) return;
     const cells = line.split("\t");

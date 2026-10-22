@@ -7,11 +7,11 @@ import { GitError, isGitRepo, runGit } from "./gitutil.ts"
 import { iterRegistrations } from "./hook_settings.ts"
 import { FAIL, PASS, stderrExcerpt, WARN } from "./metrics.ts"
 import { isOsError, ValueError } from "./pyerrors.ts"
-import { readText, textLines } from "./pyio.ts"
+import { readText } from "./pyio.ts"
 import { pythonJsonLoads } from "./pyjson.ts"
 import { isExecutable, isFile, isLink, pathExists, pyBasename, pyDirname, pyJoin, pyRelpath, walk } from "./pypath.ts"
 import { compilePythonRegex } from "./pyregex.ts"
-import { pyLstrip, sortedByCodePoint } from "./pystr.ts"
+import { pyLstrip, pySplitlines, sortedByCodePoint } from "./pystr.ts"
 import { isJsonObject, pyStr, pyTypeName } from "./pyvalue.ts"
 import type { JsonObject, PyValue } from "./pyvalue.ts"
 import { runProcess, TimeoutExpired } from "./subprocess.ts"
@@ -115,7 +115,7 @@ function skillRulesTotal(skillPaths: string[]): Assertion {
 }
 
 function checkedLines(path: string, rulesSectionOnly: boolean): NumberedLine[] {
-  const lines = textLines(readText(path))
+  const lines = pySplitlines(readText(path))
   const numbered = rulesSectionOnly ? rulesSection(lines) : lines.map((line, index): NumberedLine => [index + 1, line])
   return outsideFences(numbered)
 }

@@ -7,8 +7,8 @@ import { isOsError, ValueError } from "./pyerrors.ts"
 import { pythonJsonLoads } from "./pyjson.ts"
 import { expanduser, isExecutable, isFile, pyJoin } from "./pypath.ts"
 import { firstCodePoints, pyStrip } from "./pystr.ts"
-import { isJsonObject, isPyInt, pyRepr, pyStr } from "./pyvalue.ts"
-import type { JsonObject, PyValue } from "./pyvalue.ts"
+import { isJsonObject, isPyInt, pyIntSign, pyRepr, pyStr } from "./pyvalue.ts"
+import type { JsonObject, PyInt, PyValue } from "./pyvalue.ts"
 import { runProcess, TimeoutExpired } from "./subprocess.ts"
 import type { RunResult } from "./subprocess.ts"
 
@@ -26,18 +26,18 @@ export class MetricError extends Error {}
 export interface MetricResult {
   id: string
   metric: string
-  count: number
+  count: PyInt
   items: PyValue[]
   status: string
   error?: string
 }
 
-export type MetricItems = [number, PyValue[]]
+export type MetricItems = [PyInt, PyValue[]]
 
 export function evaluateMetric(row: LedgerRow, since: string, today: string): MetricResult {
   try {
     const [count, items] = collectMetricItems(row.metric, since)
-    const status = count > 0 ? PASS : row.isInGrace(today) ? GRACE : FAIL
+    const status = pyIntSign(count) > 0 ? PASS : row.isInGrace(today) ? GRACE : FAIL
     return { id: row.id, metric: row.metric, count, items, status }
   } catch (error) {
     if (!(error instanceof MetricError)) throw error
@@ -99,7 +99,7 @@ function runnerItems(runner: string, since: string): MetricItems {
   const count = isJsonObject(payload) ? payload["count"] : undefined
   const items = isJsonObject(payload) ? payload["items"] : undefined
   if (!isPyInt(count) || !Array.isArray(items)) throw new MetricError(`runner ${runner} must print {"count": int, "items": [...]}`)
-  return [Number(count), items]
+  return [count, items]
 }
 
 export function findRunner(runner: string): string | null {

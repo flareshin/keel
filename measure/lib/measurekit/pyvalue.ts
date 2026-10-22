@@ -13,8 +13,19 @@ export function isJsonObject(value: PyValue | undefined): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value) && !(value instanceof PyFloat)
 }
 
-export function isPyInt(value: PyValue | undefined): value is number | bigint | boolean {
+export type PyInt = number | bigint | boolean
+
+export function isPyInt(value: PyValue | undefined): value is PyInt {
   return typeof value === "bigint" || typeof value === "boolean" || (typeof value === "number" && Number.isInteger(value))
+}
+
+export function pyIntSign(value: PyInt): -1 | 0 | 1 {
+  const exact = BigInt(value)
+  return exact > 0n ? 1 : exact < 0n ? -1 : 0
+}
+
+export function pyIntText(value: PyInt): string {
+  return BigInt(value).toString()
 }
 
 export function pyTruthy(value: PyValue | undefined): boolean {

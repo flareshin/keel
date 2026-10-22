@@ -71,6 +71,16 @@ describe("measure run", () => {
     assert.deepEqual([result.count, result.items, result.status], [2, ["a", "b"], "PASS"])
   })
 
+  it("run_keepsTheRunnerCountAsPrinted_whenItIsABooleanOrBeyondDoublePrecision", () => {
+    givenKeelRows(ledgerRow("C-demo", { metric: "run:odd" }))
+    for (const printed of ["true", "12345678901234567890"]) {
+      box.write("keel/measure/metrics/odd", `#!/bin/bash\necho '{"count": ${printed}, "items": []}'\n`, true)
+      const [completed] = box.runJson("run", ["C-demo"])
+      assert.equal(completed.status, 0)
+      assert.ok(completed.stdout.includes(`"count": ${printed},`), completed.stdout)
+    }
+  })
+
   it("run_failsWithError_whenRunnerPrintsNoJson", () => {
     givenKeelRows(ledgerRow("C-demo", { metric: "run:broken", grace_until: FUTURE }))
     box.write("keel/measure/metrics/broken", "#!/bin/bash\necho not-json\n", true)

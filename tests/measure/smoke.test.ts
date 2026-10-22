@@ -226,6 +226,21 @@ describe("file checks", () => {
     assertStatus("id-tagging", "principles", "FAIL", "line 2: bullet without [ID]")
   })
 
+  it("idTagging_failsOnABulletAfterAUnicodeLineSeparator", () => {
+    harness.box.write("keel/PRINCIPLES.md", "# Principles\n\n- [K1] Tagged.\u2028- untagged bullet\n")
+    assertStatus("id-tagging", "principles", "FAIL", "line 4: bullet without [ID]")
+  })
+
+  it("idTagging_failsOnABulletAfterAFormFeed", () => {
+    harness.box.write("keel/PRINCIPLES.md", "# Principles\n\n- [K1] Tagged.\f- untagged bullet\n")
+    assertStatus("id-tagging", "principles", "FAIL", "line 4: bullet without [ID]")
+  })
+
+  it("idTagging_numbersTheRulesSectionOfASkillByPythonLineBreaks", () => {
+    harness.box.write("keel/skills/demo/SKILL.md", "# Demo\n\u0085\n## Rules\n\n- [K1] Tagged.\v- untagged bullet\n")
+    assertStatus("id-tagging", "skill:demo", "FAIL", "line 7: bullet without [ID]")
+  })
+
   it("idTagging_fails_whenATagNamesNoLedgerRow", () => {
     harness.box.write("keel/PRINCIPLES.md", "1. [C-ghost] Unknown.\n")
     assertStatus("id-tagging", "principles", "FAIL", "line 1: unknown id [C-ghost]")

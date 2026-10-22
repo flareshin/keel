@@ -50,7 +50,7 @@ export function translateNewlines(text: string): string {
   return text.replace(/\r\n?/g, "\n")
 }
 
-export function textLines(text: string): string[] {
+export function newlineSeparatedLines(text: string): string[] {
   const lines = text.split("\n")
   if (lines[lines.length - 1] === "") lines.pop()
   return lines

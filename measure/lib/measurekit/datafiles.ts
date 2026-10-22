@@ -1,7 +1,7 @@
 import fs from "node:fs"
 
 import { ValueError } from "./pyerrors.ts"
-import { readText, textLines } from "./pyio.ts"
+import { readText, newlineSeparatedLines } from "./pyio.ts"
 import { pythonJsonDumps, pythonJsonLoads } from "./pyjson.ts"
 import { pathExists, pyDirname } from "./pypath.ts"
 import { pyStrip } from "./pystr.ts"
@@ -13,7 +13,7 @@ export class TsvError extends Error {}
 export type NumberedLine = [number, string]
 
 export function dataLines(path: string): NumberedLine[] {
-  const numbered = textLines(readText(path)).map((line, index): NumberedLine => [index + 1, line])
+  const numbered = newlineSeparatedLines(readText(path)).map((line, index): NumberedLine => [index + 1, line])
   return numbered.filter(([, line]) => pyStrip(line) !== "" && !line.startsWith("#"))
 }
 
@@ -40,7 +40,7 @@ export function readJsonl(path: string): { records: JsonObject[]; malformed: num
   if (!pathExists(path)) return { records: [], malformed: 0 }
   const records: JsonObject[] = []
   let malformed = 0
-  for (const line of textLines(readText(path)).filter((candidate) => pyStrip(candidate) !== "")) {
+  for (const line of newlineSeparatedLines(readText(path)).filter((candidate) => pyStrip(candidate) !== "")) {
     const record = parseRecord(line)
     if (record === null) malformed++
     else records.push(record)

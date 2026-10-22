@@ -6,6 +6,7 @@ import os from "node:os"
 import path from "node:path"
 
 import { parseIsoDate } from "../../measure/lib/measurekit/pydate.ts"
+import { newlineSeparatedLines, readText } from "../../measure/lib/measurekit/pyio.ts"
 import { JsonDecodeError, pythonJsonDumps, pythonJsonLoads } from "../../measure/lib/measurekit/pyjson.ts"
 import { expanduser, pyBasename, pyDirname, pyJoin, pyNormpath, pyRelpath, pySplitext, realpath } from "../../measure/lib/measurekit/pypath.ts"
 import { compilePythonRegex, PyRegexError } from "../../measure/lib/measurekit/pyregex.ts"
@@ -16,7 +17,7 @@ import { runProcess, TimeoutExpired } from "../../measure/lib/measurekit/subproc
 import type { PyValue } from "../../measure/lib/measurekit/pyvalue.ts"
 
 const PYTHON_ORACLE = String.raw`
-import json, os, re, shlex, struct, sys
+import json, os, re, shlex, struct, sys, tempfile
 from datetime import datetime
 
 def regex_flags(flags):
@@ -37,6 +38,13 @@ def run(op, args):
         return repr(round(args[0] / args[1], 4))
     if op == "splitlines":
         return args[0].splitlines()
+    if op == "fileiter":
+        with tempfile.TemporaryDirectory() as directory:
+            name = os.path.join(directory, "text")
+            with open(name, "w", encoding="utf-8", newline="") as handle:
+                handle.write(args[0])
+            with open(name, encoding="utf-8") as handle:
+                return [line.rstrip("\n") for line in handle]
     if op == "strip":
         return [args[0].strip(), args[0].lstrip()]
     if op == "split":
@@ -120,6 +128,27 @@ function randomString(random: () => number, maxLength: number): string {
   return text
 }
 
+const DOTTED_DOTLESS_I_PATTERNS: [string, string][] = [
+  ["i", "i"], ["I", "i"], ["(?i)i", ""], ["(?i)\u0130", ""], ["(?i)\u0131", ""], ["\u0130", "i"], ["[a-z]+x", "i"], ["(?i)[a-z]+x", ""], ["[^i]", "i"], ["[^a-z]", "i"],
+  ["[\u0130]", "i"], ["[\u0100-\u0200]", "i"], ["\\u0130", "i"], ["\\x49", "i"], ["\\x69", "i"], ["\\111", "i"], ["\\\u0130", "i"], ["[\\w]", "i"], ["[\\d-]i", "i"], ["[a-]x", "i"],
+  ["(?P<api>i)(?P=api)", "i"], ["(?ai)i", ""], ["API_KEY", "i"], ["(?i)[A-Z]{2}\u0130_KEY", ""],
+]
+
+const QUANTIFIER_AND_BRACKET_PATTERNS: [string, string][] = [
+  ["x{,}y", ""], ["x{}y", ""], ["x{,}", ""], ["x{ ,}", ""], ["a]", ""], ["]", ""], ["[]]", ""], ["[^]]", ""], ["[a-c-e]", ""], ["[-a]", ""], ["[a-]", ""], ["[\\d-x]", ""], ["[z-a]", ""],
+]
+
+const SCOPED_FLAG_PATTERNS: [string, string][] = [
+  ["(?s:a.b)", ""], ["(?s:a.b).c", ""], ["(?-s:a.b)", "s"], ["(?m:x$)", ""], ["(?m:^b)", ""], ["(?-m:x$)", "m"], ["(?i:a)b", ""], ["(?-i:a)b", "i"], ["a(?i:b)c", ""],
+  ["(?i:\u0130)", ""], ["(?i-s:a.b)", "s"], ["(?is:A.B)", ""], ["(?a:\\w)", ""], ["(?u:\\w)", ""], ["(?a)(?u:\\w)", ""], ["(?L:a)", ""], ["(?i-i:a)", ""],
+  ["(?-:a)", ""], ["(?-i:a)[b]", "i"], ["(?-i:a)[^b]", "i"], ["(?<n>a)", ""], ["(?<=a)b", ""], ["(?<!a)b", ""], ["(?i:a(?-i:b))c", "m"], ["((?s:a.b))+", ""], ["(?s:a.b", ""], ["a)", ""],
+]
+
+const ESCAPE_PATTERNS: [string, string][] = [
+  ["\\012", ""], ["\\0", ""], ["\\08", ""], ["\\101", ""], ["[\\012]", ""], ["[\\101]", ""], ["[\\0]", ""], ["\\400", ""], ["[\\400]", ""], ["[\\8]", ""], ["\\1", ""],
+  ["(a)\\1", ""], ["(a)\\12", ""], ["(a)\\101", ""], ["(a)\\1a", ""], ["(a)\\0", ""],
+]
+
 describe("python compatibility helpers match python3", () => {
   const random = seededRandom(20261022)
 
@@ -180,6 +209,24 @@ describe("python compatibility helpers match python3", () => {
     compare(cases, actual)
   })
 
+  it("newlineSeparatedLines_agrees_withPythonFileIterationAndDiffersFromSplitlines", () => {
+    const texts = ["a\r\nb\rc\nd", "a\u2028b\fc\vd\x1ce\x85f", "\n", "", "a\n\n", "x\r\n\r\ny", "last without newline", "a\n"]
+    for (let index = 0; index < 300; index++) texts.push(randomString(random, 20))
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "keel-fileiter-"))
+    try {
+      const actual = texts.map((text) => {
+        const file = path.join(root, "text")
+        fs.writeFileSync(file, text, "utf8")
+        return newlineSeparatedLines(readText(file))
+      })
+      compare(texts.map((text): Case => ["fileiter", [text]]), actual)
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+    assert.deepEqual(newlineSeparatedLines("a\u2028b\n"), ["a\u2028b"])
+    assert.deepEqual(pySplitlines("a\u2028b\n"), ["a", "b"])
+  })
+
   it("stringHelpers_agree_onSplitlinesStripSplitAndLower", () => {
     const texts = ["a\r\nb\rc\nd\x0be\x0cf\x1cg\x1dh\x1ei\x85j k l", "\n", "", "a\n\n", "x\r\n\r\ny", "  　 mid \xa0 ", "\x1f x \x1f", "﻿x﻿", "İSTANBUL ΣΑΣ", "ǅ ß ẞ"]
     for (let index = 0; index < 400; index++) texts.push(randomString(random, 20))
@@ -216,9 +263,11 @@ describe("python compatibility helpers match python3", () => {
       ["\\d+", ""], ["\\w+é", ""], ["\\bé\\b", ""], ["\\B1", ""], ["[^\\s]+x", ""], ["[\\d\\-_]x", ""], ["x{,3}y", ""], ["a{", ""], ["a{1", ""], ["a{2}b", ""], ["\\-\\_\\ ", ""], ["a|b|", ""],
       ["\\x41\\u0042", ""], ["[\\x41-\\x43]+", ""], ["\\.\\*", ""], ["(?:ab)+c", ""], ["\\q", ""], ["(unclosed", ""], ["[unclosed", ""], ["a**", ""], ["(?i:ab)c", ""],
       ["ß", "i"], ["Σ", "i"], ["σς", "i"], ["[a-z]+", "i"], ["\\s", ""], ["\\S\\s\\S", ""], ["(?i)abc", ""], ["(?s).", ""], ["(?m)^b$", ""],
+      ...DOTTED_DOTLESS_I_PATTERNS, ...QUANTIFIER_AND_BRACKET_PATTERNS, ...SCOPED_FLAG_PATTERNS, ...ESCAPE_PATTERNS,
     ]
-    const texts = ["", "a", "aa", "a\n", "a\r", "\na", "x\nb\nc", "b\r\nc", "##  Rules", "## rules (hard)", "K5", "K8", "prose:x", "prose: x", "10" + ".1.2.3", "10" + ".٣.2.3", "AKIA" + "ABCDEFGHIJKLMNOP", "é", "xé ", "1", "١٢٣", "abc", "ABC", "a b", "xxxy", "a{", "\x1c", "-_ ", "A", "Aa\nb"]
-    for (let index = 0; index < 40; index++) texts.push(randomString(random, 8).replaceAll("İ", "I"))
+    const texts = ["", "a", "aa", "a\n", "a\r", "\na", "x\nb\nc", "b\r\nc", "##  Rules", "## rules (hard)", "K5", "K8", "prose:x", "prose: x", "10" + ".1.2.3", "10" + ".٣.2.3", "AKIA" + "ABCDEFGHIJKLMNOP", "é", "xé ", "1", "١٢٣", "abc", "ABC", "a b", "xxxy", "a{", "\x1c", "-_ ", "A", "Aa\nb",
+      "i", "I", "\u0130", "\u0131", "x\u0130", "AP\u0130_KEY", "api_key", "\u212a", "a]", "]", "\0", "\n", "x\n", "xy", "TOKENNNX", "a\nb", "a\nbxc", "a\nb\nc", "ab", "aB", "Ab", "b\nx", "abc\n", "aa", "a\x08"]
+    for (let index = 0; index < 40; index++) texts.push(randomString(random, 8))
     const cases: Case[] = []
     const actual: unknown[] = []
     for (const [pattern, flags] of patterns) {
@@ -233,6 +282,12 @@ describe("python compatibility helpers match python3", () => {
       }
     }
     compare(cases, actual)
+  })
+
+  it("compilePythonRegex_rejectsVerboseAndLocaleFlags_insteadOfScanningWithTheWrongMeaning", () => {
+    for (const pattern of ["(?x)a b", "(?x:a b)", "(?L)a", "(?L:a)"]) {
+      assert.throws(() => compilePythonRegex(pattern), PyRegexError, pattern)
+    }
   })
 
   it("parseIsoDate_agrees_withStrptimeOnShapesAndCalendarEdges", () => {

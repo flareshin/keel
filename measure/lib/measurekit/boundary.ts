@@ -94,7 +94,7 @@ export function* fileLines(root: string, relativePaths: Iterable<string>): Gener
       continue
     }
     yield [relativePath, PATH_NAME_LINE, relativePath]
-    yield* textLines(relativePath, fullPath)
+    yield* splitlinesOfFile(relativePath, fullPath)
   }
 }
 
@@ -122,7 +122,7 @@ function walkWithoutGit(root: string, directory: string): string[] {
   return sortedByCodePoint(found)
 }
 
-function* textLines(label: string, fullPath: string): Generator<ScanLine> {
+function* splitlinesOfFile(label: string, fullPath: string): Generator<ScanLine> {
   if (isLink(fullPath) || !isFile(fullPath)) return
   const content = fs.readFileSync(fullPath)
   if (content.includes(0)) return

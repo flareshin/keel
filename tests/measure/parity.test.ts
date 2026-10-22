@@ -117,6 +117,17 @@ const CASES_UNDER_PARITY: ParityCase[] = [
     cwd: (box) => path.join(box.root, "work"),
   },
   { name: "boundary generic-only", tool: "boundary", args: ["--generic-only", "--paths", "notes.txt"], setup: (box) => box.write("work/notes.txt", `acmecorp\nkey ${FAKE_AWS_KEY}\n`), cwd: (box) => path.join(box.root, "work") },
+  { name: "boundary generic-only folds the dotted capital I like re.I", tool: "boundary", args: ["--generic-only", "--paths", "notes.txt"], setup: (box) => box.write("work/notes.txt", 'AP\u0130_KEY = "abcdefghij"\n'), cwd: (box) => path.join(box.root, "work") },
+  { name: "boundary generic-only folds the dotless small i like re.I", tool: "boundary", args: ["--generic-only", "--paths", "notes.txt"], setup: (box) => box.write("work/notes.txt", 'ap\u0131_key = "abcdefghij"\n'), cwd: (box) => path.join(box.root, "work") },
+  {
+    name: "boundary overlay regex with an empty quantifier, a lone bracket, an octal escape and a scoped flag group", tool: "boundary", args: ["--paths", "notes.txt"],
+    setup: (box) => {
+      box.writeLexicon()
+      box.write("overlay/boundary/regex.txt", "(?s:BEGIN.SECRET)\nTOKEN{,}X\nZED]\nQ\\101\n(?i:abc)D\n")
+      box.write("work/notes.txt", "TOKENNNX\nZED]\nQA\nBEGIN-SECRET\nABCD\nabcd\n")
+    },
+    cwd: (box) => path.join(box.root, "work"),
+  },
   { name: "boundary missing lexicon", tool: "boundary", args: ["--paths", "notes.txt"], setup: (box) => box.write("work/notes.txt", "x\n"), cwd: (box) => path.join(box.root, "work") },
   { name: "boundary invalid regex", tool: "boundary", args: ["--paths", "notes.txt"], setup: (box) => { box.writeLexicon(); box.write("overlay/boundary/regex.txt", "(unclosed\n"); box.write("work/notes.txt", "x\n") }, cwd: (box) => path.join(box.root, "work"), engineDependentStderr: true },
   { name: "boundary staged", tool: "boundary", args: ["--staged"], setup: (box) => void repoWithStaged(box), cwd: (box) => path.join(box.root, "work") },
@@ -159,7 +170,10 @@ const CASES_UNDER_PARITY: ParityCase[] = [
       box.write("keel/measure/metrics/demo-runner", '#!/bin/bash\necho \'{"count": 3, "items": [1.0, "\u00e9\\ud83d\\ude00", {"b": 2, "a": 1.5e30, "c": [0.1, 1e-7, 12345678901234567890]}, null, true]}\'\n', true)
     },
   },
-  { name: "run runner with a boolean count", tool: "run", args: ["C-demo"], setup: (box) => { ledgerBox(box, [ledgerRow("C-demo", { metric: "run:odd" })]); box.write("keel/measure/metrics/odd", "#!/bin/bash\necho '{\"count\": 1.0, \"items\": []}'\n", true) } },
+  { name: "run runner with a float count is rejected as not an int", tool: "run", args: ["C-demo"], setup: (box) => { ledgerBox(box, [ledgerRow("C-demo", { metric: "run:odd" })]); box.write("keel/measure/metrics/odd", "#!/bin/bash\necho '{\"count\": 1.0, \"items\": []}'\n", true) } },
+  { name: "run runner with a boolean count", tool: "run", args: ["C-demo"], setup: (box) => { ledgerBox(box, [ledgerRow("C-demo", { metric: "run:odd" })]); box.write("keel/measure/metrics/odd", "#!/bin/bash\necho '{\"count\": true, \"items\": []}'\n", true) } },
+  { name: "run runner with a false count", tool: "run", args: ["C-demo"], setup: (box) => { ledgerBox(box, [ledgerRow("C-demo", { metric: "run:odd" })]); box.write("keel/measure/metrics/odd", "#!/bin/bash\necho '{\"count\": false, \"items\": []}'\n", true) } },
+  { name: "run runner with a count beyond 2^53", tool: "run", args: ["C-demo"], setup: (box) => { ledgerBox(box, [ledgerRow("C-demo", { metric: "run:odd" })]); box.write("keel/measure/metrics/odd", "#!/bin/bash\necho '{\"count\": 12345678901234567890, \"items\": []}'\n", true) } },
   { name: "run runner exits non-zero", tool: "run", args: ["C-demo"], setup: (box) => { ledgerBox(box, [ledgerRow("C-demo", { metric: "run:bad" })]); box.write("keel/measure/metrics/bad", "#!/bin/bash\necho oops >&2\nexit 4\n", true) } },
   { name: "run evals", tool: "run", args: ["C-demo"], setup: (box) => { ledgerBox(box, [ledgerRow("C-demo", { metric: "evals:demo" })]); box.appendLog("keel-evals.jsonl", { ts: new Date().toISOString(), eval_id: "demo", pass: true }) } },
   { name: "run unknown metric kind", tool: "run", args: ["C-demo"], setup: (box) => ledgerBox(box, [ledgerRow("C-demo", { metric: "odd:it's", grace_until: FUTURE })]) },
@@ -170,6 +184,14 @@ const CASES_UNDER_PARITY: ParityCase[] = [
       ledgerRow("C-fires", { review_by: PAST, metric: "fires:C-fires" }), ledgerRow("C-bad", { review_by: PAST, metric: "run:none" }),
       ledgerRow("C-repo", { review_by: PAST, layer: "repo", enforced_at: "repo:a/b:c", metric: "exists:/nowhere:HEAD:x" }),
     ]),
+  },
+  {
+    name: "propose expiry with a boolean and a huge runner count", tool: "propose", args: [],
+    setup: (box) => {
+      ledgerBox(box, [ledgerRow("C-bool", { review_by: PAST, metric: "run:odd" }), ledgerRow("C-huge", { review_by: PAST, metric: "run:huge" })])
+      box.write("keel/measure/metrics/odd", "#!/bin/bash\necho '{\"count\": true, \"items\": []}'\n", true)
+      box.write("keel/measure/metrics/huge", "#!/bin/bash\necho '{\"count\": 12345678901234567890, \"items\": []}'\n", true)
+    },
   },
   { name: "propose model upgrade", tool: "propose", args: ["--model-upgrade", "m\u00e9"], setup: (box) => ledgerBox(box, [charterRow("K1"), ledgerRow("C-demo")]) },
   { name: "propose bad option", tool: "propose", args: ["--model-upgrade"] },
@@ -186,10 +208,21 @@ const CASES_UNDER_PARITY: ParityCase[] = [
       box.commitAll(box.keel)
     },
   },
+  {
+    name: "weekly defect runner with a boolean count", tool: "weekly", args: [],
+    setup: (box) => {
+      box.initRepo(box.keel)
+      ledgerBox(box, [charterRow("K1")])
+      box.write("overlay/measure/metrics/defects-x", '#!/bin/bash\necho \'{"count": true, "items": []}\'\n', true)
+      box.commitAll(box.keel)
+    },
+  },
   { name: "weekly extra argument", tool: "weekly", args: ["x"] },
   { name: "smoke clean json-only", tool: "smoke", args: ["--json-only"], setup: (box) => box.seedCleanKeel() },
   { name: "smoke clean with summary", tool: "smoke", args: [], setup: (box) => box.seedCleanKeel() },
   { name: "smoke failing", tool: "smoke", args: [], setup: (box) => { box.seedCleanKeel(); box.fire("C-unknown"); box.write("keel/PRINCIPLES.md", "- Untagged\n- [K9] ghost\n"); box.write("data/projects/p/memory/MEMORY.md", "x".repeat(9000)) } },
+  { name: "smoke principles bullet after a unicode line separator", tool: "smoke", args: ["--json-only"], setup: (box) => { box.seedCleanKeel(); box.write("keel/PRINCIPLES.md", "# Principles\n\n- [K1] Tagged.\u2028- untagged bullet\n"); box.commitAll(box.keel) } },
+  { name: "smoke principles bullet after a form feed", tool: "smoke", args: ["--json-only"], setup: (box) => { box.seedCleanKeel(); box.write("keel/PRINCIPLES.md", "# Principles\n\n- [K1] Tagged.\f- untagged bullet\n"); box.commitAll(box.keel) } },
   { name: "smoke seed ledger", tool: "smoke", args: ["--json-only"], setup: (box) => fs.copyFileSync(path.join(CHECKOUT, "ledger.tsv"), path.join(box.keel, "ledger.tsv")) },
   { name: "smoke bad flag", tool: "smoke", args: ["--candidate=1"] },
   { name: "eval dry-run", tool: "evals/eval", args: ["K4", "--model", "m", "--dry-run"], stub: "eval", setup: (box) => { box.linkKeel(); box.seedSuite(box.askScenario(), box.editScenario()) } },

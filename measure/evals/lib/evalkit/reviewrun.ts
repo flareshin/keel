@@ -3,7 +3,7 @@ import os from "node:os"
 
 import { GitError, runGit } from "../../../lib/measurekit/gitutil.ts"
 import { isOsError, ValueError } from "../../../lib/measurekit/pyerrors.ts"
-import { readText, UnicodeDecodeError, textLines } from "../../../lib/measurekit/pyio.ts"
+import { readText, UnicodeDecodeError, newlineSeparatedLines } from "../../../lib/measurekit/pyio.ts"
 import { pythonJsonDumps, pythonJsonLoads } from "../../../lib/measurekit/pyjson.ts"
 import { isDir, pyDirname, pyJoin, realpath } from "../../../lib/measurekit/pypath.ts"
 import { firstCodePoints, pySplitlines, pySplitWhitespace } from "../../../lib/measurekit/pystr.ts"
@@ -83,7 +83,7 @@ export function buildCaseRepo(reviewCase: ReviewCase, parent: string): CaseRepo 
 
 function hasLine(repo: string, relativePath: string, line: number): boolean {
   try {
-    return textLines(readText(pyJoin(repo, relativePath))).length >= line
+    return newlineSeparatedLines(readText(pyJoin(repo, relativePath))).length >= line
   } catch (error) {
     if (error instanceof UnicodeDecodeError || isOsError(error)) return false
     throw error

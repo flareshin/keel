@@ -31,13 +31,19 @@ export class TimeoutExpired extends Error {
   }
 }
 
-export function run(command: readonly string[], timeoutSeconds: number): CompletedProcess {
+export interface RunOptions {
+  cwd?: string;
+  input?: string;
+}
+
+export function run(command: readonly string[], timeoutSeconds: number, options: RunOptions = {}): CompletedProcess {
   const [program, ...args] = command;
   if (program === undefined) throw new OSError("empty command", undefined);
   const result = spawnSync(program, args, {
     encoding: "utf8",
     timeout: timeoutSeconds * 1000,
     maxBuffer: UNLIMITED_OUTPUT_BYTES,
+    ...options,
   });
   if (result.error) {
     const code = (result.error as NodeJS.ErrnoException).code;

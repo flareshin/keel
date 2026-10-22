@@ -4,7 +4,7 @@ import { rstripChar, strip } from "./pycompat.ts";
 import { run } from "./subprocess.ts";
 import type { CompletedProcess } from "./subprocess.ts";
 
-const GIT_TIMEOUT_SECONDS = 8;
+export const GIT_TIMEOUT_SECONDS = 8;
 
 export function git(args: readonly string[], cwd: string): CompletedProcess {
   return run(["git", "-C", cwd, ...args], GIT_TIMEOUT_SECONDS);

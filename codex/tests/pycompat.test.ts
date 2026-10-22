@@ -3,9 +3,10 @@ import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, w
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
+import { pythonStr as hookkitStr } from "../../hooks/lib/hookkit/pycompat.ts";
 import { osErrorMessage, pythonFailureMessage, ValueError } from "../lib/pyerrors.ts";
 import { decodeUtf8, nameOf, parentOf, purePath, readText, resolvePath, shellQuote, translateNewlines } from "../lib/pyfs.ts";
-import { JSONDecodeError, pythonFloatRepr, pythonJsonDumps, pythonJsonLoads } from "../lib/pyjson.ts";
+import { JSONDecodeError, PyFloat, pythonFloatRepr, pythonJsonDumps, pythonJsonLoads } from "../lib/pyjson.ts";
 import type { JsonValue } from "../lib/pyjson.ts";
 import { pythonRepr } from "../lib/pyrepr.ts";
 import { pythonValueStr } from "../lib/pystr.ts";
@@ -42,7 +43,7 @@ const JSON_BASES = [
   '{"a": 1, "b": [true, false, null, "x\\u00e9\\ud83d\\ude00"], "c": {"d": -1.5e-7}}',
   '[1, 2.5, "s", {"k": []}]', '"plain"', "-12", "0.001", '{"nested": {"deep": [[], {}]}}', "  \n[1,\n2]\n",
   '"\\n\\t\\"\\\\\\/\\b\\f\\r"', "12345678901234567890", '{"a": NaN, "b": -Infinity, "c": [Infinity]}',
-  '{"k": "v", "k": "w"}', '"\\ud83d\\ude00 \\ud83d x \\ude00"', "[[[[1]]]]", "true", "null", "{}", "[]",
+  '{"k": "v", "k": "w"}', '[1.0, -0.0, 0.0, 100.0, 1e2, 2E-1, 1e16, 1.5e300, 12345678901234567.0, 1e400, -1e400, 5e-324, 1E+2]', '{"a": 1.0, "b": [2.0]}', '"\\ud83d\\ude00 \\ud83d x \\ude00"', "[[[[1]]]]", "true", "null", "{}", "[]",
 ];
 const JSON_ALPHABET = [...'{}[]",:\\ntrufalsNI-+.eE0123456789 \t\n\r\u0001\u00e9\ud83d\ude00\ufeff/ubfrn'];
 
@@ -98,7 +99,7 @@ describe("pyjson parity with python json", () => {
 
   it("formats floats like repr", () => {
     const texts = ["0.1", "0.5", "1e-7", "1e-5", "0.0001", "0.00001234", "5e-324", "1.7976931348623157e308", "1e16", "1.5e16", "123456789012345678.5",
-      "1e22", "-2.5e-10", "3.141592653589793", "100000000000000.5", "1e300", "-1e-300", "9007199254740993.5", "0.30000000000000004"];
+      "1e22", "-2.5e-10", "1.0", "-0.0", "0.0", "100.0", "9007199254740992.0", "123456789.0", "1e15", "999999999999999.0", "3.141592653589793", "100000000000000.5", "1e300", "-1e-300", "9007199254740993.5", "0.30000000000000004"];
     const calls = texts.map((text) => ({ fn: "float_repr", args: [text] }));
     const actual = texts.map((text) => outcomeOf(() => pythonFloatRepr(Number(text))));
     compare("float repr", calls, actual, pythonReference(process.cwd(), calls));
@@ -308,11 +309,24 @@ describe("python text and path helpers", () => {
     const documents = [
       '["a\\u0001"]', '["a", "b"]', '{"k": ["x\\u00a0y", null, true, false, 12, 1.5, -2.5e-7, 1e22, 0.1]}', "[[], {}, [[]]]",
       '["it\'s", "say \\"hi\\"", "both \' \\"", "\\ud83d\\ude00", "\\u200b\\ud800", "\\u0000\\u007f\\u0085\\u2028"]', '"plain"', "null", "true",
-      "12345678901234567890", "[NaN, Infinity, -Infinity]", '{"a": {"b": [1, {"c": "\\n\\t\\r\\\\"}]}}', "[" + "[".repeat(2999) + "]".repeat(2999) + "]",
+      "12345678901234567890", "[NaN, Infinity, -Infinity]", '{"a": {"b": [1, {"c": "\\n\\t\\r\\\\"}]}}', '[1.0]', '[-0.0, 0.0, 100.0, 1e16, 1e22, 0.5, 1e-7, 2.0e0]', '{"k": 1.0}', '[[1.0, [2.0]], {"a": 3.0}]', '1.0', "[" + "[".repeat(2999) + "]".repeat(2999) + "]",
     ];
     const calls = documents.map((text) => ({ fn: "py_str", args: [text] }));
     const actual = documents.map((text) => outcomeOf(() => pythonValueStr(pythonJsonLoads(text))));
     compare("container str", calls, actual, pythonReference(process.cwd(), calls), false);
+  });
+
+  it("agrees with hookkit's pythonStr on plain containers and differs only where hookkit has no equivalent", () => {
+    const shared: unknown[] = ["plain", null, true, false, 12, [], {}, ["a", "b"], { k: [1, null, true] }, [["x"]], ["it's", 'say "hi"', "back\\slash\n"], { "a b": { c: [] } }];
+    for (const value of shared) assert.equal(pythonValueStr(value), hookkitStr(value), JSON.stringify(value));
+    const python: Array<[unknown, string]> = [
+      [["a\u0001"], "['a\\x01']"], [["\u00a0"], "['\\xa0']"], [["\u2028"], "['\\u2028']"], [[new PyFloat(1)], "[1.0]"], [new PyFloat(-0), "-0.0"],
+      [[new PyFloat(NaN), new PyFloat(Infinity)], "[nan, inf]"], [{ k: new PyFloat(1e16) }, "{'k': 1e+16}"],
+    ];
+    for (const [value, text] of python) {
+      assert.equal(pythonValueStr(value), text);
+      assert.notEqual(hookkitStr(value), text);
+    }
   });
 
   it("shell quoting matches shlex.quote", () => {

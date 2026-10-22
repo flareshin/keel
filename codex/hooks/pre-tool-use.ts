@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { userInfo } from "node:os";
-import { expandUser, glob, isRecord, isTruthy, splitlines, strip } from "../../hooks/lib/hookkit/pycompat.ts";
+import { expandUser, glob, splitlines, strip } from "../../hooks/lib/hookkit/pycompat.ts";
 import { resolveDirectory, steps, writeTargets } from "../../hooks/lib/hookkit/shell.ts";
 import { OSError, run } from "../../hooks/lib/hookkit/subprocess.ts";
 import type { CompletedProcess } from "../../hooks/lib/hookkit/subprocess.ts";
@@ -9,7 +9,7 @@ import type { CommandResult } from "../lib/command.ts";
 import { completeEdit, HOOK_CALLER_FRAMES, validateUpdate } from "../lib/config_policy.ts";
 import { osErrorMessage, pythonFailureMessage, ValueError } from "../lib/pyerrors.ts";
 import { childPath, decodeUtf8, decodeUtf8WithSurrogateEscape, hasGlobMagic, isStrictAncestor, parentOf, pathExists, purePath, pythonStdinIsLenient, readText, resolvePath, translateNewlines } from "../lib/pyfs.ts";
-import { pythonJsonDumps, pythonJsonLoads } from "../lib/pyjson.ts";
+import { isJsonObject, isTruthy, pythonJsonDumps, pythonJsonLoads } from "../lib/pyjson.ts";
 import { pythonValueStr } from "../lib/pystr.ts";
 import type { JsonValue } from "../lib/pyjson.ts";
 
@@ -57,10 +57,10 @@ export function main(readInput: () => Buffer, runner: GuardRunner = spawnGuard):
 }
 
 export function normalize(payload: unknown): Call[] {
-  if (!isRecord(payload)) throw new ValueError("payload must be an object");
+  if (!isJsonObject(payload)) throw new ValueError("payload must be an object");
   const name = payload["tool_name"];
   const tool = payload["tool_input"];
-  if (!isRecord(tool)) throw new ValueError("tool_input must be an object");
+  if (!isJsonObject(tool)) throw new ValueError("tool_input must be an object");
   if (typeof name === "string" && GUARDED_TOOLS.includes(name)) {
     if (name === "Bash" && typeof tool["command"] !== "string") throw new ValueError("Bash command is missing");
     return [payload as Call];
@@ -176,9 +176,9 @@ export function runGuard(name: string, call: Record<string, unknown>, runner: Gu
   if (completed.returncode !== 0) throw new ValueError(strip(completed.stderr) || `${name} exited ${completed.returncode}`);
   if (strip(completed.stdout) === "") return [];
   const output = pythonJsonLoads(completed.stdout);
-  if (!isRecord(output)) throw new ValueError(`${name} returned a non-object response`);
+  if (!isJsonObject(output)) throw new ValueError(`${name} returned a non-object response`);
   const specific = Object.hasOwn(output, "hookSpecificOutput") ? output["hookSpecificOutput"] : {};
-  if (!isRecord(specific)) throw new ValueError(`${name} returned invalid hook output`);
+  if (!isJsonObject(specific)) throw new ValueError(`${name} returned invalid hook output`);
   const context = Object.hasOwn(specific, "additionalContext") ? specific["additionalContext"] : null;
   if (context !== null && typeof context !== "string") throw new ValueError(`${name} returned invalid context`);
   return isTruthy(context) ? [context as string] : [];

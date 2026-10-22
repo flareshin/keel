@@ -1,10 +1,11 @@
-import { expandUser, isTruthy } from "../../hooks/lib/hookkit/pycompat.ts";
+import { expandUser } from "../../hooks/lib/hookkit/pycompat.ts";
 import { ExitRequest, parseArguments } from "./argparse.ts";
 import type { CommandParser } from "./argparse.ts";
 import type { CommandResult } from "./command.ts";
 import { writeAtomic } from "./files.ts";
 import { pythonFailureMessage, ValueError } from "./pyerrors.ts";
 import { childPath, pathExists, purePath, readText, resolvePath } from "./pyfs.ts";
+import { isTruthy } from "./pyjson.ts";
 import { tomlEquals, tomlLoads } from "./toml.ts";
 
 const REFUSED_EXIT_CODE = 3;

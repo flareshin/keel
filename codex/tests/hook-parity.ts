@@ -8,6 +8,7 @@ const PYTHON_HOOK = join(ADAPTER, "hooks", "pre-tool-use.py");
 const TYPESCRIPT_HOOK = join(ADAPTER, "hooks", "pre-tool-use.ts");
 const NORMAL_CONFIG = "[features]\nhooks = true\n";
 const MAX_MISMATCHES_SHOWN = 6;
+const FLOAT_DIRECTORIES = ["1", "1.0", "100.0", "-0.0", "1e+16", "1e+22", "0.5", "2.5"];
 const TIMESTAMP = /\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)?/g;
 
 export interface HookCase {
@@ -78,6 +79,10 @@ function buildSandbox(paths: Paths, config: string | Buffer | null): void {
   symlinkSync(paths.profile, join(paths.aliases, "profile-alias"));
   symlinkSync(join(paths.aliases, "nowhere"), join(paths.aliases, "dangling"));
   mkdirSync(paths.repo);
+  for (const name of FLOAT_DIRECTORIES) {
+    mkdirSync(join(paths.repo, name));
+    if (name !== "1") symlinkSync(join(paths.profile, "hooks.json"), join(paths.repo, name, "hj"));
+  }
   mkdirSync(paths.data);
   mkdirSync(paths.overlay);
   put(join(paths.root, "gitconfig"), "[user]\n\tname = parity\n\temail = parity@localhost\n");

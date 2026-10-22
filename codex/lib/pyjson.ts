@@ -1,7 +1,15 @@
-import { codePointLength, compareCodePoints } from "../../hooks/lib/hookkit/pycompat.ts";
+import { codePointLength, compareCodePoints, isRecord, isTruthy as isTruthyValue } from "../../hooks/lib/hookkit/pycompat.ts";
 import { ValueError } from "./pyerrors.ts";
 
-export type JsonValue = null | boolean | number | bigint | string | JsonValue[] | { [key: string]: JsonValue };
+export class PyFloat {
+  readonly value: number;
+
+  constructor(value: number) {
+    this.value = value;
+  }
+}
+
+export type JsonValue = null | boolean | number | bigint | string | PyFloat | JsonValue[] | { [key: string]: JsonValue };
 
 export interface DumpOptions {
   indent?: number;
@@ -23,7 +31,7 @@ const HIGH_SURROGATE_LAST = 0xdbff;
 const LOW_SURROGATE_FIRST = 0xdc00;
 const LOW_SURROGATE_LAST = 0xdfff;
 const ESCAPE_UNIT_LENGTH = 6;
-const CONSTANTS: ReadonlyArray<readonly [string, number]> = [["NaN", NaN], ["Infinity", Infinity], ["-Infinity", -Infinity]];
+const CONSTANTS: ReadonlyArray<readonly [string, PyFloat]> = [["NaN", new PyFloat(NaN)], ["Infinity", new PyFloat(Infinity)], ["-Infinity", new PyFloat(-Infinity)]];
 
 export class JSONDecodeError extends ValueError {
   constructor(message: string, text: string, position: number) {
@@ -130,9 +138,9 @@ function scanScalar(text: string, index: number): [JsonValue, number] {
   throw new JSONDecodeError("Expecting value", text, index);
 }
 
-function parseNumber(match: RegExpExecArray): number | bigint {
+function parseNumber(match: RegExpExecArray): number | bigint | PyFloat {
   const literal = match[0];
-  if (match[1] !== undefined || match[2] !== undefined) return Number(literal);
+  if (match[1] !== undefined || match[2] !== undefined) return new PyFloat(Number(literal));
   const digits = literal.startsWith("-") ? literal.length - 1 : literal.length;
   if (digits > MAX_INTEGER_DIGITS) {
     throw new ValueError(`Exceeds the limit (${MAX_INTEGER_DIGITS} digits) for integer string conversion: value has ${digits} digits; ` +
@@ -196,13 +204,40 @@ function quoteString(text: string, ensureAscii: boolean): string {
   return `"${escaped}"`;
 }
 
+export function isJsonObject(value: unknown): value is { [key: string]: JsonValue } {
+  return isRecord(value) && !(value instanceof PyFloat);
+}
+
+function emptyLike(value: JsonValue): JsonValue {
+  if (Array.isArray(value)) return [];
+  return isJsonObject(value) ? {} : value;
+}
+
+export function cloneJson<T extends JsonValue>(value: T): T {
+  const copy = emptyLike(value);
+  const pending: Array<[JsonValue, JsonValue]> = [[value, copy]];
+  while (pending.length > 0) {
+    const [source, target] = pending.pop() as [JsonValue, JsonValue];
+    const members: Array<[string | null, JsonValue]> = Array.isArray(source) ? source.map((item) => [null, item]) : isJsonObject(source) ? Object.entries(source) : [];
+    for (const [key, item] of members) {
+      const itemCopy = emptyLike(item);
+      if (key === null) (target as JsonValue[]).push(itemCopy);
+      else Object.defineProperty(target, key, { value: itemCopy, enumerable: true, writable: true, configurable: true });
+      pending.push([item, itemCopy]);
+    }
+  }
+  return copy as T;
+}
+
+export function isTruthy(value: unknown): boolean {
+  return value instanceof PyFloat ? value.value !== 0 : isTruthyValue(value);
+}
+
 export function pythonFloatRepr(value: number): string {
   if (Number.isNaN(value)) return "NaN";
   if (value === Infinity) return "Infinity";
   if (value === -Infinity) return "-Infinity";
-  if (Number.isInteger(value) && Math.abs(value) < 10 ** FLOAT_FIXED_LIMIT) {
-    return Number.isSafeInteger(value) ? String(value) : `${value}.0`;
-  }
+  if (Object.is(value, -0)) return "-0.0";
   const [mantissa = "", exponentText = "0"] = value.toExponential().split("e");
   const sign = mantissa.startsWith("-") ? "-" : "";
   const digits = mantissa.replace(/^-/, "").replace(".", "");
@@ -235,7 +270,8 @@ function encodeStep(value: JsonValue, options: DumpOptions, level: number): Arra
   if (value === null) return ["null"];
   if (typeof value === "boolean") return [value ? "true" : "false"];
   if (typeof value === "bigint") return [value.toString()];
-  if (typeof value === "number") return [pythonFloatRepr(value)];
+  if (value instanceof PyFloat) return [pythonFloatRepr(value.value)];
+  if (typeof value === "number") return [Number.isInteger(value) ? String(value) : pythonFloatRepr(value)];
   if (typeof value === "string") return [quoteString(value, options.ensureAscii ?? true)];
   const isArray = Array.isArray(value);
   let keys: string[] = [];

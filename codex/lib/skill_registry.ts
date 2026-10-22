@@ -1,13 +1,13 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { isDeepStrictEqual } from "node:util";
-import { isRecord, isSystemError, sortedByCodePoint } from "../../hooks/lib/hookkit/pycompat.ts";
+import { isSystemError, sortedByCodePoint } from "../../hooks/lib/hookkit/pycompat.ts";
 import { OSError } from "../../hooks/lib/hookkit/subprocess.ts";
 import { readJson, writeAtomic } from "./files.ts";
 import type { ManagedFile } from "./files.ts";
 import { ValueError } from "./pyerrors.ts";
 import { childPath, isAbsolute, isSymlink, nameOf, parentOf, pathExists, resolvePath } from "./pyfs.ts";
-import { pythonJsonDumps } from "./pyjson.ts";
+import { cloneJson, isJsonObject, PyFloat, pythonJsonDumps } from "./pyjson.ts";
 import type { JsonValue } from "./pyjson.ts";
 
 export const REGISTRY_NAME = "keel-codex-skills.json";
@@ -138,7 +138,7 @@ export const realSkillFiles: SkillFiles = { writeAtomic, replaceLink };
 
 export function planSkills(agentsHome: string, profile: string, desired: Map<string, ManagedFile>): SkillPlan {
   const original = readRegistry(agentsHome);
-  const plan: SkillPlan = { records: structuredClone(original), create: new Map(), replace: new Map(), remove: [], problems: [], changed: false };
+  const plan: SkillPlan = { records: new Map(Array.from(original, ([name, record]) => [name, cloneJson(record)])), create: new Map(), replace: new Map(), remove: [], problems: [], changed: false };
   const desiredNames = new Set(Array.from(desired.keys(), nameOf));
   for (const [name, record] of Array.from(plan.records)) {
     if (!desiredNames.has(name) && record.profiles.includes(profile)) releaseSkill(plan, childPath(agentsHome, `skills/${name}`), profile);
@@ -152,7 +152,7 @@ function readRegistry(agentsHome: string): SkillRecords {
   const registry = readJson(childPath(agentsHome, REGISTRY_NAME));
   if (Object.keys(registry).length === 0) return new Map();
   const skills = registry["skills"];
-  if (!isVersionOne(registry["version"]) || !isRecord(skills)) throw new ValueError("invalid shared skill registry");
+  if (!isVersionOne(registry["version"]) || !isJsonObject(skills)) throw new ValueError("invalid shared skill registry");
   const records: SkillRecords = new Map();
   for (const [name, entry] of Object.entries(skills)) {
     records.set(name, validatedRecord(name, entry));
@@ -161,11 +161,11 @@ function readRegistry(agentsHome: string): SkillRecords {
 }
 
 function isVersionOne(version: JsonValue | undefined): boolean {
-  return version === REGISTRY_VERSION || version === true;
+  return version === REGISTRY_VERSION || version === true || (version instanceof PyFloat && version.value === REGISTRY_VERSION);
 }
 
 function validatedRecord(name: string, entry: JsonValue): SkillRecord {
-  if (name === "" || name === "." || name === ".." || name.includes("/") || !isRecord(entry)) {
+  if (name === "" || name === "." || name === ".." || name.includes("/") || !isJsonObject(entry)) {
     throw new ValueError("invalid skill registry entry");
   }
   const { target, profiles, managed } = entry as { [key: string]: JsonValue | undefined };

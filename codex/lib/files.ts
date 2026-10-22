@@ -1,9 +1,8 @@
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { isRecord } from "../../hooks/lib/hookkit/pycompat.ts";
 import { ValueError } from "./pyerrors.ts";
 import { fileMode, isFile, isSymlink, nameOf, parentOf, pathExists, readText, resolvePath, sha256Hex } from "./pyfs.ts";
-import { pythonJsonLoads } from "./pyjson.ts";
+import { isJsonObject, pythonJsonLoads } from "./pyjson.ts";
 import type { JsonValue } from "./pyjson.ts";
 
 const TEMPORARY_SUFFIX_LENGTH = 8;
@@ -60,6 +59,6 @@ export function writeAtomic(path: string, content: string): void {
 
 export function readJson(path: string): { [key: string]: JsonValue } {
   const value = isFile(path) ? pythonJsonLoads(readText(path)) : {};
-  if (!isRecord(value)) throw new ValueError(`expected an object: ${path}`);
+  if (!isJsonObject(value)) throw new ValueError(`expected an object: ${path}`);
   return value as { [key: string]: JsonValue };
 }

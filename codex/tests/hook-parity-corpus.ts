@@ -366,5 +366,25 @@ export function hookCases(paths: Paths): HookCase[] {
     ["single string with control character", "Ba\u0001sh"], ["non-breaking string", "Bash "], ["empty list", []], ["number list", [1, 2.5, -3e-7, 1e22]],
   ] as const) add(`tool_name ${name}`, payload(toolName, { command: "ls" }));
 
+  const FLOAT_LITERALS = ["1.0", "100.0", "-0.0", "0.0", "1e16", "1E22", "0.5", "2.5", "1e400", "-1e400"];
+  const withCwd = (cwd: string): string => `{"tool_name": "Write", "tool_input": {"file_path": "hj", "content": "x"}, "cwd": ${cwd}}`;
+  for (const literal of FLOAT_LITERALS) {
+    add(`float cwd ${literal}`, withCwd(literal));
+    add(`float cwd ${literal} in a list`, withCwd(`[${literal}]`));
+    add(`float tool_name ${literal}`, `{"tool_name": ${literal}, "tool_input": {}, "cwd": ${JSON.stringify(repo)}}`);
+    add(`float tool_name ${literal} in a list`, `{"tool_name": [${literal}, "x"], "tool_input": {}, "cwd": ${JSON.stringify(repo)}}`);
+    add(`float tool_name ${literal} in a dict`, `{"tool_name": {"k": ${literal}}, "tool_input": {}, "cwd": ${JSON.stringify(repo)}}`);
+    add(`float file_path ${literal}`, `{"tool_name": "Write", "tool_input": {"file_path": ${literal}, "content": "x"}, "cwd": ${JSON.stringify(repo)}}`, { crash: true });
+    add(`float tool_input ${literal}`, `{"tool_name": "Write", "tool_input": ${literal}, "cwd": ${JSON.stringify(repo)}}`);
+    add(`float payload ${literal}`, literal);
+    add(`float Bash command ${literal}`, `{"tool_name": "Bash", "tool_input": {"command": ${literal}}, "cwd": ${JSON.stringify(repo)}}`);
+    add(`float apply_patch command ${literal}`, `{"tool_name": "apply_patch", "tool_input": {"command": ${literal}}, "cwd": ${JSON.stringify(repo)}}`);
+    add(`float keel_partial ${literal}`, `{"tool_name": "Edit", "tool_input": {"file_path": ${JSON.stringify(`${profile}/config.toml`)}, "old_string": "true", "new_string": "false", "keel_partial": ${literal}}, "cwd": ${JSON.stringify(repo)}}`);
+    add(`float replace_all ${literal}`, `{"tool_name": "Edit", "tool_input": {"file_path": ${JSON.stringify(`${profile}/config.toml`)}, "old_string": "e", "new_string": "E", "replace_all": ${literal}}, "cwd": ${JSON.stringify(repo)}}`);
+    add(`float beside force push ${literal}`, `{"tool_name": "Bash", "tool_input": {"command": "git push --force origin main"}, "cwd": ${JSON.stringify(repo)}, "extra": [${literal}, {"k": ${literal}}]}`);
+  }
+  add("integral float cwd beside a decoy integer directory", withCwd("1.0"));
+  add("integer cwd", withCwd("1"));
+
   return cases;
 }

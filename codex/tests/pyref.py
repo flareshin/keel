@@ -37,19 +37,9 @@ def failure(error):
     return {'error': str(error), 'type': type(error).__name__}
 
 
-def integral_floats_as_ints(value):
-    if isinstance(value, float) and math.isfinite(value) and value.is_integer() and abs(value) < 1e16:
-        return int(value)
-    if isinstance(value, list):
-        return [integral_floats_as_ints(item) for item in value]
-    if isinstance(value, dict):
-        return {key: integral_floats_as_ints(item) for key, item in value.items()}
-    return value
-
-
 def json_loads(text):
     try:
-        return {'ok': json.dumps(integral_floats_as_ints(json.loads(text)), sort_keys=True)}
+        return {'ok': json.dumps(json.loads(text), sort_keys=True)}
     except ValueError as error:
         return failure(error)
 

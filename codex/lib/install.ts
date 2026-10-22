@@ -1,5 +1,5 @@
 import { readdirSync, unlinkSync } from "node:fs";
-import { expandUser, isRecord, isSystemError, sortedByCodePoint } from "../../hooks/lib/hookkit/pycompat.ts";
+import { expandUser, isSystemError, sortedByCodePoint } from "../../hooks/lib/hookkit/pycompat.ts";
 import { ExitRequest, parseArguments } from "./argparse.ts";
 import type { CommandParser } from "./argparse.ts";
 import type { CommandResult } from "./command.ts";
@@ -7,7 +7,7 @@ import { digest, fingerprint, readJson, writeAtomic } from "./files.ts";
 import type { ManagedFile } from "./files.ts";
 import { pythonFailureMessage, ValueError } from "./pyerrors.ts";
 import { absolutePath, childPath, isAbsolute, isDirectory, isFile, nameOf, parentOf, purePath, readText, resolvePath, shellQuote } from "./pyfs.ts";
-import { pythonJsonDumps } from "./pyjson.ts";
+import { isJsonObject, pythonJsonDumps } from "./pyjson.ts";
 import type { JsonValue } from "./pyjson.ts";
 import { applySkillPlan, planSkills, realSkillFiles, withInstallationLock } from "./skill_registry.ts";
 import type { SkillFiles, SkillPlan } from "./skill_registry.ts";
@@ -189,7 +189,7 @@ function writeAll(
 function readProfile(statePath: string, agentsHome: string): { owned: Map<string, string>; migrated: boolean } {
   const state = readJson(statePath);
   const recorded = Object.hasOwn(state, "owned") ? state["owned"] : {};
-  if (!isRecord(recorded) || Object.values(recorded).some((value) => typeof value !== "string")) {
+  if (!isJsonObject(recorded) || Object.values(recorded).some((value) => typeof value !== "string")) {
     throw new ValueError(`invalid ownership state: ${statePath}`);
   }
   const homeOnRecord = Object.hasOwn(state, "skills_home") ? state["skills_home"] : agentsHome;

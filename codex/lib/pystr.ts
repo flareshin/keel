@@ -1,5 +1,4 @@
-import { isRecord } from "../../hooks/lib/hookkit/pycompat.ts";
-import { pythonFloatRepr } from "./pyjson.ts";
+import { isJsonObject, PyFloat, pythonFloatRepr } from "./pyjson.ts";
 import { pythonRepr } from "./pyrepr.ts";
 
 type Pending = string | { value: unknown };
@@ -18,7 +17,7 @@ export function pythonValueStr(value: unknown): string {
 
 function expand(value: unknown): Pending[] {
   if (Array.isArray(value)) return enclose("[", "]", value.map((item) => [{ value: item }]));
-  if (isRecord(value)) return enclose("{", "}", Object.entries(value).map(([key, item]) => [pythonRepr(key), ": ", { value: item }]));
+  if (isJsonObject(value)) return enclose("{", "}", Object.entries(value).map(([key, item]) => [pythonRepr(key), ": ", { value: item }]));
   return [scalarRepr(value)];
 }
 
@@ -37,11 +36,12 @@ function scalarRepr(value: unknown): string {
   if (value === true) return "True";
   if (value === false) return "False";
   if (typeof value === "string") return pythonRepr(value);
-  if (typeof value === "number") return numberRepr(value);
+  if (value instanceof PyFloat) return floatRepr(value.value);
+  if (typeof value === "number") return Number.isInteger(value) ? String(value) : floatRepr(value);
   return String(value);
 }
 
-function numberRepr(value: number): string {
+function floatRepr(value: number): string {
   if (Number.isNaN(value)) return "nan";
   if (value === Infinity) return "inf";
   if (value === -Infinity) return "-inf";

@@ -4,7 +4,7 @@ import { describe, test } from 'node:test';
 import type { TestContext } from 'node:test';
 import { RecursionError as HookRecursionError } from '../../hooks/lib/hookkit/pyruntime.ts';
 import { isRecursionError } from '../../hooks/ship-gate/ship-gate.ts';
-import { RecursionError as ScannerRecursionError, ValueError } from '../../lib/evidence/pycompat.ts';
+import { RecursionError as ScannerRecursionError, ValueError, pythonJsonLoads } from '../../lib/evidence/pycompat.ts';
 import { LOGIC_WITH_TEST, Sandbox } from './helpers.ts';
 import type { Repo } from './helpers.ts';
 
@@ -12,11 +12,15 @@ const PUSH_INSIDE_QUOTES = `'; git push origin feature; echo "`;
 const OVER_BOUND = 10_001;
 const DENY_TAIL = 'Run it yourself in your terminal: ';
 
-function listCommandPush(sandbox: Sandbox, repo: Repo, depth: number) {
+function listCommandPayload(sandbox: Sandbox, repo: Repo, depth: number): string {
   const placeholder = 'LIST_COMMAND';
   const text = JSON.stringify(sandbox.bashPayload(repo, placeholder));
   const nested = '['.repeat(depth) + JSON.stringify(PUSH_INSIDE_QUOTES) + ']'.repeat(depth);
-  return sandbox.hookRaw(text.replace(JSON.stringify(placeholder), nested));
+  return text.replace(JSON.stringify(placeholder), nested);
+}
+
+function listCommandPush(sandbox: Sandbox, repo: Repo, depth: number) {
+  return sandbox.hookRaw(listCommandPayload(sandbox, repo, depth));
 }
 
 function reviewedFeature(sandbox: Sandbox): [Repo, string] {
@@ -56,8 +60,10 @@ describe('RecursionDenialTest', () => {
     assert.ok(run.stderr.includes('RecursionError: maximum recursion depth exceeded while decoding a JSON array'), run.stderr.slice(0, 400));
   });
 
-  test('push_denies_whenCommandIsAListNestedPastTheStrBound', (t) => {
+  test('push_denies_whenCommandIsAListNestedPastTheJsonBound', (t) => {
     const [sandbox, repo] = featureRepo(t);
+    assert.throws(() => pythonJsonLoads(listCommandPayload(sandbox, repo, OVER_BOUND)),
+      (error: Error) => error instanceof ScannerRecursionError && error.message.includes('while decoding a JSON array'));
     const run = listCommandPush(sandbox, repo, OVER_BOUND);
     assert.equal(run.rc, 2, run.stderr.slice(0, 400));
     assert.ok(run.stderr.includes(DENY_TAIL), run.stderr.slice(0, 400));
@@ -72,6 +78,17 @@ describe('RecursionDenialTest', () => {
     assert.equal(listCommandPush(sandbox, repo, 9998).rc, 2);
     const tooDeepForJson = listCommandPush(sandbox, repo, 9999);
     assert.equal(tooDeepForJson.rc, 2, tooDeepForJson.stderr.slice(0, 400));
+  });
+
+  test('push_passes_whenApprovedAndSessionIdIsNestedBelowTheBound', (t) => {
+    const sandbox = new Sandbox(t);
+    const [repo] = reviewedFeature(sandbox);
+    const placeholder = 'NESTED_SESSION';
+    const text = JSON.stringify(sandbox.bashPayload(repo, 'git push origin feature', { session: placeholder }));
+    for (const depth of [3000, 9998]) {
+      const run = sandbox.hookRaw(text.replace(JSON.stringify(placeholder), '['.repeat(depth) + '"s1"' + ']'.repeat(depth)));
+      assert.equal(run.rc, 0, run.stderr.slice(0, 400));
+    }
   });
 
   test('hook_denies_whenStdinNestsPastTheJsonBoundEvenForAHarmlessCommand', (t) => {

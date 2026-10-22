@@ -274,7 +274,59 @@ function passwdFileHome(name: string): string | null {
   return null;
 }
 
+interface OpenDump {
+  closer: string;
+  items: Array<JsonValue | undefined>;
+  keys: string[] | null;
+  index: number;
+}
+
 export function pythonJsonDumps(value: JsonValue | undefined, options: { sortKeys?: boolean } = {}): string {
+  const parts: string[] = [];
+  const open: OpenDump[] = [];
+  let next = value;
+  for (;;) {
+    if (Array.isArray(next) || isJsonObject(next)) {
+      if (open.length >= MAX_JSON_DEPTH) throw new RecursionError('maximum recursion depth exceeded while encoding a JSON object');
+      const keys = Array.isArray(next) ? null : options.sortKeys ? sortedStrings(Object.keys(next)) : Object.keys(next);
+      const items = Array.isArray(next) ? next : keys!.map((key) => (next as { [key: string]: JsonValue })[key]);
+      const opener = keys === null ? '[' : '{';
+      const closer = keys === null ? ']' : '}';
+      if (items.length > 0) {
+        open.push({ closer, items, keys, index: 0 });
+        parts.push(opener + dumpMemberKey(keys, 0));
+        next = items[0];
+        continue;
+      }
+      parts.push(opener + closer);
+    } else {
+      parts.push(dumpScalar(next));
+    }
+    const following = closeFinishedDumps(open, parts);
+    if (following === null) return parts.join('');
+    next = following.value;
+  }
+}
+
+function closeFinishedDumps(open: OpenDump[], parts: string[]): { value: JsonValue | undefined } | null {
+  for (;;) {
+    const innermost = open.at(-1);
+    if (innermost === undefined) return null;
+    innermost.index += 1;
+    if (innermost.index < innermost.items.length) {
+      parts.push(', ' + dumpMemberKey(innermost.keys, innermost.index));
+      return { value: innermost.items[innermost.index] };
+    }
+    parts.push(innermost.closer);
+    open.pop();
+  }
+}
+
+function dumpMemberKey(keys: string[] | null, index: number): string {
+  return keys === null ? '' : dumpString(keys[index]!) + ': ';
+}
+
+function dumpScalar(value: JsonValue | undefined): string {
   if (value === null) return 'null';
   if (value === true) return 'true';
   if (value === false) return 'false';
@@ -282,11 +334,6 @@ export function pythonJsonDumps(value: JsonValue | undefined, options: { sortKey
   if (typeof value === 'bigint') return value.toString();
   if (value instanceof PyFloat) return dumpFloat(value.value);
   if (typeof value === 'string') return dumpString(value);
-  if (Array.isArray(value)) return '[' + value.map((item) => pythonJsonDumps(item, options)).join(', ') + ']';
-  if (isJsonObject(value)) {
-    const keys = options.sortKeys ? sortedStrings(Object.keys(value)) : Object.keys(value);
-    return '{' + keys.map((key) => dumpString(key) + ': ' + pythonJsonDumps(value[key], options)).join(', ') + '}';
-  }
   throw new TypeError(`Object of type ${typeof value} is not JSON serializable`);
 }
 
@@ -564,16 +611,30 @@ function numericEquals(left: bigint | number, right: bigint | number): boolean {
 }
 
 export function pyEquals(left: unknown, right: unknown): boolean {
+  const pending: Array<[unknown, unknown]> = [[left, right]];
+  for (let pair = pending.pop(); pair !== undefined; pair = pending.pop()) {
+    if (!sameAtThisLevel(pair[0], pair[1], pending)) return false;
+  }
+  return true;
+}
+
+function sameAtThisLevel(left: unknown, right: unknown, pending: Array<[unknown, unknown]>): boolean {
   const leftNumber = pyNumeric(left);
   const rightNumber = pyNumeric(right);
   if (leftNumber !== undefined || rightNumber !== undefined) {
     return leftNumber !== undefined && rightNumber !== undefined && numericEquals(leftNumber, rightNumber);
   }
-  if (Array.isArray(left)) return Array.isArray(right) && left.length === right.length && left.every((item, index) => pyEquals(item, right[index]));
+  if (Array.isArray(left)) {
+    if (!Array.isArray(right) || left.length !== right.length) return false;
+    left.forEach((item, index) => pending.push([item, right[index]]));
+    return true;
+  }
   if (isJsonObject(left)) {
     if (!isJsonObject(right)) return false;
     const keys = Object.keys(left);
-    return keys.length === Object.keys(right).length && keys.every((key) => Object.hasOwn(right, key) && pyEquals(left[key], right[key]));
+    if (keys.length !== Object.keys(right).length || !keys.every((key) => Object.hasOwn(right, key))) return false;
+    keys.forEach((key) => pending.push([left[key], right[key]]));
+    return true;
   }
   return left === right;
 }

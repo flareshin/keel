@@ -35,6 +35,7 @@ DEEP_NESTING = 3000
 BOUND_NESTING = 9999
 OVER_BOUND_NESTINGS = [10001, 200000]
 DEEPEST_PARSED_COMMAND_NESTING = 9998
+DEEPEST_PARSED_SESSION_NESTING = 9998
 COMMAND_DIVERGENT_NESTINGS = [9999, 10001]
 JSON_EDGE_VALUES = [
     OVER_LIMIT_INTEGER, "-" + OVER_LIMIT_INTEGER, "1" * INT_DIGIT_LIMIT, OVER_LIMIT_INTEGER + ".5", OVER_LIMIT_INTEGER + "e2",
@@ -345,6 +346,15 @@ def merge_spellings(holder: Holder) -> None:
     sandbox.hook_raw(payload_text(sandbox, repo, "gh pr merge 7 --match-head-commit %s" % head))
 
 
+def deep_session_id(holder: Holder) -> None:
+    sandbox, repo, head = reviewed_feature(holder)
+    for depth in [DEEP_NESTING, DEEPEST_PARSED_SESSION_NESTING]:
+        session = "s1"
+        for _ in range(depth):
+            session = [session]
+        sandbox.hook_raw(payload_text(sandbox, repo, "git push origin feature", session_id=session))
+
+
 def deep_evidence_file(holder: Holder) -> None:
     for depth in OVER_BOUND_NESTINGS:
         sandbox, repo, head = reviewed_feature(holder)
@@ -531,7 +541,7 @@ def record_all(recorder) -> None:
 
     helpers.Sandbox.hook_raw = recording_hook_raw
     for scenario in (malformed_payloads, unicode_and_case_spellings, refspec_and_option_spellings, merge_spellings, deep_evidence_file,
-                     broken_state, repository_states):
+                     deep_session_id, broken_state, repository_states):
         recorder.current_test = scenario.__name__
         holder = Holder()
         try:

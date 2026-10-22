@@ -10,6 +10,7 @@ import {
 } from '../../lib/evidence/pycompat.ts';
 import { OSError } from '../../lib/evidence/subprocess.ts';
 import { isInputFailure } from '../../lib/evidence/writers.ts';
+import type { JsonValue } from '../../lib/evidence/pycompat.ts';
 
 describe('pythonJsonDumps', () => {
   test('escapes non-ASCII and non-BMP the way json.dumps does and uses python separators', () => {
@@ -25,6 +26,38 @@ describe('pythonJsonDumps', () => {
 
   test('keeps insertion order without sortKeys and writes empty containers', () => {
     assert.equal(pythonJsonDumps({ b: [], a: {} }), '{"b": [], "a": {}}');
+  });
+
+  test('writes nesting far deeper than the call stack, up to the 10000 level bound', () => {
+    const depth = 9999;
+    let nestedArrays: JsonValue = 'x';
+    let nestedObjects: JsonValue = 'x';
+    for (let level = 0; level < depth; level++) {
+      nestedArrays = [nestedArrays];
+      nestedObjects = { b: nestedObjects, a: [] };
+    }
+    assert.equal(pythonJsonDumps(nestedArrays), '['.repeat(depth) + '"x"' + ']'.repeat(depth));
+    assert.equal(pythonJsonDumps(nestedObjects, { sortKeys: true }), '{"a": [], "b": '.repeat(depth) + '"x"' + '}'.repeat(depth));
+    assert.equal(pythonJsonDumps(nestedObjects), '{"b": '.repeat(depth) + '"x"' + ', "a": []}'.repeat(depth));
+    assert.equal(pythonJsonDumps(JSON.parse('[' + '['.repeat(10_000 - 1) + ']'.repeat(10_000 - 1) + ']')), '['.repeat(10_000) + ']'.repeat(10_000));
+  });
+
+  test('keeps separators, key order, ascii escapes and number spellings the same at every level', () => {
+    const value = { 'é': ['😀', { z: [1, new PyFloat(1), 9007199254740993n, null, true], a: {} }], b: [[], [[]]] };
+    assert.equal(pythonJsonDumps(value, { sortKeys: true }),
+      '{"b": [[], [[]]], "\\u00e9": ["\\ud83d\\ude00", {"a": {}, "z": [1, 1.0, 9007199254740993, null, true]}]}');
+    assert.equal(pythonJsonDumps(value),
+      '{"\\u00e9": ["\\ud83d\\ude00", {"z": [1, 1.0, 9007199254740993, null, true], "a": {}}], "b": [[], [[]]]}');
+  });
+
+  test('throws the RecursionError past 10000 levels and a TypeError for a value json cannot encode', () => {
+    for (const depth of [10_001, 200_000]) {
+      let nested: JsonValue = 1;
+      for (let level = 0; level < depth; level++) nested = [nested];
+      assert.throws(() => pythonJsonDumps(nested), (error: Error) => error instanceof RecursionError && !(error instanceof ValueError)
+        && error.message === 'maximum recursion depth exceeded while encoding a JSON object');
+    }
+    assert.throws(() => pythonJsonDumps([undefined as never]), TypeError);
   });
 });
 
@@ -95,6 +128,17 @@ describe('pythonJsonLoads', () => {
 });
 
 describe('python value semantics', () => {
+  test('pyEquals compares values nested far deeper than the call stack', () => {
+    const nest = (bottom: unknown, depth: number) => {
+      let value: unknown = bottom;
+      for (let level = 0; level < depth; level++) value = { a: [value] };
+      return value;
+    };
+    assert.equal(pyEquals(nest(1, 9999), nest(new PyFloat(1), 9999)), true);
+    assert.equal(pyEquals(nest(1, 9999), nest(2, 9999)), false);
+    assert.equal(pyEquals(nest(1, 9999), nest(1, 9998)), false);
+  });
+
   test('pyEquals compares numbers by value across int, bool and float like ==', () => {
     for (const [left, right, expected] of [
       [1, new PyFloat(1), true], [true, 1, true], [new PyFloat(1), true, true], [9007199254740993n, new PyFloat(9007199254740992), false],

@@ -42,7 +42,6 @@ for (const name of SCRIPTS) {
   })
 }
 
-// agent() throws when its agentType is not in the session's agent registry, so every named type must ship and link.
 test('workflowAgentTypes_shipAsLinkedAgentFilesWithTheirToolLimitAndNoPin_whenScanned', () => {
   const named = [...new Set(SCRIPTS.flatMap((name) => [...readScript(name).matchAll(/_TYPE = '([\w-]+)'/g)].map((match) => match[1])))].sort()
   const links = readFileSync(join(KEEL_HOME, 'settings', 'links.tsv'), 'utf8')

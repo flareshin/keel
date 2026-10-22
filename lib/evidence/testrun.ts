@@ -28,6 +28,7 @@ export const COUNT_PATTERNS: Array<[name: string, pattern: RegExp]> = [
 const NO_TESTS_RECOGNIZED = 4;
 const COMMAND_NOT_FOUND = 2;
 const DEFAULT_EXEC_PATH = '/bin:/usr/bin';
+const MKFIFO = '/usr/bin/mkfifo';
 const KEEPS_SEARCHING_ERRORS = new Set(['ENOENT', 'ENOTDIR']);
 const OUTPUT_POLL_MS = 10;
 const OUTPUT_READ_BYTES = 64 * 1024;
@@ -122,7 +123,7 @@ function openOutputPipe(): { reader: number; writer: number } {
   const directory = mkdtempSync(join(tmpdir(), 'keel-test-'));
   try {
     const fifo = join(directory, 'output');
-    const made = spawnSync('mkfifo', ['-m', '600', fifo], { encoding: 'utf8' });
+    const made = spawnSync(MKFIFO, ['-m', '600', fifo], { encoding: 'utf8' });
     if (made.status !== 0) throw new Error(`mkfifo failed: ${made.error?.message ?? made.stderr}`);
     const reader = openSync(fifo, constants.O_RDONLY | constants.O_NONBLOCK);
     return { reader, writer: openSync(fifo, constants.O_WRONLY) };

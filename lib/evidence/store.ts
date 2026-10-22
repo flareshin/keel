@@ -112,7 +112,7 @@ export function readFile(path: string): Evidence {
   try {
     evidence = pythonJsonLoads(universalNewlines(decodeStrict(readFileSync(path))));
   } catch (error) {
-    throw new EvidenceError(`unreadable evidence ${path}: ${readFailure(error)}`);
+    throw new EvidenceError(`unreadable evidence ${path}: ${readFailure(error, path)}`);
   }
   if (!isJsonObject(evidence) || typeof evidence['expires_at'] !== 'string') {
     throw new EvidenceError('not an evidence object: ' + path);
@@ -120,8 +120,8 @@ export function readFile(path: string): Evidence {
   return evidence as Evidence;
 }
 
-function readFailure(error: unknown): string {
-  if (error instanceof Error && 'errno' in error) return pyOsErrorMessage(error as NodeJS.ErrnoException);
+function readFailure(error: unknown, path: string): string {
+  if (error instanceof Error && 'errno' in error) return pyOsErrorMessage({ ...error, path } as NodeJS.ErrnoException);
   return error instanceof Error ? error.message : String(error);
 }
 
@@ -131,7 +131,7 @@ function ensurePrivateDirs(directory: string): void {
   try {
     mkdirSync(directory, { mode: DIRECTORY_MODE });
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST' || !isDirectory(directory)) throw error;
   }
   let current = directory;
   for (;;) {

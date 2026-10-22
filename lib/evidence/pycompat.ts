@@ -138,17 +138,27 @@ export function pyReprList(values: string[]): string {
 }
 
 const OS_WORDING: Record<string, string> = {
-  EEXIST: 'File exists', EFAULT: 'Bad address', EIO: 'Input/output error', EISDIR: 'Is a directory',
-  ELOOP: 'Too many levels of symbolic links', ENAMETOOLONG: 'File name too long', ENFILE: 'Too many open files in system',
-  ENOMEM: 'Cannot allocate memory', ETXTBSY: 'Text file busy',
+  EALREADY: 'Operation already in progress', EEXIST: 'File exists', EFAULT: 'Bad address', EHOSTUNREACH: 'No route to host',
+  EIO: 'Input/output error', EISDIR: 'Is a directory', ELOOP: 'Too many levels of symbolic links', ENAMETOOLONG: 'File name too long',
+  ENFILE: 'Too many open files in system', ENOMEM: 'Cannot allocate memory', ENOTSUP: 'Operation not supported', ESPIPE: 'Illegal seek',
+  ETXTBSY: 'Text file busy',
 };
 const OS_WORDING_BY_PLATFORM: Record<string, Record<string, string>> = {
-  darwin: { EBUSY: 'Resource busy', ENODEV: 'Operation not supported by device', ENXIO: 'Device not configured' },
-  other: { EBUSY: 'Device or resource busy', ENODEV: 'No such device', ENXIO: 'No such device or address' },
+  darwin: {
+    EADDRNOTAVAIL: "Can't assign requested address", EAFNOSUPPORT: 'Address family not supported by protocol family',
+    EBUSY: 'Resource busy', ENODATA: 'No message available on STREAM', ENODEV: 'Operation not supported by device',
+    ENXIO: 'Device not configured', EOVERFLOW: 'Value too large to be stored in data type', ETIMEDOUT: 'Operation timed out',
+    EXDEV: 'Cross-device link',
+  },
+  unverifiedGlibc: {
+    EADDRNOTAVAIL: 'Cannot assign requested address', EAFNOSUPPORT: 'Address family not supported by protocol',
+    EBUSY: 'Device or resource busy', ENODATA: 'No data available', ENODEV: 'No such device', ENXIO: 'No such device or address',
+    EOVERFLOW: 'Value too large for defined data type', ETIMEDOUT: 'Connection timed out', EXDEV: 'Invalid cross-device link',
+  },
 };
 
 function osWording(code: string | undefined, libuvDescription: string): string {
-  const platformWording = OS_WORDING_BY_PLATFORM[process.platform === 'darwin' ? 'darwin' : 'other']!;
+  const platformWording = OS_WORDING_BY_PLATFORM[process.platform === 'darwin' ? 'darwin' : 'unverifiedGlibc']!;
   const wording = code === undefined ? undefined : OS_WORDING[code] ?? platformWording[code];
   return wording ?? libuvDescription.charAt(0).toUpperCase() + libuvDescription.slice(1);
 }

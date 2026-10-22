@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { chmodSync, closeSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { dirname, join, relative } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { describe, test } from 'node:test';
 import type { TestContext } from 'node:test';
@@ -408,6 +408,68 @@ describe('cross-implementation evidence compatibility', () => {
     assert.deepEqual(outcomes[0]!.runs.map(([rc]) => rc), [0, 3, 0]);
     assert.match(String(outcomes[0]!.runs[0]![1]), /^Ran 3 tests\n$/);
     assert.equal(outcomes[0]!.state.length, 2);
+  });
+
+  test('file system failures in the evidence store and in spawning read like the OS wording Python prints', (t) => {
+    const { sandbox, repo } = prepare(t);
+    const busy = repo.write('busy.sh', "#!/bin/sh\necho 'Ran 3 tests'\n", true);
+    const holder = openSync(busy, 'r+');
+    t.after(() => closeSync(holder));
+    const executingBusyFileFails = process.platform !== 'darwin';
+    if (!executingBusyFileFails) t.diagnostic('ETXTBSY case skipped: darwin lets a file open for writing execute');
+    const testsDirectory = (dataDir: string) => join(dataDir, 'state', 'keel', 'evidence', 'tests', 'acme__app');
+    const cases = [
+      { label: 'directory in place of an evidence file (EISDIR)', args: ['evidence', 'gc'], cwd: undefined, errno: 'Errno 21',
+        setup: (dataDir: string) => mkdirSync(join(testsDirectory(dataDir), 'bad.json'), { recursive: true }) },
+      { label: 'unreadable evidence file (EACCES)', args: ['evidence', 'gc'], cwd: undefined, errno: 'Errno 13',
+        setup: (dataDir: string) => {
+          mkdirSync(testsDirectory(dataDir), { recursive: true });
+          writeFileSync(join(testsDirectory(dataDir), 'bad.json'), '{}', { mode: 0o000 });
+        } },
+      { label: 'file in place of the evidence directory (EEXIST)', args: ['test', '--', 'bash', '-c', "echo 'Ran 3 tests'"], cwd: repo.path, errno: 'Errno 17',
+        setup: (dataDir: string) => {
+          mkdirSync(dirname(testsDirectory(dataDir)), { recursive: true });
+          writeFileSync(testsDirectory(dataDir), 'not a directory');
+        } },
+      ...(executingBusyFileFails ? [{ label: 'script open for writing (ETXTBSY)', args: ['test', '--', './busy.sh'], cwd: repo.path, errno: 'Errno 26', setup: () => undefined }] : []),
+    ];
+    for (const [index, item] of cases.entries()) {
+      const results = (['py', 'ts'] as Impl[]).map((impl) => {
+        sandbox.data = join(sandbox.root, `data-os-${impl}-${index}`);
+        sandbox.env['KEEL_DATA_DIR'] = sandbox.data;
+        mkdirSync(sandbox.data);
+        item.setup(sandbox.data);
+        sandbox.runner = RUNNERS[impl];
+        const run = sandbox.keel(item.args, { cwd: item.cwd });
+        return [run.rc, normalize(run.stdout, sandbox.data), normalize(run.stderr, sandbox.data)];
+      });
+      assert.ok(String(results[0]![2]).includes(item.errno), `${item.label}: python stderr ${String(results[0]![2])}`);
+      assert.deepEqual(results[1], results[0], item.label);
+    }
+  });
+
+  test('keel test does not depend on the caller PATH for mkfifo', (t) => {
+    const { sandbox, repo } = prepare(t);
+    const tools = join(sandbox.root, 'tools-without-mkfifo');
+    mkdirSync(tools);
+    for (const name of ['git', 'sed', 'basename', 'uname', 'bash']) {
+      const located = spawnSync('sh', ['-c', `command -v ${name}`], { encoding: 'utf8' }).stdout.trim();
+      symlinkSync(located, join(tools, name));
+    }
+    sandbox.env['PATH'] = tools;
+    const python = spawnSync('sh', ['-c', 'command -v python3'], { encoding: 'utf8' }).stdout.trim();
+    const runners: Record<Impl, string[]> = { py: [python, KEEL_PYTHON], ts: [process.execPath, join(KEEL_HOME, 'bin', 'keel.ts')] };
+    const outcomes = (['py', 'ts'] as Impl[]).map((impl) => {
+      sandbox.data = join(sandbox.root, `data-no-mkfifo-${impl}`);
+      sandbox.env['KEEL_DATA_DIR'] = sandbox.data;
+      mkdirSync(sandbox.data);
+      sandbox.runner = runners[impl];
+      const run = sandbox.keel(['test', '--', '/bin/echo', 'Ran 1 test'], { cwd: repo.path });
+      return { run: [run.rc, normalize(run.stdout, sandbox.data), normalize(run.stderr, sandbox.data)], recorded: sandbox.evidenceFiles('tests').length };
+    });
+    assert.deepEqual(outcomes[1], outcomes[0]);
+    assert.deepEqual(outcomes[0]!.run.slice(0, 2), [0, 'Ran 1 test\n']);
+    assert.equal(outcomes[0]!.recorded, 1);
   });
 
   test('cli error paths match: usage, refusal and stdin JSON errors', (t) => {

@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { constants, tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { getSystemErrorMap } from 'node:util';
 import {
-  JSONDecodeError, PyFloat, decodeSurrogateEscape, fnmatchCase, isDirectory, isFile, isSystemError, pyEquals, pyRepr, pySplitLines, pyStr, pyStrip, pyTruthy, pythonJsonDumps, pythonJsonLoads,
+  JSONDecodeError, PyFloat, decodeSurrogateEscape, fnmatchCase, isDirectory, isFile, isSystemError, pyEquals, pyOsErrorMessage, pyRepr, pySplitLines, pyStr, pyStrip, pyTruthy, pythonJsonDumps, pythonJsonLoads,
 } from '../../lib/evidence/pycompat.ts';
 import { OSError } from '../../lib/evidence/subprocess.ts';
 import { isInputFailure } from '../../lib/evidence/writers.ts';
@@ -130,5 +132,26 @@ describe('failure classification', () => {
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
+  });
+});
+
+describe('pyOsErrorMessage', () => {
+  const reportable = [...getSystemErrorMap()].flatMap(([errno, [code]]) => (code in constants.errno ? [{ errno, code }] : []));
+
+  test('words every errno node can report like the host os.strerror', () => {
+    const python = spawnSync('python3', ['-I', '-c', 'import os, sys\nfor n in sys.argv[1:]: print(os.strerror(-int(n)))', ...reportable.map(({ errno }) => String(errno))], { encoding: 'utf8' });
+    assert.equal(python.status, 0, python.stderr);
+    const strerror = python.stdout.split('\n');
+    assert.ok(reportable.length > 50, `only ${reportable.length} errnos compared`);
+    const differing = reportable.flatMap(({ errno, code }, index) => {
+      const ours = pyOsErrorMessage(Object.assign(new Error('unused'), { errno, code }));
+      return ours === `[Errno ${-errno}] ${strerror[index]}` ? [] : [`${code}: ${ours} != ${strerror[index]}`];
+    });
+    assert.deepEqual(differing, []);
+  });
+
+  test('appends the repr of the path like OSError.__str__', () => {
+    const error = Object.assign(new Error('unused'), { errno: -21, code: 'EISDIR', path: "/tmp/it's" });
+    assert.equal(pyOsErrorMessage(error), `[Errno 21] Is a directory: "/tmp/it's"`);
   });
 });

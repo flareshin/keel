@@ -131,7 +131,7 @@ function randomString(random: () => number, maxLength: number): string {
 const DOTTED_DOTLESS_I_PATTERNS: [string, string][] = [
   ["i", "i"], ["I", "i"], ["(?i)i", ""], ["(?i)\u0130", ""], ["(?i)\u0131", ""], ["\u0130", "i"], ["[a-z]+x", "i"], ["(?i)[a-z]+x", ""], ["[^i]", "i"], ["[^a-z]", "i"],
   ["[\u0130]", "i"], ["[\u0100-\u0200]", "i"], ["\\u0130", "i"], ["\\x49", "i"], ["\\x69", "i"], ["\\111", "i"], ["\\\u0130", "i"], ["[\\w]", "i"], ["[\\d-]i", "i"], ["[a-]x", "i"],
-  ["(?P<api>i)(?P=api)", "i"], ["(?ai)i", ""], ["API_KEY", "i"], ["(?i)[A-Z]{2}\u0130_KEY", ""],
+  ["(?ai)i", ""], ["API_KEY", "i"], ["(?i)[A-Z]{2}\u0130_KEY", ""],
 ]
 
 const QUANTIFIER_AND_BRACKET_PATTERNS: [string, string][] = [
@@ -288,6 +288,15 @@ describe("python compatibility helpers match python3", () => {
     for (const pattern of ["(?x)a b", "(?x:a b)", "(?L)a", "(?L:a)"]) {
       assert.throws(() => compilePythonRegex(pattern), PyRegexError, pattern)
     }
+  })
+
+  it("compilePythonRegex_rejectsBackreferencesUnderIgnoreCase_becauseJsCannotFoldDottedAndDotlessI", () => {
+    for (const pattern of ["(?i)(i)\\1", "(?i)(?P<g>\\w)(?P=g)", "(?i:(a)\\1)"]) {
+      assert.throws(() => compilePythonRegex(pattern), PyRegexError, pattern)
+    }
+    assert.throws(() => compilePythonRegex("(?P<api>i)(?P=api)", "i"), PyRegexError)
+    assert.equal(compilePythonRegex("(a)\\1").test("aa"), true)
+    assert.equal(compilePythonRegex("(?P<g>a)(?P=g)").test("aa"), true)
   })
 
   it("parseIsoDate_agrees_withStrptimeOnShapesAndCalendarEdges", () => {

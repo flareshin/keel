@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { withEnv } from "../../tests/hooks/helpers.ts";
 import { describe, it } from "node:test";
 import { canonicalCodec, decodeWithCodec, PythonStartupFailure, PythonUncaughtError, resolveStdinEncoding, UnsupportedStdinEncoding } from "../lib/pycodecs.ts";
-import { ASCII_OPAQUE_ENCODING_NAMES, NON_TEXT_ENCODINGS, TEXT_ENCODING_NAMES } from "../lib/pycodec_names.ts";
+import { NON_TEXT_ENCODINGS, PYTHON_CODEC_ALIAS_NAMES, TEXT_ENCODING_NAMES } from "../lib/pycodec_names.ts";
 import { ValueError } from "../lib/pyerrors.ts";
 import { decodeStdin, stdinCodec } from "../lib/pystdin.ts";
 import { pythonReference, seededRandom } from "./pyref.ts";
+import { expectedStdinDeny, UNSUPPORTED_STDIN_CODECS } from "./stdin-policy.ts";
 import type { Outcome, ReferenceCall } from "./pyref.ts";
 
 const EXACT_CODECS = ["utf_8", "utf_8_sig", "ascii", "latin_1", "cp1252", "cp1251", "cp866", "koi8_r", "iso8859_2", "iso8859_5", "iso8859_7", "iso8859_15"];
@@ -14,10 +19,7 @@ const MISMATCHES_SHOWN = 8;
 const PYTHON_FATAL = "fatal";
 const ASCII_PAYLOAD = Buffer.from("plain");
 const INVALID_PAYLOAD = Buffer.from([0xff, 0x80, 0xfe]);
-const DIVERGENT_CODECS = [
-  "euc_kr", "euc_jp", "shift_jis", "big5", "gbk", "gb2312", "cp949", "gb18030", "big5hkscs", "cp932", "iso2022_jp", "hz",
-  "utf_16", "utf_32", "utf_7", "mac_roman", "cp037", "cp500", "koi8_u", "iso8859_4", "cp850",
-];
+const DIVERGENT_CODECS = UNSUPPORTED_STDIN_CODECS;
 
 function report(label: string, cases: number, mismatches: string[], note = ""): void {
   console.log(`parity ${label}: ${cases} cases, ${mismatches.length} mismatches${note}`);
@@ -35,14 +37,32 @@ function tableOutcome(decode: () => string): Outcome {
   }
 }
 
-function pythonOutcome(environment: Record<string, string>, bytes: Buffer): Outcome {
-  const [outcome] = pythonReference(process.cwd(), [{ fn: "stdin_decode", args: [environment, bytes.toString("hex")] }]) as [Outcome];
+function normalizedReference(outcome: Outcome): Outcome {
   return outcome.error === "crash" ? { error: PYTHON_FATAL } : outcome;
+}
+
+function codecPolicies(environments: Array<Record<string, string>>): Outcome[] {
+  const stdin = pythonReference(process.cwd(), environments.map((env) => ({ fn: "stdin_codec", args: [env] })));
+  return pythonReference(process.cwd(), environments.map((env, index) => {
+    const selected = (stdin[index]?.ok as string[] | undefined)?.[0] ?? "bogus";
+    const canonical = PYTHON_TO_CODEC[selected] ?? selected.replaceAll("-", "_");
+    const locale = env["LC_ALL"] || env["LC_CTYPE"] || env["LANG"];
+    const localeCodeset = !EXACT_CODECS.includes(canonical) && locale?.includes(".") ? locale.slice(locale.indexOf(".") + 1).split("@")[0] : undefined;
+    const encoding = (env["PYTHONIOENCODING"] ?? "").split(":")[0] || localeCodeset || selected;
+    return { fn: "codec_lookup", args: [encoding] };
+  }));
+}
+
+function policyExpectation(reference: Outcome, policy: Outcome): Outcome {
+  if (policy.error !== undefined) return { error: PYTHON_FATAL };
+  const { codec, name } = policy.ok as { codec: string; name: string };
+  const exact = PYTHON_TO_CODEC[codec.replaceAll("_", "-")] ?? codec;
+  return EXACT_CODECS.includes(exact) ? normalizedReference(reference) : { error: `deny: ${expectedStdinDeny(name)}` };
 }
 
 describe("stdin decoding follows Python's locale, UTF-8 mode and PYTHONIOENCODING rules", () => {
   const LOCALES = [undefined, "", "C", "POSIX", "C.UTF-8", "C.utf8", "UTF-8", "en_US.UTF-8", "xx_YY.UTF-8", "en_US.ISO8859-1", "en_US.US-ASCII", "en_US", "ko_KR.eucKR",
-    "ko_KR.CP949", "ru_RU.KOI8-R", "ru_RU.CP1251", "el_GR.ISO8859-7", "be_BY.CP1131", "sr_RS.UTF-8@latin"];
+    "ko_KR.CP949", "ru_RU.KOI8-R", "ru_RU.CP1251", "el_GR.ISO8859-7", "be_BY.CP1131", "sr_RS.UTF-8@latin", "en_US.UTF-8@euro", "xx_YY.UTF-8@euro"];
   const CHOICES: Record<string, Array<string | undefined>> = {
     LC_ALL: LOCALES, LC_CTYPE: LOCALES, LANG: LOCALES,
     PYTHONUTF8: [undefined, undefined, "0", "0", "1", ""],
@@ -101,18 +121,17 @@ describe("stdin decoding follows Python's locale, UTF-8 mode and PYTHONIOENCODIN
   });
 
   it("decodes valid and invalid bytes like sys.stdin.read() wherever the codec is exact, and fails closed elsewhere", () => {
-    const pairs = samples(80).flatMap((environment) => INPUTS.map((hex) => [environment, hex] as const));
+    const environments = samples(80);
+    const policies = codecPolicies(environments);
+    const pairs = environments.flatMap((environment) => INPUTS.map((hex) => [environment, hex] as const));
     const calls = pairs.map(([environment, hex]) => ({ fn: "stdin_decode", args: [environment, hex] }));
     const expected = pythonReference(process.cwd(), calls);
     const wrong: string[] = [];
     let failedClosed = 0;
     pairs.forEach(([environment, hex], index) => {
       const actual = tableOutcome(() => decodeStdin(Buffer.from(hex, "hex"), environment));
-      const reference = (expected[index] as Outcome).error === "crash" ? { error: PYTHON_FATAL } : (expected[index] as Outcome);
-      if (typeof actual.error === "string" && actual.error.startsWith("deny: ")) {
-        failedClosed += 1;
-        return;
-      }
+      const reference = policyExpectation(expected[index] as Outcome, policies[Math.floor(index / INPUTS.length)] as Outcome);
+      if (typeof actual.error === "string" && actual.error.startsWith("deny: ")) failedClosed += 1;
       if (JSON.stringify(actual) !== JSON.stringify(reference)) wrong.push(`${JSON.stringify(calls[index])}\n  ts: ${JSON.stringify(actual)}\n  py: ${JSON.stringify(reference)}`);
     });
     report("stdin decode", calls.length, wrong, ` (${failedClosed} failed closed)`);
@@ -125,22 +144,23 @@ describe("stdin decoding follows Python's locale, UTF-8 mode and PYTHONIOENCODIN
     const names = [...accepted, ...Object.keys(nonText), "bogus", "utf-99", "", "-", "UTF-8@latin", "iso8859.1", "ISO8859.15", "x".repeat(40)].filter((name) => name !== "");
     const calls: ReferenceCall[] = names.map((name) => ({ fn: "stdin_decode", args: [{ PYTHONIOENCODING: name }, ASCII_PAYLOAD.toString("hex")] }));
     const expected = pythonReference(process.cwd(), calls);
+    const policies = pythonReference(process.cwd(), names.map((name) => ({ fn: "codec_lookup", args: [name] })));
     const wrong: string[] = [];
     let failedClosed = 0;
     names.forEach((name, index) => {
       const actual = tableOutcome(() => decodeStdin(ASCII_PAYLOAD, { PYTHONIOENCODING: name }));
-      const reference = (expected[index] as Outcome).error === "crash" ? { error: PYTHON_FATAL } : (expected[index] as Outcome);
+      const reference = policyExpectation(expected[index] as Outcome, policies[index] as Outcome);
       if (typeof actual.error === "string" && actual.error.startsWith("deny: ")) failedClosed += 1;
-      else if (JSON.stringify(actual) !== JSON.stringify(reference)) wrong.push(`${name}\n  ts: ${JSON.stringify(actual)}\n  py: ${JSON.stringify(reference)}`);
+      if (JSON.stringify(actual) !== JSON.stringify(reference)) wrong.push(`${name}\n  ts: ${JSON.stringify(actual)}\n  py: ${JSON.stringify(reference)}`);
     });
     report("stdin ascii names", names.length, wrong, ` (${failedClosed} failed closed)`);
   });
 
   it("pins the embedded codec name tables to the live Python", () => {
     const [table] = pythonReference(process.cwd(), [{ fn: "codec_table", args: [] }]) as [Outcome];
-    const live = table.ok as { accepted: string[]; opaque: string[]; nonText: Record<string, string> };
+    const live = table.ok as { accepted: string[]; aliases: Record<string, string>; nonText: Record<string, string> };
     assert.deepEqual([...TEXT_ENCODING_NAMES], live.accepted);
-    assert.deepEqual([...ASCII_OPAQUE_ENCODING_NAMES], live.opaque);
+    assert.deepEqual([...PYTHON_CODEC_ALIAS_NAMES], Object.keys(live.aliases).sort());
     assert.deepEqual(NON_TEXT_ENCODINGS, live.nonText);
   });
 
@@ -159,7 +179,7 @@ describe("stdin decoding follows Python's locale, UTF-8 mode and PYTHONIOENCODIN
     assert.equal(canonicalCodec("utf-8-sig"), "utf_8_sig");
     assert.equal(canonicalCodec("UTF8 SIG"), "utf_8_sig");
     assert.equal(canonicalCodec("iso8859.1"), "latin_1");
-    assert.equal(canonicalCodec("ISO8859.15"), "iso8859_15");
+    assert.equal(canonicalCodec("ISO8859.15"), null);
     report("codec aliases", checked, wrong);
   });
 
@@ -180,33 +200,73 @@ describe("stdin decoding follows Python's locale, UTF-8 mode and PYTHONIOENCODIN
     report("single-byte codecs", SINGLE_BYTE_CODECS.length * 256, wrong);
   });
 
-  it("lists every codec where TypeScript denies instead of decoding as Python does", () => {
-    const samples = pythonReference(process.cwd(), DIVERGENT_CODECS.map((name) => ({ fn: "codec_sample", args: [name] })));
-    const rows: Array<{ codec: string; input: string; python: string; typescript: string }> = [];
-    const unexpected: string[] = [];
-    DIVERGENT_CODECS.forEach((codec, index) => {
-      const sample = (samples[index] as Outcome).ok as string;
-      const inputs: Array<[string, Buffer]> = [["ascii", ASCII_PAYLOAD], ["valid text", Buffer.from(sample, "hex")], ["invalid bytes", INVALID_PAYLOAD]];
-      for (const [input, bytes] of inputs) {
-        const environment = { PYTHONIOENCODING: codec };
-        const python = pythonOutcome(environment, bytes);
-        const typescript = tableOutcome(() => decodeStdin(bytes, environment));
-        const denied = typeof typescript.error === "string" && typescript.error.startsWith("deny: ");
-        const summarize = (outcome: Outcome): string => (outcome.error === undefined ? "decodes" : outcome.error.slice(0, 60));
-        if (denied) {
-          rows.push({ codec, input, python: summarize(python), typescript: (typescript.error as string).slice(6) });
-          if (typescript.error !== `deny: stdin encoding ${codec} is not supported; set PYTHONUTF8=1`) unexpected.push(`${codec} ${input}: ${typescript.error}`);
-        } else if (JSON.stringify(typescript) !== JSON.stringify(python)) {
-          unexpected.push(`${codec} ${input}: ts ${JSON.stringify(typescript)} vs python ${JSON.stringify(python)}`);
-        }
+  it("matches Python accept and reject behavior for every exact codec and error handler", () => {
+    const errors = ["strict", "replace", "ignore", "backslashreplace", "surrogateescape", "surrogatepass", "bogus", "xmlcharrefreplace", "namereplace"];
+    const inputs = ["", "706c61696e", "ff", "819d98", "c328", "e282", "eda080", "efbbbf6162", "f09f9880", "0080ff"];
+    const cases = EXACT_CODECS.flatMap((codec) => errors.flatMap((handler) => inputs.map((hex) => ({ codec, handler, hex }))));
+    const reference = pythonReference(process.cwd(), cases.map(({ codec, handler, hex }) => ({ fn: "codec_decode", args: [codec, hex, handler] })));
+    const wrong: string[] = [];
+    for (const [index, { codec, handler, hex }] of cases.entries()) {
+      let actual: Outcome;
+      try {
+        actual = { ok: decodeWithCodec(codec, Buffer.from(hex, "hex"), handler) };
+      } catch (error) {
+        if (error instanceof PythonUncaughtError) actual = { error: "uncaught" };
+        else if (error instanceof ValueError) actual = { error: error.message };
+        else throw error;
       }
+      const python = reference[index] as Outcome;
+      const expected = python.error === "LookupError" || python.error === "TypeError" ? { error: "uncaught" } : python;
+      if (JSON.stringify(actual) !== JSON.stringify(expected)) wrong.push(`${codec}:${handler} ${hex}: ${JSON.stringify(actual)} vs ${JSON.stringify(expected)}`);
+    }
+    report("exact codec errors", cases.length, wrong);
+  });
+
+  it("lists every codec where TypeScript denies instead of decoding as Python does", () => {
+    const [table] = pythonReference(process.cwd(), [{ fn: "codec_table", args: [] }]) as [Outcome];
+    const { accepted } = table.ok as { accepted: string[] };
+    const policies = pythonReference(process.cwd(), accepted.map((name) => ({ fn: "codec_lookup", args: [name] })));
+    const unsupported = new Set(policies.flatMap((policy) => {
+      const { codec } = policy.ok as { codec: string };
+      const exact = PYTHON_TO_CODEC[codec.replaceAll("_", "-")] ?? codec;
+      return EXACT_CODECS.includes(exact) ? [] : [codec];
+    }));
+    assert.deepEqual([...unsupported].sort(), [...DIVERGENT_CODECS]);
+    const samples = pythonReference(process.cwd(), DIVERGENT_CODECS.map((name) => ({ fn: "codec_sample", args: [name] })));
+    const rows = DIVERGENT_CODECS.flatMap((codec, index) => {
+      const sample = (samples[index] as Outcome).ok;
+      const inputs: Array<[string, Buffer]> = [["ascii", ASCII_PAYLOAD], ["invalid bytes", INVALID_PAYLOAD]];
+      if (typeof sample === "string") inputs.push(["valid text", Buffer.from(sample, "hex")]);
+      return inputs.map(([input, bytes]) => ({ codec, input, bytes }));
     });
-    console.log("divergences from Python (codec, input, Python outcome, TypeScript outcome):");
-    for (const row of rows) console.log(`  ${row.codec} | ${row.input} | python: ${row.python} | typescript: deny "${row.typescript}"`);
-    console.log(`parity stdin divergences: ${rows.length} listed, ${unexpected.length} unexpected`);
+    const python = pythonReference(process.cwd(), rows.map(({ codec, bytes }) => ({ fn: "stdin_decode", args: [{ PYTHONIOENCODING: codec }, bytes.toString("hex")] })));
+    const unexpected: string[] = [];
+    for (const [index, { codec, input, bytes }] of rows.entries()) {
+      const typescript = tableOutcome(() => decodeStdin(bytes, { PYTHONIOENCODING: codec }));
+      if (typescript.error !== `deny: ${expectedStdinDeny(codec)}`) unexpected.push(`${codec} ${input}: ${JSON.stringify(typescript)}`);
+      const reference = normalizedReference(python[index] as Outcome);
+      console.log(`  ${codec} | ${input} | python: ${reference.error ?? "decodes"} | typescript: deny "${expectedStdinDeny(codec)}"`);
+    }
+    console.log(`parity stdin divergences: ${rows.length} listed, ${unexpected.length} unexpected (${DIVERGENT_CODECS.length} codecs)`);
     assert.deepEqual(unexpected, []);
-    assert.ok(rows.some((row) => row.codec === "euc_kr" && row.input === "valid text"));
-    assert.ok(rows.some((row) => row.codec === "utf_16" && row.input === "ascii"));
+  });
+
+  it("handles incomplete UTF-8 signatures like sys.stdin.read rather than bytes.decode", () => {
+    const pairs = ["utf-8-sig", "utf-8"].flatMap((codec) => ["strict", "replace", "surrogateescape"].flatMap((handler) => ["ef", "efbb"].map((hex) => ({ codec, handler, hex }))));
+    const reference = pythonReference(process.cwd(), pairs.map(({ codec, handler, hex }) => ({ fn: "stdin_decode", args: [{ PYTHONIOENCODING: `${codec}:${handler}` }, hex] })));
+    for (const [index, { codec, handler, hex }] of pairs.entries()) {
+      assert.deepEqual(tableOutcome(() => decodeStdin(Buffer.from(hex, "hex"), { PYTHONIOENCODING: `${codec}:${handler}` })), reference[index], `${codec}:${handler} ${hex}`);
+    }
+  });
+
+  it("rejects unsupported codecs before inspecting even ASCII or empty input", () => {
+    for (const codec of DIVERGENT_CODECS) {
+      for (const bytes of [Buffer.alloc(0), ASCII_PAYLOAD, Buffer.from([0x1b, 0x24, 0x42, 0x43, 0x66]), INVALID_PAYLOAD]) {
+        assert.throws(() => decodeStdin(bytes, { PYTHONIOENCODING: codec }), {
+          name: "UnsupportedStdinEncoding", message: `stdin encoding ${codec} is not supported; set PYTHONUTF8=1`,
+        });
+      }
+    }
   });
 
   it("fails closed with a fixed reason rather than crashing or allowing", () => {
@@ -215,10 +275,30 @@ describe("stdin decoding follows Python's locale, UTF-8 mode and PYTHONIOENCODIN
     ] as const) {
       assert.throws(() => decodeStdin(Buffer.from([0xb0, 0xa1, 0x20]), { ...environment }), { name: "UnsupportedStdinEncoding", message: `stdin encoding ${name} is not supported; set PYTHONUTF8=1` });
     }
-    assert.equal(decodeStdin(Buffer.from("plain"), { PYTHONIOENCODING: "euc-kr" }), "plain");
+    assert.throws(() => decodeStdin(Buffer.from("plain"), { PYTHONIOENCODING: "euc-kr" }), UnsupportedStdinEncoding);
     assert.throws(() => decodeStdin(Buffer.from("plain"), { PYTHONIOENCODING: "bogus" }), (error: unknown) => error instanceof PythonStartupFailure &&
       error.stderr.startsWith("Fatal Python error: init_stdio_encoding: failed to get the Python codec name of the stdio encoding\nPython runtime state: core initialized\nLookupError: unknown encoding: bogus\n"));
     assert.throws(() => decodeStdin(Buffer.from("plain"), { PYTHONIOENCODING: "hex" }), (error: unknown) => error instanceof PythonStartupFailure &&
       error.stderr.includes("LookupError: 'hex' is not a text encoding"));
   });
+});
+
+it("extracts Linux locale codesets without their modifiers", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "keel-locale-modifier-"));
+  const platform = Object.getOwnPropertyDescriptor(process, "platform") as PropertyDescriptor;
+  try {
+    const commands = join(directory, "commands");
+    mkdirSync(commands);
+    writeFileSync(join(commands, "locale"), "#!/bin/sh\nprintf '%s\\n' 'en_US.UTF-8@euro' 'ko_KR.CP949@custom'\n");
+    chmodSync(join(commands, "locale"), 0o755);
+    Object.defineProperty(process, "platform", { value: "linux" });
+    const { stdinCodec: linuxCodec } = await import(new URL("../lib/pystdin.ts?linux-locale-test", import.meta.url).href);
+    withEnv({ PATH: commands }, () => {
+      assert.deepEqual(linuxCodec({ PYTHONUTF8: "0", LC_ALL: "en_US.UTF-8@euro" }), { name: "UTF-8", errors: "strict" });
+      assert.deepEqual(linuxCodec({ PYTHONUTF8: "0", LC_ALL: "ko_KR.CP949@custom" }), { name: "CP949", errors: "strict" });
+    });
+  } finally {
+    Object.defineProperty(process, "platform", platform);
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

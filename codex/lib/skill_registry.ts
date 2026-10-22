@@ -76,6 +76,7 @@ function processStartedAfter(id: number, moment: number): boolean {
   const known = startedAfterLock.get(key);
   if (known !== undefined) return known;
   const listing = spawnSync("ps", ["-o", "lstart=", "-p", String(id)], { encoding: "utf8", env: { ...process.env, LC_ALL: "C" } });
+  if (listing.error !== undefined || listing.status !== 0 || typeof listing.stdout !== "string") return false;
   const started = Date.parse(listing.stdout.trim());
   const later = listing.status === 0 && !Number.isNaN(started) && started > moment;
   startedAfterLock.set(key, later);

@@ -411,6 +411,11 @@ describe("installation", () => {
       });
     }
 
+    it("keeps a live owner's lock when the process listing cannot start", () => {
+      const lock = lockWith(String(process.pid), HOUR_SECONDS);
+      withEnv({ PATH: join(home, "missing-programs") }, () => assert.equal(lockIsStale(lock), false));
+    });
+
     it("keeps a lock held by this live process", () => {
       assert.equal(lockIsStale(lockWith(String(process.pid), 0)), false);
     });

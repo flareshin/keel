@@ -1,7 +1,7 @@
 import { TextDecoder } from "node:util";
 import { ValueError } from "./pyerrors.ts";
 import { ASCII_LIMIT, decodeFailure, decodeUtf8Handling, escapedBytes } from "./pyfs.ts";
-import { ASCII_OPAQUE_ENCODING_NAMES, NON_TEXT_ENCODINGS, TEXT_ENCODING_NAMES } from "./pycodec_names.ts";
+import { NON_TEXT_ENCODINGS, PYTHON_CODEC_ALIAS_NAMES, TEXT_ENCODING_NAMES } from "./pycodec_names.ts";
 
 const ALIASES: Record<string, readonly string[]> = {
   utf_8: ["cp65001", "csutf8", "u8", "utf", "utf8", "utf8_ucs2", "utf8_ucs4"],
@@ -25,7 +25,7 @@ const WHATWG_LABELS: Record<string, string> = {
 
 const UNDEFINED_BYTES: Record<string, readonly number[]> = { cp1252: [0x81, 0x8d, 0x8f, 0x90, 0x9d], cp1251: [0x98] };
 const REPLACEMENT_CHARACTER = "�";
-const UTF8_BOM = [0xef, 0xbb, 0xbf];
+export const UTF8_BOM = [0xef, 0xbb, 0xbf] as const;
 const SURROGATE_LEAD = 0xed;
 const FIRST_SURROGATE_SECOND_BYTE = 0xa0;
 const FIRST_CONTINUATION = 0x80;
@@ -82,14 +82,15 @@ export class UnsupportedStdinEncoding extends ValueError {
   }
 }
 
-export type StdinEncoding = { kind: "exact"; codec: string } | { kind: "unsupported"; name: string; asciiTransparent: boolean };
+export type StdinEncoding = { kind: "exact"; codec: string } | { kind: "unsupported"; name: string };
 
 const textNames = new Set(TEXT_ENCODING_NAMES);
-const asciiOpaqueNames = new Set(ASCII_OPAQUE_ENCODING_NAMES);
+const aliasNames = new Set(PYTHON_CODEC_ALIAS_NAMES);
 
 function lookupKeys(name: string): string[] {
   const normalized = normalizeCodecName(name);
-  return [normalized, normalized.replaceAll(".", "_")];
+  const dottedAlias = normalized.replaceAll(".", "_");
+  return aliasNames.has(dottedAlias) ? [normalized, dottedAlias] : [normalized];
 }
 
 export function canonicalCodec(name: string): string | null {
@@ -104,7 +105,7 @@ export function resolveStdinEncoding(name: string): StdinEncoding {
   for (const key of lookupKeys(name)) {
     const codec = canonicalByName.get(key);
     if (codec !== undefined) return { kind: "exact", codec };
-    if (textNames.has(key)) return { kind: "unsupported", name: key, asciiTransparent: !asciiOpaqueNames.has(key) };
+    if (textNames.has(key)) return { kind: "unsupported", name: key };
     if (Object.hasOwn(NON_TEXT_ENCODINGS, key)) {
       throw new PythonStartupFailure("init_sys_streams: can't initialize sys standard streams", `LookupError: '${NON_TEXT_ENCODINGS[key]}' is not a text encoding`);
     }

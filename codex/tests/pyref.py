@@ -226,11 +226,23 @@ def codec_table():
     return {'ok': {'accepted': text, 'opaque': opaque, 'nonText': non_text, 'aliases': encodings.aliases.aliases}}
 
 
+def codec_lookup(name):
+    import codecs
+    import encodings
+    try:
+        info = codecs.lookup(name)
+    except LookupError:
+        return {'error': 'fatal'}
+    if not info._is_text_encoding:
+        return {'error': 'fatal'}
+    return {'ok': {'codec': info.name.replace('-', '_'), 'name': encodings.normalize_encoding(name).lower()}}
+
+
 def codec_sample(name):
     for text in ('\u00e9a', '\u4e2d\u6587', '\uac00\ub098', '\u65e5\u672c', 'abc'):
         try:
             return {'ok': text.encode(name).hex()}
-        except (UnicodeEncodeError, LookupError):
+        except (UnicodeError, LookupError):
             continue
     return {'error': 'no sample'}
 
@@ -273,7 +285,7 @@ def os_error(path):
 
 FUNCTIONS = {name: function for name, function in globals().items()
              if name in ('json_loads', 'json_dumps', 'float_repr', 'toml_loads', 'toml_equals', 'py_repr',
-                         'decode_utf8', 'shell_quote', 'resolve', 'pure', 'os_error', 'py_str', 'toml_recursion_threshold', 'toml_cold_recursion_threshold', 'stdin_codec', 'stdin_decode', 'codec_table', 'codec_sample', 'codec_bytes', 'codec_encode', 'codec_decode')}
+                         'decode_utf8', 'shell_quote', 'resolve', 'pure', 'os_error', 'py_str', 'toml_recursion_threshold', 'toml_cold_recursion_threshold', 'stdin_codec', 'stdin_decode', 'codec_table', 'codec_sample', 'codec_bytes', 'codec_encode', 'codec_decode', 'codec_lookup')}
 
 
 def main():

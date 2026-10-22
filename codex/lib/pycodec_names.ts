@@ -41,16 +41,6 @@ export const TEXT_ENCODING_NAMES = `
   windows_1258 windows_31j windows_874 windows_936 x_mac_japanese x_mac_korean x_mac_simp_chinese x_mac_trad_chinese
 `.split(/\s+/).filter((name) => name !== "");
 
-export const ASCII_OPAQUE_ENCODING_NAMES = `
-  037 1026 1140 273 424 500 864 ccsid01140 cp01140 cp037 cp1026 cp1140 cp273 cp424 cp500 cp864 cp875 csibm01140 csibm037
-  csibm1026 csibm273 csibm424 csibm500 csibm864 csiso2022kr csunicode11utf7 csutf16 csutf16be csutf16le csutf32 csutf32be
-  csutf32le csutf7 ebcdic_cp_be ebcdic_cp_ca ebcdic_cp_ch ebcdic_cp_he ebcdic_cp_nl ebcdic_cp_us ebcdic_cp_wt
-  ebcdic_us_37_euro hz hz_gb hz_gb_2312 hzgb ibm01140 ibm037 ibm039 ibm1026 ibm1140 ibm273 ibm424 ibm500 ibm864 iso2022_kr
-  iso2022kr iso_2022_kr punycode s_jis_2004 s_jisx0213 shift_jis_2004 shift_jisx0213 shiftjis2004 shiftjisx0213 sjis_2004
-  sjisx0213 u16 u32 u7 undefined unicode_1_1_utf_7 unicodebigunmarked unicodelittleunmarked utf16 utf32 utf7 utf_16
-  utf_16_be utf_16_le utf_16be utf_16le utf_32 utf_32_be utf_32_le utf_32be utf_32le utf_7
-`.split(/\s+/).filter((name) => name !== "");
-
 export const NON_TEXT_ENCODINGS: Readonly<Record<string, string>> = {
   "base64": "base64",
   "base64_codec": "base64",
@@ -71,3 +61,50 @@ export const NON_TEXT_ENCODINGS: Readonly<Record<string, string>> = {
   "zlib": "zlib",
   "zlib_codec": "zlib",
 };
+
+export const PYTHON_CODEC_ALIAS_NAMES = `
+  037 1026 1125 1140 1250 1251 1252 1253 1254
+  1255 1256 1257 1258 273 424 437 500 646
+  775 850 852 855 857 858 860 861 862
+  863 864 865 866 869 874 8859 932 936
+  949 950 ansi ansi_x3.4_1968 ansi_x3.4_1986 ansi_x3_4_1968 arabic asmo_708 base64
+  base_64 big5_hkscs big5_tw bz2 ccsid00858 ccsid01140 chinese cp00858 cp01140
+  cp1051 cp1361 cp154 cp367 cp65001 cp819 cp866u cp936 cp_gr
+  cp_is csascii csbig5 csbig5hkscs cseuckr cseucpkdfmtjapanese csgb18030 csgb2312 csgbk
+  cshproman8 csibm00858 csibm01140 csibm037 csibm1026 csibm273 csibm424 csibm500 csibm855
+  csibm857 csibm858 csibm860 csibm861 csibm863 csibm864 csibm865 csibm866 csibm869
+  csiso2022jp csiso2022jp2 csiso2022kr csiso58gb231280 csiso885913 csiso885914 csiso885915 csiso885916 csiso88598e
+  csiso88598i csisolatin1 csisolatin2 csisolatin3 csisolatin4 csisolatin5 csisolatin6 csisolatinarabic csisolatincyrillic
+  csisolatingreek csisolatinhebrew cskoi8r cskoi8u csksc56011987 cskz1048 csmacintosh cspc775baltic cspc850multilingual
+  cspc862latinhebrew cspc8codepage437 cspcp852 csptcp154 csshiftjis cstis620 csunicode11utf7 csutf16 csutf16be
+  csutf16le csutf32 csutf32be csutf32le csutf7 csutf8 cswindows1250 cswindows1251 cswindows1252
+  cswindows1253 cswindows1254 cswindows1255 cswindows1256 cswindows1257 cswindows1258 cswindows31j cswindows874 cyrillic
+  cyrillic_asian dbcs ebcdic_cp_be ebcdic_cp_ca ebcdic_cp_ch ebcdic_cp_he ebcdic_cp_nl ebcdic_cp_us ebcdic_cp_wt
+  ebcdic_us_37_euro ecma_114 ecma_118 elot_928 euc_cn euc_jis2004 euccn eucgb2312_cn eucjis2004
+  eucjisx0213 eucjp euckr gb18030_2000 gb2312_1980 gb2312_80 gb_2312_80 greek greek8
+  hebrew hex hkscs hz_gb hz_gb_2312 hzgb ibm00858 ibm01140 ibm037
+  ibm039 ibm1026 ibm1051 ibm1125 ibm1140 ibm273 ibm367 ibm424 ibm437
+  ibm500 ibm775 ibm819 ibm850 ibm852 ibm855 ibm857 ibm858 ibm860
+  ibm861 ibm862 ibm863 ibm864 ibm865 ibm866 ibm869 iso2022jp iso2022jp_1
+  iso2022jp_2 iso2022jp_2004 iso2022jp_3 iso2022jp_ext iso2022kr iso646_us iso8859 iso8859_1 iso_2022_jp
+  iso_2022_jp_1 iso_2022_jp_2 iso_2022_jp_2004 iso_2022_jp_3 iso_2022_jp_ext iso_2022_kr iso_646.irv_1991 iso_8859_1 iso_8859_10
+  iso_8859_10_1992 iso_8859_11 iso_8859_11_2001 iso_8859_13 iso_8859_14 iso_8859_14_1998 iso_8859_15 iso_8859_16 iso_8859_16_2001
+  iso_8859_1_1987 iso_8859_2 iso_8859_2_1987 iso_8859_3 iso_8859_3_1988 iso_8859_4 iso_8859_4_1988 iso_8859_5 iso_8859_5_1988
+  iso_8859_6 iso_8859_6_1987 iso_8859_7 iso_8859_7_1987 iso_8859_8 iso_8859_8_1988 iso_8859_8_e iso_8859_8_i iso_8859_9
+  iso_8859_9_1989 iso_celtic iso_ir_100 iso_ir_101 iso_ir_109 iso_ir_110 iso_ir_126 iso_ir_127 iso_ir_138
+  iso_ir_144 iso_ir_148 iso_ir_149 iso_ir_157 iso_ir_166 iso_ir_199 iso_ir_226 iso_ir_58 iso_ir_6
+  jisx0213 korean ks_c_5601 ks_c_5601_1987 ks_c_5601_1989 ks_x_1001 ksc5601 ksc_5601 ksx1001
+  kz_1048 l1 l10 l2 l3 l4 l5 l6 l7
+  l8 l9 latin latin1 latin10 latin2 latin3 latin4 latin5
+  latin6 latin7 latin8 latin9 latin_10 latin_2 latin_3 latin_4 latin_5
+  latin_6 latin_7 latin_8 latin_9 mac mac_centeuro maccentraleurope maccyrillic macgreek
+  maciceland macintosh maclatin2 macroman macturkish ms1361 ms874 ms932 ms936
+  ms949 ms950 ms_kanji mskanji pc_multilingual_850_euro pt154 quopri quoted_printable quotedprintable
+  r8 rk1048 roman8 rot13 ruscii s_jis s_jis_2004 s_jisx0213 shiftjis
+  shiftjis2004 shiftjisx0213 sjis sjis_2004 sjisx0213 strk1048_2002 thai tis620 tis_620_0
+  tis_620_2529_0 tis_620_2529_1 u16 u32 u7 u8 u_jis uhc ujis
+  unicode_1_1_utf_7 unicodebigunmarked unicodelittleunmarked us us_ascii utf utf16 utf32 utf7
+  utf8 utf8_sig utf8_ucs2 utf8_ucs4 utf_16be utf_16le utf_32be utf_32le uu
+  windows_1250 windows_1251 windows_1252 windows_1253 windows_1254 windows_1255 windows_1256 windows_1257 windows_1258
+  windows_31j windows_874 windows_936 x_mac_japanese x_mac_korean x_mac_simp_chinese x_mac_trad_chinese zip zlib
+`.split(/\s+/).filter((name) => name !== "");

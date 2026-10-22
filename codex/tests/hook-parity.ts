@@ -3,6 +3,8 @@ import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkS
 import { tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { withoutLocale } from "./locale-env.ts";
+import { expectedStdinDeny, UNSUPPORTED_STDIN_CODECS } from "./stdin-policy.ts";
+import type { StdinDivergence } from "./stdin-policy.ts";
 
 const ADAPTER = join(import.meta.dirname, "..");
 const PYTHON_HOOK = join(ADAPTER, "hooks", "pre-tool-use.py");
@@ -17,6 +19,8 @@ export interface HookCase {
   stdin: string | Buffer;
   config?: string | Buffer | null;
   crash?: boolean;
+  startupFailure?: boolean;
+  divergence?: StdinDivergence;
   env?: Record<string, string>;
 }
 
@@ -37,6 +41,7 @@ interface Observation {
   stdout: string;
   stderr: string;
   files: Record<string, string>;
+  before: Record<string, string>;
 }
 
 export interface HookParityReport {
@@ -46,6 +51,7 @@ export interface HookParityReport {
   denied: number;
   passed: number;
   contextual: number;
+  divergences: number;
 }
 
 export function sandboxPaths(): Paths {
@@ -121,15 +127,30 @@ function snapshot(root: string): Record<string, string> {
 
 function observe(command: string[], testCase: HookCase, paths: Paths): Observation {
   buildSandbox(paths, testCase.config === undefined ? NORMAL_CONFIG : testCase.config);
+  const before = testCase.divergence === undefined ? {} : snapshot(paths.root);
   const result = spawnSync(command[0] as string, command.slice(1), { input: testCase.stdin, env: environmentFor(paths, testCase.env), cwd: paths.repo, maxBuffer: 1 << 26 });
-  return { status: result.status, stdout: result.stdout.toString("utf8"), stderr: result.stderr.toString("utf8"), files: snapshot(paths.root) };
+  return { status: result.status, stdout: result.stdout.toString("utf8"), stderr: result.stderr.toString("utf8"), files: snapshot(paths.root), before };
 }
 
 function differences(testCase: HookCase, python: Observation, typescript: Observation): string[] {
   const found: string[] = [];
+  if (testCase.divergence !== undefined) {
+    const { codec, encoding } = testCase.divergence;
+    const expected = { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: `keel Codex guard: ${expectedStdinDeny(encoding)}` } };
+    if (!UNSUPPORTED_STDIN_CODECS.includes(codec)) found.push(`unlisted divergence: ${codec}`);
+    if (typescript.status !== 0 || typescript.stderr !== "") found.push(`unsupported codec crashed: ${typescript.stderr}`);
+    try {
+      if (JSON.stringify(JSON.parse(typescript.stdout)) !== JSON.stringify(expected)) found.push(`unsupported codec decision: ${typescript.stdout}`);
+    } catch {
+      found.push(`unsupported codec emitted invalid JSON: ${typescript.stdout}`);
+    }
+    if (JSON.stringify(typescript.before) !== JSON.stringify(typescript.files)) found.push("unsupported codec changed files");
+    return found;
+  }
   if (python.status !== typescript.status) found.push(`exit ${python.status} vs ${typescript.status}`);
   if (python.stdout !== typescript.stdout) found.push(`stdout\n    py: ${JSON.stringify(python.stdout)}\n    ts: ${JSON.stringify(typescript.stdout)}`);
-  if (!testCase.crash && python.stderr !== typescript.stderr) found.push(`stderr\n    py: ${JSON.stringify(python.stderr)}\n    ts: ${JSON.stringify(typescript.stderr)}`);
+  const normalizeStderr = (text: string): string => testCase.startupFailure ? text.replace(/Current thread 0x[0-9a-f]+/g, "Current thread <address>") : text;
+  if (!testCase.crash && normalizeStderr(python.stderr) !== normalizeStderr(typescript.stderr)) found.push(`stderr\n    py: ${JSON.stringify(python.stderr)}\n    ts: ${JSON.stringify(typescript.stderr)}`);
   if (testCase.crash && python.stderr === "") found.push("crash case produced no python error output");
   for (const key of new Set([...Object.keys(python.files), ...Object.keys(typescript.files)])) {
     if (python.files[key] !== typescript.files[key]) found.push(`file ${key}: py=${python.files[key]} ts=${typescript.files[key]}`);
@@ -138,11 +159,12 @@ function differences(testCase: HookCase, python: Observation, typescript: Observ
 }
 
 export function runHookParity(cases: readonly HookCase[], paths: Paths): HookParityReport {
-  const report: HookParityReport = { cases: cases.length, mismatches: 0, details: [], denied: 0, passed: 0, contextual: 0 };
+  const report: HookParityReport = { cases: cases.length, mismatches: 0, details: [], denied: 0, passed: 0, contextual: 0, divergences: 0 };
   for (const testCase of cases) {
     const python = observe(["python3", PYTHON_HOOK], testCase, paths);
     const typescript = observe([process.execPath, TYPESCRIPT_HOOK], testCase, paths);
     const found = differences(testCase, python, typescript);
+    if (testCase.divergence !== undefined) report.divergences += 1;
     if (found.length > 0) {
       report.mismatches += 1;
       if (report.details.length < MAX_MISMATCHES_SHOWN) report.details.push(`${testCase.name}: ${found.join("; ")}`);

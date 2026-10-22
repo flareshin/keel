@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import type { StdinDivergence } from "./stdin-policy.ts";
 import type { HookCase, Paths } from "./hook-parity.ts";
 
 const PATCH_BEGIN = "*** Begin Patch\n";
@@ -386,9 +387,8 @@ export function hookCases(paths: Paths): HookCase[] {
   add("integral float cwd beside a decoy integer directory", withCwd("1.0"));
   add("integer cwd", withCwd("1"));
 
-  const MULTIBYTE_SAFE_INPUTS = ["ascii only", "euc-kr valid"];
-  const CRASHING_HANDLER_SAFE_INPUTS = ["ascii only", "byte order mark first", "valid non-ascii"];
-  const textVariables: Array<[string, Record<string, string>, string[]?]> = [
+  const CRASHING_HANDLER_SAFE_INPUTS = ["ascii only", "byte order mark first", "valid non-ascii", "iso2022 escape sequence", "empty input"];
+  const textVariables: Array<[string, Record<string, string>, StdinDivergence?]> = [
     ["default", {}],
     ["utf8 mode off in the C locale via LANG", { PYTHONUTF8: "0", LANG: "C" }],
     ["utf8 mode off, LANG C and LC_CTYPE C.UTF-8 as a Python parent exports it", { PYTHONUTF8: "0", LANG: "C", LC_CTYPE: "C.UTF-8" }],
@@ -434,8 +434,20 @@ export function hookCases(paths: Paths): HookCase[] {
     ["io errors xmlcharrefreplace", { PYTHONIOENCODING: "utf-8:xmlcharrefreplace" }],
     ["io errors namereplace", { PYTHONIOENCODING: "utf-8:namereplace" }],
     ["io errors unknown", { PYTHONIOENCODING: "utf-8:bogus" }],
-    ["io encoding euc-kr", { PYTHONIOENCODING: "euc-kr" }, MULTIBYTE_SAFE_INPUTS],
-    ["utf8 mode off in an EUC-KR locale", { PYTHONUTF8: "0", LC_ALL: "ko_KR.eucKR" }, MULTIBYTE_SAFE_INPUTS],
+    ["io encoding unknown name", { PYTHONIOENCODING: "bogus" }],
+    ["io encoding non-text hex", { PYTHONIOENCODING: "hex" }],
+    ["io encoding non-text rot13", { PYTHONIOENCODING: "rot13" }],
+    ["io encoding dotted module name", { PYTHONIOENCODING: "ISO8859.15" }],
+    ["io encoding dotted alias", { PYTHONIOENCODING: "iso8859.1" }],
+    ["io encoding utf-16", { PYTHONIOENCODING: "utf-16" }, { codec: "utf_16", encoding: "utf_16" }],
+    ["io encoding gb2312", { PYTHONIOENCODING: "gb2312" }, { codec: "gb2312", encoding: "gb2312" }],
+    ["io encoding big5", { PYTHONIOENCODING: "big5" }, { codec: "big5", encoding: "big5" }],
+    ["io encoding gbk", { PYTHONIOENCODING: "gbk" }, { codec: "gbk", encoding: "gbk" }],
+    ["io encoding cp949", { PYTHONIOENCODING: "cp949" }, { codec: "cp949", encoding: "cp949" }],
+    ["io encoding iso2022_jp", { PYTHONIOENCODING: "iso2022_jp" }, { codec: "iso2022_jp", encoding: "iso2022_jp" }],
+    ["utf8 mode off in a CP949 locale", { PYTHONUTF8: "0", LC_ALL: "ko_KR.CP949" }, { codec: "cp949", encoding: "cp949" }],
+    ["io encoding euc-kr", { PYTHONIOENCODING: "euc-kr" }, { codec: "euc_kr", encoding: "euc_kr" }],
+    ["utf8 mode off in an EUC-KR locale", { PYTHONUTF8: "0", LC_ALL: "ko_KR.eucKR" }, { codec: "euc_kr", encoding: "euckr" }],
     ["utf8 mode off in a KOI8-R locale", { PYTHONUTF8: "0", LC_ALL: "ru_RU.KOI8-R" }],
     ["utf8 mode off in a CP1251 locale", { PYTHONUTF8: "0", LC_CTYPE: "ru_RU.CP1251" }],
   ];
@@ -443,6 +455,9 @@ export function hookCases(paths: Paths): HookCase[] {
   const insideCommand = (middle: number[]): Buffer =>
     Buffer.concat([Buffer.from('{"tool_name": "Bash", "tool_input": {"command": "echo '), Buffer.from(middle), Buffer.from(`"}, "cwd": ${JSON.stringify(repo)}}`)]);
   const textInputs: Array<[string, Buffer]> = [
+    ["empty input", Buffer.alloc(0)],
+    ["incomplete signature first byte", Buffer.from([0xef])],
+    ["incomplete signature second byte", Buffer.from([0xef, 0xbb])],
     ["ascii only", Buffer.from(asciiPayload)],
     ["encoded surrogate", insideCommand([0xed, 0xa0, 0x80])],
     ["encoded surrogate then invalid byte", insideCommand([0xed, 0xa0, 0x80, 0xff])],
@@ -450,6 +465,9 @@ export function hookCases(paths: Paths): HookCase[] {
     ["byte order mark first", Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(asciiPayload)])],
     ["byte order mark then invalid byte", Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), insideCommand([0xff])])],
     ["cp1252 undefined byte", insideCommand([0x81, 0x9d])],
+    ["gb2312 and big5 invalid lead", insideCommand([0x81, 0x40])],
+    ["gbk valid trail byte", insideCommand([0xa0, 0x80])],
+    ["iso2022 escape sequence", insideCommand([0x1b, 0x24, 0x42, 0x43, 0x66, 0x1b, 0x28, 0x42])],
     ["euc-kr valid", insideCommand([0xb0, 0xa1, 0xb3, 0xaa])],
     ["valid non-ascii", Buffer.from(`{"tool_name": "Bash", "tool_input": {"command": "echo héllo 😀"}, "cwd": ${JSON.stringify(repo)}}`)],
     ["invalid start byte", Buffer.concat([Buffer.from('{"tool_name": "Bash", "tool_input": {"command": "echo '), Buffer.from([0xff]), Buffer.from(`"}, "cwd": ${JSON.stringify(repo)}}`)])],
@@ -457,10 +475,11 @@ export function hookCases(paths: Paths): HookCase[] {
     ["bad continuation", Buffer.concat([Buffer.from('{"tool_name": "Bash", "tool_input": {"command": "echo '), Buffer.from([0xc3, 0x28]), Buffer.from(`"}, "cwd": ${JSON.stringify(repo)}}`)])],
     ["invalid byte before a protected write", Buffer.concat([Buffer.from(`{"tool_name": "Write", "tool_input": {"file_path": ${JSON.stringify(`${profile}/hooks.json`)}, "content": "`), Buffer.from([0xc3, 0x28]), Buffer.from(`"}, "cwd": ${JSON.stringify(repo)}}`)])],
   ];
-  for (const [variablesName, env, only] of textVariables) {
+  for (const [variablesName, env, divergence] of textVariables) {
     for (const [inputName, stdin] of textInputs) {
-      const crashes = /xmlcharrefreplace|namereplace|unknown/.test(variablesName) && !CRASHING_HANDLER_SAFE_INPUTS.includes(inputName);
-      if (only === undefined || only.includes(inputName)) add(`stdin ${inputName} with ${variablesName}`, stdin, { env, crash: crashes });
+      const startupFailure = variablesName === "io encoding unknown name" || variablesName === "io encoding dotted module name" || variablesName.startsWith("io encoding non-text");
+      const crashes = !startupFailure && /xmlcharrefreplace|namereplace|unknown/.test(variablesName) && !CRASHING_HANDLER_SAFE_INPUTS.includes(inputName);
+      add(`stdin ${inputName} with ${variablesName}`, stdin, { env, crash: crashes, divergence, startupFailure });
     }
   }
 

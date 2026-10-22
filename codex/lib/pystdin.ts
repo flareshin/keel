@@ -1,8 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { basename, dirname } from "node:path";
-import { canonicalCodec, decodeWithCodec, resolveStdinEncoding, UnsupportedStdinEncoding } from "./pycodecs.ts";
-import { ASCII_LIMIT } from "./pyfs.ts";
+import { canonicalCodec, decodeWithCodec, resolveStdinEncoding, UnsupportedStdinEncoding, UTF8_BOM } from "./pycodecs.ts";
 
 export interface StdinCodec {
   name: string;
@@ -28,7 +27,7 @@ function listedCharset(name: string): string | null {
   }
   if (!installedLocales.has(normalizedLocale(name))) return null;
   if (!name.includes(".")) throw new UnsupportedStdinEncoding(`of locale ${name}`);
-  return name.slice(name.indexOf(".") + 1);
+  return name.slice(name.indexOf(".") + 1).split("@")[0] ?? "";
 }
 
 function installedCharset(name: string): string | null {
@@ -66,10 +65,9 @@ export function stdinCodec(env: NodeJS.ProcessEnv = process.env): StdinCodec {
 export function decodeStdin(bytes: Buffer, env: NodeJS.ProcessEnv = process.env): string {
   const { name, errors } = stdinCodec(env);
   const encoding = resolveStdinEncoding(name);
-  const plain = !bytes.some((byte) => byte >= ASCII_LIMIT);
-  if (encoding.kind === "exact") return plain ? bytes.toString("latin1") : decodeWithCodec(encoding.codec, bytes, errors);
-  if (plain && encoding.asciiTransparent) return bytes.toString("latin1");
-  throw new UnsupportedStdinEncoding(encoding.name);
+  if (encoding.kind === "unsupported") throw new UnsupportedStdinEncoding(encoding.name);
+  if (encoding.codec === "utf_8_sig" && bytes.length < UTF8_BOM.length && bytes.every((byte, index) => byte === UTF8_BOM[index])) return "";
+  return decodeWithCodec(encoding.codec, bytes, errors);
 }
 
 export function encodeStdout(text: string, env: NodeJS.ProcessEnv = process.env): string {

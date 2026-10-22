@@ -35,7 +35,7 @@ this reference shapes only the behavior and interfaces the current task needs.
 - [K5.13] Validate external values once at the boundary, with security exceptions where necessary.
 - [K5.14] Remove new/changed code comments except mandatory notices, necessary tool directives and verified external constraints. Comments are hypotheses, not behavior evidence. Preserve the full rule's exceptions; do not force unrelated legacy cleanup.
 - [K5.15] Follow the nearest established pattern; explain an approved migration.
-- [K5.16] Tests assert observable behavior and meaningful failure boundaries. Existing regression-sensitive tests count; a fixed number of tests per branch does not establish adequacy.
+- [K5.16] Tests assert observable behavior and meaningful failure boundaries, with expected values derived from the requirement, never recomputed like the code. Existing regression-sensitive tests count; a fixed number of tests per branch does not establish adequacy.
 - [K5] A separate context judges the output. New findings need concrete evidence, not taste.
 
 ## Delivery

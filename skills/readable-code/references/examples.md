@@ -116,3 +116,8 @@ BE: `log.warn("lookup failed {}", e.getMessage())` drops the stack trace and eve
 @Test void createInvoice_throwsImmediately_whenErrorIsNotACollision()
 @Test void createInvoice_usesParentAccount_forSubAccountOrders()
 ```
+```java
+assertEquals(order.subtotal() * VAT_RATE, invoice.vat());
+assertEquals(1_200, invoice.vat());
+```
+The first assertion repeats the code's formula, so it stays green when `VAT_RATE` or the formula is wrong. The second states the requirement for a 12,000 subtotal at 10%.

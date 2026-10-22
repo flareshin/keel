@@ -1,7 +1,9 @@
 import fs from "node:fs"
 
-import { decodeStrict, readBytes } from "../../measure/lib/measurekit/pyio.ts"
+import { firstLineOf, readBytes } from "../../measure/lib/measurekit/pyio.ts"
 import { isFile, isLink, lexists, pyJoin } from "../../measure/lib/measurekit/pypath.ts"
+import { pyTruthy, pyTypeName } from "../../measure/lib/measurekit/pyvalue.ts"
+import type { PyValue } from "../../measure/lib/measurekit/pyvalue.ts"
 import { readText, Refused } from "./config.ts"
 import type { KeelPaths } from "./config.ts"
 
@@ -11,9 +13,6 @@ export const HEADER =
 export const MAX_BYTES = 4096
 export const FILE_NAME = "CLAUDE.md"
 export const RESTORE_OP = "restore-claude-md"
-
-const LINE_FEED = 0x0a
-const CARRIAGE_RETURN = 0x0d
 
 export interface RestoreAction {
   op: string
@@ -32,15 +31,13 @@ export function buildClaudeMd(paths: KeelPaths): string {
 
 export function isGeneratedClaudeMd(path: string): boolean {
   if (isLink(path) || !isFile(path)) return false
-  const bytes = readBytes(path)
-  const lineEnd = bytes.findIndex((byte) => byte === LINE_FEED || byte === CARRIAGE_RETURN)
-  if (lineEnd >= 0 && bytes[lineEnd] === CARRIAGE_RETURN) return false
-  const firstLine = decodeStrict(lineEnd < 0 ? bytes : bytes.subarray(0, lineEnd))
-  return firstLine === HEADER
+  return firstLineOf(readBytes(path)).replace(/\n$/, "") === HEADER
 }
 
-export function restoreMovedAside(path: string, backupPath: string | null): RestoreAction | null {
-  if (!backupPath || !lexists(backupPath) || lexists(path)) return null
+export function restoreMovedAside(path: string, backupPath: PyValue | undefined): RestoreAction | null {
+  if (!pyTruthy(backupPath)) return null
+  if (typeof backupPath !== "string") throw new TypeError(`lstat: path should be string, bytes or os.PathLike, not ${pyTypeName(backupPath)}`)
+  if (!lexists(backupPath) || lexists(path)) return null
   fs.renameSync(backupPath, path)
   return { op: RESTORE_OP, path, from: backupPath }
 }

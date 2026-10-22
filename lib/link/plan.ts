@@ -252,8 +252,8 @@ function planHooksPath(plan: Plan, paths: KeelPaths): void {
 
 function setHooksPath(keelHome: string): void {
   const command = ["git", "-C", keelHome, "config", "core.hooksPath", HOOKS_PATH]
-  const result = runProcess(command)
-  if (result.returncode !== 0) throw new CalledProcessError(`Command '${pyRepr(command)}' returned non-zero exit status ${result.returncode}.`)
+  const configRun = runProcess(command)
+  if (configRun.returncode !== 0) throw new CalledProcessError(`Command '${pyRepr(command)}' returned non-zero exit status ${configRun.returncode}.`)
 }
 
 function isCheckoutRoot(keelHome: string): boolean {

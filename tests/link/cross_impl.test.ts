@@ -4,7 +4,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
-import { LINK_ENTRY, LinkSandbox, PYTHON_LINK_ENTRY, listedDrops, writeFile } from "./helpers.ts"
+import { LINK_ENTRY, LinkSandbox, PYTHON_LINK_ENTRY, listedDrops, normalizeStamps, snapshotTree, writeFile } from "./helpers.ts"
 import type { LinkResult } from "./helpers.ts"
 
 type Implementation = "python" | "typescript"
@@ -14,7 +14,6 @@ type ScenarioOptions = { dataDirName?: string; tagV1?: boolean; plainSandbox?: b
 type Transcript = { commands: { args: string[]; status: number | null; stdout: string; stderr: string }[]; tree: unknown[] }
 
 const COMMANDS: Record<Implementation, string[]> = { python: [PYTHON_LINK_ENTRY], typescript: [process.execPath, LINK_ENTRY] }
-const STAMP = /\d{8}T\d{6}Z-\d+/g
 const SCRATCH_ROOT = path.join(os.tmpdir(), `keel-link-cross-${process.pid}`)
 const NON_BMP = "\u{1F600}"
 
@@ -64,39 +63,13 @@ function tagDataRepoAsV1(box: LinkSandbox): void {
   box.git(box.data, "tag", "v1-final")
 }
 
-function snapshotTree(root: string): unknown[] {
-  const entries: unknown[] = []
-  const visit = (directory: string) => {
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      const entryPath = path.join(directory, entry.name)
-      if (entryPath === path.join(root, ".git")) continue
-      const mode = fs.lstatSync(entryPath).mode & 0o7777
-      const relative = normalize(path.relative(root, entryPath))
-      if (entry.isSymbolicLink()) {
-        entries.push({ path: relative, type: "link", mode, target: fs.readlinkSync(entryPath) })
-      } else if (entry.isDirectory()) {
-        entries.push({ path: relative, type: "dir", mode })
-        visit(entryPath)
-      } else {
-        entries.push({ path: relative, type: "file", mode, bytes: normalize(fs.readFileSync(entryPath).toString("latin1")) })
-      }
-    }
-  }
-  visit(root)
-  return entries.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)))
-}
-
-function normalize(text: string): string {
-  return text.replace(STAMP, "STAMP")
-}
-
 function execute(script: Script, implementationAt: (step: number) => Implementation, options: ScenarioOptions): Transcript {
   const box = new LinkSandbox({ root: SCRATCH_ROOT, dataDirName: options.dataDirName })
   const commands: Transcript["commands"] = []
   let step = 0
   const run: Run = (...args) => {
     const result = box.runLinkWith(COMMANDS[implementationAt(step++)] as string[], ...args)
-    commands.push({ args, status: result.status, stdout: normalize(result.stdout), stderr: normalize(result.stderr) })
+    commands.push({ args, status: result.status, stdout: normalizeStamps(result.stdout), stderr: normalizeStamps(result.stderr) })
     return result
   }
   try {

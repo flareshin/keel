@@ -81,8 +81,7 @@ function runWrite(plan: Plan, paths: KeelPaths, args: LinkArgs): number {
 
 function runUnlink(paths: KeelPaths): number {
   const entries = links.readLinkManifest(paths)
-  const recordedClaudeMdBackup = member(settingsJson.readLinkState(paths), settingsJson.PRE_KEEL_CLAUDE_MD)
-  const movedAsideClaudeMd = typeof recordedClaudeMdBackup === "string" ? recordedClaudeMdBackup : null
+  const movedAsideClaudeMd = member(settingsJson.readLinkState(paths), settingsJson.PRE_KEEL_CLAUDE_MD)
   const settingsRestore = settingsJson.restorePreKeelSettings(paths)
   const actions: JsonObject[] = settingsRestore ? [settingsRestore] : []
   for (const entry of entries) {

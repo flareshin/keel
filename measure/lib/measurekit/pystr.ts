@@ -62,3 +62,11 @@ export function pyInt(digits: string): number {
   for (const char of digits) value = value * 10 + digitValue(char)
   return value
 }
+
+const INTEGER_TEXT = /^[+-]?\p{Nd}+(?:_\p{Nd}+)*$/u
+
+export function pyIntOrNull(text: string): number | null {
+  const stripped = pyStrip(text)
+  if (!INTEGER_TEXT.test(stripped)) return null
+  return pyInt(stripped.replace(/^[+-]/, "").replaceAll("_", "")) * (stripped.startsWith("-") ? -1 : 1)
+}

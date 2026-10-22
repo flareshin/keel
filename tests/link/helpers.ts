@@ -26,6 +26,34 @@ export type LinkResult = {
   json: any
 }
 
+const BACKUP_STAMP = /\d{8}T\d{6}Z-\d+/g
+
+export function normalizeStamps(text: string): string {
+  return text.replace(BACKUP_STAMP, "STAMP")
+}
+
+export function snapshotTree(root: string): unknown[] {
+  const entries: unknown[] = []
+  const visit = (directory: string) => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const entryPath = path.join(directory, entry.name)
+      if (entryPath === path.join(root, ".git")) continue
+      const mode = fs.lstatSync(entryPath).mode & 0o7777
+      const relative = normalizeStamps(path.relative(root, entryPath))
+      if (entry.isSymbolicLink()) {
+        entries.push({ path: relative, type: "link", mode, target: fs.readlinkSync(entryPath) })
+      } else if (entry.isDirectory()) {
+        entries.push({ path: relative, type: "dir", mode })
+        visit(entryPath)
+      } else {
+        entries.push({ path: relative, type: "file", mode, bytes: normalizeStamps(fs.readFileSync(entryPath).toString("latin1")) })
+      }
+    }
+  }
+  visit(root)
+  return entries.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)))
+}
+
 export function readFile(file: string): string {
   return fs.readFileSync(file, "utf8")
 }
@@ -41,6 +69,7 @@ export class LinkSandbox {
   readonly overlay: string
   readonly data: string
   readonly home: string
+  readonly extraEnv: Record<string, string> = {}
 
   constructor(options: { root?: string; dataDirName?: string } = {}) {
     if (options.root === undefined) {
@@ -76,6 +105,7 @@ export class LinkSandbox {
       HOME: this.home,
       GIT_CONFIG_GLOBAL: path.join(this.root, "gitconfig"),
       GIT_CONFIG_NOSYSTEM: "1",
+      ...this.extraEnv,
     }
     assert.ok(env.KEEL_DATA_DIR.startsWith(this.root + path.sep), "KEEL_DATA_DIR must stay inside the temp dir")
     return env
@@ -86,9 +116,14 @@ export class LinkSandbox {
   }
 
   runLinkWith(command: string[], ...args: string[]): LinkResult {
+    const completed = this.runLinkRaw(command, ...args)
+    return { ...completed, json: completed.stdout.trim() ? JSON.parse(completed.stdout) : null }
+  }
+
+  runLinkRaw(command: string[], ...args: string[]): Omit<LinkResult, "json"> {
     const [program = "", ...leading] = command
     const completed = spawnSync(program, [...leading, ...args], { env: this.env(), encoding: "utf8" })
-    return { status: completed.status, stdout: completed.stdout, stderr: completed.stderr, json: completed.stdout.trim() ? JSON.parse(completed.stdout) : null }
+    return { status: completed.status, stdout: completed.stdout, stderr: completed.stderr }
   }
 
   git(cwd: string, ...args: string[]): string {

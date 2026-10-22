@@ -34,8 +34,8 @@ export function expandPlaceholders(text: string, paths: KeelPaths, where: string
 
 export function runGit(cwd: string, ...args: string[]): string | null {
   if (!isDir(cwd)) return null
-  const result = runProcess(["git", "-C", cwd, ...args])
-  return result.returncode === 0 ? result.stdout : null
+  const gitRun = runProcess(["git", "-C", cwd, ...args])
+  return gitRun.returncode === 0 ? gitRun.stdout : null
 }
 
 export function readText(path: string): string {

@@ -20,7 +20,6 @@ const MASKS: [RegExp, string][] = [
   [/\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ/g, "<ts>"],
   [/line \d+, in /g, "line N, in "],
   [/\/tmp[A-Za-z0-9_]{6,8}\//g, "/<tmp>/"],
-  [/^usage: [\s\S]*?(?=^\S+: error: )/gm, ""],
 ]
 
 const mask = (text: string): string => MASKS.reduce((masked, [pattern, replacement]) => masked.replace(pattern, replacement), text)
@@ -39,8 +38,8 @@ interface ParityCase {
   setup?: (box: EvalSandbox) => void
   cwd?: (box: EvalSandbox) => string
   stub?: "eval" | "review"
-  helpText?: boolean
   engineDependentStderr?: boolean
+  columns?: string
 }
 
 let compared = 0
@@ -141,7 +140,7 @@ const CASES_UNDER_PARITY: ParityCase[] = [
   { name: "boundary repeated option keeps the last", tool: "boundary", args: ["--paths", "missing.txt", "--paths", "notes.txt"], setup: (box) => { box.writeLexicon(); box.write("work/notes.txt", "x\n") }, cwd: (box) => path.join(box.root, "work") },
   { name: "boundary unknown option", tool: "boundary", args: ["--bogus", "--staged"] },
   { name: "boundary paths without value", tool: "boundary", args: ["--paths"] },
-  { name: "boundary help", tool: "boundary", args: ["-h"], helpText: true },
+  { name: "boundary help", tool: "boundary", args: ["-h"] },
   {
     name: "run fires", tool: "run", args: ["C-demo"],
     setup: (box) => { ledgerBox(box, [ledgerRow("C-demo")]); box.fire("C-demo"); box.fire("C-demo", undefined, "error"); box.fire("C-demo", "2020-01-01T00:00:00Z") },
@@ -162,7 +161,7 @@ const CASES_UNDER_PARITY: ParityCase[] = [
   { name: "run unique prefix", tool: "run", args: ["--s", "2020-01-01", "C-demo"], setup: (box) => ledgerBox(box, [ledgerRow("C-demo")]) },
   { name: "run explicit value on a flag", tool: "boundary", args: ["--staged=1"] },
   { name: "run extra argument", tool: "run", args: ["C-demo", "extra"], setup: (box) => ledgerBox(box, [ledgerRow("C-demo")]) },
-  { name: "run help", tool: "run", args: ["--help"], helpText: true },
+  { name: "run help", tool: "run", args: ["--help"] },
   {
     name: "run runner with floats unicode and nested items", tool: "run", args: ["C-demo"],
     setup: (box) => {
@@ -248,6 +247,20 @@ const CASES_UNDER_PARITY: ParityCase[] = [
   { name: "review-eval full run", tool: "evals/review-eval", args: ["--repeat", "2"], stub: "review", setup: (box) => { writeReviewCases(box); playReview(box, 6) } },
   { name: "review-eval single case", tool: "evals/review-eval", args: ["--case", "mean-1", "--repeat", "1", "--model", "opus"], stub: "review", setup: (box) => { writeReviewCases(box); playReview(box, 1) } },
   { name: "review-eval bad repeat", tool: "evals/review-eval", args: ["--repeat", "0"] },
+  { name: "propose help", tool: "propose", args: ["-h"] },
+  { name: "weekly help", tool: "weekly", args: ["-h"] },
+  { name: "smoke help", tool: "smoke", args: ["--help"] },
+  { name: "eval help", tool: "evals/eval", args: ["-h"] },
+  { name: "review-eval help", tool: "evals/review-eval", args: ["-h"] },
+  { name: "boundary help at forty columns", tool: "boundary", args: ["-h"], columns: "40" },
+  { name: "eval help at fifty columns", tool: "evals/eval", args: ["-h"], columns: "50" },
+  { name: "review-eval help at two hundred columns", tool: "evals/review-eval", args: ["-h"], columns: "200" },
+  { name: "eval usage error at sixty columns", tool: "evals/eval", args: ["K4", "--bogus"], columns: "60" },
+  { name: "eval usage error at thirty columns", tool: "evals/eval", args: ["--split"], columns: "30" },
+  { name: "review-eval usage error at seventy columns", tool: "evals/review-eval", args: ["--split", "dev"], columns: "70" },
+  { name: "smoke usage error at forty columns", tool: "smoke", args: ["--bogus"], columns: "40" },
+  { name: "propose usage error at thirty columns", tool: "propose", args: ["--model-upgrade"], columns: "30" },
+  { name: "run usage error at twenty columns", tool: "run", args: [], columns: "20" },
 ]
 
 const REVIEW_BASE = "export function total(items: number[]): number {\n  return items.reduce((sum, item) => sum + item, 0)\n}\n"
@@ -279,10 +292,10 @@ describe("python and typescript entries agree", () => {
   for (const parityCase of CASES_UNDER_PARITY) {
     it(parityCase.name, () => {
       parityCase.setup?.(box)
+      if (parityCase.columns !== undefined) box.env["COLUMNS"] = parityCase.columns
       if (parityCase.stub === "review") box.env["PATH"] = REVIEW_STUB_DIR + path.delimiter + (box.env["PATH"] ?? "").replace(STUBS_DIR + path.delimiter, "")
       if (parityCase.args.includes("@RAW")) parityCase.args = parityCase.args.map((arg) => (arg === "@RAW" ? path.join(box.data, "logs", "keel-eval-K4-old") : arg))
       const { python, ts } = runBoth(box, parityCase)
-      if (parityCase.helpText) python.stdout = ts.stdout = ""
       if (parityCase.engineDependentStderr) {
         for (const outcome of [python, ts]) outcome.stderr = outcome.stderr.replace(/(invalid regex: ).*/, "$1<engine message>")
       }

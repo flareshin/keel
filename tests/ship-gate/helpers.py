@@ -274,7 +274,7 @@ class Sandbox:
                        since: Optional[str] = None, verdict: str = "PASS", kind: str = "lens-review",
                        head: Optional[str] = None, review_base: Optional[str] = None, agent_id: str = "ag1",
                        session: str = "s1", base_branch: str = "origin/main",
-                       no_test_reason: Optional[str] = None) -> dict:
+                       no_test_reason: Optional[str] = None, agent_type: str = "general-purpose") -> dict:
         snapshot = None if head else self.keel("snapshot", repo.path).json["tree"]
         keel_evidence = {
             "v": 1, "repo_root": repo.path,
@@ -288,7 +288,7 @@ class Sandbox:
             "keel_evidence": keel_evidence,
             "verdict": verdict,
             "source": {
-                "session_id": session, "agent_id": agent_id, "agent_type": "general-purpose",
+                "session_id": session, "agent_id": agent_id, "agent_type": agent_type,
                 "transcript_path": self.main_transcript(session),
                 "agent_transcript_path": self.agent_transcript(session, agent_id), "via": "SubagentHandback",
             },

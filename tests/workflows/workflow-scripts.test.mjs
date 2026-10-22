@@ -42,6 +42,23 @@ for (const name of SCRIPTS) {
   })
 }
 
+// agent() throws when its agentType is not in the session's agent registry, so every named type must ship and link.
+test('workflowAgentTypes_shipAsLinkedAgentFilesWithTheirToolLimitAndNoPin_whenScanned', () => {
+  const named = [...new Set(SCRIPTS.flatMap((name) => [...readScript(name).matchAll(/_TYPE = '([\w-]+)'/g)].map((match) => match[1])))].sort()
+  const links = readFileSync(join(KEEL_HOME, 'settings', 'links.tsv'), 'utf8')
+
+  const definitions = named.map((type) => {
+    const frontmatter = readFileSync(join(KEEL_HOME, 'agents', `${type}.md`), 'utf8').split('\n---\n')[0]
+    const field = (key) => (frontmatter.match(new RegExp(`^${key}:\\s*(.*)$`, 'm')) || [])[1]
+    return { type, name: field('name'), tools: field('tools'), model: field('model'), effort: field('effort'), linked: links.includes(`{{KEEL}}/agents/${type}.md\tagents/${type}.md\n`) }
+  })
+
+  assert.deepEqual(definitions, [
+    { type: 'keel-auditor', name: 'keel-auditor', tools: 'Bash, Read, Skill', model: undefined, effort: undefined, linked: true },
+    { type: 'keel-reporter', name: 'keel-reporter', tools: 'Read', model: undefined, effort: undefined, linked: true },
+  ])
+})
+
 test('isPureLiteral_rejectsInterpolationAndVariables_whenMetaIsNotLiteral', () => {
   // given
   const samples = ["{ name: NAME }", "{ name: `x${y}` }", "{ ...base, name: 'x' }", "{ name: make('x') }"]

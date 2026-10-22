@@ -16,6 +16,7 @@ const UNTIERED_EFFORT = 'high'
 const TIER_EFFORT = { 'smoke-only': 'medium', light: 'medium', standard: 'medium', heavy: 'high' }
 const MECHANICAL_MODEL = A.mechanicalModel || 'sonnet'
 const MECHANICAL_EFFORT = 'low'
+const REPORTER_TYPE = 'keel-reporter'
 const REVIEW_KIND = 'lens-review'
 const READABLE_KEY = 'readable-code'
 const RULE_CHECKS_KEY = 'rule-checks'
@@ -450,7 +451,7 @@ function handBackReport(report) {
 ${REPORT_START}
 ${report}
 ${REPORT_END}`
-  return agent(prompt, { label: 'report', phase: 'Report', model: MECHANICAL_MODEL, effort: MECHANICAL_EFFORT })
+  return agent(prompt, { label: 'report', phase: 'Report', model: MECHANICAL_MODEL, effort: MECHANICAL_EFFORT, agentType: REPORTER_TYPE })
 }
 
 function findHandBackProblem(message, expectedReport, evidenceLines) {

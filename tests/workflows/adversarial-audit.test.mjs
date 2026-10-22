@@ -327,6 +327,31 @@ test('adversarialAudit_combinedFindingsUseOneSeparateVerifier_withDistinctLensId
   assert.deepEqual(result.confirmed.map((finding) => `${finding.lens}/${finding.id}`), ['contract/A1', 'tests/A1'])
 })
 
+test('adversarialAudit_runsCombinedAuditAndVerifyAsTheAuditorType_inBothModes', async () => {
+  const respond = (prompt, opts) => {
+    if (opts.label === 'audit:combined') return { audits: LENSES.map((lens) => ({ lens: lens.key, findings: [finding('A1')] })) }
+    if (opts.label.startsWith('audit:')) return { findings: [finding('A1')], notes: 'ran' }
+    const findings = JSON.parse(prompt.split('\nFindings: ')[1])
+    return { decisions: findings.map(({ id }) => ({ id, verdict: 'CONFIRMED', evidence: 'independent caller proof' })) }
+  }
+  const combined = createRuntime({ respond })
+  const split = createRuntime({ respond })
+
+  await combined.run('adversarial-audit', { target: '/work/app', lenses: LENSES })
+  await split.run('adversarial-audit', { auditMode: 'split', target: '/work/app', lenses: LENSES })
+
+  assert.deepEqual(combined.record.agents.map(({ opts }) => [opts.label, opts.agentType]), [
+    ['audit:combined', 'keel-auditor'],
+    ['verify:combined', 'keel-auditor'],
+  ])
+  assert.deepEqual(split.record.agents.map(({ opts }) => [opts.label, opts.agentType]).sort(), [
+    ['audit:contract', 'keel-auditor'],
+    ['audit:tests', 'keel-auditor'],
+    ['verify:contract', 'keel-auditor'],
+    ['verify:tests', 'keel-auditor'],
+  ])
+})
+
 test('adversarialAudit_blocksCollidingCombinedIds_withoutLosingFindingsSilently', async () => {
   const rt = createRuntime({ respond: () => ({ audits: [
     { lens: 'contract', findings: [finding('api:A1')] },

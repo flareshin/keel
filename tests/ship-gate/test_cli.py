@@ -179,6 +179,13 @@ class WriteReviewTest(unittest.TestCase):
         self.assertEqual(evidence["reviewed_tree"], evidence["snapshot_tree"])
         self.assertEqual(evidence["source"]["via"], "SubagentHandback")
 
+    def test_writeReview_recordsTheReporterType_whenTheLensReviewReporterHandsBack(self):
+        sandbox = Sandbox(self)
+        repo = self.feature(sandbox)
+        sandbox.review(repo, agent_type="keel-reporter")
+        evidence = read_json(sandbox.evidence_files("review")[0])
+        self.assertEqual(evidence["source"]["agent_type"], "keel-reporter")
+
     def test_writeReview_isIdempotent_whenSameRunReviewsSameTree(self):
         sandbox = Sandbox(self)
         repo = self.feature(sandbox)

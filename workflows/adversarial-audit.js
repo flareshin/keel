@@ -14,6 +14,7 @@ const GUARDRAILS = A.guardrails || ''
 const MAX_FINDINGS = A.maxFindingsPerLens || 8
 const MODEL = A.model || 'opus'
 const EFFORT = A.effort || 'high'
+const AUDITOR_TYPE = 'keel-auditor'
 const AUDIT_MODE = A.auditMode || 'combined'
 
 const FINDINGS_SCHEMA = {
@@ -106,7 +107,7 @@ async function auditCombinedLenses() {
   let response
   try {
     response = await agent(`${COMMON}\nInspect each required lens and return exactly one audit per lens. Reuse context reads, not conclusions between lenses.\nLenses: ${JSON.stringify(LENSES)}`, {
-      label: 'audit:combined', phase: 'Audit', schema, model: MODEL, effort: EFFORT,
+      label: 'audit:combined', phase: 'Audit', schema, model: MODEL, effort: EFFORT, agentType: AUDITOR_TYPE,
     })
   } catch (e) {
     return LENSES.map((lens) => ({ lens: lens.key, verified: [], notes: '', failed: true }))
@@ -149,7 +150,7 @@ Finding discipline (a violation voids the finding):
 
 function auditLens(lens) {
   return agent(`${COMMON}\n\n${lens.prompt}`, {
-    label: `audit:${lens.key}`, phase: 'Audit', schema: FINDINGS_SCHEMA, model: MODEL, effort: EFFORT,
+    label: `audit:${lens.key}`, phase: 'Audit', schema: FINDINGS_SCHEMA, model: MODEL, effort: EFFORT, agentType: AUDITOR_TYPE,
   })
 }
 
@@ -161,7 +162,7 @@ async function verifyLensFindings(audit, lens) {
   if (findings.length === 0) return { lens: lens.key, verified: [], notes }
   try {
     const response = await agent(buildVerifyPrompt(findings), {
-      label: `verify:${lens.key}`, phase: 'Verify', schema: DECISIONS_SCHEMA, model: MODEL, effort: EFFORT,
+      label: `verify:${lens.key}`, phase: 'Verify', schema: DECISIONS_SCHEMA, model: MODEL, effort: EFFORT, agentType: AUDITOR_TYPE,
     })
     const decisions = Array.isArray(response?.decisions) ? response.decisions : []
     const hasUnknownDecision = decisions.some((item) => !ids.includes(item?.id))

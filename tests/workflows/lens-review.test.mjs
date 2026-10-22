@@ -123,6 +123,23 @@ test('lensReview_usesSonnetForTransportAndOpusForJudgment_whenModelsAreOmitted',
   assert.equal(evidenceLines(result.report).length, 1)
 })
 
+test('lensReview_runsJudgmentAsTheAuditorTypeAndTheReporterAsTheReporterType_whilePrepareKeepsTheDefault', async () => {
+  const audits = { contract: { findings: [finding('c1', 'medium')] } }
+  const verdicts = { c1: { verdict: 'CONFIRMED', evidence: 'static caller proof' } }
+  const rt = createRuntime({ respond: responder({ audits, verdicts }) })
+
+  await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
+
+  assert.deepEqual(rt.record.agents.map(({ opts }) => [opts.label, opts.agentType]), [
+    ['prepare', undefined],
+    ['audit:contract', 'keel-auditor'],
+    ['audit:readable-code', 'keel-auditor'],
+    ['audit:rule-checks', 'keel-auditor'],
+    ['verify:contract', 'keel-auditor'],
+    ['report', 'keel-reporter'],
+  ])
+})
+
 test('lensReview_separatesMechanicalOverrideFromAuditModel_whenBothAreGiven', async () => {
   const rt = createRuntime({ respond: responder() })
 

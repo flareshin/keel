@@ -8,3 +8,5 @@ source	target
 {{KEEL}}/workflows/lens-review.js	workflows/lens-review.js
 {{KEEL}}/workflows/adversarial-audit.js	workflows/adversarial-audit.js
 {{KEEL}}/workflows/review-lenses.json	workflows/review-lenses.json
+{{KEEL}}/agents/keel-auditor.md	agents/keel-auditor.md
+{{KEEL}}/agents/keel-reporter.md	agents/keel-reporter.md

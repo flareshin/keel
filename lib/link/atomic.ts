@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto"
 import fs from "node:fs"
 
+import { encodeStrict } from "../../measure/lib/measurekit/pyio.ts"
 import { isDir, lexists, pyBasename, pyDirname, pyJoin } from "../../measure/lib/measurekit/pypath.ts"
 
 const TEMP_PREFIX = ".keel-link-"
@@ -24,7 +25,7 @@ export function writeTextAtomic(path: string, text: string, mode: number): void 
   makedirs(directory)
   const tempPath = createTempFile(directory)
   try {
-    writeAndSync(tempPath, Buffer.from(text, "utf8"))
+    writeAndSync(tempPath, encodeStrict(text))
     fs.chmodSync(tempPath, mode)
     fs.renameSync(tempPath, path)
   } catch (error) {

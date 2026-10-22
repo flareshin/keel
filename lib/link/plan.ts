@@ -3,6 +3,7 @@ import fs from "node:fs"
 import { iterRegistrations } from "../../measure/lib/measurekit/hook_settings.ts"
 import type { Registration } from "../../measure/lib/measurekit/hook_settings.ts"
 import { hookRowsInForce, loadLedgersFrom } from "../../measure/lib/measurekit/ledger.ts"
+import { encodeStrict } from "../../measure/lib/measurekit/pyio.ts"
 import { isFile, isLink, lexists, pyJoin, realpath } from "../../measure/lib/measurekit/pypath.ts"
 import { pyStrip } from "../../measure/lib/measurekit/pystr.ts"
 import { PyFloat, pyRepr } from "../../measure/lib/measurekit/pyvalue.ts"
@@ -154,7 +155,7 @@ function planClaudeMd(plan: Plan, paths: KeelPaths, backupRoot: string): void {
   const path = pyJoin(paths.dataDir, claudeMd.FILE_NAME)
   const content = claudeMd.buildClaudeMd(paths)
   const writeNow = () => writeTextAtomic(path, content, CLAUDE_MD_MODE)
-  plan.claudeMdBytes = Buffer.byteLength(content, "utf8")
+  plan.claudeMdBytes = encodeStrict(content).length
   if (plan.claudeMdBytes > claudeMd.MAX_BYTES) {
     const detail = `generated CLAUDE.md would be ${plan.claudeMdBytes} bytes, over the ${claudeMd.MAX_BYTES}-byte cap`
     addProblem(plan, "claude-md-drift", path, detail, BLOCKS_ALWAYS)

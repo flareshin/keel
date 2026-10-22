@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, it } from "node:test"
 import fs from "node:fs"
 import path from "node:path"
 
-import { LinkSandbox, assertExit, isSymlink, lexistsPath, onlyBackup, problemKinds, readFile, writeFile } from "./helpers.ts"
+import { isLink, lexists } from "../../measure/lib/measurekit/pypath.ts"
+import { LinkSandbox, assertExit, onlyBackup, problemKinds, readFile, writeFile } from "./helpers.ts"
 
 const TASK = "scheduled-tasks/demo/SKILL.md"
 const TASK_TEXT = "---\nname: demo\n---\nRun the demo.\n"
@@ -37,10 +38,10 @@ describe("link copies scheduled tasks", () => {
   it("write_copiesScheduledTaskFile_whenTargetIsMissing", () => {
     const result = box.runLink("--write")
     assertExit(result, 0)
-    assert.equal(isSymlink(target), false)
+    assert.equal(isLink(target), false)
     assert.equal(box.readData(TASK), TASK_TEXT)
     assert.ok(hasAction(result, "copy"))
-    assert.equal(isSymlink(box.dataPath("commands/hello.md")), true)
+    assert.equal(isLink(box.dataPath("commands/hello.md")), true)
   })
 
   it("write_keepsSourcePermissionBits_whenCopying", () => {
@@ -62,7 +63,7 @@ describe("link copies scheduled tasks", () => {
     const result = box.runLink("--write")
     assertExit(result, 0)
     assert.ok(hasAction(result, "copy"))
-    assert.equal(isSymlink(target), false)
+    assert.equal(isLink(target), false)
     assert.equal(box.readData(TASK), TASK_TEXT)
   })
 
@@ -79,7 +80,7 @@ describe("link copies scheduled tasks", () => {
     const result = box.runLink("--write", "--force")
     assertExit(result, 0)
     assert.ok(hasAction(result, "copy"))
-    assert.equal(isSymlink(target), false)
+    assert.equal(isLink(target), false)
     assert.equal(box.readData(TASK), TASK_TEXT)
     assert.equal(readFile(onlyBackup(box, TASK)), "edited in the app\n")
   })
@@ -99,7 +100,7 @@ describe("link copies scheduled tasks", () => {
     const result = box.runLink("--write", "--force")
     assertExit(result, 3)
     assert.deepEqual(problemKinds(result), ["dangling"])
-    assert.equal(lexistsPath(target), false)
+    assert.equal(lexists(target), false)
   })
 
   it("write_refuses_whenDirectorySitsAtTaskWithoutForce", () => {
@@ -116,7 +117,7 @@ describe("link copies scheduled tasks", () => {
     fs.symlinkSync(elsewhere, target)
     const result = box.runLink("--write", "--force")
     assertExit(result, 0)
-    assert.equal(isSymlink(target), false)
+    assert.equal(isLink(target), false)
     assert.equal(box.readData(TASK), TASK_TEXT)
     assert.equal(fs.readlinkSync(onlyBackup(box, TASK)), elsewhere)
   })

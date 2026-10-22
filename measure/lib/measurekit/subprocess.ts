@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process"
 import os from "node:os"
 
+import { toOsError } from "./pyerrno.ts"
 import { OsError } from "./pyerrors.ts"
 import { translateNewlines } from "./pyio.ts"
 import { pyRepr } from "./pyvalue.ts"
@@ -29,13 +30,6 @@ export class TimeoutExpired extends Error {
   }
 }
 
-const ERRNO_TEXT: Record<string, string> = {
-  ENOENT: "[Errno 2] No such file or directory",
-  EACCES: "[Errno 13] Permission denied",
-  ENOEXEC: "[Errno 8] Exec format error",
-  ENOTDIR: "[Errno 20] Not a directory",
-}
-
 export function runProcess(command: string[] | string, options: RunOptions = {}): RunResult {
   const useShell = options.shell === true
   const argv = typeof command === "string" ? [command] : command
@@ -54,7 +48,7 @@ export function runProcess(command: string[] | string, options: RunOptions = {})
   })
   const error = result.error as NodeJS.ErrnoException | undefined
   if (error?.code === "ETIMEDOUT") throw new TimeoutExpired(command, options.timeoutSeconds ?? 0, result.stdout ?? "")
-  if (error) throw new OsError(`${ERRNO_TEXT[error.code ?? ""] ?? error.message}: '${program}'`)
+  if (error) throw toOsError(error, program) ?? new OsError(`${error.message}: ${pyRepr(program)}`)
   const returncode = result.status ?? -(os.constants.signals[result.signal as NodeJS.Signals] ?? 0)
   return { returncode, stdout: translateNewlines(result.stdout ?? ""), stderr: translateNewlines(result.stderr ?? "") }
 }

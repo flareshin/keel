@@ -10,6 +10,7 @@ import type { LinkResult } from "./helpers.ts"
 type Implementation = "python" | "typescript"
 type Run = (...args: string[]) => LinkResult
 type Script = (run: Run, box: LinkSandbox) => void
+type ScenarioOptions = { dataDirName?: string; tagV1?: boolean; plainSandbox?: boolean }
 type Transcript = { commands: { args: string[]; status: number | null; stdout: string; stderr: string }[]; tree: unknown[] }
 
 const COMMANDS: Record<Implementation, string[]> = { python: [PYTHON_LINK_ENTRY], typescript: [process.execPath, LINK_ENTRY] }
@@ -89,7 +90,7 @@ function normalize(text: string): string {
   return text.replace(STAMP, "STAMP")
 }
 
-function execute(script: Script, implementationAt: (step: number) => Implementation, options: { dataDirName?: string; tagV1?: boolean }): Transcript {
+function execute(script: Script, implementationAt: (step: number) => Implementation, options: ScenarioOptions): Transcript {
   const box = new LinkSandbox({ root: SCRATCH_ROOT, dataDirName: options.dataDirName })
   const commands: Transcript["commands"] = []
   let step = 0
@@ -99,10 +100,10 @@ function execute(script: Script, implementationAt: (step: number) => Implementat
     return result
   }
   try {
-    seedRichSandbox(box)
+    if (!options.plainSandbox) seedRichSandbox(box)
     if (options.tagV1) tagDataRepoAsV1(box)
     script(run, box)
-    commands.push({ args: ["git config core.hooksPath"], status: 0, stdout: box.git(box.keel, "config", "--get", "core.hooksPath"), stderr: "" })
+    commands.push({ args: ["git config core.hooksPath"], status: 0, stdout: box.gitConfigValue(box.keel, "core.hooksPath"), stderr: "" })
     return { commands, tree: snapshotTree(box.data) }
   } finally {
     box.remove()
@@ -146,6 +147,65 @@ const QUOTED_DATA_DIR_STATUSES = [3, 0, 0, 0, 0]
 const QUOTED_DATA_DIR_AFTER_WRITE = 2
 const QUOTED_DATA_DIR_AT_UNLINK = 3
 
+const INTEGER_LIKE_KEYS_FRAGMENT: Script = (run, box) => {
+  box.writeOverlay(
+    "settings/70-numeric.json",
+    '{"env": {"Z": "1", "10": "a", "2": "b"}, "permissions": {"extra": {"b": 1, "3": 2, "1": 3}}, "hooks": {"Stop": [{"hooks": [{"type": "command", "command": "x", "9": 1, "a": 2, "0": 3}]}], "10": [], "2": []}}',
+  )
+  box.writeOverlay("settings/80-numeric.json", '{"env": {"10": "later", "7": "c", "Z": "2"}}')
+  run("--check")
+  run("--write")
+  run("--check")
+  run("--unlink")
+}
+const INTEGER_LIKE_KEYS_FRAGMENT_STATUSES = [1, 0, 0, 0, 0]
+
+const LONE_SURROGATE_ESCAPE = "\\ud800"
+
+const LONE_SURROGATE_FRAGMENT: Script = (run, box) => {
+  box.writeOverlay("settings/90-lone.json", `{"env": {"X": "${LONE_SURROGATE_ESCAPE}"}}`)
+  run("--check")
+  run("--write")
+  run("--check")
+}
+const LONE_SURROGATE_FRAGMENT_STATUSES = [1, 70, 1, 0]
+
+const LONE_SURROGATE_CONFLICTING_KEYS: Script = (run, box) => {
+  box.writeOverlay("settings/90-lone.json", `{"env": {"${LONE_SURROGATE_ESCAPE}": "a"}}`)
+  box.writeOverlay("settings/91-lone.json", `{"env": {"${LONE_SURROGATE_ESCAPE}": "b"}}`)
+  run("--check")
+  run("--write")
+  run("--check")
+}
+const LONE_SURROGATE_CONFLICTING_KEYS_STATUSES = [1, 70, 1, 0]
+
+const LONE_SURROGATE_LIVE_UNOWNED_VALUE: Script = (run, box) => {
+  box.writeData("settings.json", `{"model": "${LONE_SURROGATE_ESCAPE}"}`)
+  run("--check")
+  run("--write", "--adopt")
+  run("--check")
+}
+const LONE_SURROGATE_LIVE_UNOWNED_VALUE_STATUSES = [1, 0, 0, 0]
+
+const LONE_SURROGATE_LIVE_OWNED_VALUE_AFTER_WRITE: Script = (run, box) => {
+  run("--write")
+  box.writeData("settings.json", `{"env": {"A": "${LONE_SURROGATE_ESCAPE}"}}`)
+  run("--check")
+  run("--write")
+}
+const LONE_SURROGATE_LIVE_OWNED_VALUE_AFTER_WRITE_STATUSES = [0, 70, 70, 0]
+
+const LONE_SURROGATE_LIVE_OWNED_KEY: Script = (run, box) => {
+  box.writeData("settings.json", `{"env": {"${LONE_SURROGATE_ESCAPE}": "a"}}`)
+  run("--write")
+  run("--check")
+}
+const LONE_SURROGATE_LIVE_OWNED_KEY_STATUSES = [3, 1, 0]
+
+type Scenario = { name: string; script: Script; statuses: number[]; switchPoints: number[]; options: ScenarioOptions }
+
+const loneSurrogateScenario = (name: string, script: Script, statuses: number[]): Scenario => ({ name, script, statuses, switchPoints: [1], options: { plainSandbox: true } })
+
 const alwaysUse = (implementation: Implementation) => () => implementation
 const switchAt = (first: Implementation, second: Implementation, step: number) => (current: number) => (current < step ? first : second)
 
@@ -168,7 +228,7 @@ after(() => {
 })
 
 describe("link cross implementation", () => {
-  const scenarios: { name: string; script: Script; statuses: number[]; switchPoints: number[]; options: { dataDirName?: string; tagV1?: boolean } }[] = [
+  const scenarios: Scenario[] = [
     {
       name: "fullLifecycle",
       script: FULL_LIFECYCLE,
@@ -183,6 +243,12 @@ describe("link cross implementation", () => {
       switchPoints: [QUOTED_DATA_DIR_AFTER_WRITE, QUOTED_DATA_DIR_AT_UNLINK],
       options: { dataDirName: `da ta's \u00e9 ${NON_BMP}`, tagV1: true },
     },
+    { name: "integerLikeKeysKeepTheirSourceOrder", script: INTEGER_LIKE_KEYS_FRAGMENT, statuses: INTEGER_LIKE_KEYS_FRAGMENT_STATUSES, switchPoints: [1, 2], options: { plainSandbox: true } },
+    loneSurrogateScenario("loneSurrogateInFragment", LONE_SURROGATE_FRAGMENT, LONE_SURROGATE_FRAGMENT_STATUSES),
+    loneSurrogateScenario("loneSurrogateInConflictingFragmentKeys", LONE_SURROGATE_CONFLICTING_KEYS, LONE_SURROGATE_CONFLICTING_KEYS_STATUSES),
+    loneSurrogateScenario("loneSurrogateInLiveUnownedValue", LONE_SURROGATE_LIVE_UNOWNED_VALUE, LONE_SURROGATE_LIVE_UNOWNED_VALUE_STATUSES),
+    loneSurrogateScenario("loneSurrogateInLiveOwnedValueAfterWrite", LONE_SURROGATE_LIVE_OWNED_VALUE_AFTER_WRITE, LONE_SURROGATE_LIVE_OWNED_VALUE_AFTER_WRITE_STATUSES),
+    loneSurrogateScenario("loneSurrogateInLiveOwnedKey", LONE_SURROGATE_LIVE_OWNED_KEY, LONE_SURROGATE_LIVE_OWNED_KEY_STATUSES),
   ]
 
   for (const { name, script, statuses, switchPoints, options } of scenarios) {

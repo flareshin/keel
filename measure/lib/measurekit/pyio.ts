@@ -1,9 +1,12 @@
 import fs from "node:fs"
 
-import { OsError, ValueError } from "./pyerrors.ts"
-import { pyRepr } from "./pyvalue.ts"
+import { toOsError } from "./pyerrno.ts"
+import { ValueError } from "./pyerrors.ts"
 
 export class UnicodeDecodeError extends ValueError {}
+export class UnicodeEncodeError extends ValueError {}
+
+const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g
 
 const STRICT_DECODER = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true })
 const LENIENT_DECODER = new TextDecoder("utf-8", { fatal: false, ignoreBOM: true })
@@ -20,21 +23,40 @@ export function decodeReplacing(bytes: Uint8Array): string {
   return LENIENT_DECODER.decode(bytes)
 }
 
-const ERRNO_TEXT: Record<string, string> = {
-  ENOENT: "[Errno 2] No such file or directory",
-  EACCES: "[Errno 13] Permission denied",
-  ENOTDIR: "[Errno 20] Not a directory",
-  EISDIR: "[Errno 21] Is a directory",
+export function encodeStrict(text: string): Buffer {
+  if (text.isWellFormed()) return Buffer.from(text, "utf8")
+  throw new UnicodeEncodeError(describeFirstLoneSurrogateRun(text))
+}
+
+export function backslashReplaceLoneSurrogates(text: string): string {
+  return text.replace(LONE_SURROGATE, surrogateEscape)
+}
+
+function describeFirstLoneSurrogateRun(text: string): string {
+  const codePoints = Array.from(text)
+  const start = codePoints.findIndex(isLoneSurrogate)
+  let end = start
+  while (end < codePoints.length && isLoneSurrogate(codePoints[end] as string)) end++
+  const subject =
+    end - start === 1
+      ? `character '${surrogateEscape(codePoints[start] as string)}' in position ${start}`
+      : `characters in position ${start}-${end - 1}`
+  return `'utf-8' codec can't encode ${subject}: surrogates not allowed`
+}
+
+function isLoneSurrogate(codePoint: string): boolean {
+  return codePoint.length === 1 && codePoint >= "\ud800" && codePoint <= "\udfff"
+}
+
+function surrogateEscape(surrogate: string): string {
+  return "\\u" + surrogate.charCodeAt(0).toString(16).padStart(4, "0")
 }
 
 export function readBytes(path: string): Buffer {
   try {
     return fs.readFileSync(path)
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code ?? ""
-    const text = ERRNO_TEXT[code]
-    if (text === undefined) throw error
-    throw new OsError(`${text}: ${pyRepr(path)}`)
+    throw toOsError(error, path) ?? error
   }
 }
 

@@ -9,7 +9,7 @@ import { FAIL, PASS, stderrExcerpt, WARN } from "./metrics.ts"
 import { isOsError, ValueError } from "./pyerrors.ts"
 import { readText } from "./pyio.ts"
 import { pythonJsonLoads } from "./pyjson.ts"
-import { isExecutable, isFile, isLink, pathExists, pyBasename, pyDirname, pyJoin, pyRelpath, walk } from "./pypath.ts"
+import { isExecutable, isFile, isLink, lexists, pathExists, pyBasename, pyDirname, pyJoin, pyRelpath, walk } from "./pypath.ts"
 import { compilePythonRegex } from "./pyregex.ts"
 import { pyLstrip, pySplitlines, sortedByCodePoint } from "./pystr.ts"
 import { isJsonObject, pyStr, pyTypeName } from "./pyvalue.ts"
@@ -90,15 +90,6 @@ function skillFiles(root: string): string[] {
   }
   const paths = names.filter((name) => !name.startsWith(".")).map((name) => pyJoin(skillsDir, name, "SKILL.md"))
   return sortedByCodePoint(paths.filter((path) => lexists(path)))
-}
-
-function lexists(path: string): boolean {
-  try {
-    fs.lstatSync(path)
-    return true
-  } catch {
-    return false
-  }
 }
 
 function taggingAssertion(scope: string, path: string, knownIds: Set<string>, rulesSectionOnly: boolean, statusWhenAbsent: string): Assertion {

@@ -3,7 +3,9 @@ import fs from "node:fs"
 
 import { isCommandHook, iterHookEntries } from "../../measure/lib/measurekit/hook_settings.ts"
 import type { Registration } from "../../measure/lib/measurekit/hook_settings.ts"
-import { JsonDecodeError, pythonJsonDumps, pythonJsonLoads, pythonJsonRawDecode } from "../../measure/lib/measurekit/pyjson.ts"
+import { setMember } from "../../measure/lib/measurekit/pydict.ts"
+import { encodeStrict } from "../../measure/lib/measurekit/pyio.ts"
+import { JsonDecodeError, pythonJsonDumps, pythonJsonLoads, pythonJsonRawDecode, skipJsonWhitespace } from "../../measure/lib/measurekit/pyjson.ts"
 import { isFile, pyDirname, pyJoin } from "../../measure/lib/measurekit/pypath.ts"
 import { pyStrip, sortedByCodePoint } from "../../measure/lib/measurekit/pystr.ts"
 import { isJsonObject, pyTruthy, pyTypeName } from "../../measure/lib/measurekit/pyvalue.ts"
@@ -13,7 +15,7 @@ import { writeTextAtomic, makedirs } from "./atomic.ts"
 import { canonicalJson, readText, Refused } from "./config.ts"
 import type { KeelPaths } from "./config.ts"
 import { OWNED_KEYS } from "./fragments.ts"
-import { member, objectMember, setMember } from "./members.ts"
+import { member, objectMember } from "./members.ts"
 
 export const FILE_NAME = "settings.json"
 export const PRE_KEEL_BACKUP = "pre_keel_settings_backup"
@@ -24,7 +26,6 @@ const PRIVATE_FILE_MODE = 0o600
 const PRIVATE_DIR_MODE = 0o700
 const NO_PRE_KEEL_FILE = "none"
 const LINK_STATE_SCHEMA = 1
-const JSON_WHITESPACE = new Set([" ", "\t", "\n", "\r"])
 
 export class AttributeError extends Error {}
 
@@ -270,18 +271,18 @@ function render(value: PyValue): string {
 }
 
 function scanTopLevel(text: string): [Member[], number] {
-  let index = skipWhitespace(text, 0)
+  let index = skipJsonWhitespace(text, 0)
   if (text.slice(index, index + 1) !== "{") throw new Refused("settings.json top level must be a JSON object")
-  index = skipWhitespace(text, index + 1)
+  index = skipJsonWhitespace(text, index + 1)
   const members: Member[] = []
   while (text.charAt(index) !== "}") {
     const keyStart = index
     const [key, afterKey] = pythonJsonRawDecode(text, index)
-    const valueStart = skipWhitespace(text, skipWhitespace(text, afterKey) + 1)
+    const valueStart = skipJsonWhitespace(text, skipJsonWhitespace(text, afterKey) + 1)
     const [, valueEnd] = pythonJsonRawDecode(text, valueStart)
     members.push({ key: key as string, keyStart, valueStart, valueEnd, indent: lineIndent(text, keyStart) })
-    index = skipWhitespace(text, valueEnd)
-    if (text.charAt(index) === ",") index = skipWhitespace(text, index + 1)
+    index = skipJsonWhitespace(text, valueEnd)
+    if (text.charAt(index) === ",") index = skipJsonWhitespace(text, index + 1)
   }
   return [members, index]
 }
@@ -341,12 +342,6 @@ function lineIndent(text: string, position: number): string {
   return pyStrip(prefix) === "" ? prefix : ""
 }
 
-function skipWhitespace(text: string, index: number): number {
-  let end = index
-  while (JSON_WHITESPACE.has(text.charAt(end))) end++
-  return end
-}
-
 function digest(value: PyValue | undefined): string {
-  return createHash("sha256").update(canonicalJson(value), "utf8").digest("hex")
+  return createHash("sha256").update(encodeStrict(canonicalJson(value))).digest("hex")
 }

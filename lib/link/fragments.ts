@@ -1,6 +1,7 @@
 import fs from "node:fs"
 
 import { activeStackNames } from "../../measure/lib/measurekit/ledger.ts"
+import { memberEntries, setMember } from "../../measure/lib/measurekit/pydict.ts"
 import { ValueError } from "../../measure/lib/measurekit/pyerrors.ts"
 import { readText } from "../../measure/lib/measurekit/pyio.ts"
 import { JsonDecodeError, pythonJsonLoads } from "../../measure/lib/measurekit/pyjson.ts"
@@ -10,7 +11,7 @@ import { isJsonObject, pyRepr } from "../../measure/lib/measurekit/pyvalue.ts"
 import type { JsonObject, PyValue } from "../../measure/lib/measurekit/pyvalue.ts"
 import { canonicalJson, expandPlaceholders, Refused } from "./config.ts"
 import type { KeelPaths } from "./config.ts"
-import { childList, childObject, member, objectMember, setMember } from "./members.ts"
+import { childList, childObject, member, objectMember } from "./members.ts"
 
 export const OWNED_KEYS = ["hooks", "permissions", "env"]
 export const LIST_PERMISSION_KEYS = ["allow", "deny", "ask"]
@@ -20,15 +21,15 @@ export function loadMergedFragments(paths: KeelPaths): [JsonObject, string[]] {
   const merged: JsonObject = {}
   const conflicts: string[] = []
   for (const [source, fragment] of fragments) {
-    for (const [event, entries] of Object.entries(objectMember(fragment, "hooks"))) {
+    for (const [event, entries] of memberEntries(objectMember(fragment, "hooks"))) {
       childList(childObject(merged, "hooks"), event).push(...(entries as PyValue[]))
     }
-    for (const [key, value] of Object.entries(objectMember(fragment, "permissions"))) {
+    for (const [key, value] of memberEntries(objectMember(fragment, "permissions"))) {
       const permissions = childObject(merged, "permissions")
       if (LIST_PERMISSION_KEYS.includes(key)) extendKeepingFirst(childList(permissions, key), value as PyValue[])
       else setLaterWins(permissions, key, value, `permissions.${key}`, source, conflicts)
     }
-    for (const [key, value] of Object.entries(objectMember(fragment, "env"))) {
+    for (const [key, value] of memberEntries(objectMember(fragment, "env"))) {
       setLaterWins(childObject(merged, "env"), key, value, `env.${key}`, source, conflicts)
     }
   }
@@ -77,14 +78,14 @@ function validateFragmentShape(path: string, fragment: PyValue): asserts fragmen
     const section = member(fragment, key)
     if (section !== undefined && !isJsonObject(section)) throw new Refused(`${path}: ${key} must be an object`)
   }
-  for (const [event, entries] of Object.entries(objectMember(fragment, "hooks"))) {
+  for (const [event, entries] of memberEntries(objectMember(fragment, "hooks"))) {
     if (!Array.isArray(entries)) throw new Refused(`${path}: hooks.${event} must be an array`)
   }
   for (const key of LIST_PERMISSION_KEYS) {
-    const rules = member(objectMember(fragment, "permissions"), key) ?? []
-    if (!Array.isArray(rules)) throw new Refused(`${path}: permissions.${key} must be an array`)
+    const rules = member(objectMember(fragment, "permissions"), key)
+    if (rules !== undefined && !Array.isArray(rules)) throw new Refused(`${path}: permissions.${key} must be an array`)
   }
-  for (const [key, value] of Object.entries(objectMember(fragment, "env"))) {
+  for (const [key, value] of memberEntries(objectMember(fragment, "env"))) {
     if (typeof value !== "string") throw new Refused(`${path}: env.${key} must be a string`)
   }
 }
@@ -94,7 +95,7 @@ function expandStrings(value: PyValue, paths: KeelPaths, where: string): PyValue
   if (Array.isArray(value)) return value.map((item) => expandStrings(item, paths, where))
   if (isJsonObject(value)) {
     const expanded: JsonObject = {}
-    for (const [key, item] of Object.entries(value)) setMember(expanded, key, expandStrings(item, paths, where))
+    for (const [key, item] of memberEntries(value)) setMember(expanded, key, expandStrings(item, paths, where))
     return expanded
   }
   return value

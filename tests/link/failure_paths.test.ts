@@ -23,7 +23,13 @@ after(() => {
   console.log(`parity: ${compared} cases, ${mismatches} mismatches`)
 })
 
-const FAILURE_CASES: [string, (box: LinkSandbox) => void, string[], number][] = [
+const LONE_SURROGATE_ESCAPE = "\\ud800"
+const LIST_PERMISSION_KEYS = ["allow", "deny", "ask"]
+const NON_LIST_VALUES: [string, string][] = [["Null", "null"], ["ANumber", "7"], ["True", "true"], ["AnObject", '{"a": 1}']]
+
+type FailureCase = [string, (box: LinkSandbox) => void, string[], number]
+
+const FAILURE_CASES: FailureCase[] = [
   ["linkStateIsInvalidJson", (box) => box.writeData("state/keel/link-state.json", "{oops"), ["--write"], 3],
   ["linkStateIsAList", (box) => box.writeData("state/keel/link-state.json", "[]"), ["--write"], 70],
   ["linkStateIsAListOnUnlink", (box) => box.writeData("state/keel/link-state.json", "[]"), ["--unlink"], 70],
@@ -53,6 +59,14 @@ const FAILURE_CASES: [string, (box: LinkSandbox) => void, string[], number][] = 
   ["fragmentHooksIsAList", (box) => box.writeOverlay("settings/90-x.json", '{"hooks": []}'), ["--check"], 3],
   ["fragmentHooksEventIsNotAList", (box) => box.writeOverlay("settings/90-x.json", '{"hooks": {"Stop": 1}}'), ["--check"], 3],
   ["fragmentPermissionIsNotAList", (box) => box.writeOverlay("settings/90-x.json", '{"permissions": {"allow": "x"}}'), ["--check"], 3],
+  ...LIST_PERMISSION_KEYS.flatMap((key) =>
+    NON_LIST_VALUES.map(([label, literal]): FailureCase => [
+      `fragmentPermission${key[0]?.toUpperCase()}${key.slice(1)}Is${label}`,
+      (box) => box.writeOverlay("settings/90-x.json", `{"permissions": {"${key}": ${literal}}}`),
+      ["--check"],
+      3,
+    ]),
+  ),
   ["fragmentEnvValueIsNotAString", (box) => box.writeOverlay("settings/90-x.json", '{"env": {"A": 1}}'), ["--check"], 3],
   ["manifestRowHasOneColumn", (box) => box.writeKeel("settings/links.tsv", "source\ttarget\nonly-one\n"), ["--check"], 3],
   [
@@ -66,6 +80,26 @@ const FAILURE_CASES: [string, (box: LinkSandbox) => void, string[], number][] = 
   ["settingsStartsWithByteOrderMark", (box) => box.writeData("settings.json", BYTE_ORDER_MARK + "{}"), ["--check"], 3],
   ["settingsHoldsNaN", (box) => box.writeData("settings.json", '{"env": NaN}'), ["--check"], 1],
   ["settingsPermissionIsAString", (box) => box.writeData("settings.json", '{"permissions": {"allow": "Read"}}'), ["--check"], 1],
+  ...NON_LIST_VALUES.map(([label, literal]): FailureCase => [
+    `settingsPermissionAllowIs${label}`,
+    (box) => box.writeData("settings.json", `{"permissions": {"allow": ${literal}}}`),
+    ["--check"],
+    1,
+  ]),
+  ["fragmentLoneSurrogateValueOnWrite", (box) => box.writeOverlay("settings/90-x.json", `{"env": {"X": "${LONE_SURROGATE_ESCAPE}"}}`), ["--write"], 70],
+  ["fragmentLoneSurrogateValueOnDryRun", (box) => box.writeOverlay("settings/90-x.json", `{"env": {"X": "${LONE_SURROGATE_ESCAPE}"}}`), [], 0],
+  [
+    "fragmentLoneSurrogateKeyOverriddenOnCheck",
+    (box) => {
+      box.writeOverlay("settings/90-x.json", `{"env": {"${LONE_SURROGATE_ESCAPE}": "a"}}`)
+      box.writeOverlay("settings/91-x.json", `{"env": {"${LONE_SURROGATE_ESCAPE}": "b"}}`)
+    },
+    ["--check"],
+    1,
+  ],
+  ["fragmentLoneSurrogateInRefusedEnvValue", (box) => box.writeOverlay("settings/90-x.json", `{"env": {"${LONE_SURROGATE_ESCAPE}": 1}}`), ["--check"], 3],
+  ["settingsLoneSurrogateInUnownedValueOnAdopt", (box) => box.writeData("settings.json", `{"model": "${LONE_SURROGATE_ESCAPE}"}`), ["--write", "--adopt"], 0],
+  ["settingsLoneSurrogateInOwnedKeyOnCheck", (box) => box.writeData("settings.json", `{"env": {"${LONE_SURROGATE_ESCAPE}": "a"}}`), ["--check"], 1],
   ["unlinkFindsADirectoryAtClaudeMd", (box) => fs.mkdirSync(box.dataPath("CLAUDE.md")), ["--unlink"], 0],
   ["stacksNameIsInvalid", (box) => box.writeOverlay("stacks.txt", "BAD NAME\n"), ["--check"], 3],
   ["ledgerIsMalformed", (box) => box.writeKeel("ledger.tsv", "garbage\n"), ["--check"], 1],

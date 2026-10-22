@@ -3,7 +3,8 @@ import { spawnSync } from "node:child_process"
 import { afterEach, beforeEach, describe, it } from "node:test"
 import fs from "node:fs"
 
-import { LinkSandbox, assertExit, lexistsPath, ops, onlyBackup, readFile } from "./helpers.ts"
+import { lexists } from "../../measure/lib/measurekit/pypath.ts"
+import { LinkSandbox, assertExit, ops, onlyBackup, readFile } from "./helpers.ts"
 import type { LinkResult } from "./helpers.ts"
 
 const afterRunMarker = (result: LinkResult) => result.stderr.split("run:")[1] as string
@@ -28,7 +29,7 @@ describe("link unlink", () => {
     const result = box.runLink("--unlink")
     assertExit(result, 0)
     assert.equal(ops(result).filter((op) => op === "remove-link").length, 4)
-    for (const target of ["skills/demo", "bin/keel", "commands/hello.md", "CLAUDE.md"]) assert.equal(lexistsPath(box.dataPath(target)), false, target)
+    for (const target of ["skills/demo", "bin/keel", "commands/hello.md", "CLAUDE.md"]) assert.equal(lexists(box.dataPath(target)), false, target)
     assert.equal(fs.existsSync(box.dataPath("state/keel/link-state.json")), false)
   })
 
@@ -97,7 +98,7 @@ describe("link unlink", () => {
     fs.unlinkSync(onlyBackup(box, "CLAUDE.md"))
     const result = box.runLink("--unlink")
     assertExit(result, 0)
-    assert.equal(lexistsPath(box.dataPath("CLAUDE.md")), false)
+    assert.equal(lexists(box.dataPath("CLAUDE.md")), false)
     assert.ok(!ops(result).includes("restore-claude-md"))
     assert.ok(afterRunMarker(result).includes("CLAUDE.md"))
   })

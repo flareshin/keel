@@ -3,7 +3,7 @@ import fs from "node:fs"
 import { ArgumentParser } from "../../measure/lib/measurekit/argparse.ts"
 import type { ParsedArguments } from "../../measure/lib/measurekit/argparse.ts"
 import { ValueError, isOsError } from "../../measure/lib/measurekit/pyerrors.ts"
-import { readText, textLines } from "../../measure/lib/measurekit/pyio.ts"
+import { backslashReplaceLoneSurrogates, readText, newlineSeparatedLines } from "../../measure/lib/measurekit/pyio.ts"
 import { pythonJsonDumps } from "../../measure/lib/measurekit/pyjson.ts"
 import { isFile, pyJoin, realpath } from "../../measure/lib/measurekit/pypath.ts"
 import { pySplitlines, pyStrip } from "../../measure/lib/measurekit/pystr.ts"
@@ -121,7 +121,7 @@ export function buildV1RestoreCommand(dataDir: string, candidates: string[]): st
 export function readAcceptedDrops(path: string | undefined): Set<string> {
   if (path === undefined) return new Set()
   try {
-    return new Set(textLines(readText(path)).filter((line) => pyStrip(line) !== "" && !line.startsWith("#")))
+    return new Set(newlineSeparatedLines(readText(path)).filter((line) => pyStrip(line) !== "" && !line.startsWith("#")))
   } catch (error) {
     if (isOsError(error)) throw new Refused(`--accept-drops ${path}: ${(error as Error).message}`)
     throw error
@@ -208,5 +208,5 @@ function sayDrops(dropped: string[]): void {
 }
 
 function say(message: string): void {
-  process.stderr.write(message + "\n")
+  process.stderr.write(backslashReplaceLoneSurrogates(message) + "\n")
 }

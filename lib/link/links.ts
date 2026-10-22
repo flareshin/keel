@@ -1,6 +1,6 @@
 import fs from "node:fs"
 
-import { readText as readTranslatedText, textLines } from "../../measure/lib/measurekit/pyio.ts"
+import { readText as readTranslatedText, newlineSeparatedLines } from "../../measure/lib/measurekit/pyio.ts"
 import { isFile, isLink, pyDirname, pyJoin, pyNormpath, realpath } from "../../measure/lib/measurekit/pypath.ts"
 import { pyStrip } from "../../measure/lib/measurekit/pystr.ts"
 import { pyRepr } from "../../measure/lib/measurekit/pyvalue.ts"
@@ -44,7 +44,7 @@ export function isKeelLink(path: string, paths: KeelPaths): boolean {
 
 function readTsv(path: string): [string, string][] {
   if (!isFile(path)) return []
-  const lines = textLines(readTranslatedText(path)).filter((line) => pyStrip(line) !== "" && !line.startsWith("#"))
+  const lines = newlineSeparatedLines(readTranslatedText(path)).filter((line) => pyStrip(line) !== "" && !line.startsWith("#"))
   const [header, ...body] = lines
   if (header !== undefined && !sameCells(header.split("\t"), MANIFEST_HEADER)) {
     throw new Refused(`${path}: header must be exactly ${MANIFEST_HEADER.join(" / ")}`)

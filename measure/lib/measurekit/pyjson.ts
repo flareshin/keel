@@ -1,3 +1,4 @@
+import { memberKeys, setMember } from "./pydict.ts"
 import { compareCodePoints } from "./pystr.ts"
 import { ValueError } from "./pyerrors.ts"
 import { PyFloat, pyFloatRepr } from "./pyvalue.ts"
@@ -36,6 +37,12 @@ export function pythonJsonRawDecode(text: string, index: number): [PyValue, numb
   return [value, reader.position]
 }
 
+export function skipJsonWhitespace(text: string, index: number): number {
+  let end = index
+  while (JSON_WHITESPACE.has(text.charAt(end))) end++
+  return end
+}
+
 export function pythonJsonDumps(value: object | PyValue, options: DumpOptions = {}): string {
   return dump(value as PyValue, options, 0)
 }
@@ -60,7 +67,7 @@ class Reader {
   }
 
   skipWhitespace(): void {
-    while (!this.atEnd() && JSON_WHITESPACE.has(this.text.charAt(this.position))) this.position++
+    this.position = skipJsonWhitespace(this.text, this.position)
   }
 
   readValue(): PyValue {
@@ -151,7 +158,7 @@ class Reader {
       this.skipWhitespace()
       if (this.text.charAt(this.position++) !== ":") throw this.fail("Expecting ':' delimiter", this.position - 1)
       this.skipWhitespace()
-      Object.defineProperty(members, key, { value: this.readValue(), enumerable: true, writable: true, configurable: true })
+      setMember(members, key, this.readValue())
       this.skipWhitespace()
       const separator = this.text.charAt(this.position++)
       if (separator === "}") return members
@@ -169,7 +176,7 @@ function dump(value: PyValue, options: DumpOptions, depth: number): string {
   if (value instanceof PyFloat) return dumpFloat(value.value)
   if (typeof value === "string") return dumpString(value, options)
   if (Array.isArray(value)) return dumpContainer(value.map((item) => dump(item, options, depth + 1)), "[", "]", options, depth)
-  const keys = Object.keys(value)
+  const keys = memberKeys(value)
   if (options.sortKeys) keys.sort(compareCodePoints)
   const separator = ": "
   const members = keys.map((key) => dumpString(key, options) + separator + dump(value[key] as PyValue, options, depth + 1))

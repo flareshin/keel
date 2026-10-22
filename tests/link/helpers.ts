@@ -5,6 +5,8 @@ import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
+import { lexists } from "../../measure/lib/measurekit/pypath.ts"
+
 export const KEEL_ROOT = path.dirname(path.dirname(path.dirname(fs.realpathSync(fileURLToPath(import.meta.url)))))
 export const LINK_ENTRY = path.join(KEEL_ROOT, "bin", "link.ts")
 export const PYTHON_LINK_ENTRY = path.join(KEEL_ROOT, "bin", "link")
@@ -95,6 +97,11 @@ export class LinkSandbox {
     return completed.stdout
   }
 
+  gitConfigValue(cwd: string, key: string): string {
+    const completed = spawnSync("git", ["-C", cwd, "config", "--get", key], { env: this.env(), encoding: "utf8" })
+    return completed.status === 0 ? completed.stdout : "<unset>"
+  }
+
   writeKeel(relative: string, text: string): void {
     writeFile(path.join(this.keel, relative), text)
   }
@@ -147,28 +154,11 @@ export function writeAdoptingEveryDrop(box: LinkSandbox): LinkResult {
 export function backupsOf(box: LinkSandbox, relative: string): string[] {
   const backupRoot = path.join(box.data, "state", "keel", "link-backup")
   if (!fs.existsSync(backupRoot)) return []
-  return fs.readdirSync(backupRoot).sort().map((stamp) => path.join(backupRoot, stamp, relative)).filter((candidate) => lexistsPath(candidate))
+  return fs.readdirSync(backupRoot).sort().map((stamp) => path.join(backupRoot, stamp, relative)).filter((candidate) => lexists(candidate))
 }
 
 export function onlyBackup(box: LinkSandbox, relative: string): string {
   const found = backupsOf(box, relative)
   assert.equal(found.length, 1, found.join(", "))
   return found[0] as string
-}
-
-export function lexistsPath(file: string): boolean {
-  try {
-    fs.lstatSync(file)
-    return true
-  } catch {
-    return false
-  }
-}
-
-export function isSymlink(file: string): boolean {
-  try {
-    return fs.lstatSync(file).isSymbolicLink()
-  } catch {
-    return false
-  }
 }

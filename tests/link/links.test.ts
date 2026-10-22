@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, it } from "node:test"
 import fs from "node:fs"
 import path from "node:path"
 
-import { LinkSandbox, assertExit, isSymlink, lexistsPath, ops, onlyBackup, problemKinds, readFile } from "./helpers.ts"
+import { isLink, lexists } from "../../measure/lib/measurekit/pypath.ts"
+import { LinkSandbox, assertExit, ops, onlyBackup, problemKinds, readFile } from "./helpers.ts"
 
 describe("link write links", () => {
   let box: LinkSandbox
@@ -44,7 +45,7 @@ describe("link write links", () => {
     assertExit(result, 3)
     assert.deepEqual(problemKinds(result), ["target-occupied"])
     assert.equal(box.readData("bin/keel"), "v1 content\n")
-    assert.equal(lexistsPath(box.dataPath("skills/demo")), false)
+    assert.equal(lexists(box.dataPath("skills/demo")), false)
     assert.equal(fs.existsSync(box.dataPath("CLAUDE.md")), false)
   })
 
@@ -97,7 +98,7 @@ describe("link write links", () => {
     const result = box.runLink("--write")
     assertExit(result, 3)
     assert.deepEqual(problemKinds(result), ["dangling"])
-    assert.equal(lexistsPath(box.dataPath("skills/absent")), false)
+    assert.equal(lexists(box.dataPath("skills/absent")), false)
   })
 
   for (const target of ["../escape", "/abs/path", "skills/../../x"]) {
@@ -134,8 +135,8 @@ describe("link write links", () => {
     fs.rmSync(box.overlay, { recursive: true })
     const result = box.runLink("--write")
     assertExit(result, 0)
-    assert.equal(isSymlink(box.dataPath("bin/keel")), true)
-    assert.equal(lexistsPath(box.dataPath("commands/hello.md")), false)
+    assert.equal(isLink(box.dataPath("bin/keel")), true)
+    assert.equal(lexists(box.dataPath("commands/hello.md")), false)
   })
 })
 
@@ -163,7 +164,7 @@ describe("link worktree guard", () => {
     const result = runFromWorktree("--write")
     assertExit(result, 3)
     assert.ok(result.stderr.includes("linked worktree"))
-    assert.equal(lexistsPath(box.dataPath("bin/keel")), false)
+    assert.equal(lexists(box.dataPath("bin/keel")), false)
   })
 
   it("write_proceeds_whenWorktreeIsExplicitlyAllowed", () => {

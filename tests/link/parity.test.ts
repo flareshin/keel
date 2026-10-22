@@ -36,7 +36,7 @@ const TRICKY_CHARS = ["a", "Z", " ", "\t", "\n", "\u0000", "\u001f", "\u007f", "
 const NUMBER_TEXTS = ["0", "-1", "42", "1.0", "2.5", "-0.0", "1e3", "1E-7", "0.1", "12345678901234567890", "12345678901234567890.5", "1e400"]
 const WHITESPACE = ["", " ", "\n", "\t", "\n  ", "\n    ", "  "]
 const OWNED_KEYS = ["hooks", "permissions", "env"]
-const MEMBER_KEYS = [...OWNED_KEYS, "model", "theme", "nested", "\u00e9"]
+const MEMBER_KEYS = [...OWNED_KEYS, "model", "theme", "nested", "\u00e9", "10", "2"]
 const STRING_POOL = ["Read", "Bash(x:*)", "\u00e9", "\u{1F600}", "a b", "Glob"]
 const PERMISSION_KEYS = ["allow", "deny", "ask", "defaultMode", "extra"]
 

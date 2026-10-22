@@ -177,22 +177,23 @@ def toml_cold_recursion_threshold(kind, extra_frames):
 def stdin_codec(env):
     full = {key: value for key, value in os.environ.items() if not key.startswith(('LC_', 'LANG', 'PYTHON'))}
     full.update(env)
-    result = subprocess.run([sys.executable, '-c', 'import sys; print(sys.stdin.encoding, sys.stdin.errors)'],
-                            env=full, capture_output=True, text=True)
+    code = 'import os, sys; os.write(1, (sys.stdin.encoding + " " + sys.stdin.errors).encode("ascii"))'
+    result = subprocess.run([sys.executable, '-c', code], env=full, capture_output=True, text=True)
     if result.returncode:
         return {'error': 'fatal'}
-    encoding, errors = result.stdout.lstrip('\ufeff').split()
+    encoding, errors = result.stdout.split()
     return {'ok': [encoding, errors]}
 
 
 def stdin_decode(env, hex_bytes):
     full = {key: value for key, value in os.environ.items() if not key.startswith(('LC_', 'LANG', 'PYTHON'))}
     full.update(env)
-    code = ('import json, sys\n'
+    code = ('import json, os, sys\n'
             'try:\n'
-            '    print(json.dumps({"ok": [ord(c) for c in sys.stdin.read()]}))\n'
+            '    reply = {"ok": [ord(c) for c in sys.stdin.read()]}\n'
             'except UnicodeDecodeError as error:\n'
-            '    print(json.dumps({"error": str(error)}))\n')
+            '    reply = {"error": str(error)}\n'
+            'os.write(1, json.dumps(reply).encode("ascii"))\n')
     result = subprocess.run([sys.executable, '-c', code], env=full, input=bytes.fromhex(hex_bytes), capture_output=True)
     if result.returncode:
         return {'error': 'crash'}
@@ -205,14 +206,33 @@ def codec_table():
     import encodings.aliases
     import pkgutil
     names = set(encodings.aliases.aliases) | {module.name for module in pkgutil.iter_modules(encodings.__path__)}
-    accepted = []
+    ascii_text = bytes(range(128))
+    text, opaque, non_text = [], [], {}
     for name in sorted(names):
         try:
-            if codecs.lookup(name)._is_text_encoding:
-                accepted.append(name)
+            info = codecs.lookup(name)
         except LookupError:
-            pass
-    return {'ok': {'accepted': accepted, 'aliases': encodings.aliases.aliases}}
+            continue
+        if not info._is_text_encoding:
+            non_text[name] = info.name
+            continue
+        text.append(name)
+        try:
+            transparent = ascii_text.decode(name) == ascii_text.decode('ascii')
+        except Exception:
+            transparent = False
+        if not transparent:
+            opaque.append(name)
+    return {'ok': {'accepted': text, 'opaque': opaque, 'nonText': non_text, 'aliases': encodings.aliases.aliases}}
+
+
+def codec_sample(name):
+    for text in ('\u00e9a', '\u4e2d\u6587', '\uac00\ub098', '\u65e5\u672c', 'abc'):
+        try:
+            return {'ok': text.encode(name).hex()}
+        except (UnicodeEncodeError, LookupError):
+            continue
+    return {'error': 'no sample'}
 
 
 def codec_bytes(name):
@@ -253,7 +273,7 @@ def os_error(path):
 
 FUNCTIONS = {name: function for name, function in globals().items()
              if name in ('json_loads', 'json_dumps', 'float_repr', 'toml_loads', 'toml_equals', 'py_repr',
-                         'decode_utf8', 'shell_quote', 'resolve', 'pure', 'os_error', 'py_str', 'toml_recursion_threshold', 'toml_cold_recursion_threshold', 'stdin_codec', 'stdin_decode', 'codec_table', 'codec_bytes', 'codec_encode', 'codec_decode')}
+                         'decode_utf8', 'shell_quote', 'resolve', 'pure', 'os_error', 'py_str', 'toml_recursion_threshold', 'toml_cold_recursion_threshold', 'stdin_codec', 'stdin_decode', 'codec_table', 'codec_sample', 'codec_bytes', 'codec_encode', 'codec_decode')}
 
 
 def main():

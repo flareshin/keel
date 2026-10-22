@@ -1,6 +1,7 @@
 import { TextDecoder } from "node:util";
 import { ValueError } from "./pyerrors.ts";
-import { decodeFailure, decodeUtf8Handling, escapedBytes } from "./pyfs.ts";
+import { ASCII_LIMIT, decodeFailure, decodeUtf8Handling, escapedBytes } from "./pyfs.ts";
+import { ASCII_OPAQUE_ENCODING_NAMES, NON_TEXT_ENCODINGS, TEXT_ENCODING_NAMES } from "./pycodec_names.ts";
 
 const ALIASES: Record<string, readonly string[]> = {
   utf_8: ["cp65001", "csutf8", "u8", "utf", "utf8", "utf8_ucs2", "utf8_ucs4"],
@@ -15,27 +16,14 @@ const ALIASES: Record<string, readonly string[]> = {
   iso8859_5: ["csisolatincyrillic", "cyrillic", "iso_8859_5", "iso_8859_5_1988", "iso_ir_144"],
   iso8859_7: ["csisolatingreek", "ecma_118", "elot_928", "greek", "greek8", "iso_8859_7", "iso_8859_7_1987", "iso_ir_126"],
   iso8859_15: ["csiso885915", "iso_8859_15", "l9", "latin9", "latin_9"],
-  euc_kr: ["cseuckr", "euckr", "x_mac_korean"],
-  euc_jp: ["cseucpkdfmtjapanese", "eucjp", "u_jis", "ujis"],
-  shift_jis: ["csshiftjis", "s_jis", "shiftjis", "sjis", "x_mac_japanese"],
-  big5: ["big5_tw", "csbig5", "x_mac_trad_chinese"],
-  gbk: ["936", "cp936", "csgbk", "ms936", "windows_936"],
-  gb2312: ["chinese", "csgb2312", "csiso58gb231280", "euc_cn", "euccn", "eucgb2312_cn", "gb2312_1980", "gb2312_80", "gb_2312_80", "iso_ir_58", "x_mac_simp_chinese"],
 };
 
 const WHATWG_LABELS: Record<string, string> = {
   cp1252: "windows-1252", cp1251: "windows-1251", cp866: "ibm866", koi8_r: "koi8-r", iso8859_2: "iso-8859-2", iso8859_5: "iso-8859-5",
-  iso8859_7: "iso-8859-7", iso8859_15: "iso-8859-15", euc_kr: "euc-kr", euc_jp: "euc-jp", shift_jis: "shift_jis", big5: "big5", gbk: "gbk", gb2312: "gbk",
+  iso8859_7: "iso-8859-7", iso8859_15: "iso-8859-15",
 };
 
 const UNDEFINED_BYTES: Record<string, readonly number[]> = { cp1252: [0x81, 0x8d, 0x8f, 0x90, 0x9d], cp1251: [0x98] };
-const MULTI_BYTE_REJECTED: Record<string, readonly number[]> = {
-  euc_kr: [...range(0x80, 0x8d), ...range(0x90, 0x9f)], euc_jp: [...range(0x80, 0x8d), ...range(0x90, 0x9f)], big5: [0x80, 0xff], gbk: [0x80], gb2312: [0x80],
-};
-const INCOMPLETE_SEQUENCE = "incomplete multibyte sequence";
-const ILLEGAL_SEQUENCE = "illegal multibyte sequence";
-const MULTI_BYTE = new Set(["euc_kr", "euc_jp", "shift_jis", "big5", "gbk", "gb2312"]);
-const ASCII_LIMIT = 0x80;
 const REPLACEMENT_CHARACTER = "�";
 const UTF8_BOM = [0xef, 0xbb, 0xbf];
 const SURROGATE_LEAD = 0xed;
@@ -46,10 +34,6 @@ const ENCODED_SURROGATE_BASE = 0xd000;
 const ENCODED_SURROGATE_LENGTH = 3;
 const CONTINUATION_PAYLOAD = 0x3f;
 const BYTE_VALUES = 256;
-
-function range(first: number, last: number): number[] {
-  return Array.from({ length: last - first + 1 }, (_unused, offset) => first + offset);
-}
 
 const canonicalByName = new Map<string, string>();
 for (const [canonical, aliases] of Object.entries(ALIASES)) {
@@ -74,8 +58,58 @@ export function normalizeCodecName(name: string): string {
   return normalized.toLowerCase();
 }
 
+export class PythonStartupFailure extends Error {
+  readonly stderr: string;
+
+  constructor(header: string, detail: string) {
+    super(detail);
+    this.name = "PythonStartupFailure";
+    this.stderr = `Fatal Python error: ${header}\nPython runtime state: core initialized\n${detail}\n\nCurrent thread 0x0000000000000000 (most recent call first):\n`;
+  }
+}
+
+export class PythonUncaughtError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PythonUncaughtError";
+  }
+}
+
+export class UnsupportedStdinEncoding extends ValueError {
+  constructor(name: string) {
+    super(`stdin encoding ${name} is not supported; set PYTHONUTF8=1`);
+    this.name = "UnsupportedStdinEncoding";
+  }
+}
+
+export type StdinEncoding = { kind: "exact"; codec: string } | { kind: "unsupported"; name: string; asciiTransparent: boolean };
+
+const textNames = new Set(TEXT_ENCODING_NAMES);
+const asciiOpaqueNames = new Set(ASCII_OPAQUE_ENCODING_NAMES);
+
+function lookupKeys(name: string): string[] {
+  const normalized = normalizeCodecName(name);
+  return [normalized, normalized.replaceAll(".", "_")];
+}
+
 export function canonicalCodec(name: string): string | null {
-  return canonicalByName.get(normalizeCodecName(name)) ?? null;
+  for (const key of lookupKeys(name)) {
+    const codec = canonicalByName.get(key);
+    if (codec !== undefined) return codec;
+  }
+  return null;
+}
+
+export function resolveStdinEncoding(name: string): StdinEncoding {
+  for (const key of lookupKeys(name)) {
+    const codec = canonicalByName.get(key);
+    if (codec !== undefined) return { kind: "exact", codec };
+    if (textNames.has(key)) return { kind: "unsupported", name: key, asciiTransparent: !asciiOpaqueNames.has(key) };
+    if (Object.hasOwn(NON_TEXT_ENCODINGS, key)) {
+      throw new PythonStartupFailure("init_sys_streams: can't initialize sys standard streams", `LookupError: '${NON_TEXT_ENCODINGS[key]}' is not a text encoding`);
+    }
+  }
+  throw new PythonStartupFailure("init_stdio_encoding: failed to get the Python codec name of the stdio encoding", `LookupError: unknown encoding: ${name}`);
 }
 
 function handleFailure(errors: string, bytes: Buffer, start: number, end: number, message: () => string): string {
@@ -89,7 +123,7 @@ function handleFailure(errors: string, bytes: Buffer, start: number, end: number
     case "replace": return REPLACEMENT_CHARACTER;
     case "ignore": return "";
     case "backslashreplace": return Array.from(bytes.subarray(start, end), (byte) => `\\x${byte.toString(16).padStart(2, "0")}`).join("");
-    default: throw new Error(`stdin error handler ${errors} aborts Python with an uncaught exception`);
+    default: throw new PythonUncaughtError(`stdin error handler ${errors} aborts Python with an uncaught exception`);
   }
 }
 
@@ -144,52 +178,6 @@ function singleByteTable(canonical: string): Array<string | null> {
   return table;
 }
 
-interface MultiByteFailure {
-  start: number;
-  end: number;
-  reason: string;
-}
-
-function locateMultiByteFailure(canonical: string, bytes: Buffer): MultiByteFailure | null {
-  const decoder = new TextDecoder(WHATWG_LABELS[canonical] as string, { fatal: true });
-  const rejected = MULTI_BYTE_REJECTED[canonical] ?? [];
-  let pending = 0;
-  for (let index = 0; index < bytes.length; index += 1) {
-    const last = index === bytes.length - 1;
-    try {
-      if (rejected.includes(bytes[index] ?? 0)) throw new Error("byte Python rejects");
-      pending = decoder.decode(bytes.subarray(index, index + 1), { stream: true }) === "" ? pending + 1 : 0;
-    } catch {
-      const start = index - pending;
-      return { start, end: start + 1, reason: last && pending === 0 ? INCOMPLETE_SEQUENCE : ILLEGAL_SEQUENCE };
-    }
-  }
-  try {
-    decoder.decode();
-    return null;
-  } catch {
-    return { start: bytes.length - Math.max(pending, 1), end: bytes.length, reason: INCOMPLETE_SEQUENCE };
-  }
-}
-
-function decodeMultiByte(canonical: string, bytes: Buffer, errors: string): string {
-  const label = WHATWG_LABELS[canonical] as string;
-  let text = "";
-  let from = 0;
-  for (;;) {
-    const rest = bytes.subarray(from);
-    const failure = locateMultiByteFailure(canonical, rest);
-    if (failure === null) return text + new TextDecoder(label).decode(rest);
-    const [start, end] = [from + failure.start, from + failure.end];
-    text += new TextDecoder(label).decode(bytes.subarray(from, start));
-    text += handleFailure(errors, bytes, start, end, () => {
-      const where = end - start === 1 ? `byte ${hexByte(bytes[start])} in position ${start}` : `bytes in position ${start}-${end - 1}`;
-      return `'${canonical}' codec can't decode ${where}: ${failure.reason}`;
-    });
-    from = end;
-  }
-}
-
 export function decodeWithCodec(canonical: string, bytes: Buffer, errors: string): string {
   if (canonical === "latin_1") return bytes.toString("latin1");
   if (canonical === "utf_8") return decodeUtf8(bytes, errors);
@@ -198,7 +186,6 @@ export function decodeWithCodec(canonical: string, bytes: Buffer, errors: string
     const table = Array.from({ length: BYTE_VALUES }, (_unused, byte) => (byte < ASCII_LIMIT ? String.fromCharCode(byte) : null));
     return decodeByTable(bytes, errors, table, (position) => `'ascii' codec can't decode byte ${hexByte(bytes[position])} in position ${position}: ordinal not in range(128)`);
   }
-  if (MULTI_BYTE.has(canonical)) return decodeMultiByte(canonical, bytes, errors);
   return decodeByTable(bytes, errors, singleByteTable(canonical), (position) =>
     `'charmap' codec can't decode byte ${hexByte(bytes[position])} in position ${position}: character maps to <undefined>`);
 }

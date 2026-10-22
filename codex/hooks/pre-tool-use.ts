@@ -10,12 +10,14 @@ import { completeEdit, HOOK_CALLER_FRAMES, validateUpdate } from "../lib/config_
 import { osErrorMessage, pythonFailureMessage, ValueError } from "../lib/pyerrors.ts";
 import { childPath, hasGlobMagic, isStrictAncestor, parentOf, pathExists, purePath, readText, resolvePath, translateNewlines } from "../lib/pyfs.ts";
 import { isJsonObject, isTruthy, pythonJsonDumps, pythonJsonLoads } from "../lib/pyjson.ts";
+import { PythonStartupFailure } from "../lib/pycodecs.ts";
 import { decodeStdin, encodeStdout } from "../lib/pystdin.ts";
 import { pythonValueStr } from "../lib/pystr.ts";
 import type { JsonValue } from "../lib/pyjson.ts";
 
 const KEEL = parentOf(parentOf(parentOf(resolvePath(import.meta.filename))));
 const GUARD_TIMEOUT_SECONDS = 35;
+const PYTHON_STARTUP_FAILURE_EXIT_CODE = 1;
 const GUARDED_TOOLS = ["Bash", "Edit", "Write"];
 const PATCH_PREFIXES = ["*** Add File: ", "*** Update File: ", "*** Delete File: ", "*** Move to: "];
 const ADAPTER_FILES = ["AGENTS.md", "hooks.json", "keel-codex-state.json"];
@@ -44,6 +46,7 @@ export function main(readInput: () => Buffer, runner: GuardRunner = spawnGuard):
     const output = { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: contexts.join("\n") } };
     return { code: 0, stdout: pythonJsonDumps(output) + "\n", stderr: "" };
   } catch (error) {
+    if (error instanceof PythonStartupFailure) return { code: PYTHON_STARTUP_FAILURE_EXIT_CODE, stdout: "", stderr: error.stderr };
     const message = pythonFailureMessage(error);
     if (message === null) throw error;
     const decision = {
@@ -182,6 +185,6 @@ export function runGuard(name: string, call: Record<string, unknown>, runner: Gu
 }
 
 if (import.meta.main) {
-  const result = main(() => readFileSync(0));
-  emit({ ...result, stdout: encodeStdout(result.stdout) });
+  const hookResult = main(() => readFileSync(0));
+  emit({ ...hookResult, stdout: encodeStdout(hookResult.stdout) });
 }

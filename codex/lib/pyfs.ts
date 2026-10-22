@@ -9,7 +9,7 @@ const MAX_SYMLINK_HOPS = 40;
 const GLOB_MAGIC = /[*?[]/;
 const NEWLINES = /\r\n?/g;
 const UNSAFE_SHELL_CHARACTER = /[^A-Za-z0-9_@%+=:,./-]/;
-const ASCII_LIMIT = 0x80;
+export const ASCII_LIMIT = 0x80;
 const CONTINUATION_LOW = 0x80;
 const CONTINUATION_HIGH = 0xbf;
 export const SURROGATE_ESCAPE_BASE = 0xdc00;

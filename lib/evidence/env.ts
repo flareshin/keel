@@ -4,11 +4,13 @@ import { join } from 'node:path';
 import { expandUser, pythonJsonDumps } from './pycompat.ts';
 import type { JsonValue } from './pycompat.ts';
 
-export const RUN_ID_PATTERN = '^[A-Za-z0-9._-]{8,64}$';
-const RUN_ID_FULL_RE = /^[A-Za-z0-9._-]{8,64}$/;
-const RUN_ID_MATCH_RE = /^[A-Za-z0-9._-]{8,64}\n?$/;
-const SHA_FULL_RE = /^[0-9a-f]{40}$/;
-const SHA_MATCH_RE = /^[0-9a-f]{40}\n?$/;
+const RUN_ID_BODY = '[A-Za-z0-9._-]{8,64}';
+const SHA_BODY = '[0-9a-f]{40}';
+export const RUN_ID_PATTERN = `^${RUN_ID_BODY}$`;
+const RUN_ID_FULL_RE = new RegExp(`^${RUN_ID_BODY}$`);
+const RUN_ID_MATCH_RE = new RegExp(`^${RUN_ID_BODY}\\n?$`);
+const SHA_FULL_RE = new RegExp(`^${SHA_BODY}$`);
+const SHA_MATCH_RE = new RegExp(`^${SHA_BODY}\\n?$`);
 export const EVIDENCE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 export const GITLINK_MODE = '160000';
 export const DELETED_MODE = '000000';

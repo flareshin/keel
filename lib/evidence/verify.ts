@@ -4,14 +4,13 @@ import * as codexReview from './codex_review.ts';
 import * as commentCleanup from './comment_cleanup.ts';
 import * as gitcmd from './gitcmd.ts';
 import type { PathEntry } from './gitcmd.ts';
-import { JSONDecodeError, pyRepr, sortedStrings } from './pycompat.ts';
+import { pyRepr, sortedStrings } from './pycompat.ts';
 import * as registry from './registry.ts';
 import type { GatedRepo } from './registry.ts';
 import { LIGHT, SMOKE_ONLY, classify, hasTestPath, logicPaths } from './risk.ts';
 import type { Risk } from './risk.ts';
 import * as store from './store.ts';
 import type { Evidence } from './store.ts';
-import { OSError } from './subprocess.ts';
 import * as writers from './writers.ts';
 import { NO_TEST_REASON } from './writers.ts';
 
@@ -284,9 +283,7 @@ export function provenanceReasons(chain: Chain): Reason[] {
 }
 
 export function isValidationFailure(error: unknown): boolean {
-  return error instanceof writers.Refused || error instanceof OSError || error instanceof TypeError || error instanceof RangeError
-    || error instanceof SyntaxError || error instanceof JSONDecodeError
-    || (error instanceof Error && typeof (error as NodeJS.ErrnoException).errno === 'number');
+  return error instanceof writers.Refused || writers.isInputFailure(error);
 }
 
 function failureText(error: unknown): string {

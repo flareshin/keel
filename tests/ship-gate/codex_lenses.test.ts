@@ -93,8 +93,8 @@ describe('CodexLensesTest', () => {
   test('lenses_acceptsOneIndependentAuditor_coveringAllLenses', (t) => {
     const f = new LensFixture(t);
     f.combineAudits();
-    const result = f.registerLenses();
-    assert.equal(result.verdict, 'PASS');
+    const registered = f.registerLenses();
+    assert.equal(registered.verdict, 'PASS');
     assert.equal(store.loadReviews(f.repo.key)[0]!.source['reviewers'].length, 1);
   });
 
@@ -154,12 +154,12 @@ describe('CodexLensesTest', () => {
 
   test('lenses_registersFiveCleanAudits_withoutVerifiers', (t) => {
     const f = new LensFixture(t);
-    const result = f.registerLenses();
-    assert.equal(result.verdict, 'PASS');
+    const registered = f.registerLenses();
+    assert.equal(registered.verdict, 'PASS');
     const evidence = store.loadReviews(f.repo.key)[0]!;
     codexReview.validateEvidence(evidence);
     assert.equal(evidence.source['reviewers'].length, 5);
-    writers.writeApproval(result.root_run_id, 'approval');
+    writers.writeApproval(registered.root_run_id, 'approval');
   });
 
   test('lenses_refusesAuthorAsReviewer', (t) => {
@@ -202,9 +202,9 @@ describe('CodexLensesTest', () => {
   test('lenses_preservesConfirmedFailure_andRefusesApproval', (t) => {
     const f = new LensFixture(t);
     f.addVerifier(f.addFinding(), 'confirmed');
-    const result = f.registerLenses();
-    assert.equal(result.verdict, 'NEEDS_FIXES');
-    assert.throws(() => writers.writeApproval(result.root_run_id, 'approval'), refused);
+    const registered = f.registerLenses();
+    assert.equal(registered.verdict, 'NEEDS_FIXES');
+    assert.throws(() => writers.writeApproval(registered.root_run_id, 'approval'), refused);
   });
 
   test('lenses_refusesVerifierThatRepeatsFullReview', (t) => {
@@ -229,10 +229,10 @@ describe('CodexLensesTest', () => {
 
   test('lenses_refusesChangedTranscript_afterRegistration', (t) => {
     const f = new LensFixture(t);
-    const result = f.registerLenses();
+    const registered = f.registerLenses();
     f.reports[f.audits[0]!].findings = [{ id: 'new', impact: 'high', evidence: 'src/a.py:1', scenario: 'new fault' }];
     f.rewrite(f.audits[0]!);
-    assert.throws(() => writers.writeApproval(result.root_run_id, 'approval'), refused);
+    assert.throws(() => writers.writeApproval(registered.root_run_id, 'approval'), refused);
   });
 
   test('lenses_refusesChangedCandidate_orDifferentAuthor', (t) => {
@@ -277,12 +277,12 @@ describe('CodexLensesTest', () => {
 
   test('lenses_requiresTestsAndApproval_atGate', (t) => {
     const f = new LensFixture(t);
-    const result = f.registerLenses();
+    const registered = f.registerLenses();
     f.repo.commit({});
     assert.equal(verify.judge(f.outgoing()).ok, false);
     f.sandbox.testsEvidence(f.repo);
     assert.equal(verify.judge(f.outgoing()).ok, false);
-    writers.writeApproval(result.root_run_id, 'approval');
+    writers.writeApproval(registered.root_run_id, 'approval');
     assert.equal(verify.judge(f.outgoing()).ok, true);
   });
 
@@ -298,8 +298,8 @@ describe('CodexLensesTest', () => {
     const f = new LensFixture(t);
     const previous = f.registerLenses();
     f.startDelta(previous);
-    const result = f.registerLenses();
-    assert.equal(result.root_run_id, previous.root_run_id);
+    const registered = f.registerLenses();
+    assert.equal(registered.root_run_id, previous.root_run_id);
     const head = writers.chainHeads(previous.root_run_id).get(f.repo.key)!;
     assert.equal(head.since, previous.evidence_id);
     assert.deepEqual(head.paths.map((item) => item.path), ['src/a.py']);

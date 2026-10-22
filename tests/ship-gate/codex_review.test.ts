@@ -17,14 +17,14 @@ const FINDING = { id: 'A1', impact: 'medium', evidence: 'src/a.py:1', scenario: 
 describe('CodexReviewTest', () => {
   test('reader_recordsDistinctNativeProvenance_andCanBeApproved', (t) => {
     const f = new CodexFixture(t);
-    const result = f.register();
+    const registered = f.register();
     const evidence = store.loadReviews(f.repo.key)[0]!;
-    assert.equal(result.verdict, 'PASS');
+    assert.equal(registered.verdict, 'PASS');
     assert.equal(evidence.review_kind, 'codex-lens-review');
     assert.equal(evidence.source['via'], 'CodexSubagents');
     assert.equal(evidence.reviewed_tree, f.tree);
     assert.deepEqual(evidence.paths.map((entry) => entry.path), ['src/a.py', 'tests/test_a.py']);
-    const approval = writers.writeApproval(result.root_run_id, 'approval');
+    const approval = writers.writeApproval(registered.root_run_id, 'approval');
     assert.deepEqual(approval['heads'], { [f.repo.key]: evidence.evidence_id });
   });
 
@@ -46,10 +46,10 @@ describe('CodexReviewTest', () => {
 
   test('reader_acceptsHistoricalEvidence_afterWorkingTreeChanges', (t) => {
     const f = new CodexFixture(t);
-    const result = f.register();
+    const registered = f.register();
     f.repo.write('src/a.py', 'print(3)\n');
     codexReview.validateEvidence(store.loadReviews(f.repo.key)[0]!);
-    assert.equal(result.verdict, 'PASS');
+    assert.equal(registered.verdict, 'PASS');
   });
 
   test('reader_refusesMissingOrBlockedLens', (t) => {
@@ -72,17 +72,17 @@ describe('CodexReviewTest', () => {
     f.writeSession(AUDIT, AUTHOR, { ...f.report, findings: [FINDING] });
     const decision = { id: 'A1', verdict: 'confirmed', evidence: 'static: src/a.py:1 returns the wrong constant' };
     f.writeSession(VERIFY, AUTHOR, { ...f.verification, decisions: [decision] });
-    const result = f.register();
-    assert.equal(result.verdict, 'NEEDS_FIXES');
-    assert.throws(() => writers.writeApproval(result.root_run_id, 'approval'), refused);
+    const registered = f.register();
+    assert.equal(registered.verdict, 'NEEDS_FIXES');
+    assert.throws(() => writers.writeApproval(registered.root_run_id, 'approval'), refused);
   });
 
   test('approval_refusesChangedTranscript_afterRegistration', (t) => {
     const f = new CodexFixture(t);
-    const result = f.register();
+    const registered = f.register();
     const finding = { id: 'V1', impact: 'high', evidence: 'src/a.py:1', scenario: 'new failure' };
     f.writeSession(VERIFY, AUTHOR, { ...f.verification, findings: [finding] });
-    assert.throws(() => writers.writeApproval(result.root_run_id, 'approval'), refused);
+    assert.throws(() => writers.writeApproval(registered.root_run_id, 'approval'), refused);
   });
 
   test('reader_refusesFinalTextInjectedInUserMessage', (t) => {
@@ -146,7 +146,7 @@ describe('CodexReviewTest', () => {
 
   test('gate_requiresTestsAndOwnerApproval_thenAcceptsNativeReview', (t) => {
     const f = new CodexFixture(t);
-    const result = f.register();
+    const registered = f.register();
     f.repo.commit({});
     let decision = verify.judge(f.outgoing());
     assert.equal(decision.ok, false);
@@ -155,16 +155,16 @@ describe('CodexReviewTest', () => {
     decision = verify.judge(f.outgoing());
     assert.equal(decision.ok, false);
     assert.ok(decision.reasons.some((reason) => reason.text.includes('no approval bound')));
-    writers.writeApproval(result.root_run_id, 'approval');
+    writers.writeApproval(registered.root_run_id, 'approval');
     assert.equal(verify.judge(f.outgoing()).ok, true);
   });
 
   test('gate_refusesChangedTranscript_evenAfterApproval', (t) => {
     const f = new CodexFixture(t);
-    const result = f.register();
+    const registered = f.register();
     f.repo.commit({});
     f.sandbox.testsEvidence(f.repo);
-    writers.writeApproval(result.root_run_id, 'approval');
+    writers.writeApproval(registered.root_run_id, 'approval');
     const path = f.writeSession(VERIFY, AUTHOR, f.verification);
     appendFileSync(path, JSON.stringify({ type: 'event_msg', payload: { type: 'task_started', turn_id: 'later' } }) + '\n');
     const decision = verify.judge(f.outgoing());
@@ -174,10 +174,10 @@ describe('CodexReviewTest', () => {
 
   test('gate_refusesCodeChangedAfterReview', (t) => {
     const f = new CodexFixture(t);
-    const result = f.register();
+    const registered = f.register();
     f.repo.commit({ 'src/a.py': 'print(999)\n' });
     f.sandbox.testsEvidence(f.repo);
-    writers.writeApproval(result.root_run_id, 'approval');
+    writers.writeApproval(registered.root_run_id, 'approval');
     const decision = verify.judge(f.outgoing());
     assert.equal(decision.ok, false);
     assert.ok(decision.reasons.some((reason) => reason.text.includes('does not cover')));

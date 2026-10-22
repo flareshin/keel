@@ -3,7 +3,8 @@ import { readFileSync, readdirSync, lstatSync, realpathSync } from 'node:fs';
 import { userInfo } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import * as codexLenses from './codex_lenses.ts';
-import { PYTHON_SPACE_PATTERN, compareCodePoints, decodeStrict, pyRealpath, pySplitLines, pyStrip, pythonJsonLoads, universalNewlines } from './pycompat.ts';
+import * as env from './env.ts';
+import { PYTHON_SPACE_PATTERN, compareCodePoints, decodeStrict, isJsonObject, isSystemError, pyEquals, pyRealpath, pySplitLines, pyStrip, pyTruthy, pythonJsonLoads, universalNewlines } from './pycompat.ts';
 import { OSError, TimeoutExpired, runCaptured } from './subprocess.ts';
 import * as writers from './writers.ts';
 import type { JsonObject } from './writers.ts';
@@ -28,7 +29,7 @@ export const seams = { sessionRoot };
 
 export function validateEvidence(evidence: JsonObject): void {
   const source = evidence['source'] || {};
-  if (source['version'] === 2) {
+  if (pyEquals(source['version'], 2)) {
     codexLenses.validateEvidence(evidence);
     return;
   }
@@ -75,7 +76,8 @@ export function locateSession(identity: unknown): [path: string, content: Buffer
     if (records.length === 0 || records[0]!['type'] !== 'session_meta' || asObject(records[0]!['payload'])['id'] !== identity) {
       throw new TypeError('not a session');
     }
-  } catch {
+  } catch (error) {
+    if (!writers.isInputFailure(error)) throw error;
     throw new writers.Refused('invalid Codex rollout: ' + path);
   }
   return [pyRealpath(path), content];
@@ -87,7 +89,8 @@ function findRollouts(directory: string, identity: string): string[] {
   let entries;
   try {
     entries = readdirSync(directory, { withFileTypes: true });
-  } catch {
+  } catch (error) {
+    if (!isSystemError(error)) throw error;
     return found;
   }
   for (const entry of entries) {
@@ -140,14 +143,15 @@ export function completedReport(content: Buffer, identity: string): [meta: JsonO
         final = joinOutputText(required(payload, 'content'));
       }
       if (record['type'] === 'event_msg' && (payload['type'] === 'task_complete' || payload['type'] === 'turn_aborted')) {
-        complete = payload['type'] === 'task_complete' && pyTruthy(turn) && payload['turn_id'] === turn;
+        complete = payload['type'] === 'task_complete' && pyTruthy(turn) && pyEquals(payload['turn_id'], turn);
       }
     }
     if (!complete || final === null) throw new RangeError('no completed report');
     const report = pythonJsonLoads(final);
-    if (report === null || typeof report !== 'object' || Array.isArray(report)) throw new RangeError('report is not an object');
+    if (!isJsonObject(report)) throw new RangeError('report is not an object');
     return [meta, report as JsonObject];
-  } catch {
+  } catch (error) {
+    if (!writers.isInputFailure(error)) throw error;
     throw new writers.Refused('Codex reviewer has no completed structured final report');
   }
 }
@@ -171,24 +175,25 @@ export function sharedAuthor(audit: JsonObject, verifier: JsonObject, auditId: s
     }
     if (parents[0] !== parents[1] || new Set([parents[0], auditId, verifierId]).size !== 3) throw new RangeError('not distinct');
     return parents[0]!;
-  } catch {
+  } catch (error) {
+    if (!writers.isInputFailure(error)) throw error;
     throw new writers.Refused('audit and verifier must be distinct children of the same author');
   }
 }
 
 export function validateReports(audit: JsonObject, verification: JsonObject, repo: string, auditId: string): string {
   for (const [report, role] of [[audit, 'audit'], [verification, 'verify']] as const) {
-    if (!hasExactKeys(report, REPORT_KEYS) || report['version'] !== 1 || report['role'] !== role) {
+    if (!hasExactKeys(report, REPORT_KEYS) || !pyEquals(report['version'], 1) || report['role'] !== role) {
       throw new writers.Refused('invalid native review report schema or role');
     }
     if (report['repo'] !== repo || report['base'] !== audit['base'] || report['tree'] !== audit['tree']) {
       throw new writers.Refused('native reviewers disagree about the target');
     }
     for (const key of ['base', 'tree']) {
-      if (!isFullSha(report[key])) throw new writers.Refused('invalid target object id');
+      if (!env.isSha(report[key])) throw new writers.Refused('invalid target object id');
     }
     const lenses = report['lenses'];
-    if (!isPlainObject(lenses) || !hasExactKeys(lenses, LENSES)) throw new writers.Refused('every native review must cover all five lenses');
+    if (!isJsonObject(lenses) || !hasExactKeys(lenses, LENSES)) throw new writers.Refused('every native review must cover all five lenses');
     if (Object.values(lenses).some((item) => !isCompleteLens(item))) throw new writers.Refused('incomplete or unproven review lens');
     validateFindings(report['findings']);
   }
@@ -204,7 +209,7 @@ export function adjudicatedFindings(findings: JsonObject[], decisions: unknown):
   const seen: unknown[] = [];
   const confirmed: unknown[] = [];
   for (const decision of decisions) {
-    if (!isPlainObject(decision) || !hasExactKeys(decision, DECISION_KEYS)
+    if (!isJsonObject(decision) || !hasExactKeys(decision, DECISION_KEYS)
       || (decision['verdict'] !== 'confirmed' && decision['verdict'] !== 'refuted') || !nonblank(decision['evidence'])) {
       throw new writers.Refused('every finding needs an evidenced verifier decision');
     }
@@ -220,7 +225,7 @@ export function validateFindings(findings: unknown): void {
   if (!Array.isArray(findings)) throw new writers.Refused('findings must be a list');
   const ids: unknown[] = [];
   for (const finding of findings) {
-    if (!isPlainObject(finding) || !hasExactKeys(finding, FINDING_KEYS)) throw new writers.Refused('invalid finding schema');
+    if (!isJsonObject(finding) || !hasExactKeys(finding, FINDING_KEYS)) throw new writers.Refused('invalid finding schema');
     if (!['high', 'medium', 'low'].includes(finding['impact']) || ['id', 'evidence', 'scenario'].some((key) => !nonblank(finding[key]))) {
       throw new writers.Refused('finding needs impact, file evidence and a failure scenario');
     }
@@ -271,22 +276,14 @@ export function validateRuleChecks(repo: string, base: string, tree: string, aud
   }
 }
 
-export function isPlainObject(value: unknown): value is JsonObject {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
 export function hasExactKeys(value: unknown, keys: Set<string>): boolean {
-  if (!isPlainObject(value)) return false;
+  if (!isJsonObject(value)) return false;
   const actual = Object.keys(value);
   return actual.length === keys.size && actual.every((key) => keys.has(key));
 }
 
-export function isFullSha(value: unknown): boolean {
-  return typeof value === 'string' && /^[0-9a-f]{40}$/.test(value);
-}
-
 function isCompleteLens(item: unknown): boolean {
-  return isPlainObject(item) && hasExactKeys(item, LENS_ITEM_KEYS) && item['status'] === 'complete' && nonblank(item['evidence']);
+  return isJsonObject(item) && hasExactKeys(item, LENS_ITEM_KEYS) && item['status'] === 'complete' && nonblank(item['evidence']);
 }
 
 function isEmptyList(value: unknown): boolean {
@@ -300,12 +297,8 @@ function sameMultiset(left: unknown[], right: unknown[]): boolean {
   return sortedLeft.every((item, index) => item === sortedRight[index]);
 }
 
-function pyTruthy(value: unknown): boolean {
-  return !(value === null || value === undefined || value === false || value === 0 || value === '');
-}
-
 function asObject(value: unknown): JsonObject {
-  if (!isPlainObject(value)) throw new TypeError('not an object');
+  if (!isJsonObject(value)) throw new TypeError('not an object');
   return value;
 }
 

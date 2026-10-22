@@ -1,8 +1,8 @@
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as env from './env.ts';
 import * as gitcmd from './gitcmd.ts';
-import { decodeStrict, pyRepr, pyStrip, universalNewlines } from './pycompat.ts';
+import { decodeStrict, isFile, pyRepr, pyStrip, universalNewlines } from './pycompat.ts';
 
 const GATED_HEADER = ['origin', 'gate', 'integration_base', 'risk_rules', 'tests'];
 const GATED_OPTIONAL = ['push_approval'];
@@ -114,12 +114,4 @@ export function readTsv(path: string, header: string[], optional: string[] = [])
     }
     return Object.fromEntries(columns.map((column, index) => [column, values[index]!]));
   });
-}
-
-function isFile(path: string): boolean {
-  try {
-    return statSync(path).isFile();
-  } catch {
-    return false;
-  }
 }

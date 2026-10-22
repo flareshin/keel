@@ -49,15 +49,15 @@ function rejectUnencodable(command: string[]): void {
 export function runCaptured(command: string[], options: RunOptions = {}): Completed {
   rejectUnencodable(command);
   const [program, ...args] = command;
-  const result = childProcess.spawnSync(program!, args, {
+  const completed = childProcess.spawnSync(program!, args, {
     env: options.env,
     cwd: options.cwd,
     input: options.input,
     timeout: options.timeoutSeconds === undefined ? undefined : options.timeoutSeconds * 1000,
     maxBuffer: UNLIMITED_OUTPUT,
   });
-  if (result.error) throw spawnFailure(result.error as NodeJS.ErrnoException, command, options.timeoutSeconds);
-  return { returncode: returnCode(result.status, result.signal), stdout: result.stdout, stderr: result.stderr };
+  if (completed.error) throw spawnFailure(completed.error as NodeJS.ErrnoException, command, options.timeoutSeconds);
+  return { returncode: returnCode(completed.status, completed.signal), stdout: completed.stdout, stderr: completed.stderr };
 }
 
 export function spawnFailure(error: NodeJS.ErrnoException, command: string[], timeoutSeconds: number | undefined): Error {

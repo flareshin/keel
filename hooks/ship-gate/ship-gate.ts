@@ -4,8 +4,7 @@ import * as contract from "../lib/hookkit/contract.ts";
 import * as protocol from "../lib/hookkit/protocol.ts";
 import type { Payload } from "../lib/hookkit/protocol.ts";
 import {
-  arraysEqual, basename, getField, isRecord, isTruthy, joinPath, lstripChar, normalizePath, partition, PY_WORD, pythonStr,
-  truncate,
+  arraysEqual, basename, getField, joinPath, lstripChar, normalizePath, partition, PY_WORD, pythonStr, truncate,
 } from "../lib/hookkit/pycompat.ts";
 import { isFile, shlexQuote } from "../lib/hookkit/pypath.ts";
 import { AttributeError, pythonTypeName as pythonValueTypeName, readStdin, writeStderr } from "../lib/hookkit/pyruntime.ts";
@@ -14,9 +13,11 @@ import type { Step } from "../lib/hookkit/shell.ts";
 import { appendLogLine, iso, stateDir, utcNow } from "../../lib/evidence/env.ts";
 import * as gc from "../../lib/evidence/gc.ts";
 import * as gitcmd from "../../lib/evidence/gitcmd.ts";
-import { decodeStrict, errorText, JSONDecodeError, pyRepr, pythonJsonLoads, pyStrip, sortedStrings, universalNewlines } from "../../lib/evidence/pycompat.ts";
+import {
+  decodeStrict, errorText, isJsonObject, JSONDecodeError, PyFloat, pyRepr, pyStr, pythonJsonLoads, pythonTypeName as errorTypeName, pyStrip,
+  pyTruthy, sortedStrings, universalNewlines,
+} from "../../lib/evidence/pycompat.ts";
 import type { JsonValue } from "../../lib/evidence/pycompat.ts";
-import { pythonTypeName as errorTypeName } from "../../lib/evidence/pycompat.ts";
 import * as registry from "../../lib/evidence/registry.ts";
 import type { GatedRepo } from "../../lib/evidence/registry.ts";
 import { runCaptured } from "../../lib/evidence/subprocess.ts";
@@ -147,7 +148,7 @@ class Report {
 
   constructor(payload: Payload, event: unknown) {
     const session = getField(payload, "session_id");
-    this.session = isTruthy(session) ? session : "-";
+    this.session = pyTruthy(session) ? session : "-";
     this.event = event;
   }
 
@@ -192,7 +193,7 @@ class Report {
 
   emit(): number {
     if (this.blocks.length > 0) return protocol.deny(backslashReplaced(this.blocks.join("\n\n")));
-    if (this.context.length > 0) return protocol.warn(pythonStr(this.event), this.context.join("\n"));
+    if (this.context.length > 0) return protocol.warn(valueText(this.event), this.context.join("\n"));
     return protocol.EXIT_PASS;
   }
 
@@ -216,6 +217,19 @@ function backslashReplaced(text: string): string {
   return text.replace(LONE_SURROGATE, (surrogate) => "\\u" + surrogate.charCodeAt(0).toString(16).padStart(4, "0"));
 }
 
+function isScalarNumber(value: unknown): value is PyFloat | bigint {
+  return value instanceof PyFloat || typeof value === "bigint";
+}
+
+function valueText(value: unknown): string {
+  return isScalarNumber(value) ? pyStr(value) : pythonStr(value);
+}
+
+function valueTypeName(value: unknown): string {
+  if (value instanceof PyFloat) return "float";
+  return typeof value === "bigint" ? "int" : pythonValueTypeName(value);
+}
+
 function errorLabel(error: unknown): string {
   return `${errorTypeName(error)}: ${errorText(error)}`;
 }
@@ -230,11 +244,11 @@ function main(): number {
 }
 
 function dispatch(payload: unknown): number {
-  if (!isRecord(payload)) {
-    throw new AttributeError(`'${pythonValueTypeName(payload)}' object has no attribute 'get'`);
+  if (!isJsonObject(payload)) {
+    throw new AttributeError(`'${valueTypeName(payload)}' object has no attribute 'get'`);
   }
   const eventField = getField(payload, "hook_event_name");
-  const event = isTruthy(eventField) ? eventField : "";
+  const event = pyTruthy(eventField) ? eventField : "";
   const report = new Report(payload, event);
   if (event === "PreToolUse" && getField(payload, "tool_name") === "Bash") guardBash(payload, report);
   return report.emit();
@@ -258,14 +272,14 @@ function bashCommandOf(raw: string): string {
     if (error instanceof JSONDecodeError) return raw;
     throw error;
   }
-  if (!isRecord(payload)) return "";
+  if (!isJsonObject(payload)) return "";
   if (getField(payload, "hook_event_name") !== "PreToolUse" || getField(payload, "tool_name") !== "Bash") return "";
   return commandOf(payload);
 }
 
 function commandOf(payload: Payload): string {
   const command = getField(protocol.toolInput(payload), "command");
-  return pythonStr(isTruthy(command) ? command : "");
+  return valueText(pyTruthy(command) ? command : "");
 }
 
 function guardBash(payload: Payload, report: Report): void {
@@ -274,8 +288,8 @@ function guardBash(payload: Payload, report: Report): void {
   const command = commandOf(payload);
   if (!DECISION_HINT.test(command)) return;
   const cwdField = getField(payload, "cwd");
-  const cwd = isTruthy(cwdField) ? cwdField : process.cwd();
-  if (typeof cwd !== "string") throw new TypeError(`expected string object, got '${pythonValueTypeName(cwd)}'`);
+  const cwd = pyTruthy(cwdField) ? cwdField : process.cwd();
+  if (typeof cwd !== "string") throw new TypeError(`expected string object, got '${valueTypeName(cwd)}'`);
   const actions = callActions(command, cwd);
   for (const action of actions) judgeAction(action, report);
   if (actions.some((action) => action.kind === "push" || action.kind === "merge")) collectGarbageIfDue(report);
@@ -701,7 +715,7 @@ function ghDefaultKey(repoRoot: string): string | null {
 }
 
 function warnRegistryAbsentOnce(report: Report): void {
-  const stamp = joinPath(stateDir(), "sessions", `${pythonStr(report.session)}.registry-warned`);
+  const stamp = joinPath(stateDir(), "sessions", `${valueText(report.session)}.registry-warned`);
   if (existsSync(stamp)) return;
   mkdirSync(pathDirname(stamp), { recursive: true });
   writeFileSync(stamp, "");
@@ -803,37 +817,37 @@ function fetchPullRequest(merge: Merge): Record<string, unknown> {
     throw new GateError("gh pr view failed: " + pyStrip(universalNewlines(decodeStrict(completed.stderr))));
   }
   const pullRequest: unknown = pythonJsonLoads(universalNewlines(decodeStrict(completed.stdout)));
-  if (!isRecord(pullRequest) || !isTruthy(pullRequest["baseRefName"])) throw new GateError("gh pr view returned no baseRefName");
+  if (!isJsonObject(pullRequest) || !pyTruthy(pullRequest["baseRefName"])) throw new GateError("gh pr view returned no baseRefName");
   return pullRequest;
 }
 
 export function checksNotGreen(pullRequest: Record<string, unknown>, auto: boolean): string[] {
   const notGreen: string[] = [];
   for (const check of iterate(pullRequest["statusCheckRollup"])) {
-    if (!isRecord(check)) throw new AttributeError(`'${pythonValueTypeName(check)}' object has no attribute 'get'`);
+    if (!isJsonObject(check)) throw new AttributeError(`'${valueTypeName(check)}' object has no attribute 'get'`);
     const outcome = firstTruthy("", getField(check, "conclusion"), getField(check, "status"), getField(check, "state"));
     if (isBlocking(outcome, auto)) {
-      notGreen.push(`${pythonStr(firstTruthy("?", getField(check, "name"), getField(check, "context")))}=${pythonStr(outcome)}`);
+      notGreen.push(`${valueText(firstTruthy("?", getField(check, "name"), getField(check, "context")))}=${valueText(outcome)}`);
     }
   }
   return notGreen;
 }
 
 function iterate(value: unknown): unknown[] {
-  if (!isTruthy(value)) return [];
+  if (!pyTruthy(value)) return [];
   if (Array.isArray(value)) return value;
   if (typeof value === "string") return Array.from(value);
-  if (isRecord(value)) return Object.keys(value);
-  throw new TypeError(`'${pythonValueTypeName(value)}' object is not iterable`);
+  if (isJsonObject(value)) return Object.keys(value);
+  throw new TypeError(`'${valueTypeName(value)}' object is not iterable`);
 }
 
 function firstTruthy(fallback: unknown, ...values: unknown[]): unknown {
-  return values.find(isTruthy) ?? fallback;
+  return values.find(pyTruthy) ?? fallback;
 }
 
 function isBlocking(outcome: unknown, auto: boolean): boolean {
-  if (Array.isArray(outcome) || isRecord(outcome)) {
-    const type = pythonValueTypeName(outcome);
+  if (Array.isArray(outcome) || isJsonObject(outcome)) {
+    const type = valueTypeName(outcome);
     throw new TypeError(`cannot use '${type}' as a set element (unhashable type: '${type}')`);
   }
   if (typeof outcome !== "string") return false;
@@ -878,7 +892,7 @@ function fetchedCommit(repoRoot: string, sha: string): string {
 }
 
 function fetchedRemoteBranch(repoRoot: string, name: unknown): string {
-  if (typeof name !== "string") throw new TypeError(`can only concatenate str (not "${pythonValueTypeName(name)}") to str`);
+  if (typeof name !== "string") throw new TypeError(`can only concatenate str (not "${valueTypeName(name)}") to str`);
   if (!gitcmd.refExists(repoRoot, "refs/remotes/origin/" + name)) gitcmd.fetch(repoRoot, ["origin"]);
   if (!gitcmd.refExists(repoRoot, "refs/remotes/origin/" + name)) {
     throw new GateError(`origin/${name} is not in this clone even after fetching origin`);

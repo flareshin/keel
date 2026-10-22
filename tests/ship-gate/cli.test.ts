@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import childProcess from 'node:child_process';
-import { readFileSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
+import type { TestContext } from 'node:test';
 import * as gitcmd from '../../lib/evidence/gitcmd.ts';
-import { Sandbox, readJson } from './helpers.ts';
+import { KEEL, KEEL_PYTHON, Sandbox, readJson } from './helpers.ts';
 import type { Repo, Run } from './helpers.ts';
 
 function summaryOf(run: Run): any {
@@ -124,6 +126,32 @@ describe('KeelTestCommandTest', () => {
       assert.equal(run.rc, 0, run.stderr);
       assert.equal(summaryOf(run).count, expected, output);
     }
+  });
+
+  test('keelTest_forwardsOutputWhileTheCommandRuns_andKeepsStdoutStderrOrder', async (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    const script = "echo first; echo error-first >&2; sleep 1; echo second; echo error-second >&2; echo 'Ran 1 test'";
+    const child = childProcess.spawn('node', [KEEL, 'test', '--', 'bash', '-c', script], { cwd: repo.path, env: sandbox.env });
+    let output = '';
+    let stillRunningAtFirstOutput: boolean | undefined;
+    child.stdout.on('data', (chunk: Buffer) => {
+      stillRunningAtFirstOutput ??= child.exitCode === null && child.signalCode === null;
+      output += chunk.toString();
+    });
+    child.stderr.resume();
+    const exitCode = await new Promise((resolveExit) => child.on('close', resolveExit));
+    assert.equal(exitCode, 0);
+    assert.equal(stillRunningAtFirstOutput, true);
+    assert.equal(output, 'first\nerror-first\nsecond\nerror-second\nRan 1 test\n');
+  });
+
+  test('keelTest_keepsEveryByte_whenOutputIsLargerThanOneRead', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    const run = sandbox.keel(['test', '--', 'bash', '-c', "head -c 300000 /dev/zero | tr '\\0' x; echo; echo 'Ran 1 test'"], { cwd: repo.path });
+    assert.equal(run.rc, 0, run.stderr);
+    assert.equal(run.stdout, 'x'.repeat(300000) + '\nRan 1 test\n');
   });
 
   test('keelTest_recognizesSurefireTotals_whenPerClassLinesPrecede', (t) => {
@@ -393,4 +421,58 @@ describe('SmokeShowGcTest', () => {
     assert.equal(sandbox.evidenceFiles('tests').length, 1);
     assert.deepEqual(sandbox.evidenceFiles('approval'), []);
   });
+});
+
+describe('KeelEntryPointTest', () => {
+  function stubbedHome(t: TestContext): string {
+    const home = mkdtempSync(join(tmpdir(), 'keel-entry-'));
+    t.after(() => rmSync(home, { recursive: true, force: true }));
+    mkdirSync(join(home, 'lib', 'evidence'), { recursive: true });
+    writeFileSync(join(home, 'lib', 'evidence', 'cli.ts'),
+      "export async function main(argv: string[]): Promise<number> {\n  process.stdout.write('stub:' + argv.join(',') + '\\n');\n  return 5;\n}\n");
+    return home;
+  }
+
+  function entry(keelHome: string | undefined, args: string[]) {
+    const env: Record<string, string> = { ...process.env as Record<string, string> };
+    delete env['KEEL_HOME'];
+    if (keelHome !== undefined) env['KEEL_HOME'] = keelHome;
+    return childProcess.spawnSync('node', [KEEL, ...args], { encoding: 'utf8', env });
+  }
+
+  test('entry_loadsCliFromKeelHome_whenSet', (t) => {
+    const run = entry(stubbedHome(t), ['a', 'b']);
+    assert.deepEqual([run.status, run.stdout], [5, 'stub:a,b\n']);
+  });
+
+  test('entry_loadsCliBesideItself_whenKeelHomeIsEmpty', () => {
+    const run = entry('', ['bogus']);
+    assert.equal(run.status, 2);
+    assert.match(run.stderr, /^keel: /);
+  });
+});
+
+describe('EchoedNumberTest', () => {
+  const NUMBER_TOKENS: Array<[token: string, persisted: string]> = [
+    ['1.0', '1.0'], ['-0.0', '-0.0'], ['1e16', '1e+16'], ['9007199254740993', '9007199254740993'], ['1E2', '100.0'],
+  ];
+
+  for (const [token, persisted] of NUMBER_TOKENS) {
+    test(`writeReview_persistsPythonSpelling_whenAgentTypeIsTheNumberToken ${token}`, (t) => {
+      const sandbox = new Sandbox(t);
+      const repo = sandbox.clone('acme', 'app');
+      repo.branch('feature');
+      repo.commit({ 'src/a.py': 'a\n' });
+      const stdin = JSON.stringify(sandbox.reviewRequest(repo)).replace('"agent_type":"general-purpose"', `"agent_type":${token}`);
+      assert.ok(stdin.includes(`"agent_type":${token},`), stdin);
+      for (const runner of [['python3', KEEL_PYTHON], ['node', KEEL]]) {
+        sandbox.runner = [...runner];
+        const written = sandbox.keel(['evidence', 'write-review'], { stdin });
+        assert.equal(written.rc, 0, written.stderr);
+        const file = sandbox.evidenceFiles('review').at(-1)!;
+        assert.equal(/"agent_type": ([^,]*),/.exec(readFileSync(file, 'utf8'))![1], persisted, runner[0]);
+        rmSync(file);
+      }
+    });
+  }
 });

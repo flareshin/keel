@@ -4,7 +4,7 @@ import * as codexReview from './codex_review.ts';
 import * as gc from './gc.ts';
 import * as gitcmd from './gitcmd.ts';
 import * as prepare from './prepare.ts';
-import { errorText, JSONDecodeError, pythonJsonDumps, pythonJsonLoads, pythonTypeName, sortedStrings } from './pycompat.ts';
+import { errorText, JSONDecodeError, UnicodeDecodeError, isJsonObject, pyEquals, pythonJsonDumps, pythonJsonLoads, pythonTypeName, sortedStrings } from './pycompat.ts';
 import type { JsonValue } from './pycompat.ts';
 import * as registry from './registry.ts';
 import { printErrorLine, printLine, readStdinText } from './stdio.ts';
@@ -145,7 +145,7 @@ export function compatibility(): JsonObject {
   for (const key of store.repoKeys('review')) {
     const reviews = store.loadReviews(key);
     const old = new Set(reviews
-      .filter((item) => item.review_kind === codexReview.KIND && (item.source || {})['version'] !== 2)
+      .filter((item) => item.review_kind === codexReview.KIND && !pyEquals((item.source || {})['version'], 2))
       .map((item) => item.evidence_id));
     count += old.size;
     roots.push(...buildChains(reviews).filter((chain) => chain.links.some((link) => old.has(link.evidence_id))).map((chain) => chain.rootRunId));
@@ -171,15 +171,15 @@ function stdinJson(): JsonObject {
   try {
     request = pythonJsonLoads(readStdinText());
   } catch (error) {
-    if (error instanceof JSONDecodeError || error instanceof TypeError) {
+    if (error instanceof JSONDecodeError || error instanceof UnicodeDecodeError) {
       throw new writers.Usage(`stdin is not JSON: ${(error as Error).message}`);
     }
     throw error;
   }
-  if (request === null || typeof request !== 'object' || Array.isArray(request)) throw new writers.Usage('stdin must be a JSON object');
+  if (!isJsonObject(request)) throw new writers.Usage('stdin must be a JSON object');
   return request;
 }
 
-function printResult(result: JsonObject): void {
-  printLine(pythonJsonDumps(result, { sortKeys: true }));
+function printResult(payload: JsonObject): void {
+  printLine(pythonJsonDumps(payload, { sortKeys: true }));
 }

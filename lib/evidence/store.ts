@@ -1,8 +1,8 @@
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import * as env from './env.ts';
-import { compareCodePoints, decodeStrict, pyOsErrorMessage, pythonJsonDumps, pythonJsonLoads, sortedStrings, universalNewlines } from './pycompat.ts';
+import { compareCodePoints, decodeStrict, isDirectory, isJsonObject, pyOsErrorMessage, pythonJsonDumps, pythonJsonLoads, sortedStrings, universalNewlines } from './pycompat.ts';
 import type { JsonValue } from './pycompat.ts';
 
 export const REPO_SCOPED_KINDS = ['review', 'tests', 'smoke'];
@@ -69,13 +69,13 @@ export function write(kind: string, body: { [key: string]: JsonValue }, repoKey:
   const directory = kindDir(kind, repoKey);
   ensurePrivateDirs(directory);
   const final = join(directory, evidence.evidence_id + '.json');
-  const temp = join(directory, '.tmp-' + randomBytes(TEMP_FILE_RANDOM_BYTES).toString('hex'));
+  const tempPath = join(directory, '.tmp-' + randomBytes(TEMP_FILE_RANDOM_BYTES).toString('hex'));
   try {
-    writeFileSync(temp, pythonJsonDumps(evidence, { sortKeys: true }) + '\n', { flag: 'wx', mode: FILE_MODE });
-    chmodSync(temp, FILE_MODE);
-    renameSync(temp, final);
+    writeFileSync(tempPath, pythonJsonDumps(evidence, { sortKeys: true }) + '\n', { flag: 'wx', mode: FILE_MODE });
+    chmodSync(tempPath, FILE_MODE);
+    renameSync(tempPath, final);
   } catch (error) {
-    if (existsSync(temp)) unlinkSync(temp);
+    if (existsSync(tempPath)) unlinkSync(tempPath);
     throw error;
   }
   return evidence;
@@ -108,29 +108,21 @@ export function repoKeys(kind: string): string[] {
 }
 
 export function readFile(path: string): Evidence {
-  let evidence: JsonValue;
+  let evidence: unknown;
   try {
     evidence = pythonJsonLoads(universalNewlines(decodeStrict(readFileSync(path))));
   } catch (error) {
-    throw new EvidenceError(`unreadable evidence ${path}: ${readFailure(error)}`);
+    throw new EvidenceError(`unreadable evidence ${path}: ${readFailure(error, path)}`);
   }
-  if (evidence === null || typeof evidence !== 'object' || Array.isArray(evidence) || typeof evidence['expires_at'] !== 'string') {
+  if (!isJsonObject(evidence) || typeof evidence['expires_at'] !== 'string') {
     throw new EvidenceError('not an evidence object: ' + path);
   }
   return evidence as Evidence;
 }
 
-function readFailure(error: unknown): string {
-  if (error instanceof Error && 'errno' in error) return pyOsErrorMessage(error as NodeJS.ErrnoException);
+function readFailure(error: unknown, path: string): string {
+  if (error instanceof Error && 'errno' in error) return pyOsErrorMessage({ ...error, path } as NodeJS.ErrnoException);
   return error instanceof Error ? error.message : String(error);
-}
-
-function isDirectory(path: string): boolean {
-  try {
-    return statSync(path).isDirectory();
-  } catch {
-    return false;
-  }
 }
 
 function ensurePrivateDirs(directory: string): void {
@@ -139,7 +131,7 @@ function ensurePrivateDirs(directory: string): void {
   try {
     mkdirSync(directory, { mode: DIRECTORY_MODE });
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST' || !isDirectory(directory)) throw error;
   }
   let current = directory;
   for (;;) {

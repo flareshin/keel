@@ -1,9 +1,9 @@
-import { closeSync, openSync, statSync, unlinkSync, existsSync } from 'node:fs';
+import { closeSync, openSync, unlinkSync, existsSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DELETED_MODE, GITLINK_MODE } from './env.ts';
-import { decodeReplacing, decodeSurrogateEscape, pyRealpath, pySplitLines, pySplitWhitespace, pyStrip } from './pycompat.ts';
+import { decodeReplacing, decodeSurrogateEscape, isDirectory, pyRealpath, pySplitLines, pySplitWhitespace, pyStrip } from './pycompat.ts';
 import { runCaptured } from './subprocess.ts';
 import type { Completed } from './subprocess.ts';
 
@@ -215,14 +215,6 @@ export function snapshotTree(repo: string): string {
     return text(repo, ['--work-tree', repo, 'write-tree'], options);
   } finally {
     if (existsSync(index)) unlinkSync(index);
-  }
-}
-
-function isDirectory(path: string): boolean {
-  try {
-    return statSync(path).isDirectory();
-  } catch {
-    return false;
   }
 }
 

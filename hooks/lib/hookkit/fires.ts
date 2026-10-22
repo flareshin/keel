@@ -1,7 +1,7 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { dataDir } from "./env.ts";
-import { joinPath, pythonJsonDumps, pythonStr, truncate } from "./pycompat.ts";
+import { isSystemError, joinPath, pythonJsonDumps, pythonStr, truncate } from "./pycompat.ts";
 
 export const DETAIL_LIMIT = 200;
 
@@ -31,6 +31,7 @@ export class FireLog {
       mkdirSync(dirname(path), { recursive: true });
       appendFileSync(path, pythonJsonDumps(record) + "\n", "utf8");
     } catch (error) {
+      if (!isSystemError(error)) throw error;
       process.stderr.write(`${this.hook}: could not append keel-fires.jsonl (${describeError(error)})\n`);
     }
   }

@@ -4,36 +4,205 @@ A small, measured harness for Claude Code. It has five principles. Each one is e
 
 keel is written almost entirely by AI agents. Every change is reviewed by a separate agent context that did not write it (`lens-review`), and keel ships through its own ship-gate, which merges only with the owner's approval.
 
-Status: not yet public. No license has been chosen yet, so all rights are reserved for now. The binding spec is `docs/DESIGN.md`.
+Status: not yet public. No license has been chosen yet, so all rights are reserved for now. The binding spec is [`docs/DESIGN.md`](docs/DESIGN.md); where this README and the spec disagree, the spec wins.
 
-## What it does
+## Why keel exists
 
-- `PRINCIPLES.md`: the charter (K1–K5), the `risk` experiment and the floor rules the agent must read (`F-mod-trust` is a smoke check only; see `ledger.tsv`). `bin/link` generates the user-level `CLAUDE.md` from it.
-- `ledger.tsv`: one row per rule, giving its layer, where it is enforced, its metric and its review date. Company rows live in a separate private overlay ledger.
-- Hooks: `ship-gate` (push and merge gate based on review, test and approval evidence), `git-guard` (attribution, secrets, force push, evidence protection), `report-gate` (evidence in done/pass claims, review evidence writing), `model-assign`, `handoff`, plus `env-preflight` for the `spring-maven` stack.
-- `bin/keel`: the evidence CLI (`test`, `approve`, `snapshot`, `evidence …`).
-- `measure/`: the metric runner, smoke checks, demotion proposals, the weekly report and the public-boundary scanner.
-- `skills/`: `prompt-refine` (K4), `readable-code` (K5), `descend`, `improve` (requested legacy cleanup under K5).
-- `workflows/`: `lens-review` and `adversarial-audit`.
+An agent harness tends to fail in three ways:
+
+- **Self-judged work.** The agent that wrote a change also declares it done and correct.
+- **Unverifiable claims.** "Tests pass" or "reviewed" appears in a message, but nothing machine-checkable backs it.
+- **Rule accretion.** Every incident adds a paragraph of prose to the instructions. The prose grows, nobody measures whether it works, and nothing ever leaves.
+
+keel answers these with a few rules held by code where possible:
+
+- Hooks hold rules that a script can decide, such as blocking a push without review evidence.
+- Every rule is a row in a ledger. The row says where the rule is enforced, how it is measured and when it is reviewed again.
+- A rule that stops earning its place is proposed for demotion and, eventually, retirement.
+
+## Principles
+
+The charter lives in [`PRINCIPLES.md`](PRINCIPLES.md). `bin/link` turns it into the user-level `CLAUDE.md`.
+
+| ID | Principle | Strongest layer today |
+|---|---|---|
+| K1 | An author never judges its own output. | hook (`ship-gate`) |
+| K2 | Every done or pass claim carries machine-verifiable evidence. | hook (`report-gate`) |
+| K3 | Changed logic ships with tests in the same diff. | hook (`ship-gate`) |
+| K4 | Ask when ambiguous; act when clear. | skill (`prompt-refine`) |
+| K5 | Make only needed, readable changes. | skill (`readable-code`) |
+
+`PRINCIPLES.md` also states:
+
+- **`risk`**: a core experiment. Verification weight is proportional to risk.
+- **Floor rules**: hook-enforced safety limits. `F-irreversible` (merge, deploy and delete need explicit approval), `F-secrets`, `F-attribution`, `F-force-push` and `F-hookskip` (never switch hooks off).
+
+One more floor row lives only in the ledger: `F-mod-trust` (every installed Claude Code mod is reviewed). It is a prose-layer row with no hook behind it; the smoke `mod-trust` check measures it.
+
+## Enforcement ladder
+
+```
+repo  >  hook  >  skill  >  prose
+```
+
+- **repo**: a lint rule, architecture test or CI test in the target repository. Strongest, because it binds every author, human or agent.
+- **hook**: a Claude Code hook script in keel that allows, warns about or denies a tool call.
+- **skill**: instructions the agent loads for a task. Used where the rule needs judgment.
+- **prose**: plain text in a document. Weakest.
+
+A rule enters at the strongest layer that can hold it. A `skill` or `prose` row must say why it cannot be stronger (`why_not_stronger`). The `descend` skill moves a recurring review finding down the ladder, for example into a lint rule in the target repo. keel's own text for that rule is then deleted.
+
+## The ledger
+
+[`ledger.tsv`](ledger.tsv) holds one row per rule: its id, scope, statement, layer, `enforced_at`, metric, incidents, `review_by` date and status. The format is specified in DESIGN.md §4 and (b).
+
+- **Ids.** `K*` = charter, `risk`, `C-*` = core, `S-*` = stack, `O-*` = overlay, `F-*` = floor. Every rule line in a rule location (`PRINCIPLES.md`, the overlay's `PERSONAL.md`, the rules section of each `SKILL.md`, every hook message) carries its `[ID]`, and smoke checks this.
+- **Rule of two.** A non-charter, non-floor row needs at least two distinct incidents behind it.
+- **Metric.** Every active row has a metric that `measure/run` evaluates, such as counting the hook's firings, running an eval or checking that a file exists in a repo. A metric that recognized zero items fails.
+- **Expiry.** Rows carry a `review_by` date. `measure/propose` looks at expired rows. A row whose metric counted nothing is proposed one layer weaker (`hook` → `skill` → `prose` → retired). A row that counted something gets 60 more days. Proposals are printed only; the owner edits the ledger.
+- **Caps.** Charter ≤ 7 rows, core ≤ 10 (floor rows excluded), each stack ≤ 10, overlay ≤ 15, hook scripts ≤ 8, and the generated `CLAUDE.md` ≤ 4096 bytes. Growth is visible and bounded.
+
+## Three places: keel, overlay, data
+
+| Location | Visibility | Holds |
+|---|---|---|
+| `~/git/keel` (this repo) | public goal | The method: principles, ledger engine, hooks, ship-gate, review engine, measurement, skills, stacks and example data with invented values |
+| `~/git/keel-overlay` (`KEEL_OVERLAY_DIR`) | private | Company and personal data: the owner's `PERSONAL.md` rules, the overlay ledger, gated-repo registry, risk path rules, boundary lexicon, known secret values, private skills and scheduled tasks |
+| `~/.claude` (`KEEL_DATA_DIR`) | private | Data only: transcripts, memory, logs, evidence and state. Harness paths in it are symlinks or files generated by `bin/link` |
+
+Why the split:
+
+- **keel can be published; company data must not be.** Company rules, repository names and incident records go only in the overlay. Company rules are rows in the overlay's own ledger, and smoke checks the union of both ledgers.
+- **A scanner guards the boundary.** `measure/boundary` checks added lines and commit messages against the overlay's private lexicon and regexes and against generic secret patterns (`measure/boundary-generic.tsv`). The `pre-commit` and `pre-push` hooks in `githooks/` run it, and smoke fails if the lexicon is missing.
+- **Method and data stay separate.** keel holds the engine; the overlay decides where it applies. Anyone can pair keel with an overlay of their own. Every overlay file is optional, and a missing file means no data. [`examples/`](examples) shows the overlay's shape with invented values.
+
+## How a change ships
+
+```
+worktree ──► change + tests ──► keel test ──► lens-review ──► keel approve ──► push / merge
+                                   │               │                │                │
+                              tests evidence  review evidence  approval evidence  ship-gate checks all
+```
+
+1. **Work in a worktree.** `C-isolation`: a session edits only in its own worktree. The live checkouts, which the links point at, move only through an approved fast-forward merge.
+2. **Run tests through keel.** `keel test -- <cmd>` runs the command, parses the runner summary (`Ran N tests`, `Tests run: N`, `N passed`, TAP) and writes tests evidence tied to the exact tree. It writes none if the exit code is non-zero, the count is 0 or the tree changed during the run.
+3. **Review in a separate context.** The `lens-review` workflow runs independent auditors over a snapshot tree (`keel snapshot`), never the live working tree. A separate verifier checks each finding's reproduction, and a reporter agent emits a report starting with `VERDICT: PASS` or `VERDICT: NEEDS_FIXES`, plus one `KEEL-EVIDENCE:` line per repo. The `report-gate` hook writes the review evidence; the reviewer cannot. A reviewer whose transcript shows a file write counts as an author and yields no evidence.
+4. **Fix with deltas.** Fixes after a review are reviewed as a delta on the same chain (`root_run_id`), not as a new full review.
+5. **The owner approves.** The owner runs `keel approve <root_run_id>` in their own terminal. Agents are denied this command. The approval is pinned to the chain's current head, so a later delta needs a new approval. `--read` records an acknowledgement only and approves nothing.
+6. **ship-gate decides.** On `git push` and `gh pr merge`, ship-gate computes the outgoing diff from the merge base. Unless the whole diff is smoke-only (below), every outgoing path must appear, with the same blob and mode, in one reviewed evidence chain, or in an approved series of chains, together with matching tests evidence and, at merge, the approval.
+
+`docs/review-policy.md` specifies the review flow and what an approval request must explain. Approval and a PASS are evidence, not consent to open a PR.
+
+### Risk classes
+
+ship-gate classifies the outgoing paths with the overlay's `risk-rules.tsv`; evidence never states its own risk. When a rule is ambiguous, the heavier class wins.
+
+| Class | Typical paths | Required |
+|---|---|---|
+| smoke-only | data, prompt and settings-fragment paths | smoke evidence covering the diff |
+| light | copy, style, docs, config | `lens-review` chain; tests if the repo requires them; approval at merge |
+| standard (default) | anything no rule matches | `lens-review` chain + tests; approval at merge |
+| heavy | money, inventory writes, schema, batch, external contracts | `lens-review` chain + tests; approval at merge |
+
+K3 also applies: a logic path with no test path in the same range is denied.
+
+### Threat model
+
+The hooks stop an honest agent's mistakes and shortcuts. A push or merge that the shell parser cannot attribute to one repo and branch is denied, not guessed. keel does not try to stop deliberate evasion, because no parser over arbitrary shell can be complete. The final guard is branch protection on the integration branches. A person pushing from their own terminal is the intended escape hatch. Details are in DESIGN.md §5.7a.
+
+## Components
+
+### Hooks
+
+Registered in [`settings/core.json`](settings/core.json). `ship-gate` and `git-guard` are registered with `onFailure: "block"`, so a crash or timeout blocks the call; the other hooks fail open.
+
+| Hook | Event | Enforces |
+|---|---|---|
+| `ship-gate` | `PreToolUse` Bash | K1, K3, `risk`, `F-irreversible`: review, tests and approval evidence for push and merge |
+| `git-guard` | `PreToolUse` Bash, Edit, Write, NotebookEdit | `F-secrets`, `F-attribution`, `F-force-push`, `F-hookskip`, `C-isolation`; protects evidence and fires logs |
+| `report-gate` | `PreToolUse` SubagentHandback, `SubagentStop` | K2 (evidence in done/pass claims); writes review evidence from a reviewer's report |
+| `model-assign` | `PreToolUse` Agent, Workflow | `C-dispatch`: every agent dispatch names a model and an effort |
+| `handoff` | `PreCompact` | `C-handoff`: snapshot in-flight work before compaction |
+| `env-preflight` | stack `spring-maven` | `S-jdk`: Maven builds pin the JDK the repo requires |
+
+Each decision is logged to `$KEEL_DATA_DIR/logs/keel-fires.jsonl`: a deny or warn writes one line per `[ID]` in its message, a pass one line, and a call that is no decision (for example a Bash command that is no push, merge or protected write) nothing. Ledger metrics count these lines.
+
+### The `keel` CLI
+
+| Command | Purpose |
+|---|---|
+| `keel test -- <cmd…>` | Run tests and write tests evidence (also one per unchanged submodule) |
+| `keel snapshot <repo>` | Write the working tree to a tree object without touching the index; reviewers read this |
+| `keel approve <root_run_id> [--read]` | Owner-only approval (or acknowledgement) of a review chain's heads |
+| `keel evidence show [--repo] [--root]` | Read-only view of chains, tests and smoke evidence |
+| `keel evidence write-review` | Run by `report-gate` from a reviewer's report; agents are denied it |
+| `keel evidence write-smoke` | Run by the job after a passing `measure/smoke`, before a smoke-only push |
+| `keel evidence gc` | Delete expired evidence (14 days) |
+
+Evidence lives under `$KEEL_DATA_DIR/state/keel/evidence/` as immutable JSON files (DESIGN.md (c)).
+
+### Skills and workflows
+
+- `prompt-refine` (K4): turns an ambiguous request into an approved brief and asks only the questions that change the work.
+- `readable-code` (K5): rules R1–R16 for code a person can follow. Its `scripts/rule-checks.py` produces signals for the review's rule-checks lens.
+- `descend`: moves a recurring finding to a stronger layer.
+- `improve`: one requested structural improvement in existing code.
+- `workflows/lens-review.js`: the review engine. Lenses, adversarial audit, verification, reporter.
+- `workflows/adversarial-audit.js`: independent lens coverage plus batched finding verification.
+
+### Measurement
+
+- `measure/run <id>`: a row's metric. PASS, FAIL, or GRACE while a new row is in its grace period.
+- `measure/smoke`: whole-harness checks, including ledger format, unique ids, caps, `[ID]` tagging, rule of two, metrics, the boundary scan, link integrity, wired fires (every hook row fires on its bad fixture), dangling links and mod trust.
+- `measure/propose`: demotion, retirement and extension proposals for expired rows.
+- `measure/weekly`: repo-layer rule count, always-loaded bytes, post-deploy defects, core size.
+- `measure/evals/eval <id>`: behavioral evals through `claude -p` (today: K4), with train and holdout splits.
+
+## Install and link
+
+keel never generates all of `settings.json`. It owns exactly the `hooks`, `permissions` and `env` keys. Settings fragments use `{{KEEL}}`, `{{OVERLAY}}` and `{{DATA}}` placeholders, which `bin/link` expands.
+
+```bash
+bin/link            # dry run: what would change; lists items a first --write --adopt would drop
+bin/link --check    # report drift (exit 1 on any problem)
+bin/link --write    # apply links, generated CLAUDE.md and owned settings keys
+bin/link --unlink   # remove keel's links and restore the backed-up settings
+```
+
+- Links must point at a dedicated checkout that moves only by merge. `--write` refuses when `KEEL_HOME` is a linked worktree unless `--allow-worktree` is given.
+- Every settings write is backed up first. A first write over existing settings needs `--adopt` and an `--accept-drops <file>` listing everything it would drop.
+- `--write` also sets `core.hooksPath githooks` in the keel checkout, so the boundary scan runs on commit and push.
+
+Environment variables (DESIGN.md (i)):
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `KEEL_HOME` | repo root of the running script | keel checkout |
+| `KEEL_OVERLAY_DIR` | `~/git/keel-overlay` | overlay checkout; missing means no overlay data |
+| `KEEL_DATA_DIR` | `~/.claude` | logs, state, evidence, link targets, settings |
+
+### Codex
+
+[`codex/`](codex) is an adapter that installs the same charter, core skills, guard scripts and overlay into Codex (`codex/bin/link`). See [`codex/README.md`](codex/README.md).
 
 ## Layout
 
 ```
 PRINCIPLES.md  ledger.tsv     principles and the keel ledger
 bin/           keel, link     evidence CLI, link/merge tool
-hooks/         core hooks     plus hooks/lib/hookkit
+hooks/         core hooks     plus hooks/lib/hookkit (shared shell parser)
 lib/           evidence/, link/
-measure/       run, smoke, propose, boundary, weekly
+measure/       run, smoke, propose, boundary, weekly, evals/
 githooks/      pre-commit, pre-push (boundary scan)
 settings/      core.json (hook registration), links.tsv (link manifest)
 stacks/        spring-maven/ (env-preflight hook, settings fragment)
 skills/        prompt-refine/, readable-code/, descend/, improve/
 workflows/     lens-review.js, adversarial-audit.js, review-lenses.json
+codex/         Codex adapter
+docs/          DESIGN.md (binding spec), review-policy.md, codex-review.md
 examples/      overlay-shaped sample data with invented values
 tests/         one directory per component, plus run-all.sh
 ```
-
-Settings fragments use `{{KEEL}}`, `{{OVERLAY}}` and `{{DATA}}` placeholders. `bin/link` expands them and replaces only the `hooks`, `permissions` and `env` keys of `settings.json`. `bin/link` with no arguments is a dry run (it also lists the settings items a first `--write --adopt` would drop), `--check` reports drift, and `--write` applies the changes.
 
 ## Running the tests
 
@@ -51,3 +220,7 @@ node --test 'tests/workflows/*.test.mjs'
 ```
 
 To enable the boundary-scan git hooks in a checkout, run `git config core.hooksPath githooks`.
+
+## What keel does not do
+
+keel does not bulk-copy rules from an earlier harness, depend on a harness-generating plugin, publish company data, wire live hooks to a development tree, or leave any path where an author writes its own evidence. It also has no plan-gate hook, because one showed no measured effect. The full list is in DESIGN.md §8, and removed or deferred checks are in §10.

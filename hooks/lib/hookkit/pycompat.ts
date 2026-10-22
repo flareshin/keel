@@ -355,7 +355,8 @@ export function expandUser(path: string): string {
 }
 
 function currentHome(): string | null {
-  if (Object.hasOwn(process.env, "HOME")) return process.env["HOME"] ?? "";
+  const home = environmentValue("HOME");
+  if (home !== undefined) return home;
   return tryUserInfo()?.homedir ?? null;
 }
 

@@ -105,6 +105,8 @@ describe("python path behaviors", () => {
     withEnv({ KEEL_T: "v" }, () => {
       assert.equal(pycompat.expandVars("${x$KEEL_T/a"), "${x$KEEL_T/a");
       assert.equal(pycompat.expandVars("$KEEL_T/${x"), "v/${x");
+      assert.equal(pycompat.expandVars("${KEEL_Tx"), "${KEEL_Tx");
+      assert.equal(pycompat.expandVars("${KEEL_T"), "${KEEL_T");
     });
   });
 

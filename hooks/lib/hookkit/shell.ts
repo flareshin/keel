@@ -1,5 +1,5 @@
 import {
-  arraysEqual, basename, codePointLength, expandUser, expandVars, isDigits, joinPath, lstripChar, normalizePath, partition,
+  arraysEqual, basename, codePointLength, environmentValue, expandUser, expandVars, isDigits, joinPath, lstripChar, normalizePath, partition,
   PY_SPACE, PY_WORD, rstripChar,
 } from "./pycompat.ts";
 
@@ -279,7 +279,7 @@ export function resolveDirectory(directory: string, target: string, environment:
     if (environment.has(name)) return environment.get(name);
     if (name === "PWD") return directory;
     if (name === "OLDPWD") return undefined;
-    return Object.hasOwn(process.env, name) ? process.env[name] : undefined;
+    return environmentValue(name);
   };
   const expanded = target.replace(VARIABLE_RE, (whole, braced: string | undefined, bare: string | undefined) =>
     lookup(braced ?? bare ?? "") ?? whole);

@@ -86,7 +86,7 @@ worktree ──► change + tests ──► keel test ──► lens-review ─�
 
 1. **Work in a worktree.** `C-isolation`: a session edits only in its own worktree. The live checkouts, which the links point at, move only through an approved fast-forward merge.
 2. **Run tests through keel.** `keel test -- <cmd>` runs the command, parses the runner summary (`Ran N tests`, `Tests run: N`, `N passed`, TAP) and writes tests evidence tied to the exact tree. It writes none if the exit code is non-zero, the count is 0 or the tree changed during the run.
-3. **Review in a separate context.** The `lens-review` workflow runs independent auditors over a snapshot tree (`keel snapshot`), never the live working tree. A separate verifier checks each finding's reproduction, and a reporter agent emits a report starting with `VERDICT: PASS` or `VERDICT: NEEDS_FIXES`, plus one `KEEL-EVIDENCE:` line per repo. The `report-gate` hook writes the review evidence; the reviewer cannot. A reviewer whose transcript shows a file write counts as an author and yields no evidence.
+3. **Review in a separate context.** The `lens-review` workflow runs independent auditors over a snapshot tree (`keel snapshot`), never the live working tree. Auditors and verifiers run as the tool-limited `keel-auditor` agent type, the reporter as `keel-reporter` (`agents/`), and audit effort follows the diff's risk class. A separate verifier checks each finding's reproduction, and a reporter agent emits a report starting with `VERDICT: PASS` or `VERDICT: NEEDS_FIXES`, plus one `KEEL-EVIDENCE:` line per repo. The `report-gate` hook writes the review evidence; the reviewer cannot. A reviewer whose transcript shows a file write counts as an author and yields no evidence.
 4. **Fix with deltas.** Fixes after a review are reviewed as a delta on the same chain (`root_run_id`), not as a new full review.
 5. **The owner approves.** The owner runs `keel approve <root_run_id>` in their own terminal. Agents are denied this command. The approval is pinned to the chain's current head, so a later delta needs a new approval. `--read` records an acknowledgement only and approves nothing.
 6. **ship-gate decides.** On `git push` and `gh pr merge`, ship-gate computes the outgoing diff from the merge base. Unless the whole diff is smoke-only (below), every outgoing path must appear, with the same blob and mode, in one reviewed evidence chain, or in an approved series of chains, together with matching tests evidence and, at merge, the approval.
@@ -157,6 +157,7 @@ Evidence lives under `$KEEL_DATA_DIR/state/keel/evidence/` as immutable JSON fil
 - `measure/propose`: demotion, retirement and extension proposals for expired rows.
 - `measure/weekly`: repo-layer rule count, always-loaded bytes, post-deploy defects, core size.
 - `measure/evals/eval <id>`: behavioral evals through `claude -p` (today: K4), with train and holdout splits.
+- `measure/evals/review-eval`: scores the reviewer itself (lens-review) on defect and clean cases: recall, noise and run-to-run variance.
 
 ## Install and link
 
@@ -198,6 +199,7 @@ settings/      core.json (hook registration), links.tsv (link manifest)
 stacks/        spring-maven/ (env-preflight hook, settings fragment)
 skills/        prompt-refine/, readable-code/, descend/, improve/
 workflows/     lens-review.js, adversarial-audit.js, review-lenses.json
+agents/        keel-auditor.md, keel-reporter.md (tool-limited review agent types)
 codex/         Codex adapter
 docs/          DESIGN.md (binding spec), review-policy.md, codex-review.md
 examples/      overlay-shaped sample data with invented values

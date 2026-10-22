@@ -1,0 +1,60 @@
+import { spawnSync } from "node:child_process"
+import os from "node:os"
+
+import { OsError } from "./pyerrors.ts"
+import { translateNewlines } from "./pyio.ts"
+import { pyRepr } from "./pyvalue.ts"
+
+export interface RunOptions {
+  input?: string
+  cwd?: string
+  env?: NodeJS.ProcessEnv
+  timeoutSeconds?: number
+  shell?: boolean
+  stdin?: "inherit" | "ignore"
+}
+
+export interface RunResult {
+  returncode: number
+  stdout: string
+  stderr: string
+}
+
+export class TimeoutExpired extends Error {
+  readonly partialStdout: string
+
+  constructor(command: string[] | string, timeoutSeconds: number, partialStdout: string) {
+    super(`Command '${typeof command === "string" ? command : pyRepr(command)}' timed out after ${timeoutSeconds} seconds`)
+    this.partialStdout = partialStdout
+  }
+}
+
+const ERRNO_TEXT: Record<string, string> = {
+  ENOENT: "[Errno 2] No such file or directory",
+  EACCES: "[Errno 13] Permission denied",
+  ENOEXEC: "[Errno 8] Exec format error",
+  ENOTDIR: "[Errno 20] Not a directory",
+}
+
+export function runProcess(command: string[] | string, options: RunOptions = {}): RunResult {
+  const useShell = options.shell === true
+  const argv = typeof command === "string" ? [command] : command
+  const program = argv[0] ?? ""
+  const inputGiven = options.input !== undefined
+  const result = spawnSync(program, useShell ? [] : argv.slice(1), {
+    input: options.input,
+    cwd: options.cwd,
+    env: options.env,
+    shell: useShell,
+    encoding: "utf8",
+    timeout: options.timeoutSeconds === undefined ? undefined : options.timeoutSeconds * 1000,
+    killSignal: "SIGKILL",
+    maxBuffer: Infinity,
+    stdio: [inputGiven ? "pipe" : options.stdin ?? "inherit", "pipe", "pipe"],
+  })
+  const error = result.error as NodeJS.ErrnoException | undefined
+  if (error?.code === "ETIMEDOUT") throw new TimeoutExpired(command, options.timeoutSeconds ?? 0, result.stdout ?? "")
+  if (error) throw new OsError(`${ERRNO_TEXT[error.code ?? ""] ?? error.message}: '${program}'`)
+  const returncode = result.status ?? -(os.constants.signals[result.signal as NodeJS.Signals] ?? 0)
+  return { returncode, stdout: translateNewlines(result.stdout ?? ""), stderr: translateNewlines(result.stderr ?? "") }
+}

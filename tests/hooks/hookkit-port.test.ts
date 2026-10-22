@@ -7,6 +7,8 @@ import { missingFields } from "../../hooks/lib/hookkit/contract.ts";
 import * as env from "../../hooks/lib/hookkit/env.ts";
 import { FireLog } from "../../hooks/lib/hookkit/fires.ts";
 import * as protocol from "../../hooks/lib/hookkit/protocol.ts";
+import { JSONDecodeError, parsePayload } from "../../hooks/lib/hookkit/pyjson.ts";
+import { RecursionError, ValueError } from "../../hooks/lib/hookkit/pyruntime.ts";
 import * as pycompat from "../../hooks/lib/hookkit/pycompat.ts";
 import * as repo from "../../hooks/lib/hookkit/repo.ts";
 import { readTsv } from "../../hooks/lib/hookkit/overlay.ts";
@@ -261,9 +263,9 @@ describe("protocol output", () => {
 
 describe("protocol payload", () => {
   it("parsePayload_returnsAnObject_andRejectsOtherJson", () => {
-    assert.deepEqual(protocol.parsePayload('{"tool_name": "Bash"}'), { tool_name: "Bash" });
-    assert.throws(() => protocol.parsePayload("[1]"), /not a JSON object/);
-    assert.throws(() => protocol.parsePayload('{"a": '), SyntaxError);
+    assert.deepEqual(parsePayload('{"tool_name": "Bash"}'), { tool_name: "Bash" });
+    assert.throws(() => parsePayload("[1]"), /not a JSON object/);
+    assert.throws(() => parsePayload('{"a": '), JSONDecodeError);
   });
 
   it("toolName_isLowerCased_andEmptyWhenAbsentOrFalsy", () => {
@@ -387,6 +389,24 @@ describe("overlay and transcript files", () => {
   it("iterEntries_skipsBlankMalformedAndNonObjectLines", () => {
     const path = sandbox.write(join(sandbox.root, "t.jsonl"), '{"a": 1}\n\nnot json\n[1]\n  {"b": 2}  \n');
     assert.deepEqual(Array.from(transcript.iterEntries(path)), [{ a: 1 }, { b: 2 }]);
+  });
+
+  it("iterEntries_readsADeeplyNestedLine_likePython", () => {
+    const deep = "[".repeat(9999) + "]".repeat(9999);
+    const path = sandbox.write(join(sandbox.root, "deep.jsonl"), `{"a": 1}\n{"deep": ${deep}}\n{"b": 2}\n`);
+    assert.deepEqual(Array.from(transcript.iterEntries(path)).map((entry) => Object.keys(entry)), [["a"], ["deep"], ["b"]]);
+  });
+
+  it("iterEntries_raisesRecursionError_whenALineNestsPastTheDepthBound", () => {
+    const deep = "[".repeat(140000) + "]".repeat(140000);
+    const path = sandbox.write(join(sandbox.root, "past-bound.jsonl"), `{"a": 1}\n{"deep": ${deep}}\n`);
+    assert.throws(() => Array.from(transcript.iterEntries(path)), RecursionError);
+  });
+
+  it("iterEntries_raisesValueError_whenALineHoldsAnIntegerOverTheDigitLimit", () => {
+    const path = sandbox.write(join(sandbox.root, "big.jsonl"), `{"a": 1}\n{"n": ${"1".repeat(4301)}}\n{"b": 2}\n`);
+    const read = () => Array.from(transcript.iterEntries(path));
+    assert.throws(read, (error: Error) => error instanceof ValueError && !(error instanceof JSONDecodeError) && error.message.startsWith("Exceeds the limit (4300 digits)"));
   });
 
   it("textOf_readsStringsBlocksAndMessageWrappers", () => {

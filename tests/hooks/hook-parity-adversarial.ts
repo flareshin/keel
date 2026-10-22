@@ -2,6 +2,8 @@ import { join } from "node:path";
 import {
   AGENT_ID, basePayload, bash, ENV_PREFLIGHT, GIT_GUARD, HANDOFF, HookSandbox, KEEL_EVIDENCE_LINE, MODEL_ASSIGN, preToolUse, REPORT_GATE, SESSION_ID,
 } from "./helpers.ts";
+import { jsonLimitCases } from "./hook-parity-json-limits.ts";
+import type { TsOutcome } from "./hook-parity-json-limits.ts";
 
 const DOTTED_I = "İ";
 const DOTLESS_I = "ı";
@@ -18,11 +20,13 @@ export interface AdversarialCase {
   stdin: string;
   args: string[];
   cwd: string;
+  divergence?: TsOutcome;
 }
 
 export interface AdversarialSet {
   sandbox: HookSandbox;
   cases: AdversarialCase[];
+  divergences: Map<string, TsOutcome>;
 }
 
 export function buildAdversarialSet(): AdversarialSet {
@@ -39,8 +43,10 @@ export function buildAdversarialSet(): AdversarialSet {
     ...envPreflightCases(repo),
     ...modelAssignCases(sandbox.root),
     ...handoffCases(repo),
+    ...jsonLimitCases(sandbox, repo),
   ];
-  return { sandbox, cases };
+  const divergences = new Map(cases.flatMap((adversarialCase): Array<[string, TsOutcome]> => (adversarialCase.divergence ? [[adversarialCase.name, adversarialCase.divergence]] : [])));
+  return { sandbox, cases, divergences };
 }
 
 function asciiJson(payload: unknown): string {

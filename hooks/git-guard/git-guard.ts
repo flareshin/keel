@@ -12,7 +12,7 @@ import {
 import { fnmatchCase } from "../lib/hookkit/pyfnmatch.ts";
 import { loads, parsePayload } from "../lib/hookkit/pyjson.ts";
 import { dirname, isDirectory, isFile, readTextFile, realpath, shlexQuote } from "../lib/hookkit/pypath.ts";
-import { AttributeError, describeError, pythonErrorName, pythonList, pythonTypeName, readStdin, ValueError } from "../lib/hookkit/pyruntime.ts";
+import { AttributeError, describeError, pythonErrorName, pythonList, pythonTypeName, readStdin, RecursionError, ValueError } from "../lib/hookkit/pyruntime.ts";
 import { currentBranch, findRepoKey, findToplevel, git, gitOutput, isCommit } from "../lib/hookkit/repo.ts";
 import {
   ghSubcommandArgv, gitDirectory, gitSubcommandIndex, isConfigRead, readPushArguments, resolveDirectory, steps, writeTargets,
@@ -618,12 +618,21 @@ function salvage(raw: string): { session: string | null; command: string | null 
   try {
     payload = loads(raw);
   } catch (error) {
-    if (error instanceof ValueError) return unknown;
+    if (error instanceof ValueError || error instanceof RecursionError) return unknown;
     throw error;
   }
   if (!isRecord(payload)) return unknown;
   const command = getField(protocol.toolInput(payload), "command");
-  return { session: getField(payload, "session_id") as string | null, command: isTruthy(command) ? pythonStr(command) : null };
+  return { session: getField(payload, "session_id") as string | null, command: isTruthy(command) ? printableCommand(command) : null };
+}
+
+function printableCommand(command: unknown): string | null {
+  try {
+    return pythonStr(command);
+  } catch (error) {
+    if (error instanceof RecursionError) return null;
+    throw error;
+  }
 }
 
 function commitMessageTexts(args: readonly string[], step: Step, callHeredocs: readonly string[]): string[] {

@@ -10,7 +10,7 @@ import {
 } from "../lib/hookkit/pycompat.ts";
 import { dumpsAscii, loads, parsePayload } from "../lib/hookkit/pyjson.ts";
 import { dirname, readTextFile } from "../lib/hookkit/pypath.ts";
-import { AttributeError, describeError, pythonErrorName, pythonList, pythonTypeName, readStdin, stripChars, ValueError } from "../lib/hookkit/pyruntime.ts";
+import { AttributeError, describeError, pythonErrorName, pythonList, pythonTypeName, readStdin, stripChars, RecursionError, ValueError } from "../lib/hookkit/pyruntime.ts";
 import { OSError, run, TimeoutExpired } from "../lib/hookkit/subprocess.ts";
 import type { CompletedProcess } from "../lib/hookkit/subprocess.ts";
 import { commandWritesFiles } from "../lib/hookkit/shell.ts";
@@ -60,6 +60,12 @@ const EVIDENCE_TEXT =
   "report citing an actual output line from a check you ran: a test-runner summary with its count, " +
   "the command's zero exit status, a grep or wc count, a file path with line number, or a diff " +
   "summary. If you did not verify, say so in one line starting 'UNVERIFIED:' with the reason.";
+const UNCHECKABLE_TEXT =
+  "Reading the hook input, the turn state or the agent transcript reached a nesting depth the gate does not follow (RecursionError), " +
+  "so it cannot tell whether the report is proven or the changes are in scope.";
+const UNPARSED_EVENT = /"hook_event_name"\s*:\s*"(PreToolUse|SubagentStop)"/;
+const UNPARSED_HANDBACK_TOOL = /"tool_name"\s*:\s*"subagenthandback"/i;
+const UNPARSED_STOP_RETRY = /"stop_hook_active"\s*:\s*true/;
 export const HANDBACK_TAIL = "Then hand back the corrected full report (SubagentHandback or your final message).";
 
 class TurnState {
@@ -164,11 +170,57 @@ function textValue(value: unknown): string {
   return pythonStr(isTruthy(value) ? value : "");
 }
 
+class UncheckableReport extends Error {
+  readonly reason: RecursionError;
+
+  constructor(reason: RecursionError) {
+    super(reason.message);
+    this.reason = reason;
+  }
+}
+
+function whileDeciding<T>(read: () => T): T {
+  try {
+    return read();
+  } catch (error) {
+    if (error instanceof RecursionError) throw new UncheckableReport(error);
+    throw error;
+  }
+}
+
+function refusalMessage(): string {
+  return protocol.formatMessage(HOOK, "could not check this report; refusing it", [["K2", UNCHECKABLE_TEXT]]);
+}
+
+function refuseHandback(): number {
+  return protocol.deny(refusalMessage());
+}
+
+function refuseStop(stopHookActive: boolean): number {
+  return stopHookActive ? protocol.EXIT_PASS : protocol.blockStop(refusalMessage());
+}
+
+function refuseUnparsedPayload(raw: string, error: RecursionError): number {
+  new FireLog(HOOK, null).append("K2", "error", { detail: describeError(error) });
+  const event = UNPARSED_EVENT.exec(raw)?.[1];
+  if (event === "PreToolUse" && UNPARSED_HANDBACK_TOOL.test(raw)) return refuseHandback();
+  if (event === "SubagentStop") return refuseStop(UNPARSED_STOP_RETRY.test(raw));
+  return protocol.EXIT_PASS;
+}
+
+function refuseUncheckable(payload: Payload, error: UncheckableReport, fires: FireLog): number {
+  fires.append("K2", "error", { detail: describeError(error.reason) });
+  if (getField(payload, "hook_event_name") === "PreToolUse") return refuseHandback();
+  return refuseStop(isTruthy(getField(payload, "stop_hook_active")));
+}
+
 function main(): number {
+  const raw = readStdin();
   let payload: Payload;
   try {
-    payload = parsePayload(readStdin());
+    payload = parsePayload(raw);
   } catch (error) {
+    if (error instanceof RecursionError) return refuseUnparsedPayload(raw, error);
     if (!(error instanceof ValueError)) throw error;
     new FireLog(HOOK, null).append("K2", "error", { detail: `payload is not JSON: ${error.message}` });
     return protocol.EXIT_PASS;
@@ -180,6 +232,7 @@ function main(): number {
     if (event === "SubagentStop") return judgeStop(payload, fires);
     return protocol.EXIT_PASS;
   } catch (error) {
+    if (error instanceof UncheckableReport) return refuseUncheckable(payload, error, fires);
     fires.append("K2", "error", { detail: describeError(error) });
     return protocol.EXIT_PASS;
   }
@@ -193,14 +246,14 @@ function judgeHandback(payload: Payload, fires: FireLog): number {
     return protocol.EXIT_PASS;
   }
   const report = withoutReportMarkers(pythonStr(getField(protocol.toolInput(payload), "message"))) ?? "";
-  const state = new TurnState(payload);
+  const state = whileDeciding(() => new TurnState(payload));
   state.handedBack = true;
   state.save();
   const agentTranscript = findHandbackTranscript(payload);
   if (agentTranscript === null) {
     fires.append("K2", OUTCOME, { detail: missDetail(payload, ["agent_transcript_path (derived)"]) });
   }
-  const transcript = readAgentTranscript(agentTranscript);
+  const transcript = whileDeciding(() => readAgentTranscript(agentTranscript));
 
   const fresh = flagScopeViolations(transcript, state, fires);
   if (fresh.length > 0) return protocol.deny(scopeMessage(fresh));
@@ -214,7 +267,7 @@ function judgeHandback(payload: Payload, fires: FireLog): number {
 }
 
 function judgeStop(payload: Payload, fires: FireLog): number {
-  const state = new TurnState(payload);
+  const state = whileDeciding(() => new TurnState(payload));
   const handedBack = state.handedBack;
   if (state.evidenceDenied) {
     state.evidenceDenied = false;
@@ -233,7 +286,7 @@ function judgeStop(payload: Payload, fires: FireLog): number {
     if (report && verdictOf(report) && hasEvidenceLine(report)) fires.append("K1", "warn", { detail: NO_TRANSCRIPT });
     return protocol.EXIT_PASS;
   }
-  const transcript = readAgentTranscript(agentTranscript);
+  const transcript = whileDeciding(() => readAgentTranscript(agentTranscript));
 
   const fresh = flagScopeViolations(transcript, state, fires);
   if (fresh.length > 0) return protocol.blockStop(scopeMessage(fresh));

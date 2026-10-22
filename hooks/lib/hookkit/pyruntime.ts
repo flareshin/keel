@@ -12,6 +12,10 @@ export class ValueError extends Error {
   override name = "ValueError";
 }
 
+export class RecursionError extends Error {
+  override name = "RecursionError";
+}
+
 export class AttributeError extends Error {
   override name = "AttributeError";
 }

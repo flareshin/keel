@@ -5,12 +5,13 @@ import {
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { KEEL_HOME } from "./helpers.ts";
-import type { HookSandbox } from "./helpers.ts";
 import { buildAdversarialSet } from "./hook-parity-adversarial.ts";
-import type { AdversarialCase } from "./hook-parity-adversarial.ts";
+import type { AdversarialSet } from "./hook-parity-adversarial.ts";
+import type { TsOutcome } from "./hook-parity-json-limits.ts";
 
 const RECORDER = join(import.meta.dirname, "hook_parity_record.py");
 const RUN_TIMEOUT_MS = 60_000;
+const OUTPUT_LIMIT_BYTES = 1 << 28;
 const RECORD_TIMEOUT_MS = 20 * 60_000;
 const MAX_MISMATCHES_SHOWN = 12;
 const EXCERPT_CHARACTERS = 240;
@@ -19,6 +20,7 @@ const HANDOFF_TIMESTAMP = /^(> Generated )\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ /m;
 const UNREADABLE = "<unreadable>";
 const GIT_DIRECTORY = ".git";
 const REMOTES_TREE = "remotes";
+const FIRES_PATH = join("data", "logs", "keel-fires.jsonl");
 
 interface Case {
   id: string;
@@ -31,6 +33,7 @@ interface Case {
   python: string;
   snapshot: string;
   root: string;
+  divergence?: TsOutcome;
 }
 
 interface Observation {
@@ -43,6 +46,7 @@ interface Observation {
 export interface ParityReport {
   cases: number;
   adversarial: number;
+  divergences: number;
   mismatches: number;
   perHook: Map<string, number>;
   details: string[];
@@ -56,7 +60,7 @@ export function runParity(): ParityReport {
     const casesDir = join(base, "cases");
     const sandboxRoot = join(base, "sandbox");
     const recorder = record(casesDir, sandboxRoot);
-    const report: ParityReport = { cases: 0, adversarial: 0, mismatches: 0, perHook: new Map(), details: [], recorder };
+    const report: ParityReport = { cases: 0, adversarial: 0, divergences: 0, mismatches: 0, perHook: new Map(), details: [], recorder };
     for (const testCase of loadCases(casesDir, sandboxRoot)) replay(testCase, report);
     for (const testCase of snapshotAdversarialCases(adversarial, join(base, "adversarial"))) {
       replay(testCase, report);
@@ -70,9 +74,9 @@ export function runParity(): ParityReport {
 }
 
 function replay(testCase: Case, report: ParityReport): void {
-  const expected = observe(testCase, "python");
   const actual = observe(testCase, "node");
-  const differences = compare(expected, actual);
+  const differences = testCase.divergence ? unmetOutcome(testCase.divergence, actual) : compare(observe(testCase, "python"), actual);
+  if (testCase.divergence) report.divergences += 1;
   report.cases += 1;
   report.perHook.set(testCase.script, (report.perHook.get(testCase.script) ?? 0) + 1);
   if (differences.length > 0) {
@@ -81,13 +85,13 @@ function replay(testCase: Case, report: ParityReport): void {
   }
 }
 
-function snapshotAdversarialCases(adversarial: { sandbox: HookSandbox; cases: AdversarialCase[] }, snapshot: string): Case[] {
+function snapshotAdversarialCases(adversarial: AdversarialSet, snapshot: string): Case[] {
   const sandbox = adversarial.sandbox;
   copyTree(sandbox.root, snapshot);
   return adversarial.cases.map((adversarialCase, index) => ({
     id: `adversarial-${String(index + 1).padStart(4, "0")}`, test: adversarialCase.name, script: adversarialCase.script,
     args: adversarialCase.args, cwd: adversarialCase.cwd, stdin: adversarialCase.stdin, env: sandbox.env, python: "python3",
-    snapshot, root: sandbox.root,
+    snapshot, root: sandbox.root, divergence: adversarial.divergences.get(adversarialCase.name),
   }));
 }
 
@@ -112,7 +116,7 @@ function observe(testCase: Case, runtime: "python" | "node"): Observation {
   const entry = join(KEEL_HOME, runtime === "python" ? testCase.script : testCase.script.replace(/\.py$/, ".ts"));
   const command = runtime === "python" ? testCase.python : process.execPath;
   const completed = spawnSync(command, [entry, ...testCase.args], {
-    input: testCase.stdin, encoding: "utf8", env: testCase.env, cwd: testCase.cwd, timeout: RUN_TIMEOUT_MS,
+    input: testCase.stdin, encoding: "utf8", env: testCase.env, cwd: testCase.cwd, timeout: RUN_TIMEOUT_MS, maxBuffer: OUTPUT_LIMIT_BYTES,
   });
   const observation = { code: completed.status, stdout: completed.stdout, stderr: completed.stderr, files: readTree(sandboxRoot) };
   rmSync(sandboxRoot, { recursive: true, force: true });
@@ -178,11 +182,27 @@ function readOrMark(path: string): string {
 }
 
 function normalized(key: string, content: string): string {
-  if (key === join("data", "logs", "keel-fires.jsonl")) {
+  if (key === FIRES_PATH) {
     return content.split("\n").map((line) => line.replace(FIRES_TIMESTAMP, "$1<ts>$2")).join("\n");
   }
   if (key.startsWith(join("data", "handoff") + "/")) return content.replace(HANDOFF_TIMESTAMP, "$1<ts> ");
   return content;
+}
+
+function unmetOutcome(outcome: TsOutcome, actual: Observation): string[] {
+  const unmet: string[] = [];
+  if (actual.code !== outcome.code) unmet.push(`listed divergence: code node ${actual.code}, required ${outcome.code}`);
+  if (outcome.stdoutIncludes !== undefined && !actual.stdout.includes(outcome.stdoutIncludes)) {
+    unmet.push(`listed divergence: stdout ${excerpt(actual.stdout)} lacks ${excerpt(outcome.stdoutIncludes)}`);
+  }
+  if (outcome.stderrIncludes !== undefined && !actual.stderr.includes(outcome.stderrIncludes)) {
+    unmet.push(`listed divergence: stderr ${excerpt(actual.stderr)} lacks ${excerpt(outcome.stderrIncludes)}`);
+  }
+  const fires = actual.files.get(FIRES_PATH) ?? "";
+  if (outcome.firesInclude !== undefined && !fires.includes(outcome.firesInclude)) {
+    unmet.push(`listed divergence: fires ${excerpt(fires)} lack ${excerpt(outcome.firesInclude)}`);
+  }
+  return unmet;
 }
 
 function compare(expected: Observation, actual: Observation): string[] {
@@ -205,7 +225,7 @@ function excerpt(value: unknown): string {
 }
 
 export function summary(report: ParityReport): string {
-  return `parity: ${report.cases - report.adversarial} recorded + ${report.adversarial} adversarial cases, ${report.mismatches} mismatches`;
+  return `parity: ${report.cases - report.adversarial} recorded + ${report.adversarial} adversarial cases (${report.divergences} listed divergences), ${report.mismatches} mismatches`;
 }
 
 if (import.meta.main) {

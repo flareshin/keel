@@ -1,6 +1,7 @@
 import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import type { Dirent } from "node:fs";
 import { userInfo } from "node:os";
+import { ValueError } from "./pyruntime.ts";
 import { OSError, run, TimeoutExpired } from "./subprocess.ts";
 import type { CompletedProcess } from "./subprocess.ts";
 
@@ -410,14 +411,62 @@ function pythonFloatSpelling(value: number): string {
   return value > 0 ? "inf" : "-inf";
 }
 
+interface JsonContainer {
+  source: object;
+  opener: string;
+  closer: string;
+  items: unknown[];
+  keys: string[] | null;
+}
+
+interface OpenJsonContainer extends JsonContainer {
+  index: number;
+}
+
+function jsonContainerOf(value: unknown): JsonContainer | null {
+  if (Array.isArray(value)) return { source: value, opener: "[", closer: "]", items: value.map((item) => (item === undefined ? null : item)), keys: null };
+  if (!isRecord(value)) return null;
+  const members = Object.entries(value).filter(([, item]) => item !== undefined);
+  return { source: value, opener: "{", closer: "}", items: members.map(([, item]) => item), keys: members.map(([key]) => key) };
+}
+
+function jsonMemberPrefix(container: JsonContainer, index: number): string {
+  return container.keys === null ? "" : `${JSON.stringify(container.keys[index])}: `;
+}
+
 export function pythonJsonDumps(value: unknown): string {
-  if (Array.isArray(value)) return "[" + value.map((item) => pythonJsonDumps(item === undefined ? null : item)).join(", ") + "]";
-  if (isRecord(value)) {
-    const members = Object.entries(value).filter(([, item]) => item !== undefined);
-    return "{" + members.map(([key, item]) => `${JSON.stringify(key)}: ${pythonJsonDumps(item)}`).join(", ") + "}";
+  const parts: string[] = [];
+  const open: OpenJsonContainer[] = [];
+  const active = new Set<object>();
+  let next = value;
+  for (;;) {
+    const container = jsonContainerOf(next);
+    if (container === null) {
+      parts.push(typeof next === "number" && !Number.isFinite(next) ? nonFiniteNumberText(next) : JSON.stringify(next));
+    } else if (container.items.length === 0) {
+      parts.push(container.opener + container.closer);
+    } else {
+      if (active.has(container.source)) throw new ValueError("Circular reference detected");
+      active.add(container.source);
+      open.push({ ...container, index: 0 });
+      parts.push(container.opener + jsonMemberPrefix(container, 0));
+      next = container.items[0];
+      continue;
+    }
+    for (;;) {
+      const innermost = open.at(-1);
+      if (innermost === undefined) return parts.join("");
+      innermost.index += 1;
+      if (innermost.index < innermost.items.length) {
+        parts.push(", " + jsonMemberPrefix(innermost, innermost.index));
+        next = innermost.items[innermost.index];
+        break;
+      }
+      parts.push(innermost.closer);
+      active.delete(innermost.source);
+      open.pop();
+    }
   }
-  if (typeof value === "number" && !Number.isFinite(value)) return nonFiniteNumberText(value);
-  return JSON.stringify(value);
 }
 
 function nonFiniteNumberText(value: number): string {

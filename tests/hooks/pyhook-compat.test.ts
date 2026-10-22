@@ -19,6 +19,35 @@ function decodeFailure(text: string): string {
   throw new Error(`${JSON.stringify(text)} decoded`);
 }
 
+const DIGIT_LIMIT_MESSAGE = "Exceeds the limit (4300 digits) for integer string conversion: value has 4301 digits; use sys.set_int_max_str_digits() to increase the limit";
+const AT_LIMIT = "1".repeat(4300);
+const OVER_LIMIT = "1".repeat(4301);
+const DEEP_LEVELS = [3000, 100000];
+
+function valueErrorMessage(text: string): string {
+  try {
+    loads(text);
+  } catch (error) {
+    assert.ok(error instanceof ValueError && !(error instanceof JSONDecodeError), String(error));
+    return error.message;
+  }
+  throw new Error(`${text.slice(0, 40)} decoded`);
+}
+
+function nestedArrays(depth: number): string {
+  return "[".repeat(depth) + "]".repeat(depth);
+}
+
+function nestedObjects(depth: number): string {
+  return '{"a":'.repeat(depth) + "1" + "}".repeat(depth);
+}
+
+function depthOf(value: unknown, child: (node: unknown) => unknown): number {
+  let depth = 0;
+  for (let node = value; node !== undefined; node = child(node)) depth += 1;
+  return depth;
+}
+
 describe("pyjson", () => {
   it("loads_reportsPythonsMessageAndPosition_forEachKindOfSyntaxError", () => {
     const expected: Array<[string, string]> = [
@@ -66,6 +95,57 @@ describe("pyjson", () => {
     assert.deepEqual(loads(' {"a": [1, 2.5, null, true], "b": {"c": "\\u00e9"}}\n'), { a: [1, 2.5, null, true], b: { c: "é" } });
   });
 
+  it("loads_acceptsIntegersUpToTheDigitLimit_withOrWithoutASign", () => {
+    assert.doesNotThrow(() => loads(AT_LIMIT));
+    assert.doesNotThrow(() => loads("-" + AT_LIMIT));
+    assert.doesNotThrow(() => loads(`{"n": ${AT_LIMIT}}`));
+  });
+
+  it("loads_raisesPythonsValueError_forIntegersOverTheDigitLimit_notCountingTheSign", () => {
+    for (const text of [OVER_LIMIT, "-" + OVER_LIMIT, `[${OVER_LIMIT}]`, `{"n": ${OVER_LIMIT}}`, `${OVER_LIMIT}x`, `[${OVER_LIMIT},]`]) {
+      assert.equal(valueErrorMessage(text), DIGIT_LIMIT_MESSAGE, text.slice(0, 20));
+    }
+  });
+
+  it("loads_reportsTheSyntaxErrorThatComesFirst_whenAnOverLimitIntegerFollows", () => {
+    assert.equal(decodeFailure(`[,${OVER_LIMIT}]`), "Expecting value: line 1 column 2 (char 1)");
+    assert.equal(decodeFailure(`0${OVER_LIMIT}`), "Extra data: line 1 column 2 (char 1)");
+  });
+
+  it("loads_keepsLongNumbersWithFractionOrExponentAsFloats_andLongStringsAsText", () => {
+    for (const spelling of [`${OVER_LIMIT}.5`, `-${OVER_LIMIT}.5`, `${OVER_LIMIT}e0`, `${OVER_LIMIT}E+0`, `${OVER_LIMIT}.0e-1`]) {
+      assert.equal(typeof loads(spelling), "number", spelling.slice(-8));
+    }
+    assert.equal(loads(`"${OVER_LIMIT}"`), OVER_LIMIT);
+  });
+
+  it("loads_parsesNestedArraysAndObjects_atAnyDepthPythonParses", () => {
+    for (const depth of DEEP_LEVELS) {
+      assert.equal(depthOf(loads(nestedArrays(depth)), (node) => (node as unknown[])[0]), depth, `arrays ${depth}`);
+      assert.equal(depthOf(loads(nestedObjects(depth)), (node) => (node as Record<string, unknown>)["a"]), depth + 1, `objects ${depth}`);
+    }
+  });
+
+  it("loads_reportsPythonsPosition_forSyntaxErrorsInDeeplyNestedText", () => {
+    assert.equal(decodeFailure("[".repeat(3000)), "Expecting value: line 1 column 3001 (char 3000)");
+    assert.equal(decodeFailure("[".repeat(3000) + "]".repeat(2999)), "Expecting ',' delimiter: line 1 column 6000 (char 5999)");
+    assert.equal(decodeFailure(nestedArrays(3000) + "x"), "Extra data: line 1 column 6001 (char 6000)");
+    assert.equal(decodeFailure('{"a":'.repeat(3000)), "Expecting value: line 1 column 15001 (char 15000)");
+    assert.equal(decodeFailure("[".repeat(100000)), "Expecting value: line 1 column 100001 (char 100000)");
+    assert.equal(decodeFailure("[".repeat(100000) + "]".repeat(99999)), "Expecting ',' delimiter: line 1 column 200000 (char 199999)");
+    assert.equal(decodeFailure(nestedArrays(100000) + "x"), "Extra data: line 1 column 200001 (char 200000)");
+    assert.equal(decodeFailure('{"a":'.repeat(100000)), "Expecting value: line 1 column 500001 (char 500000)");
+    assert.equal(decodeFailure(nestedObjects(100000).slice(0, -1)), "Expecting ',' delimiter: line 1 column 600001 (char 600000)");
+  });
+
+  it("parsePayload_readsAnObjectWithADeepMember_andRaisesValueErrorForAnOverLimitMember", () => {
+    const payload = parsePayload(`{"tool_name": "Bash", "deep": ${nestedArrays(3000)}, "tail": 1}`);
+    assert.equal(payload["tool_name"], "Bash");
+    assert.equal(payload["tail"], 1);
+    assert.equal(valueErrorMessage(`{"tool_name": "Bash", "n": ${OVER_LIMIT}}`), DIGIT_LIMIT_MESSAGE);
+    assert.equal(valueErrorMessage(`{"a": 1, "deep": ${nestedArrays(3000)}, "n": ${OVER_LIMIT}}`), DIGIT_LIMIT_MESSAGE);
+  });
+
   it("parsePayload_raisesValueError_whenTheDocumentIsNotAnObject", () => {
     assert.throws(() => parsePayload("[1]"), (error: Error) => error instanceof ValueError && error.message === "hook payload is not a JSON object");
   });
@@ -84,6 +164,21 @@ describe("dumpsAscii", () => {
     const text = '{"a": NaN, "b": [Infinity, -Infinity], "c": 1.5}';
     assert.equal(dumpsAscii(loads(text)), text);
     assert.equal(pythonJsonDumps(loads(text)), text);
+  });
+
+  it("writesDeeplyNestedValues_asPythonDoes", () => {
+    for (const depth of DEEP_LEVELS) {
+      assert.equal(pythonJsonDumps(loads(nestedArrays(depth))), nestedArrays(depth));
+      assert.equal(dumpsAscii(loads(nestedArrays(depth))), nestedArrays(depth));
+    }
+    assert.equal(pythonJsonDumps(loads(nestedObjects(3000))), '{"a": '.repeat(3000) + "1" + "}".repeat(3000));
+    assert.equal(pythonJsonDumps({ k: [{}, [], { a: [1, { b: null }] }] }), '{"k": [{}, [], {"a": [1, {"b": null}]}]}');
+  });
+
+  it("raisesValueError_forAContainerThatHoldsItself", () => {
+    const loop: unknown[] = [];
+    loop.push({ inner: loop });
+    assert.throws(() => pythonJsonDumps(loop), (error: Error) => error instanceof ValueError && error.message === "Circular reference detected");
   });
 
   it("keepsNonAsciiText_unlessAsked", () => {

@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import {
   AGENT_ID, basePayload, bash, ENV_PREFLIGHT, GIT_GUARD, HANDOFF, HookSandbox, KEEL_EVIDENCE_LINE, MODEL_ASSIGN, preToolUse, REPORT_GATE, SESSION_ID,
+  subagentStop,
 } from "./helpers.ts";
 
 const DOTTED_I = "İ";
@@ -11,6 +12,13 @@ const NON_FINITE_LITERALS = ["NaN", "Infinity", "-Infinity"];
 const CLI_RESPONSE = '{"evidence_id":"review-20261011T090000Z-1a2b3c4d","repo":"acme/app","paths":3}';
 const DICT_STATE_SESSION = "dict-state";
 const DICT_STATE = '{"paths": {"/old/a.py": 1, "/old/b.py": 2}, "ev": false, "hb": false}';
+const OVER_LIMIT_INTEGER = "1".repeat(4301);
+const DEEP_LEVELS = [3000, 100000];
+const UNPROVEN_REPORT = "Done. All good, VERDICT: PASS";
+const PYTHON_DUMPS_OVERFLOW_LABEL = "100000-deep objects";
+const TRANSCRIPT_DIRECTORY = "json-limit-transcripts";
+const BRIEF_ONLY = { type: "user", message: { role: "user", content: "Do the task." } };
+const EDIT_OUTSIDE_SCOPE = { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_1", name: "Edit", input: { file_path: "/elsewhere/b.py" } }] } };
 
 export interface AdversarialCase {
   name: string;
@@ -39,6 +47,7 @@ export function buildAdversarialSet(): AdversarialSet {
     ...envPreflightCases(repo),
     ...modelAssignCases(sandbox.root),
     ...handoffCases(repo),
+    ...jsonLimitCases(sandbox, repo),
   ];
   return { sandbox, cases };
 }
@@ -147,4 +156,94 @@ function withNonFiniteLiterals(payload: unknown): string {
     .replaceAll(`"${NAN_TOKEN}"`, "NaN")
     .replaceAll(`"${INFINITY_TOKEN}"`, "Infinity")
     .replaceAll(`"${NEGATIVE_INFINITY_TOKEN}"`, "-Infinity");
+}
+
+function nestedArrays(depth: number): string {
+  return "[".repeat(depth) + "]".repeat(depth);
+}
+
+function nestedObjects(depth: number): string {
+  return '{"a":'.repeat(depth) + "1" + "}".repeat(depth);
+}
+
+function extraMembers(): Array<[string, string]> {
+  return [
+    ["over-limit integer", OVER_LIMIT_INTEGER],
+    ["over-limit float", `${OVER_LIMIT_INTEGER}.5`],
+    ["deep value before over-limit integer", `[${nestedArrays(DEEP_LEVELS[0] ?? 0)}, ${OVER_LIMIT_INTEGER}]`],
+    ...DEEP_LEVELS.flatMap((depth): Array<[string, string]> => [[`${depth}-deep arrays`, nestedArrays(depth)], [`${depth}-deep objects`, nestedObjects(depth)]]),
+  ];
+}
+
+function withExtraMember(payload: unknown, member: string): string {
+  return JSON.stringify(payload).slice(0, -1) + `, "extra": ${member}}`;
+}
+
+function jsonLimitPayloadCases(name: string, script: string, cwd: string, payload: unknown, args: string[] = []): AdversarialCase[] {
+  const wholeDocuments: Array<[string, string]> = [["whole document over-limit integer", OVER_LIMIT_INTEGER], ...DEEP_LEVELS.map((depth): [string, string] => [`whole document ${depth}-deep arrays`, nestedArrays(depth)])];
+  return [
+    ...extraMembers().map(([label, member]) => ({ ...rawCase(`${name} ${label}`, script, cwd, withExtraMember(payload, member)), args })),
+    ...wholeDocuments.map(([label, document]) => ({ ...rawCase(`${name} ${label}`, script, cwd, document), args })),
+  ];
+}
+
+function jsonLimitCases(sandbox: HookSandbox, repo: string): AdversarialCase[] {
+  return [
+    ...jsonLimitPayloadCases("git-guard denying command", GIT_GUARD, repo, bash("git commit -m 'Co-Authored-By: Claude'", repo)),
+    ...jsonLimitPayloadCases("git-guard unguarded command", GIT_GUARD, repo, bash("ls", repo)),
+    ...jsonLimitPayloadCases("model-assign", MODEL_ASSIGN, sandbox.root, preToolUse("Agent", { description: "Find", prompt: "Review the diff and return a VERDICT line." }, sandbox.root)),
+    ...jsonLimitPayloadCases("handoff", HANDOFF, repo, { ...basePayload("PreCompact", repo, "/data/projects/p/t.jsonl", false), trigger: "auto" }, ["--auto"]),
+    ...jsonLimitPayloadCases("report-gate handback", REPORT_GATE, sandbox.root, handbackPayload(sandbox, UNPROVEN_REPORT)),
+    ...gitGuardSettingsCases(repo),
+    ...reportGateEvidenceLineCases(sandbox),
+    ...reportGateStateCases(sandbox),
+    ...reportGateTranscriptCases(sandbox),
+  ];
+}
+
+function handbackPayload(sandbox: HookSandbox, message: string): Record<string, unknown> {
+  return preToolUse("SubagentHandback", { message }, sandbox.root, sandbox.mainTranscript(), true);
+}
+
+function gitGuardSettingsCases(repo: string): AdversarialCase[] {
+  const settings = [
+    ["over-limit integer", `{"disableAllHooks": false, "n": ${OVER_LIMIT_INTEGER}}`],
+    ["over-limit integer without the key", `{"n": ${OVER_LIMIT_INTEGER}}`],
+    ...DEEP_LEVELS.flatMap((depth) => [
+      [`${depth}-deep value, hooks disabled`, `{"disableAllHooks": true, "x": ${nestedArrays(depth)}}`],
+      [`${depth}-deep value, hooks kept`, `{"disableAllHooks": false, "x": ${nestedArrays(depth)}}`],
+    ]),
+  ];
+  return settings.map(([label, text], index) =>
+    rawCase(`git-guard settings ${label} ${index}`, GIT_GUARD, repo, JSON.stringify(bash(`claude -p hi --settings '${text}'`, repo))));
+}
+
+function reportGateEvidenceLineCases(sandbox: HookSandbox): AdversarialCase[] {
+  const passReport = (member: string) => `VERDICT: PASS\nNo findings. 3 files changed, 40 insertions(+).\n${KEEL_EVIDENCE_LINE.replace('"v":1,', `"v":1,"x":${member},`)}`;
+  return extraMembers().filter(([label]) => label !== PYTHON_DUMPS_OVERFLOW_LABEL).map(([label, member]) =>
+    rawCase(`report-gate evidence line ${label}`, REPORT_GATE, sandbox.root, JSON.stringify(handbackPayload(sandbox, passReport(member)))));
+}
+
+function reportGateStateCases(sandbox: HookSandbox): AdversarialCase[] {
+  return extraMembers().map(([label, member], index) => {
+    const session = `json-limit-state-${index}`;
+    sandbox.write(join(sandbox.data, "state", "keel", "report-gate", `${session}-${AGENT_ID}.json`), `{"paths": [], "ev": false, "hb": false, "x": ${member}}`);
+    const transcript = sandbox.write(join(sandbox.root, TRANSCRIPT_DIRECTORY, "brief-only.jsonl"), JSON.stringify(BRIEF_ONLY) + "\n");
+    const payload = { ...subagentStop(sandbox.root, sandbox.mainTranscript(), transcript, UNPROVEN_REPORT), session_id: session };
+    return rawCase(`report-gate state file ${label}`, REPORT_GATE, sandbox.root, JSON.stringify(payload));
+  });
+}
+
+function reportGateTranscriptCases(sandbox: HookSandbox): AdversarialCase[] {
+  const brief = { type: "user", message: { role: "user", content: `[SCOPE] ${join(sandbox.root, "work", "app")}\nDo the task.` } };
+  const lines = (poisoned: string, edge: "before" | "after") => {
+    const body = [JSON.stringify(brief), JSON.stringify(EDIT_OUTSIDE_SCOPE)];
+    body.splice(edge === "before" ? 1 : 2, 0, poisoned);
+    return body.join("\n") + "\n";
+  };
+  return extraMembers().flatMap(([label, member], index) => (["before", "after"] as const).map((edge) => {
+    const path = sandbox.write(join(sandbox.root, TRANSCRIPT_DIRECTORY, `${index}-${edge}.jsonl`), lines(`{"type": "system", "extra": ${member}}`, edge));
+    const stop = subagentStop(sandbox.root, sandbox.mainTranscript(), path, "Changed it.");
+    return rawCase(`report-gate transcript line ${label} ${edge} the edit`, REPORT_GATE, sandbox.root, JSON.stringify(stop));
+  }));
 }

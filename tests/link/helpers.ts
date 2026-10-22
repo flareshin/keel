@@ -6,6 +6,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { lexists } from "../../measure/lib/measurekit/pypath.ts"
+import { isCallerSpecificVariable } from "../measure/helpers.ts"
 
 export const KEEL_ROOT = path.dirname(path.dirname(path.dirname(fs.realpathSync(fileURLToPath(import.meta.url)))))
 export const LINK_ENTRY = path.join(KEEL_ROOT, "bin", "link.ts")
@@ -96,7 +97,7 @@ export class LinkSandbox {
   }
 
   env(): NodeJS.ProcessEnv {
-    const inherited = Object.entries(process.env).filter(([key]) => !key.startsWith("KEEL_") && !key.startsWith("GIT_"))
+    const inherited = Object.entries(process.env).filter(([key]) => !isCallerSpecificVariable(key))
     const env = {
       ...Object.fromEntries(inherited),
       KEEL_HOME: this.keel,

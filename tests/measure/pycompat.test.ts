@@ -6,7 +6,7 @@ import os from "node:os"
 import path from "node:path"
 
 import { parseIsoDate } from "../../measure/lib/measurekit/pydate.ts"
-import { decodeStrict, firstLineOf, newlineSeparatedLines, readText, UnicodeDecodeError } from "../../measure/lib/measurekit/pyio.ts"
+import { decodeStrict, firstLineOf, newlineSeparatedLines, readText, readTextByLines, UnicodeDecodeError } from "../../measure/lib/measurekit/pyio.ts"
 import { JsonDecodeError, pythonJsonDumps, pythonJsonLoads } from "../../measure/lib/measurekit/pyjson.ts"
 import { expanduser, pyBasename, pyDirname, pyJoin, pyNormpath, pyRelpath, pySplitext, realpath } from "../../measure/lib/measurekit/pypath.ts"
 import { compilePythonRegex, PyRegexError } from "../../measure/lib/measurekit/pyregex.ts"
@@ -65,6 +65,16 @@ def run(op, args):
         import textwrap
         text, width, first, rest = args
         return textwrap.wrap(text, width, initial_indent=first, subsequent_indent=rest)
+    if op == "iterate":
+        with tempfile.TemporaryDirectory() as directory:
+            name = os.path.join(directory, "text")
+            with open(name, "wb") as handle:
+                handle.write(bytes.fromhex(args[0]))
+            try:
+                with open(name, encoding="utf-8") as handle:
+                    return [line.rstrip("\n") for line in handle]
+            except UnicodeDecodeError as error:
+                return "ERR " + str(error)
     if op == "strip":
         return [args[0].strip(), args[0].lstrip()]
     if op == "split":
@@ -296,6 +306,33 @@ describe("python compatibility helpers match python3", () => {
         throw error
       }
     }))
+  })
+
+  it("readTextByLines_agrees_withFileIterationIncludingChunkRelativeDecodeErrorPositions", () => {
+    const symbols = [0x61, 0x0a, 0x0d, 0xe2, 0x82, 0xac, 0xff, 0xc3, 0xa9, 0xed, 0xa0, 0x41, 0x0a, 0x0d]
+    const chunk = 8192
+    const bodies: number[][] = [[], [0x0d], [0x0a, 0xff, 0x0a], [0x0d, 0x0a, 0xe2], [0x61, 0xe2, 0x82], [0xed, 0xa0], [0xed, 0xa0, 0x80]]
+    for (let index = 0; index < 300; index++) bodies.push(Array.from({ length: 1 + Math.floor(random() * 9) }, () => symbols[Math.floor(random() * symbols.length)] as number))
+    const inputs: Buffer[] = []
+    for (const pad of [0, chunk - 2, chunk - 1, chunk, chunk + 1, chunk * 2 - 1, chunk * 2 + 5, 9000]) {
+      for (const body of bodies) inputs.push(Buffer.from([0x61, 0x0a, ...Array<number>(pad).fill(0x62), ...body]))
+    }
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "keel-iterate-"))
+    try {
+      const cases: Case[] = inputs.map((bytes) => ["iterate", [bytes.toString("hex")]])
+      compare(cases, inputs.map((bytes) => {
+        const file = path.join(directory, "text")
+        fs.writeFileSync(file, bytes)
+        try {
+          return newlineSeparatedLines(readTextByLines(file))
+        } catch (error) {
+          if (error instanceof UnicodeDecodeError) return "ERR " + error.message
+          throw error
+        }
+      }))
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true })
+    }
   })
 
   it("wrapText_agrees_withTextwrapOnHyphensLongWordsAndIndents", () => {

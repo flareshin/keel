@@ -32,6 +32,12 @@ export const DEMO_HOOK = [
   "",
 ].join("\n")
 
+const COLOR_VARIABLES = ["FORCE_COLOR", "NO_COLOR", "PYTHON_COLORS"]
+
+export function isCallerSpecificVariable(name: string): boolean {
+  return name.startsWith("KEEL_") || name.startsWith("GIT_") || COLOR_VARIABLES.includes(name)
+}
+
 export type LedgerRowValues = Record<(typeof LEDGER_COLUMNS)[number], string>
 export type Completed = { status: number | null; stdout: string; stderr: string }
 
@@ -83,7 +89,7 @@ export class MeasureSandbox {
   }
 
   private isolatedEnv(): Record<string, string> {
-    const kept = Object.entries(process.env).filter(([key]) => !key.startsWith("KEEL_") && !key.startsWith("GIT_"))
+    const kept = Object.entries(process.env).filter(([key]) => !isCallerSpecificVariable(key))
     return {
       ...(Object.fromEntries(kept) as Record<string, string>),
       KEEL_HOME: this.keel, KEEL_OVERLAY_DIR: this.overlay, KEEL_DATA_DIR: this.data,

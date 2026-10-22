@@ -225,6 +225,10 @@ const CASES_UNDER_PARITY: ParityCase[] = [
   { name: "smoke seed ledger", tool: "smoke", args: ["--json-only"], setup: (box) => fs.copyFileSync(path.join(CHECKOUT, "ledger.tsv"), path.join(box.keel, "ledger.tsv")) },
   { name: "smoke bad flag", tool: "smoke", args: ["--candidate=1"] },
   { name: "eval dry-run", tool: "evals/eval", args: ["K4", "--model", "m", "--dry-run"], stub: "eval", setup: (box) => { box.linkKeel(); box.seedSuite(box.askScenario(), box.editScenario()) } },
+  {
+    name: "eval dry-run reads only the first chunk of a generated CLAUDE.md", tool: "evals/eval", args: ["K4", "--model", "m", "--dry-run"], stub: "eval",
+    setup: (box) => { box.linkKeel(); box.seedSuite(box.askScenario(), box.editScenario()); fs.appendFileSync(path.join(box.data, "CLAUDE.md"), Buffer.concat([Buffer.alloc(9000, 0x61), Buffer.from([0x0a, 0xff, 0x0a])])) },
+  },
   { name: "eval usage errors", tool: "evals/eval", args: ["K4", "--regrade", "x", "--model", "m"] },
   { name: "eval ambiguous prefix", tool: "evals/eval", args: ["K4", "--re", "3", "--model", "m"] },
   { name: "eval option without value", tool: "evals/eval", args: ["K4", "--model"] },

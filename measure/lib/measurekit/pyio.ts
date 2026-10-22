@@ -38,6 +38,18 @@ export function decodeStrict(bytes: Uint8Array): string {
 
 export function firstLineOf(bytes: Uint8Array): string {
   let decoded = ""
+  for (const piece of decodeChunks(bytes)) {
+    decoded += piece
+    if (LINE_END.test(piece)) break
+  }
+  return cutAtFirstLineEnd(decoded)
+}
+
+export function readTextByLines(path: string): string {
+  return translateNewlines(Array.from(decodeChunks(readBytes(path))).join(""))
+}
+
+function* decodeChunks(bytes: Uint8Array): Generator<string> {
   let undecoded: Uint8Array = new Uint8Array(0)
   let heldCarriageReturn = false
   for (let offset = 0; ; offset += READ_CHUNK_BYTES) {
@@ -57,8 +69,8 @@ export function firstLineOf(bytes: Uint8Array): string {
       piece = piece.slice(0, -1)
       heldCarriageReturn = true
     }
-    decoded += piece
-    if (isLast || LINE_END.test(piece)) return cutAtFirstLineEnd(decoded)
+    yield piece
+    if (isLast) return
   }
 }
 

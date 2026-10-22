@@ -32,18 +32,18 @@ class ReportGateTestCase(helpers.SandboxTestCase):
         self.sandbox.stub_claude()
         self.scope = os.path.join(self.sandbox.root, "work", "app")
 
-    def handback(self, report, tool_uses=(), brief=None, in_subagent=True, with_transcript=True, agent_type=None):
+    def handback(self, report, tool_uses=(), brief=None, in_subagent=True, with_transcript=True):
         if with_transcript:
             self.sandbox.agent_transcript(brief or "[SCOPE] %s\nDo the task." % self.scope, tool_uses)
         payload = pre_tool_use("SubagentHandback", {"message": report}, self.sandbox.root,
                                transcript_path=self.sandbox.main_transcript(), in_subagent=in_subagent)
-        if agent_type:
-            payload["agent_type"] = agent_type
         return self.sandbox.run_hook(REPORT_GATE, payload)
 
-    def stop(self, message, tool_uses=(), stop_hook_active=False, agent_transcript=None):
+    def stop(self, message, tool_uses=(), stop_hook_active=False, agent_transcript=None, agent_type=None):
         path = agent_transcript or self.sandbox.agent_transcript("[SCOPE] %s\nDo the task." % self.scope, tool_uses)
         payload = subagent_stop(self.sandbox.root, self.sandbox.main_transcript(), path, message, stop_hook_active)
+        if agent_type:
+            payload["agent_type"] = agent_type
         return self.sandbox.run_hook(REPORT_GATE, payload)
 
     def contract_misses(self) -> list:
@@ -157,15 +157,6 @@ class HandbackReviewEvidenceTest(ReportGateTestCase):
         self.assertEqual((SESSION_ID, AGENT_ID, "SubagentHandback"), (source["session_id"], source["agent_id"], source["via"]))
         self.assertTrue(source["agent_transcript_path"].endswith("/subagents/workflows/wf-1/agent-%s.jsonl" % AGENT_ID))
         self.assertEqual(self.sandbox.main_transcript(), source["transcript_path"])
-        self.assertFired("K1", "record", "report-gate")
-
-    def test_handback_pipesEvidenceWithTheReporterType_whenTheLensReviewReporterHandsBack(self):
-        result = self.handback(FRAMED_PASS_REPORT, agent_type="keel-reporter")
-        self.assertEqual(0, result.code)
-        calls = self.sandbox.stub_calls("keel")
-        self.assertEqual(1, len(calls))
-        source = json.loads(calls[0]["stdin"])["source"]
-        self.assertEqual(("keel-reporter", "SubagentHandback"), (source["agent_type"], source["via"]))
         self.assertFired("K1", "record", "report-gate")
 
     def test_handback_sendsNeedsFixes_whenFirstLineIsVerdictNeedsFixes(self):
@@ -318,6 +309,15 @@ class SubagentStopTest(ReportGateTestCase):
         self.stop(FRAMED_PASS_REPORT)
         request = json.loads(self.sandbox.stub_calls("keel")[0]["stdin"])
         self.assertEqual(("PASS", "SubagentStop"), (request["verdict"], request["source"]["via"]))
+        self.assertFired("K1", "record", "report-gate")
+
+    def test_stop_writesEvidenceWithTheReporterType_whenTheLensReviewReporterStops(self):
+        result = self.stop(FRAMED_PASS_REPORT, agent_type="keel-reporter")
+        self.assertEqual(0, result.code)
+        calls = self.sandbox.stub_calls("keel")
+        self.assertEqual(1, len(calls))
+        source = json.loads(calls[0]["stdin"])["source"]
+        self.assertEqual(("keel-reporter", "SubagentStop"), (source["agent_type"], source["via"]))
         self.assertFired("K1", "record", "report-gate")
 
     def test_stop_refusesEvidence_whenReviewerEdited(self):

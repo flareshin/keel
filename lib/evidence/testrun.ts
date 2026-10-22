@@ -1,9 +1,9 @@
 import childProcess from 'node:child_process';
-import { accessSync, constants, statSync } from 'node:fs';
+import { accessSync, closeSync, constants, existsSync, openSync, readSync, statSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import * as env from './env.ts';
 import * as gitcmd from './gitcmd.ts';
-import { PYTHON_SPACE_PATTERN, decodeReplacing, pythonJsonDumps } from './pycompat.ts';
+import { PYTHON_SPACE_PATTERN, decodeReplacing, pyRepr, pythonJsonDumps } from './pycompat.ts';
 import * as registry from './registry.ts';
 import { printErrorLine, writeStdout } from './stdio.ts';
 import * as store from './store.ts';
@@ -24,6 +24,12 @@ export const COUNT_PATTERNS: Array<[name: string, pattern: RegExp]> = [
 const NO_TESTS_RECOGNIZED = 4;
 const COMMAND_NOT_FOUND = 2;
 const SHELL_EXEC_STDERR_TO_STDOUT = 'exec "$@" 2>&1';
+const SHEBANG = Buffer.from('#!');
+const BINARY_MAGICS = [
+  Buffer.from('7f454c46', 'hex'),
+  ...['feedface', 'feedfacf', 'cefaedfe', 'cffaedfe', 'cafebabe', 'bebafeca', 'cafebabf', 'bfbafeca'].map((magic) => Buffer.from(magic, 'hex')),
+];
+const HEADER_BYTES = 256;
 
 type Json = Parameters<typeof pythonJsonDumps>[0];
 
@@ -41,16 +47,16 @@ export async function run(argv: string[], cwd: string): Promise<number> {
   const after = gitcmd.snapshotTree(repoRoot);
   const submodulesAfter = submoduleSnapshots(repoRoot);
   const [count, framework] = recognize(output);
-  const result = { run_id: runId, repo: repoKey, repo_root: repoRoot, cmd: argv, exit: exitCode, count, framework, tree: after };
+  const testRecord = { run_id: runId, repo: repoKey, repo_root: repoRoot, cmd: argv, exit: exitCode, count, framework, tree: after };
   let evidenceId: string | null = null;
   let submoduleEvidence: Record<string, string> = {};
   if (exitCode === 0 && count > 0 && before === after) {
-    const evidence = store.write('tests', { ...result, head: gitcmd.commitSha(repoRoot, 'HEAD') }, repoKey);
+    const evidence = store.write('tests', { ...testRecord, head: gitcmd.commitSha(repoRoot, 'HEAD') }, repoKey);
     evidenceId = evidence.evidence_id;
-    submoduleEvidence = writeSubmoduleEvidence(result, submodulesBefore, submodulesAfter);
+    submoduleEvidence = writeSubmoduleEvidence(testRecord, submodulesBefore, submodulesAfter);
   }
   env.appendLogLine('keel-tests.jsonl', {
-    ...result, ts: env.iso(env.utcNow()), evidence_id: evidenceId, submodule_evidence: submoduleEvidence,
+    ...testRecord, ts: env.iso(env.utcNow()), evidence_id: evidenceId, submodule_evidence: submoduleEvidence,
   });
   printErrorLine('KEEL-TEST ' + pythonJsonDumps({
     run_id: runId, count, exit: exitCode, evidence_id: evidenceId, submodule_evidence: submoduleEvidence,
@@ -63,13 +69,13 @@ function submoduleSnapshots(repoRoot: string): Map<string, string> {
   return new Map(gitcmd.submoduleRoots(repoRoot).map((root) => [root, gitcmd.snapshotTree(root)]));
 }
 
-function writeSubmoduleEvidence(result: { repo: string }, before: Map<string, string>, after: Map<string, string>): Record<string, string> {
+function writeSubmoduleEvidence(testRecord: { repo: string }, before: Map<string, string>, after: Map<string, string>): Record<string, string> {
   const written: Record<string, string> = {};
   for (const [root, tree] of after) {
     const repoKey = registry.originKey(root);
     if (repoKey === null || before.get(root) !== tree) continue;
     const evidence = store.write('tests', {
-      ...result, repo: repoKey, repo_root: root, tree, head: gitcmd.commitSha(root, 'HEAD'), superproject: result.repo,
+      ...testRecord, repo: repoKey, repo_root: root, tree, head: gitcmd.commitSha(root, 'HEAD'), superproject: testRecord.repo,
     } as { [key: string]: any }, repoKey);
     written[repoKey] = evidence.evidence_id;
   }
@@ -90,10 +96,10 @@ export function recognize(output: string): [count: number, framework: string | n
 
 async function stream(argv: string[], cwd: string): Promise<[exitCode: number, output: string]> {
   const program = findExecutable(argv[0]!);
-  if (program === null) {
-    printErrorLine(`keel test: command not found: ${argv[0]}`);
-    return [COMMAND_NOT_FOUND, ''];
-  }
+  if (program === null) return commandNotFound(argv[0]!);
+  const header = readHeader(program);
+  if (interpreterIsMissing(header)) return commandNotFound(argv[0]!);
+  if (!isKernelExecutable(header)) throw new OSError(`[Errno 8] Exec format error: ${pyRepr(argv[0]!)}`);
   const child = childProcess.spawn('/bin/sh', ['-c', SHELL_EXEC_STDERR_TO_STDOUT, 'keel-test', ...argv], {
     cwd, stdio: ['inherit', 'pipe', 'inherit'],
   });
@@ -106,6 +112,35 @@ async function stream(argv: string[], cwd: string): Promise<[exitCode: number, o
     child.on('close', (code, signal) => resolveStatus(returnCode(code, signal)));
   });
   return [status, decodeReplacing(Buffer.concat(chunks))];
+}
+
+function commandNotFound(name: string): [exitCode: number, output: string] {
+  printErrorLine(`keel test: command not found: ${name}`);
+  return [COMMAND_NOT_FOUND, ''];
+}
+
+function readHeader(program: string): Buffer {
+  const descriptor = openSync(program, 'r');
+  try {
+    const header = Buffer.alloc(HEADER_BYTES);
+    return header.subarray(0, readSync(descriptor, header, 0, HEADER_BYTES, 0));
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
+function isKernelExecutable(header: Buffer): boolean {
+  return startsWithBytes(header, SHEBANG) || BINARY_MAGICS.some((magic) => startsWithBytes(header, magic));
+}
+
+function startsWithBytes(bytes: Buffer, prefix: Buffer): boolean {
+  return bytes.subarray(0, prefix.length).equals(prefix);
+}
+
+function interpreterIsMissing(header: Buffer): boolean {
+  if (!startsWithBytes(header, SHEBANG)) return false;
+  const interpreter = header.toString('latin1', SHEBANG.length).split('\n')[0]!.trim().split(/[ \t]/)[0]!;
+  return interpreter !== '' && !existsSync(interpreter);
 }
 
 function findExecutable(name: string): string | null {

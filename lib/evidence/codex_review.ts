@@ -3,7 +3,8 @@ import { readFileSync, readdirSync, lstatSync, realpathSync } from 'node:fs';
 import { userInfo } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import * as codexLenses from './codex_lenses.ts';
-import { PYTHON_SPACE_PATTERN, compareCodePoints, decodeStrict, pyRealpath, pySplitLines, pyStrip, pythonJsonLoads, universalNewlines } from './pycompat.ts';
+import * as env from './env.ts';
+import { PYTHON_SPACE_PATTERN, compareCodePoints, decodeStrict, isSystemError, pyRealpath, pySplitLines, pyStrip, pythonJsonLoads, universalNewlines } from './pycompat.ts';
 import { OSError, TimeoutExpired, runCaptured } from './subprocess.ts';
 import * as writers from './writers.ts';
 import type { JsonObject } from './writers.ts';
@@ -75,7 +76,8 @@ export function locateSession(identity: unknown): [path: string, content: Buffer
     if (records.length === 0 || records[0]!['type'] !== 'session_meta' || asObject(records[0]!['payload'])['id'] !== identity) {
       throw new TypeError('not a session');
     }
-  } catch {
+  } catch (error) {
+    if (!writers.isInputFailure(error)) throw error;
     throw new writers.Refused('invalid Codex rollout: ' + path);
   }
   return [pyRealpath(path), content];
@@ -87,7 +89,8 @@ function findRollouts(directory: string, identity: string): string[] {
   let entries;
   try {
     entries = readdirSync(directory, { withFileTypes: true });
-  } catch {
+  } catch (error) {
+    if (!isSystemError(error)) throw error;
     return found;
   }
   for (const entry of entries) {
@@ -147,7 +150,8 @@ export function completedReport(content: Buffer, identity: string): [meta: JsonO
     const report = pythonJsonLoads(final);
     if (report === null || typeof report !== 'object' || Array.isArray(report)) throw new RangeError('report is not an object');
     return [meta, report as JsonObject];
-  } catch {
+  } catch (error) {
+    if (!writers.isInputFailure(error)) throw error;
     throw new writers.Refused('Codex reviewer has no completed structured final report');
   }
 }
@@ -171,7 +175,8 @@ export function sharedAuthor(audit: JsonObject, verifier: JsonObject, auditId: s
     }
     if (parents[0] !== parents[1] || new Set([parents[0], auditId, verifierId]).size !== 3) throw new RangeError('not distinct');
     return parents[0]!;
-  } catch {
+  } catch (error) {
+    if (!writers.isInputFailure(error)) throw error;
     throw new writers.Refused('audit and verifier must be distinct children of the same author');
   }
 }
@@ -185,7 +190,7 @@ export function validateReports(audit: JsonObject, verification: JsonObject, rep
       throw new writers.Refused('native reviewers disagree about the target');
     }
     for (const key of ['base', 'tree']) {
-      if (!isFullSha(report[key])) throw new writers.Refused('invalid target object id');
+      if (!env.isSha(report[key])) throw new writers.Refused('invalid target object id');
     }
     const lenses = report['lenses'];
     if (!isPlainObject(lenses) || !hasExactKeys(lenses, LENSES)) throw new writers.Refused('every native review must cover all five lenses');
@@ -279,10 +284,6 @@ export function hasExactKeys(value: unknown, keys: Set<string>): boolean {
   if (!isPlainObject(value)) return false;
   const actual = Object.keys(value);
   return actual.length === keys.size && actual.every((key) => keys.has(key));
-}
-
-export function isFullSha(value: unknown): boolean {
-  return typeof value === 'string' && /^[0-9a-f]{40}$/.test(value);
 }
 
 function isCompleteLens(item: unknown): boolean {

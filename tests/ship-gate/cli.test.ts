@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import childProcess from 'node:child_process';
-import { readFileSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
+import type { TestContext } from 'node:test';
 import * as gitcmd from '../../lib/evidence/gitcmd.ts';
-import { Sandbox, readJson } from './helpers.ts';
+import { KEEL, KEEL_PYTHON, Sandbox, readJson } from './helpers.ts';
 import type { Repo, Run } from './helpers.ts';
 
 function summaryOf(run: Run): any {
@@ -392,5 +394,55 @@ describe('SmokeShowGcTest', () => {
     assert.equal(sandbox.evidenceFiles('review').length, 2);
     assert.equal(sandbox.evidenceFiles('tests').length, 1);
     assert.deepEqual(sandbox.evidenceFiles('approval'), []);
+  });
+});
+
+describe('KeelEntryPointTest', () => {
+  function stubbedHome(t: TestContext): string {
+    const home = mkdtempSync(join(tmpdir(), 'keel-entry-'));
+    t.after(() => rmSync(home, { recursive: true, force: true }));
+    mkdirSync(join(home, 'lib', 'evidence'), { recursive: true });
+    writeFileSync(join(home, 'lib', 'evidence', 'cli.ts'),
+      "export async function main(argv: string[]): Promise<number> {\n  process.stdout.write('stub:' + argv.join(',') + '\\n');\n  return 5;\n}\n");
+    return home;
+  }
+
+  function entry(keelHome: string | undefined, args: string[]) {
+    const env: Record<string, string> = { ...process.env as Record<string, string> };
+    delete env['KEEL_HOME'];
+    if (keelHome !== undefined) env['KEEL_HOME'] = keelHome;
+    return childProcess.spawnSync('node', [KEEL, ...args], { encoding: 'utf8', env });
+  }
+
+  test('entry_loadsCliFromKeelHome_whenSet', (t) => {
+    const run = entry(stubbedHome(t), ['a', 'b']);
+    assert.deepEqual([run.status, run.stdout], [5, 'stub:a,b\n']);
+  });
+
+  test('entry_loadsCliBesideItself_whenKeelHomeIsEmpty', () => {
+    const run = entry('', ['bogus']);
+    assert.equal(run.status, 2);
+    assert.match(run.stderr, /^keel: /);
+  });
+});
+
+describe('EchoedNumberLimitTest', () => {
+  test('writeReview_keepsFloatSpellingOnlyInPython_whenAgentTypeIsAFloatToken (known limit)', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    repo.branch('feature');
+    repo.commit({ 'src/a.py': 'a\n' });
+    const stdin = JSON.stringify(sandbox.reviewRequest(repo)).replace('"agent_type":"general-purpose"', '"agent_type":1.0');
+    assert.match(stdin, /"agent_type":1\.0/);
+    const persistedAgentType: Record<string, string> = {};
+    for (const [impl, runner] of [['py', ['python3', KEEL_PYTHON]], ['ts', ['node', KEEL]]] as const) {
+      sandbox.runner = [...runner];
+      const written = sandbox.keel(['evidence', 'write-review'], { stdin });
+      assert.equal(written.rc, 0, written.stderr);
+      const file = sandbox.evidenceFiles('review').at(-1)!;
+      persistedAgentType[impl] = /"agent_type": ([^,]*),/.exec(readFileSync(file, 'utf8'))![1]!;
+      rmSync(file);
+    }
+    assert.deepEqual(persistedAgentType, { py: '1.0', ts: '1' });
   });
 });

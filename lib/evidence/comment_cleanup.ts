@@ -6,13 +6,15 @@ import { runCaptured } from './subprocess.ts';
 const MAX_SOURCE_BYTES = 1024 * 1024;
 const PYTHON_SPACE_MEMBERS = PYTHON_SPACE_PATTERN.slice(1, -1);
 const PROSE = new RegExp(`^[\\p{L}\\p{N}_${PYTHON_SPACE_MEMBERS}.,!?()'"-]+$`, 'u');
-const PROTECTED = new RegExp(
-  'copyright|licen[cs]e|spdx|notice|rights reserved|trademark|coding|encoding|'
+const PROTECTED_KEYWORDS = 'copyright|licen[cs]e|spdx|notice|rights reserved|trademark|coding|encoding|'
   + 'ignore|disable|enable|suppress|pragma|noqa|nosec|lint|prettier|formatter|'
   + 'coverage|istanbul|source[^\\n]?map|sourceurl|checkstyle|generated|preserve|'
-  + 'pyright|mypy|pylint|doctest|webpack|rollup|vite|region|falls?[' + PYTHON_SPACE_MEMBERS + '-]*through|'
+  + 'pyright|mypy|pylint|doctest|webpack|rollup|vite|region|falls?<space>*through|'
   + 'databricks|command|magic|'
-  + 'global|exported|noinspection|sonar|pmd|isort|ruff|fmt|yapf|__', 'iu');
+  + 'global|exported|noinspection|sonar|pmd|isort|ruff|fmt|yapf|__';
+const DOTTED_OR_DOTLESS_I = '[i\\u0130\\u0131]';
+const PROTECTED = new RegExp(
+  PROTECTED_KEYWORDS.replaceAll('i', DOTTED_OR_DOTLESS_I).replace('<space>', `[${PYTHON_SPACE_MEMBERS}-]`), 'iu');
 const SUPPORTED_SUFFIXES = ['.py', '.js', '.ts', '.java'];
 const REGULAR_FILE_MODES = ['100644', '100755'];
 const FORBIDDEN_CHARS = ['\0', '\ufeff', '\u2028', '\u2029'];
@@ -83,7 +85,8 @@ export function onlyCommentDeletions(path: string, before: Buffer, after: Buffer
   try {
     old = decodeStrict(before);
     current = decodeStrict(after);
-  } catch {
+  } catch (error) {
+    if (!(error instanceof TypeError)) throw error;
     return false;
   }
   if (old.replaceAll('\r\n', '').includes('\r') || FORBIDDEN_CHARS.some((char) => old.includes(char))) return false;

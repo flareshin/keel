@@ -199,6 +199,6 @@ function stdinJson(): JsonObject {
   return request;
 }
 
-function printResult(result: JsonObject): void {
-  printLine(pythonJsonDumps(result, { sortKeys: true }));
+function printResult(payload: JsonObject): void {
+  printLine(pythonJsonDumps(payload, { sortKeys: true }));
 }

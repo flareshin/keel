@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
-  JSONDecodeError, decodeSurrogateEscape, fnmatchCase, pyRepr, pySplitLines, pyStrip, pythonJsonDumps, pythonJsonLoads,
+  JSONDecodeError, decodeSurrogateEscape, fnmatchCase, isDirectory, isFile, isSystemError, pyRepr, pySplitLines, pyStrip, pythonJsonDumps, pythonJsonLoads,
 } from '../../lib/evidence/pycompat.ts';
+import { OSError } from '../../lib/evidence/subprocess.ts';
+import { isInputFailure } from '../../lib/evidence/writers.ts';
 
 describe('pythonJsonDumps', () => {
   test('escapes non-ASCII and non-BMP the way json.dumps does and uses python separators', () => {
@@ -60,5 +65,39 @@ describe('python string helpers', () => {
     assert.equal(fnmatchCase('b', '[!a]'), true);
     assert.equal(fnmatchCase(']', '[]]'), true);
     assert.equal(fnmatchCase('c', '[a-b]'), false);
+  });
+});
+
+describe('failure classification', () => {
+  const errnoError = Object.assign(new Error('boom'), { errno: -2, code: 'ENOENT' });
+  const invalidArgument = Object.assign(new TypeError('path contains a null byte'), { code: 'ERR_INVALID_ARG_VALUE' });
+
+  test('isSystemError accepts errors with a numeric errno only', () => {
+    assert.equal(isSystemError(errnoError), true);
+    assert.equal(isSystemError(invalidArgument), false);
+    assert.equal(isSystemError(new Error('plain')), false);
+    assert.equal(isSystemError('ENOENT'), false);
+  });
+
+  test('isInputFailure accepts what Python catches as OSError, ValueError, KeyError or TypeError and rejects programming errors', () => {
+    for (const expected of [new TypeError('x'), new RangeError('x'), new JSONDecodeError('x', [], 0), new OSError('x'), errnoError]) {
+      assert.equal(isInputFailure(expected), true, expected.constructor.name);
+    }
+    for (const unexpected of [new Error('x'), new ReferenceError('x'), new SyntaxError('x'), 'text', null]) {
+      assert.equal(isInputFailure(unexpected), false, String(unexpected));
+    }
+  });
+
+  test('isDirectory and isFile answer false for missing paths, a file used as a directory and an embedded NUL, like os.path', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'keel-kind-'));
+    try {
+      writeFileSync(join(directory, 'f'), '');
+      assert.deepEqual([isDirectory(directory), isFile(directory)], [true, false]);
+      assert.deepEqual([isDirectory(join(directory, 'f')), isFile(join(directory, 'f'))], [false, true]);
+      assert.deepEqual([isDirectory(join(directory, 'missing')), isFile(join(directory, 'missing'))], [false, false]);
+      assert.deepEqual([isDirectory(join(directory, 'f', 'below')), isFile(join(directory, 'a\0b'))], [false, false]);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 });

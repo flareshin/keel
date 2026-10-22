@@ -122,7 +122,8 @@ export function sharedAuthor(reviews: Review[]): string {
     if (parents.size !== 1) throw new RangeError('several parents');
     author = [...parents][0]!;
     if (reviews.some((review) => review.identity === author)) throw new RangeError('author reviews itself');
-  } catch {
+  } catch (error) {
+    if (!writers.isInputFailure(error)) throw error;
     throw new writers.Refused('reviewers must be distinct children of the same author');
   }
   codexReview.locateSession(author);

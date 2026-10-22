@@ -1,14 +1,15 @@
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildChains } from './chain.ts';
 import type { Chain } from './chain.ts';
 import * as codexReview from './codex_review.ts';
 import * as env from './env.ts';
 import * as gitcmd from './gitcmd.ts';
-import { decodeStrict, expandUser, pyRealpath, pyStrip, pythonJsonLoads, sortedStrings, universalNewlines } from './pycompat.ts';
+import { JSONDecodeError, decodeStrict, expandUser, isFile, isSystemError, pyRealpath, pyStrip, pythonJsonLoads, sortedStrings, universalNewlines } from './pycompat.ts';
 import * as registry from './registry.ts';
 import * as store from './store.ts';
 import type { ReviewEvidence } from './store.ts';
+import { OSError } from './subprocess.ts';
 
 export type JsonObject = Record<string, any>;
 
@@ -23,6 +24,11 @@ const APPROVAL_SOURCE = 'cli';
 export class Refused extends Error {}
 
 export class Usage extends Error {}
+
+export function isInputFailure(error: unknown): boolean {
+  return error instanceof OSError || error instanceof TypeError || error instanceof RangeError || error instanceof JSONDecodeError
+    || isSystemError(error);
+}
 
 export function writeReview(request: JsonObject): JsonObject {
   const claim = validatedClaim(request['keel_evidence']);
@@ -196,12 +202,4 @@ function splitOnNewline(text: string): string[] {
   const lines = text.split('\n');
   if (lines.at(-1) === '') lines.pop();
   return lines;
-}
-
-function isFile(path: string): boolean {
-  try {
-    return statSync(path).isFile();
-  } catch {
-    return false;
-  }
 }

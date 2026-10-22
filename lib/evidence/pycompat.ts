@@ -1,4 +1,6 @@
-import { realpathSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { readFileSync, realpathSync, statSync } from 'node:fs';
+import type { Stats } from 'node:fs';
 import { userInfo } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { getSystemErrorMap } from 'node:util';
@@ -66,19 +68,19 @@ export function decodeStrict(bytes: Uint8Array): string {
 }
 
 export function decodeSurrogateEscape(bytes: Uint8Array): string {
-  let result = '';
+  let decoded = '';
   let index = 0;
   while (index < bytes.length) {
     const length = validSequenceLength(bytes, index);
     if (length === 0) {
-      result += String.fromCharCode(0xdc00 + bytes[index]!);
+      decoded += String.fromCharCode(0xdc00 + bytes[index]!);
       index++;
     } else {
-      result += decodeReplacing(bytes.subarray(index, index + length));
+      decoded += decodeReplacing(bytes.subarray(index, index + length));
       index += length;
     }
   }
-  return result;
+  return decoded;
 }
 
 function validSequenceLength(bytes: Uint8Array, index: number): number {
@@ -134,14 +136,68 @@ export function pyOsErrorMessage(error: NodeJS.ErrnoException): string {
   return `[Errno ${-error.errno!}] ${text}${where}`;
 }
 
+const DIRECTORY_LOOKUP_TIMEOUT_MS = 3000;
+const FIRST_DIRECTORY_HOME = /<key>dsAttrTypeStandard:NFSHomeDirectory<\/key>\s*<array>\s*<string>([^<]*)<\/string>/;
+const XML_ENTITIES: Record<string, string> = { '&lt;': '<', '&gt;': '>', '&quot;': '"', '&apos;': "'", '&amp;': '&' };
+const PASSWD_FILE = '/etc/passwd';
+const PASSWD_HOME_FIELD = 5;
+const accountHomes = new Map<string, string | null>();
+
 export function expandUser(path: string): string {
   if (!path.startsWith('~')) return path;
   const slash = path.indexOf('/', 1);
   const end = slash < 0 ? path.length : slash;
-  if (end !== 1) return path;
-  const configured = process.env['HOME'];
-  const home = (configured ?? userInfo().homedir).replace(/\/+$/, '');
-  return home + path.slice(end) || '/';
+  const home = end === 1 ? currentHome() : accountHome(path.slice(1, end));
+  if (home === null) return path;
+  return home.replace(/\/+$/, '') + path.slice(end) || '/';
+}
+
+function currentHome(): string | null {
+  return process.env['HOME'] ?? currentUser()?.homedir ?? null;
+}
+
+function currentUser(): { username: string; homedir: string } | null {
+  try {
+    return userInfo();
+  } catch (error) {
+    if (isSystemError(error)) return null;
+    throw error;
+  }
+}
+
+function accountHome(name: string): string | null {
+  if (!accountHomes.has(name)) accountHomes.set(name, lookupAccountHome(name));
+  return accountHomes.get(name) ?? null;
+}
+
+function lookupAccountHome(name: string): string | null {
+  const current = currentUser();
+  if (current?.username === name) return current.homedir;
+  return directoryServicesHome(name) ?? passwdFileHome(name);
+}
+
+function directoryServicesHome(name: string): string | null {
+  if (process.platform !== 'darwin') return null;
+  const answer = spawnSync('dscl', ['-plist', '.', '-read', `/Users/${name}`, 'NFSHomeDirectory'],
+    { encoding: 'utf8', timeout: DIRECTORY_LOOKUP_TIMEOUT_MS });
+  if (answer.error || answer.status !== 0) return null;
+  const home = FIRST_DIRECTORY_HOME.exec(answer.stdout)?.[1];
+  return home === undefined ? null : home.replace(/&(?:lt|gt|quot|apos|amp);/g, (entity) => XML_ENTITIES[entity] ?? entity);
+}
+
+function passwdFileHome(name: string): string | null {
+  let passwd: string;
+  try {
+    passwd = readFileSync(PASSWD_FILE, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === undefined) throw error;
+    return null;
+  }
+  for (const line of passwd.split('\n')) {
+    const fields = line.split(':');
+    if (fields[0] === name && fields.length > PASSWD_HOME_FIELD) return fields[PASSWD_HOME_FIELD] ?? null;
+  }
+  return null;
 }
 
 export function pythonJsonDumps(value: JsonValue | undefined, options: { sortKeys?: boolean } = {}): string {
@@ -158,10 +214,15 @@ export function pythonJsonDumps(value: JsonValue | undefined, options: { sortKey
   throw new TypeError(`Object of type ${typeof value} is not JSON serializable`);
 }
 
+const PYTHON_FLOAT_EXPONENT_BELOW = 1e-4;
+
 function dumpNumber(value: number): string {
   if (Number.isNaN(value)) return 'NaN';
   if (value === Infinity) return 'Infinity';
   if (value === -Infinity) return '-Infinity';
+  if (!Number.isInteger(value) && Math.abs(value) < PYTHON_FLOAT_EXPONENT_BELOW) {
+    return value.toExponential().replace(/e([-+])(\d)$/, 'e$10$2');
+  }
   return String(value);
 }
 
@@ -194,7 +255,8 @@ class StopScan extends Error {
 export function pythonJsonLoads(text: string): JsonValue {
   try {
     return JSON.parse(text) as JsonValue;
-  } catch {
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
     return scanPythonJson(text);
   }
 }
@@ -220,23 +282,23 @@ function scanPythonJson(text: string): JsonValue {
 
   const scanString = (begin: number): [string, number] => {
     let position = begin;
-    let result = '';
+    let decoded = '';
     for (;;) {
       let chunkEnd = position;
       while (chunkEnd < document.length && document[chunkEnd] !== '"' && document[chunkEnd] !== '\\'
         && document[chunkEnd]!.codePointAt(0)! >= 0x20) chunkEnd++;
-      result += joined(position, chunkEnd);
+      decoded += joined(position, chunkEnd);
       position = chunkEnd;
       const terminator = document[position];
       if (terminator === undefined) throw new JSONDecodeError('Unterminated string starting at', document, begin - 1);
-      if (terminator === '"') return [result, position + 1];
+      if (terminator === '"') return [decoded, position + 1];
       if (terminator !== '\\') throw new JSONDecodeError('Invalid control character at', document, position);
       const escape = document[position + 1];
       if (escape === undefined) throw new JSONDecodeError('Unterminated string starting at', document, begin - 1);
       if (escape !== 'u') {
         const mapped = JSON_ESCAPES[escape];
         if (mapped === undefined) throw new JSONDecodeError('Invalid \\escape', document, position);
-        result += mapped;
+        decoded += mapped;
         position += 2;
         continue;
       }
@@ -249,7 +311,7 @@ function scanPythonJson(text: string): JsonValue {
           position += 6;
         }
       }
-      result += String.fromCodePoint(unit);
+      decoded += String.fromCodePoint(unit);
     }
   };
 
@@ -263,13 +325,13 @@ function scanPythonJson(text: string): JsonValue {
   };
 
   const scanObject = (begin: number): [JsonValue, number] => {
-    const result: { [key: string]: JsonValue } = {};
+    const parsedObject: { [key: string]: JsonValue } = {};
     let position = begin;
     let next = document[position];
     if (next !== '"') {
       position = skipSpace(position);
       next = document[position];
-      if (next === '}') return [result, position + 1];
+      if (next === '}') return [parsedObject, position + 1];
       if (next !== '"') throw new JSONDecodeError('Expecting property name enclosed in double quotes', document, position);
     }
     position++;
@@ -282,11 +344,11 @@ function scanPythonJson(text: string): JsonValue {
       }
       position = skipSpace(position + 1);
       const [value, afterValue] = scanValue(position);
-      Object.defineProperty(result, key, { value, enumerable: true, writable: true, configurable: true });
+      Object.defineProperty(parsedObject, key, { value, enumerable: true, writable: true, configurable: true });
       position = skipSpace(afterValue);
       next = document[position];
       position++;
-      if (next === '}') return [result, position];
+      if (next === '}') return [parsedObject, position];
       if (next !== ',') throw new JSONDecodeError("Expecting ',' delimiter", document, position - 1);
       const commaPosition = position - 1;
       position = skipSpace(position);
@@ -300,16 +362,16 @@ function scanPythonJson(text: string): JsonValue {
   };
 
   const scanArray = (begin: number): [JsonValue, number] => {
-    const result: JsonValue[] = [];
+    const parsedArray: JsonValue[] = [];
     let position = skipSpace(begin);
-    if (document[position] === ']') return [result, position + 1];
+    if (document[position] === ']') return [parsedArray, position + 1];
     for (;;) {
       const [value, afterValue] = scanValue(position);
-      result.push(value);
+      parsedArray.push(value);
       position = skipSpace(afterValue);
       const next = document[position];
       position++;
-      if (next === ']') return [result, position];
+      if (next === ']') return [parsedArray, position];
       if (next !== ',') throw new JSONDecodeError("Expecting ',' delimiter", document, position - 1);
       const commaPosition = position - 1;
       position = skipSpace(position);
@@ -363,24 +425,24 @@ export function fnmatchCase(name: string, pattern: string): boolean {
 
 function fnmatchRegex(pattern: string): string {
   const chars = Array.from(pattern);
-  let result = '';
+  let regexSource = '';
   let index = 0;
   while (index < chars.length) {
     const char = chars[index++]!;
     if (char === '*') {
-      result += '.*';
+      regexSource += '.*';
       while (chars[index] === '*') index++;
     } else if (char === '?') {
-      result += '.';
+      regexSource += '.';
     } else if (char === '[') {
       const [piece, next] = bracketExpression(chars, index);
-      result += piece;
+      regexSource += piece;
       index = next;
     } else {
-      result += FNMATCH_SPECIALS.has(char) ? '\\' + char : char;
+      regexSource += FNMATCH_SPECIALS.has(char) ? '\\' + char : char;
     }
   }
-  return result;
+  return regexSource;
 }
 
 function bracketExpression(chars: string[], start: number): [string, number] {
@@ -426,6 +488,29 @@ function escapeClassChar(char: string): string {
   return '\\^]-['.includes(char) ? '\\' + char : char;
 }
 
+export function isSystemError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && typeof (error as NodeJS.ErrnoException).errno === 'number';
+}
+
+const EMBEDDED_NUL_CODE = 'ERR_INVALID_ARG_VALUE';
+
+function statKind(path: string, test: (stats: Stats) => boolean): boolean {
+  try {
+    return test(statSync(path));
+  } catch (error) {
+    if (isSystemError(error) || (error as NodeJS.ErrnoException).code === EMBEDDED_NUL_CODE) return false;
+    throw error;
+  }
+}
+
+export function isDirectory(path: string): boolean {
+  return statKind(path, (stats) => stats.isDirectory());
+}
+
+export function isFile(path: string): boolean {
+  return statKind(path, (stats) => stats.isFile());
+}
+
 export function pyRealpath(path: string): string {
   const absolute = resolve(path);
   let existing = absolute;
@@ -433,7 +518,8 @@ export function pyRealpath(path: string): string {
   for (;;) {
     try {
       return join(realpathSync.native(existing), ...missing);
-    } catch {
+    } catch (error) {
+      if (!isSystemError(error)) throw error;
       const parent = dirname(existing);
       if (parent === existing) return absolute;
       missing.unshift(basename(existing));

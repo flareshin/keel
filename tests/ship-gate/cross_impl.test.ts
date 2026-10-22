@@ -8,7 +8,7 @@ import * as registry from '../../lib/evidence/registry.ts';
 import * as store from '../../lib/evidence/store.ts';
 import { pythonJsonDumps } from '../../lib/evidence/pycompat.ts';
 import * as verify from '../../lib/evidence/verify.ts';
-import { KEEL_HOME, KEEL_PYTHON, Sandbox } from './helpers.ts';
+import { KEEL_HOME, KEEL_PYTHON, LOGIC_WITH_TEST, Sandbox } from './helpers.ts';
 import type { Repo, Run } from './helpers.ts';
 
 type Impl = 'py' | 'ts';
@@ -106,6 +106,71 @@ function judge(impl: Impl, dataDir: string, sandbox: Sandbox, repo: Repo, head: 
     if (previousOverlay === undefined) delete process.env['KEEL_OVERLAY_DIR'];
     else process.env['KEEL_OVERLAY_DIR'] = previousOverlay;
   }
+}
+
+const STACK_SEED = { 'README.md': 'top\n\n\n\n\nbottom\n' };
+const OVERLAP_FIRST = { 'README.md': 'top changed\n\n\n\n\nbottom\n' };
+const OVERLAP_SECOND = [{ 'README.md': 'top\n\n\n\n\nbottom changed\n' }];
+const SMOKE_REGISTRY = ['acme/app\tsmoke\tmain\t-\tnone'];
+const NO_TESTS_REGISTRY = ['acme/app\tcode\tmain\tacme\tnone'];
+
+interface Expectation {
+  ok: boolean;
+  reason?: string;
+  rootRunIds?: string[];
+  k3Waiver?: string;
+}
+
+function judgedIdentically(sandbox: Sandbox, repo: Repo, label: string, needsApproval: boolean, expected: Expectation): void {
+  const base = repo.git('merge-base', 'origin/main', 'HEAD');
+  const [python, typescript] = (['py', 'ts'] as Impl[]).map((impl) => judge(impl, sandbox.data, sandbox, repo, repo.head(), base, needsApproval));
+  assert.equal(typescript, python, label);
+  const decision = JSON.parse(python!);
+  assert.equal(decision.ok, expected.ok, `${label}: ${python}`);
+  if (expected.reason !== undefined) {
+    assert.ok(decision.reasons.some(([, text]: [string, string]) => text.includes(expected.reason!)), `${label}: ${python}`);
+  }
+  if (expected.rootRunIds !== undefined) assert.deepEqual(decision.root_run_ids, expected.rootRunIds, label);
+  if (expected.k3Waiver !== undefined) assert.equal(decision.k3_waiver, expected.k3Waiver, label);
+}
+
+function adjacentReviews(sandbox: Sandbox, repo: Repo, options: { approveFirst?: boolean; gap?: boolean } = {}): void {
+  repo.branch('feature');
+  const base = repo.head();
+  repo.commit({ ...LOGIC_WITH_TEST, 'src/first.py': 'first = 1\n' });
+  sandbox.review(repo, { runId: 'rv-series-0001', reviewBase: base });
+  if (options.approveFirst !== false) sandbox.approve('rv-series-0001');
+  if (options.gap) repo.commit({ 'src/gap.py': 'unreviewed = True\n' });
+  const boundary = repo.head();
+  repo.commit({ 'src/a.py': 'print(2)\n', 'src/second.py': 'second = 2\n' });
+  sandbox.review(repo, { runId: 'rv-series-0002', reviewBase: boundary });
+  sandbox.approve('rv-series-0002');
+  sandbox.testsEvidence(repo);
+}
+
+function stackedChains(sandbox: Sandbox, repo: Repo, firstFiles: Record<string, string>, secondCommits: Array<Record<string, string>>): void {
+  const base = repo.head();
+  repo.branch('first');
+  repo.commit({ ...LOGIC_WITH_TEST, ...firstFiles });
+  sandbox.review(repo, { runId: 'rv-stack-0001', reviewBase: base });
+  sandbox.approve('rv-stack-0001');
+  repo.branch('second', base);
+  for (const files of secondCommits) repo.commit(files);
+  const second = repo.head();
+  sandbox.review(repo, { runId: 'rv-stack-0002', reviewBase: base });
+  sandbox.approve('rv-stack-0002');
+  repo.branch('feature', 'first');
+  repo.git('cherry-pick', `${base}..${second}`);
+  sandbox.testsEvidence(repo);
+}
+
+function featureWithEvidence(sandbox: Sandbox, files: Record<string, string>, review: { kind?: string; noTestReason?: string } = {}): Repo {
+  const repo = sandbox.clone('acme', 'app');
+  repo.branch('feature');
+  repo.commit(files);
+  sandbox.review(repo, review);
+  sandbox.approve('rv-root-0001');
+  return repo;
 }
 
 function normalize(text: string, dataDir: string): string {
@@ -207,11 +272,85 @@ describe('cross-implementation evidence compatibility', () => {
     });
   }
 
+  describe('verify.judge parity on evidence scenarios', () => {
+    const python = (sandbox: Sandbox) => { sandbox.runner = RUNNERS.py; return sandbox; };
+
+    test('two adjacent approved reviews are reused as a series', (t) => {
+      const sandbox = python(new Sandbox(t));
+      const repo = sandbox.clone('acme', 'app');
+      adjacentReviews(sandbox, repo);
+      judgedIdentically(sandbox, repo, 'series approved', true, { ok: true, rootRunIds: ['rv-series-0001', 'rv-series-0002'] });
+      judgedIdentically(sandbox, repo, 'series without approval requirement', false, { ok: true, rootRunIds: ['rv-series-0001', 'rv-series-0002'] });
+    });
+
+    test('an unapproved first review or an unreviewed gap breaks the series', (t) => {
+      const unapproved = python(new Sandbox(t));
+      const unapprovedRepo = unapproved.clone('acme', 'app');
+      adjacentReviews(unapproved, unapprovedRepo, { approveFirst: false });
+      judgedIdentically(unapproved, unapprovedRepo, 'first review not approved', true, { ok: false });
+      const gapped = python(new Sandbox(t));
+      const gappedRepo = gapped.clone('acme', 'app');
+      adjacentReviews(gapped, gappedRepo, { gap: true });
+      judgedIdentically(gapped, gappedRepo, 'gap between reviews', true, { ok: false, reason: 'src/gap.py' });
+    });
+
+    test('parallel approved chains stacked by rebase are accepted, overlapping ones name the commit to review', (t) => {
+      const stacked = python(new Sandbox(t));
+      const stackedRepo = stacked.clone('acme', 'app', undefined, STACK_SEED);
+      stackedChains(stacked, stackedRepo, { 'src/first.py': 'first = 1\n' }, [{ 'src/second.py': 'second = 2\n' }]);
+      judgedIdentically(stacked, stackedRepo, 'stacked chains', true, { ok: true, rootRunIds: ['rv-stack-0001', 'rv-stack-0002'] });
+      const overlapping = python(new Sandbox(t));
+      const overlappingRepo = overlapping.clone('acme', 'app', undefined, STACK_SEED);
+      stackedChains(overlapping, overlappingRepo, OVERLAP_FIRST, OVERLAP_SECOND);
+      judgedIdentically(overlapping, overlappingRepo, 'overlapping stacked chains', true, { ok: false, reason: 'no review saw the stacked content' });
+    });
+
+    test('a smoke-gated row needs smoke evidence covering the tree', (t) => {
+      const sandbox = python(new Sandbox(t, SMOKE_REGISTRY));
+      const repo = sandbox.clone('acme', 'app');
+      repo.branch('feature');
+      repo.commit({ 'src/new.py': 'new = 1\n' });
+      judgedIdentically(sandbox, repo, 'smoke missing', true, { ok: false, reason: 'no smoke evidence covers this exact content' });
+      sandbox.smokeEvidence(repo);
+      judgedIdentically(sandbox, repo, 'smoke present', true, { ok: true });
+    });
+
+    test('a tests=none row denies a standard change and passes a light one', (t) => {
+      const standard = python(new Sandbox(t, NO_TESTS_REGISTRY));
+      const standardRepo = featureWithEvidence(standard, LOGIC_WITH_TEST);
+      judgedIdentically(standard, standardRepo, 'tests=none standard', true, { ok: false, reason: 'add test infrastructure first' });
+      const light = python(new Sandbox(t, NO_TESTS_REGISTRY));
+      const lightRepo = featureWithEvidence(light, { 'docs/guide.md': 'light\n' });
+      judgedIdentically(light, lightRepo, 'tests=none light', true, { ok: true });
+    });
+
+    test('a logic change without a test in the same range is denied unless the reviewer states why', (t) => {
+      const bare = python(new Sandbox(t));
+      const bareRepo = featureWithEvidence(bare, { 'src/a.py': 'print(1)\n' });
+      bare.testsEvidence(bareRepo);
+      judgedIdentically(bare, bareRepo, 'K3 same range', true, { ok: false, reason: 'logic changed with no test in the same range' });
+      const waived = python(new Sandbox(t));
+      const waivedRepo = featureWithEvidence(waived, { 'src/a.py': 'print(1)\n' }, { noTestReason: 'covered by the integration suite' });
+      waived.testsEvidence(waivedRepo);
+      judgedIdentically(waived, waivedRepo, 'K3 waiver', true, { ok: true, k3Waiver: 'covered by the integration suite' });
+    });
+
+    test('a chain with a single-lens link is denied even for a light change', (t) => {
+      const sandbox = python(new Sandbox(t, NO_TESTS_REGISTRY));
+      const repo = featureWithEvidence(sandbox, { 'docs/guide.md': 'light\n' }, { kind: 'single-lens' });
+      judgedIdentically(sandbox, repo, 'single-lens', true, { ok: false, reason: 'every change needs a lens-review chain' });
+    });
+  });
+
   test('cli error paths match: usage, refusal and stdin JSON errors', (t) => {
     const { sandbox, repo } = prepare(t);
     sandbox.data = join(sandbox.root, 'data-errors');
     sandbox.env['KEEL_DATA_DIR'] = sandbox.data;
     mkdirSync(sandbox.data);
+    repo.write('no-shebang.sh', "echo 'Ran 3 tests'\n", true);
+    repo.write('empty.sh', '', true);
+    repo.write('not-executable.sh', "#!/bin/sh\necho 'Ran 3 tests'\n");
+    repo.write('missing-interpreter.sh', "#!/nonexistent/interpreter\necho 'Ran 3 tests'\n", true);
     const cases: Array<{ args: string[]; stdin?: string; cwd?: string }> = [
       { args: [] }, { args: ['bogus'] }, { args: ['test', 'x'] }, { args: ['test', '--'] }, { args: ['approve'] }, { args: ['approve', 'x'] },
       { args: ['approve', 'rv-none-0001'] }, { args: ['approve', 'rv-none-0001', '--bogus'] }, { args: ['snapshot'] }, { args: ['snapshot', sandbox.home] },
@@ -229,6 +368,8 @@ describe('cross-implementation evidence compatibility', () => {
       { args: ['test', '--', 'bash', '-c', "echo out; echo err >&2; echo 'Ran 2 tests'; echo more >&2"], cwd: repo.path },
       { args: ['test', '--', 'bash', '-c', 'echo partial; kill -TERM $$'], cwd: repo.path },
       { args: ['test', '--', 'bash', '-c', "printf 'no newline Ran 4 tests'"], cwd: repo.path }, { args: ['test', '--', 'true'], cwd: sandbox.home },
+      { args: ['test', '--', './no-shebang.sh'], cwd: repo.path }, { args: ['test', '--', './empty.sh'], cwd: repo.path },
+      { args: ['test', '--', './not-executable.sh'], cwd: repo.path }, { args: ['test', '--', './missing-interpreter.sh'], cwd: repo.path },
     ];
     for (const item of cases) {
       const results = (['py', 'ts'] as Impl[]).map((impl) => {
@@ -239,6 +380,14 @@ describe('cross-implementation evidence compatibility', () => {
       assert.equal(results[1]!.rc, results[0]!.rc, label);
       assert.equal(normalize(results[1]!.stdout, sandbox.data), normalize(results[0]!.stdout, sandbox.data), label);
       assert.equal(normalize(results[1]!.stderr, sandbox.data), normalize(results[0]!.stderr, sandbox.data), label);
+    }
+    for (const impl of ['py', 'ts'] as Impl[]) {
+      sandbox.runner = RUNNERS[impl];
+      const filesBefore = filesUnder(sandbox.data).length;
+      const shebangless = sandbox.keel(['test', '--', './no-shebang.sh'], { cwd: repo.path });
+      assert.equal(shebangless.rc, 70, impl);
+      assert.match(shebangless.stderr, /^keel: internal error: OSError: \[Errno 8\] Exec format error: '\.\/no-shebang\.sh'/, impl);
+      assert.equal(filesUnder(sandbox.data).length, filesBefore, `${impl} wrote files`);
     }
   });
 });

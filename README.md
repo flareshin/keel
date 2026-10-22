@@ -34,10 +34,10 @@ The charter lives in [`PRINCIPLES.md`](PRINCIPLES.md). `bin/link` turns it into 
 
 `PRINCIPLES.md` also states:
 
-- **`risk`**: how much verification each risk tier needs, and that merging or a deploying push needs the owner's `keel approve`. The ledger and DESIGN.md §1 frame `risk` as a core experiment: verification weight is proportional to risk.
+- **`risk`**: how much verification each risk tier needs, and that merging or a deploying push needs the owner's `keel approve`. DESIGN.md §1 frames `risk` as a core experiment: verification weight is proportional to risk. In the ledger it is a core-scope row with a review date; the pilot in DESIGN.md §6.1 decides whether it becomes charter.
 - **Floor rules**: hook-enforced safety limits. `F-irreversible` (merge, deploy and delete need explicit approval), `F-secrets`, `F-attribution`, `F-force-push` and `F-hookskip` (never switch hooks off).
 
-One more floor row lives only in the ledger: `F-mod-trust` (every installed Claude Code mod is reviewed). It is a prose-layer row with no hook behind it. The smoke `mod-trust` check FAILs on an unreviewed mod; the row's own metric only checks that this smoke check exists.
+One more floor row is not in `PRINCIPLES.md`: `F-mod-trust` (every installed Claude Code mod is reviewed), which the ledger and DESIGN.md §1 state. It is a prose-layer row with no hook behind it. The smoke `mod-trust` check FAILs on an unreviewed mod; the row's own metric only checks that this smoke check exists.
 
 ## Enforcement ladder
 
@@ -89,7 +89,7 @@ worktree ──► change + tests ──► keel test ──► lens-review ─�
 3. **Review in a separate context.** The `lens-review` workflow runs independent auditors over a snapshot tree (`keel snapshot`), never the live working tree. Auditors and verifiers run as the tool-limited `keel-auditor` agent type, the reporter as `keel-reporter` (`agents/`), and audit effort follows the diff's risk class. A separate verifier checks each finding's reproduction, and a reporter agent emits a report starting with `VERDICT: PASS` or `VERDICT: NEEDS_FIXES`, plus one `KEEL-EVIDENCE:` line per repo. The `report-gate` hook writes the review evidence; the reviewer cannot. A reviewer whose transcript shows a file write counts as an author and yields no evidence.
 4. **Fix with deltas.** Fixes after a review are reviewed as a delta on the same chain (`root_run_id`), not as a new full review.
 5. **The owner approves.** The owner runs `keel approve <root_run_id>` in their own terminal. Agents are denied this command. The approval is pinned to the chain's current head, so a later delta needs a new approval. `--read` records an acknowledgement only and approves nothing.
-6. **ship-gate decides.** On `git push` and `gh pr merge`, ship-gate computes the outgoing diff from the merge base. Unless the whole diff is smoke-only (below), every outgoing path must appear, with the same blob and mode, in one reviewed evidence chain, or in an approved series of chains, together with matching tests evidence and, at merge, the approval.
+6. **ship-gate decides.** On `git push` and `gh pr merge`, ship-gate computes the outgoing diff from the merge base. Unless the whole diff is smoke-only (below), every outgoing path must appear, with the same blob and mode, in one reviewed evidence chain, or in an approved series of chains, together with matching tests evidence and, at merge, the approval. A blob that differs from the reviewed or tested one only by deleted comments that meet the comment-only deletion rule of DESIGN.md §5.4 still matches (§5.1).
 
 `docs/review-policy.md` specifies the review flow and what an approval request must explain. Approval and a PASS are evidence, not consent to open a PR.
 

@@ -1,0 +1,238 @@
+#!/usr/bin/env python3
+"""measure/evals/review-eval [--split train|holdout] [--case ID] [--repeat N] [--model M] [--timeout-seconds S] [--dry-run]
+measure/evals/review-eval --regrade RAW_DIR
+
+Scores keel's reviewer (the lens-review workflow, through adversarial-audit) on the cases in
+measure/evals/review/cases/<id>/ (keel's, then the overlay's): each case is built as a base commit plus its change,
+and a headless `claude -p` runs lens-review on that range, REPEAT times. A defect case's run is a hit when a
+merge-blocking finding quotes the case's file within 3 lines of its line; a clean (control) case's run is noisy when it
+has any merge-blocking finding. Prints recall, noise and run-to-run variance per split; a run with no completed workflow
+record is a fault, never a miss. A full run without faults appends one line to logs/keel-review-eval.jsonl.
+Hand-run only: each review spends a dozen reviewer agents. Exit 0 measured, 1 faults or regrade disagreement, 2 usage or data error.
+--regrade grades a raw dir's saved workflow records again with the current grader and cases, calls no claude, and
+prints how many runs grade the same as when they ran.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import secrets
+import shutil
+import sys
+import tempfile
+from datetime import datetime, timezone
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, os.path.join(HERE, "lib"))
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), "lib"))
+
+from evalkit.cases import SPLITS, CaseError  # noqa: E402
+from evalkit.liveconfig import cli_config_dir  # noqa: E402
+from evalkit.reviewcases import ReviewCase, load_review_cases, select_review_cases  # noqa: E402
+from evalkit.reviewgrade import RunGrade, grade_result, suite_numbers  # noqa: E402
+from evalkit.reviewrun import BuildError, ReviewRun, build_case_repo, review_command, run_fault, run_review  # noqa: E402
+from evalkit.runner import CLAUDE_BINARY  # noqa: E402
+from measurekit import env  # noqa: E402
+from measurekit.cli import EXIT_NEGATIVE, EXIT_OK, EXIT_USAGE, print_json, run_main  # noqa: E402
+from measurekit.datafiles import append_jsonl, read_jsonl  # noqa: E402
+
+DEFAULT_REPEAT = 3
+DEFAULT_MODEL = "sonnet"
+DEFAULT_TIMEOUT_SECONDS = 1800
+RAW_DIR_PREFIX = "keel-review-eval-"
+SUMMARY_LOG = "keel-review-eval.jsonl"
+REVIEWER_FILES = ("lens-review.js", "adversarial-audit.js")
+
+
+def main(argv: list[str]) -> int:
+    args = parse_args(argv)
+    try:
+        cases = select_review_cases(load_review_cases([env.keel_home(), env.overlay_dir()]), args.split, args.case)
+    except CaseError as error:
+        print("review-eval: %s" % error, file=sys.stderr)
+        return EXIT_USAGE
+    if args.regrade:
+        return regrade(args.regrade, cases)
+    problem = plan_problem(cases)
+    if problem:
+        print("review-eval: %s" % problem, file=sys.stderr)
+        return EXIT_USAGE
+    config = run_config(args, cases)
+    print("review-eval: %d cases (%s) x %d = %d reviews, driver model %s" % (
+        len(cases), ", ".join("%s %d" % (split, sum(case.split == split for case in cases)) for split in SPLITS),
+        args.repeat, len(cases) * args.repeat, args.model), file=sys.stderr)
+    if args.dry_run:
+        print_json(config)
+        return EXIT_OK
+    raw_dir = create_raw_dir(config)
+    grades, faults = run_all(cases, config, raw_dir)
+    report = build_report(config, grades, faults, raw_dir)
+    if not faults and config["full_run"]:
+        append_jsonl(os.path.join(env.logs_dir(), SUMMARY_LOG), summary_line(report))
+    print_json(report)
+    print_summary(report)
+    return EXIT_NEGATIVE if faults else EXIT_OK
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="measure/evals/review-eval", description="Score the lens-review reviewer on known incidents and clean diffs.")
+    parser.add_argument("--split", choices=SPLITS, help="run one split only")
+    parser.add_argument("--case", help="run one case only")
+    parser.add_argument("--repeat", type=positive_int, default=DEFAULT_REPEAT, help="reviews per case (default %d)" % DEFAULT_REPEAT)
+    parser.add_argument("--model", default=DEFAULT_MODEL, help="model of the session that starts the workflow (default %s); the reviewer agents use lens-review's own" % DEFAULT_MODEL)
+    parser.add_argument("--timeout-seconds", type=positive_int, default=DEFAULT_TIMEOUT_SECONDS, help="per-review limit (default %d)" % DEFAULT_TIMEOUT_SECONDS)
+    parser.add_argument("--dry-run", action="store_true", help="build every case repo and print the plan; run nothing")
+    parser.add_argument("--regrade", metavar="RAW_DIR", help="grade an earlier run's saved workflow records again; calls no claude")
+    args = parser.parse_args(argv)
+    if args.regrade and (args.split or args.case or args.dry_run):
+        parser.error("--regrade takes its cases from the raw dir; drop --split, --case and --dry-run")
+    return args
+
+
+def positive_int(value: str) -> int:
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError("expected a positive integer, got %r" % value)
+    return number
+
+
+def plan_problem(cases: list[ReviewCase]) -> str | None:
+    """No case, no claude, or a case whose repo does not build: found before any review spends tokens."""
+    if not cases:
+        return "no case selected"
+    if shutil.which(CLAUDE_BINARY) is None:
+        return "no `%s` on PATH" % CLAUDE_BINARY
+    parent = tempfile.mkdtemp()
+    try:
+        for case in cases:
+            build_case_repo(case, os.path.join(parent, case.id))
+    except BuildError as error:
+        return str(error)
+    finally:
+        shutil.rmtree(parent, ignore_errors=True)
+    return None
+
+
+def run_config(args: argparse.Namespace, cases: list[ReviewCase]) -> dict:
+    config_dir = cli_config_dir()
+    return {
+        "full_run": args.split is None and args.case is None, "repeat": args.repeat, "model": args.model,
+        "timeout_seconds": args.timeout_seconds, "config_dir": config_dir, "command": review_command(args.model),
+        "reviewer": reviewer_fingerprint(config_dir), "cases": [{"id": case.id, "split": case.split, "clean": case.is_clean} for case in cases],
+    }
+
+
+def reviewer_fingerprint(config_dir: str) -> dict:
+    """sha256 of the workflow files the CLI loads: which reviewer version these numbers belong to."""
+    fingerprint = {}
+    for name in REVIEWER_FILES:
+        path = os.path.join(config_dir, "workflows", name)
+        if os.path.isfile(path):
+            with open(path, "rb") as handle:
+                fingerprint[name] = hashlib.sha256(handle.read()).hexdigest()
+        else:
+            fingerprint[name] = None
+    return fingerprint
+
+
+def create_raw_dir(config: dict) -> str:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    raw_dir = os.path.join(env.logs_dir(), "%s%s-%s" % (RAW_DIR_PREFIX, stamp, secrets.token_hex(2)))
+    os.makedirs(raw_dir)
+    write_json(os.path.join(raw_dir, "config.json"), config)
+    return raw_dir
+
+
+def run_all(cases: list[ReviewCase], config: dict, raw_dir: str) -> tuple[list[RunGrade], list[dict]]:
+    grades, faults = [], []
+    for case in cases:
+        for index in range(1, config["repeat"] + 1):
+            run = run_review(case, config["command"], config["config_dir"], config["timeout_seconds"])
+            fault = run_fault(run, config["timeout_seconds"])
+            grade = None if fault else grade_result(case, index, run.workflow_record["result"])
+            save_run(raw_dir, case, index, run, fault, grade)
+            if fault:
+                faults.append({"case": case.id, "run": index, "reason": fault})
+            else:
+                grades.append(grade)
+            print("  %s %d/%d: %s" % (case.id, index, config["repeat"], "FAULT " + fault if fault else describe(grade)), file=sys.stderr)
+    return grades, faults
+
+
+def describe(grade: RunGrade) -> str:
+    if grade.case.is_clean:
+        return "clean, %d blocking" % grade.blocking
+    return "%s, %d blocking" % ("hit" if grade.hit else "miss", grade.blocking)
+
+
+def save_run(raw_dir: str, case: ReviewCase, index: int, run: ReviewRun, fault: str | None, grade: RunGrade | None) -> None:
+    stem = os.path.join(raw_dir, "%s-%d" % (case.id, index))
+    with open(stem + ".stream.jsonl", "w", encoding="utf-8") as handle:
+        handle.write(run.stream_text)
+    if run.workflow_record is not None:
+        write_json(stem + ".workflow.json", run.workflow_record)
+    append_jsonl(os.path.join(raw_dir, "runs.jsonl"), {
+        "case": case.id, "run": index, "exit": run.exit_code, "timed_out": run.timed_out, "fault": fault,
+        "blocking": grade.blocking if grade else None, "hit": grade.hit if grade else None, "pass": grade.passed if grade else None,
+    })
+
+
+def build_report(config: dict, grades: list[RunGrade], faults: list[dict], raw_dir: str) -> dict:
+    return {
+        "full_run": config["full_run"], "repeat": config["repeat"], "reviewer": config["reviewer"], "raw_dir": raw_dir,
+        "numbers": suite_numbers(grades), "faults": faults,
+        "cases": [{"id": case["id"], "split": case["split"], "clean": case["clean"],
+                   "runs": [{"run": grade.run, "pass": grade.passed, "blocking": grade.blocking} for grade in grades if grade.case.id == case["id"]]}
+                  for case in config["cases"]],
+    }
+
+
+def summary_line(report: dict) -> dict:
+    return {"ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "reviewer": report["reviewer"],
+            "repeat": report["repeat"], "numbers": report["numbers"], "raw_dir": os.path.basename(report["raw_dir"])}
+
+
+def print_summary(report: dict) -> None:
+    numbers = report["numbers"]
+    for split in SPLITS:
+        part = numbers[split]
+        print("review-eval %s: recall %s (%d/%d), noise %s (%d/%d clean runs), recall stdev %s" % (
+            split, part["recall"], part["hits"], part["defect_runs"], part["noise_rate"], part["noisy_runs"],
+            part["clean_runs"], part["recall_stdev"]), file=sys.stderr)
+    print("review-eval: case agreement %s, headroom %s, faults %d; raw: %s" % (
+        numbers["case_agreement"], "yes" if numbers["headroom"] else "none (train recall 1.0, noise 0)", len(report["faults"]), report["raw_dir"]), file=sys.stderr)
+
+
+def regrade(raw_dir: str, cases: list[ReviewCase]) -> int:
+    by_id = {case.id: case for case in cases}
+    records, malformed = read_jsonl(os.path.join(raw_dir, "runs.jsonl"))
+    if malformed or not records:
+        print("review-eval: %s/runs.jsonl is missing, empty or malformed" % raw_dir, file=sys.stderr)
+        return EXIT_USAGE
+    unknown = sorted({record["case"] for record in records} - set(by_id))
+    if unknown:
+        print("review-eval: case(s) %s are no longer in the case files" % ", ".join(unknown), file=sys.stderr)
+        return EXIT_USAGE
+    graded = [(record, regraded(raw_dir, by_id[record["case"]], record)) for record in records if not record["fault"]]
+    same = sum(record["hit"] == grade.hit and record["blocking"] == grade.blocking for record, grade in graded)
+    report = {"regraded_from": os.path.basename(os.path.normpath(raw_dir)), "runs": len(graded), "same_grade": same,
+              "numbers": suite_numbers([grade for _, grade in graded])}
+    print_json(report)
+    print("review-eval: regrade %d/%d runs graded the same" % (same, len(graded)), file=sys.stderr)
+    return EXIT_OK if same == len(graded) else EXIT_NEGATIVE
+
+
+def regraded(raw_dir: str, case: ReviewCase, record: dict) -> RunGrade:
+    with open(os.path.join(raw_dir, "%s-%d.workflow.json" % (case.id, record["run"])), encoding="utf-8") as handle:
+        return grade_result(case, record["run"], json.load(handle)["result"])
+
+
+def write_json(path: str, value: dict) -> None:
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps(value, indent=2, sort_keys=True) + "\n")
+
+
+if __name__ == "__main__":
+    run_main(main)

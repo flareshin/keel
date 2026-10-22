@@ -1,0 +1,26 @@
+diff --git a/accounts/emails.py b/accounts/emails.py
+index 47da60e..2cf46d7 100644
+--- a/accounts/emails.py
++++ b/accounts/emails.py
+@@ -1,2 +1,6 @@
++def normalized(address: str) -> str:
++    return address.strip().lower()
++
++
+ def same_address(left: str, right: str) -> bool:
+-    return left == right
++    return normalized(left) == normalized(right)
+diff --git a/tests/test_emails.py b/tests/test_emails.py
+index 16acc26..f24d148 100644
+--- a/tests/test_emails.py
++++ b/tests/test_emails.py
+@@ -6,3 +6,9 @@ from accounts.emails import same_address
+ class SameAddressTest(unittest.TestCase):
+     def test_equalAddresses_match(self) -> None:
+         self.assertTrue(same_address("ada@example.com", "ada@example.com"))
++
++    def test_caseAndSurroundingSpace_areIgnored(self) -> None:
++        self.assertTrue(same_address(" Ada@Example.com ", "ada@example.com"))
++
++    def test_differentAddresses_doNotMatch(self) -> None:
++        self.assertFalse(same_address("ada@example.com", "bob@example.com"))

@@ -51,7 +51,7 @@ def run_once(prompt: str, fixture: str, command: list[str], config_dir: str, tim
     work = os.path.join(parent, project)
     try:
         _prepare_fixture_repo(fixture, work, project)
-        exit_code, timed_out, stream_text = _run_claude(command, prompt, work, timeout_seconds)
+        exit_code, timed_out, stream_text = run_claude(command, prompt, work, timeout_seconds)
         changed = bool(run_git(work, ["status", "--porcelain", "--"] + OUTSIDE_FIXTURE).strip())
         leftover = project_dir_for(work, config_dir)
         facts = RunFacts(
@@ -87,16 +87,16 @@ def _prepare_fixture_repo(fixture: str, work: str, project: str) -> None:
     shutil.copytree(fixture, work)
     run_git(work, ["init", "-q"])
     run_git(work, ["add", "-A"])
-    run_git(work, UNSIGNED + ["commit", "-q", "-m", "init"], extra_env=_project_identity(project))
+    run_git(work, UNSIGNED + ["commit", "-q", "-m", "init"], extra_env=project_identity(project))
 
 
-def _project_identity(project: str) -> dict[str, str]:
+def project_identity(project: str) -> dict[str, str]:
     """Set through the environment, not `-c user.*`: a host GIT_AUTHOR_* or GIT_COMMITTER_* would override config."""
     name, email = project, "dev@%s.invalid" % project
     return {"GIT_AUTHOR_NAME": name, "GIT_AUTHOR_EMAIL": email, "GIT_COMMITTER_NAME": name, "GIT_COMMITTER_EMAIL": email}
 
 
-def _run_claude(command: list[str], prompt: str, cwd: str, timeout_seconds: int) -> tuple[int, bool, str]:
+def run_claude(command: list[str], prompt: str, cwd: str, timeout_seconds: int) -> tuple[int, bool, str]:
     env = {**os.environ, "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}
     try:
         completed = subprocess.run(command, input=prompt + "\n", capture_output=True, text=True, cwd=cwd, env=env, timeout=timeout_seconds)

@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+"""Stand-in for `claude -p` in reviewer eval tests: plays the next round of $KEEL_TEST_SCENARIOS/review.json. No model, no network.
+
+review.json holds {"rounds": [{"status": "completed", "result": {...}, "record": true, "exit": 0}, ...]}; call k plays
+rounds[k % len]. A round with "record" true (the default) leaves a lens-review workflow record where the CLI keeps one,
+with every "{{REPO}}" in its result replaced by the cwd. Every call appends {"argv", "cwd", "prompt"} to calls.jsonl.
+"""
+import json
+import os
+import re
+import sys
+
+SCENARIO_DIR = os.environ["KEEL_TEST_SCENARIOS"]
+CALLS_LOG = os.path.join(SCENARIO_DIR, "calls.jsonl")
+
+
+def main() -> int:
+    prompt = sys.stdin.read()
+    call_index = _previous_calls()
+    with open(CALLS_LOG, "a", encoding="utf-8") as log:
+        log.write(json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd(), "prompt": prompt}) + "\n")
+    with open(os.path.join(SCENARIO_DIR, "review.json"), encoding="utf-8") as handle:
+        rounds = json.load(handle)["rounds"]
+    scenario = rounds[call_index % len(rounds)]
+    session_id = "session-%d" % call_index
+    if scenario.get("record", True):
+        _write_record(session_id, scenario)
+    print(json.dumps({"type": "system", "subtype": "init", "session_id": session_id, "model": "stub-model"}))
+    print(json.dumps({"type": "result", "subtype": "success", "result": "VERDICT: done"}))
+    return scenario.get("exit", 0)
+
+
+def _write_record(session_id: str, scenario: dict) -> None:
+    slug = re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(os.getcwd()))
+    directory = os.path.join(os.environ["CLAUDE_CONFIG_DIR"], "projects", slug, session_id, "workflows")
+    os.makedirs(directory, exist_ok=True)
+    result = json.loads(json.dumps(scenario.get("result")).replace("{{REPO}}", os.path.realpath(os.getcwd())))
+    record = {"workflowName": "lens-review", "status": scenario.get("status", "completed"), "startTime": 1, "result": result}
+    with open(os.path.join(directory, "wf_stub.json"), "w", encoding="utf-8") as handle:
+        json.dump(record, handle)
+
+
+def _previous_calls() -> int:
+    if not os.path.exists(CALLS_LOG):
+        return 0
+    with open(CALLS_LOG, encoding="utf-8") as log:
+        return sum(1 for line in log if line.strip())
+
+
+if __name__ == "__main__":
+    sys.exit(main())

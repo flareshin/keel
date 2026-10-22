@@ -1,0 +1,35 @@
+diff --git a/shop/orders.py b/shop/orders.py
+index 8c6b11e..7296019 100644
+--- a/shop/orders.py
++++ b/shop/orders.py
+@@ -3,3 +3,8 @@ import sqlite3
+ 
+ def open_orders(conn: sqlite3.Connection) -> list[tuple]:
+     return conn.execute("SELECT id, customer, total FROM orders WHERE status = ?", ("open",)).fetchall()
++
++
++def orders_of(conn: sqlite3.Connection, customer: str) -> list[tuple]:
++    query = f"SELECT id, total FROM orders WHERE customer = '{customer}' ORDER BY id"
++    return conn.execute(query).fetchall()
+diff --git a/tests/test_orders.py b/tests/test_orders.py
+index e2f4c05..0e480f5 100644
+--- a/tests/test_orders.py
++++ b/tests/test_orders.py
+@@ -1,7 +1,7 @@
+ import sqlite3
+ import unittest
+ 
+-from shop.orders import open_orders
++from shop.orders import open_orders, orders_of
+ 
+ 
+ def seeded() -> sqlite3.Connection:
+@@ -14,3 +14,8 @@ def seeded() -> sqlite3.Connection:
+ class OpenOrdersTest(unittest.TestCase):
+     def test_returnsOnlyOpenOrders(self) -> None:
+         self.assertEqual(open_orders(seeded()), [(1, "ada", 30)])
++
++
++class OrdersOfTest(unittest.TestCase):
++    def test_returnsTheCustomersOrders(self) -> None:
++        self.assertEqual(orders_of(seeded(), "bob"), [(2, 50)])

@@ -1,0 +1,1 @@
+{"lens": "security", "must_find": "orders_of formats customer into the SQL text with an f-string instead of binding it as a parameter, so a customer value such as ' OR '1'='1 reads every order (SQL injection).", "source": "invented sample", "split": "train", "locations": [{"file": "shop/orders.py", "line": 9}]}

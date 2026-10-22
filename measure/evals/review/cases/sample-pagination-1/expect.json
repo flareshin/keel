@@ -1,0 +1,1 @@
+{"lens": "boundary", "must_find": "pageCount floors total / size, so a last partial page is dropped: pageCount(25, 10) returns 2 instead of 3; the test only covers an exact multiple.", "source": "invented sample", "split": "holdout", "locations": [{"file": "src/pager.js", "line": 8}]}

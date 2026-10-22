@@ -1,0 +1,30 @@
+diff --git a/src/pager.js b/src/pager.js
+index 2da2467..5ba6fbb 100644
+--- a/src/pager.js
++++ b/src/pager.js
+@@ -2,3 +2,8 @@ export function pageSlice(items, page, size) {
+   const start = (page - 1) * size
+   return items.slice(start, start + size)
+ }
++
++export function pageCount(total, size) {
++  if (size <= 0) throw new RangeError('size must be positive')
++  return Math.floor(total / size)
++}
+diff --git a/src/pager.test.js b/src/pager.test.js
+index 494d4fd..ae6e459 100644
+--- a/src/pager.test.js
++++ b/src/pager.test.js
+@@ -1,7 +1,11 @@
+ import { test } from 'node:test'
+ import assert from 'node:assert/strict'
+-import { pageSlice } from './pager.js'
++import { pageCount, pageSlice } from './pager.js'
+ 
+ test('pageSlice returns the items of a page', () => {
+   assert.deepEqual(pageSlice([1, 2, 3, 4, 5], 2, 2), [3, 4])
+ })
++
++test('pageCount counts full pages', () => {
++  assert.equal(pageCount(20, 10), 2)
++})

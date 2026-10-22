@@ -217,6 +217,32 @@ test('lensReview_namesEachRepoReviewBaseForOrigin_inDeltaTarget', async () => {
   assert.match(childArgs.guardrails, /A prior merge-blocking finding is introduced\./)
 })
 
+const ROUND_ROOT = 'rv-20261001T000000Z-aaaaaa'
+const STEP_BACK = /\n\nStep back: NEEDS_FIXES round 3 on root rv-20261001T000000Z-aaaaaa \(cap 3\)\. Before another fix, reconsider the approach and tell the owner what keeps failing\.\n\n/
+
+async function runFixDelta({ priorRounds, isClean }) {
+  const audits = isClean ? {} : { contract: { findings: [finding('c1', 'high')] } }
+  const verdicts = { c1: { verdict: 'CONFIRMED', evidence: 'reran' } }
+  const rt = createRuntime({ respond: responder({ audits, verdicts }) })
+  const prepared = { diff_outputs: [preparedLine()], run_id_output: DERIVED_RUN_ID, lenses_output: '', ...(priorRounds === undefined ? {} : { needs_fixes_rounds: priorRounds }) }
+  return rt.run('lens-review', { auditMode: 'split', diffs: [{ ...ROOT_DIFF, since: SHA_D }], lenses: CALLER_LENSES, rootRunId: ROUND_ROOT, prepared })
+}
+
+test('lensReview_asksAuthorToStepBack_whenThisNeedsFixesIsTheThirdOnTheRoot', async () => {
+  const result = await runFixDelta({ priorRounds: 2 })
+  assert.equal(result.verdict, 'NEEDS_FIXES')
+  assert.equal(result.needsFixesRound, 3)
+  assert.match(result.report, STEP_BACK)
+})
+
+test('lensReview_omitsStepBack_belowTheCapOrOnPassOrWithoutACount', async () => {
+  for (const [name, options, round] of [['second round', { priorRounds: 1 }, 2], ['pass after two', { priorRounds: 2, isClean: true }, 2], ['no count', {}, 1]]) {
+    const result = await runFixDelta(options)
+    assert.equal(result.needsFixesRound, round, name)
+    assert.doesNotMatch(result.report, /Step back:/, name)
+  }
+})
+
 test('lensReview_sendsRequirementToLensesAndGuideOnlyToReadableCode_whenBothAreGiven', async () => {
   const rt = createRuntime({ respond: responder() })
   const scriptArgs = { diffs: [ROOT_DIFF], lenses: CALLER_LENSES, requirement: 'Coupons stack per line.', readingGuide: 'Entry point : a.py' }

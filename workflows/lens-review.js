@@ -20,6 +20,7 @@ const READABLE_KEY = 'readable-code'
 const RULE_CHECKS_KEY = 'rule-checks'
 const BLOCKING_IMPACT = ['high', 'medium']
 const PRE_EXISTING = 'pre-existing'
+const NEEDS_FIXES_ROUND_CAP = 3
 const AUTHOR_TEXT_ARGS = ['readingGuide', 'guardrails']
 const KNOWN_ARGS = ['diffs', 'lenses', 'guardrails', 'requirement', 'readingGuide', 'priorFindings', 'runId', 'rootRunId', 'maxFindingsPerLens', 'model', 'effort', 'mechanicalModel', 'auditMode', 'prepared']
 const AUTHOR_CLAIMS = [
@@ -79,12 +80,12 @@ if (argsProblem) {
 phase('Prepare')
 const prepared = await prepareReview()
 if (prepared.error) return failed(prepared.error)
-const { runId, rootRunId, reviewed, lensSet } = prepared
+const { runId, rootRunId, reviewed, lensSet, priorNeedsFixesRounds } = prepared
 
 const audit = await runAudit(reviewed, lensSet)
 if (audit.error) return failed(audit.error)
 
-const outcome = judge(audit, lensSet, reviewed.length)
+const outcome = judge(audit, lensSet, reviewed.length, priorNeedsFixesRounds)
 log(`${outcome.verdict}: ${outcome.blocking.length} merge-blocking, ${outcome.nonBlocking.length} non-blocking, ${audit.unverified.length} unverified, ${outcome.failedLenses.length} lens(es) not run, ${audit.refuted.length} refuted`)
 const evidenceLines = reviewed.map((target) => buildEvidenceLine(target, runId, rootRunId))
 const expectedReport = buildReport(outcome, audit, reviewed, evidenceLines)
@@ -106,6 +107,7 @@ return {
   blocking: outcome.blocking,
   nonBlocking: outcome.nonBlocking,
   preExisting: outcome.preExisting,
+  needsFixesRound: outcome.needsFixesRound,
   unverified: audit.unverified,
   refutedCount: audit.refuted.length,
 }
@@ -182,7 +184,7 @@ async function prepareReview() {
   if (!runId) return { error: `prepare agent returned no valid run id: ${JSON.stringify(output.run_id_output)}` }
   const lensSet = resolveLensSet(output.lenses_output, reviewed.targets)
   if (lensSet.error) return lensSet
-  return { runId, rootRunId: A.rootRunId || runId, reviewed: reviewed.targets, lensSet }
+  return { runId, rootRunId: A.rootRunId || runId, reviewed: reviewed.targets, lensSet, priorNeedsFixesRounds: resolvePriorRounds(output.needs_fixes_rounds) }
 }
 
 function buildPreparePrompt() {
@@ -232,6 +234,10 @@ function isPreparedShaped(p) {
   if (!p || !isPastableAbsolutePath(p.repo_root)) return false
   if (!SHA.test(p.review_base) || typeof p.diff_stat !== 'string') return false
   return (SHA.test(p.head) && p.snapshot_tree === null) || (p.head === null && SHA.test(p.snapshot_tree))
+}
+
+function resolvePriorRounds(count) {
+  return Number.isInteger(count) && count > 0 ? count : 0
 }
 
 function resolveRunId(runIdOutput) {
@@ -335,15 +341,17 @@ function describeDelta() {
   return PRIOR_FINDINGS ? `${FIX_DELTA_NOTE}\n${PRIOR_FINDINGS.map((f) => `- ${f}`).join('\n')}` : DELTA_NOTE
 }
 
-function judge(audit, lensSet, repoCount) {
+function judge(audit, lensSet, repoCount, priorNeedsFixesRounds) {
   const failedLenses = [...(audit.failedLenses || []), ...findUnprovenRuleChecks(audit, lensSet, repoCount)]
   const preExisting = audit.confirmed.filter(isPreExisting)
   const introduced = audit.confirmed.filter((f) => !isPreExisting(f))
   const blocking = introduced.filter(isMergeBlocking)
   const nonBlocking = introduced.filter((f) => !isMergeBlocking(f))
   const isIncomplete = audit.unverified.length > 0 || failedLenses.length > 0
+  const verdict = blocking.length || isIncomplete ? 'NEEDS_FIXES' : 'PASS'
   return {
-    verdict: blocking.length || isIncomplete ? 'NEEDS_FIXES' : 'PASS',
+    verdict,
+    needsFixesRound: priorNeedsFixesRounds + (verdict === 'NEEDS_FIXES' ? 1 : 0),
     fixableFindings: isIncomplete ? 0 : blocking.length,
     lensesFired: lensSet.lenses.map((lens) => lens.key).filter((key) => !failedLenses.includes(key)),
     failedLenses,
@@ -399,6 +407,7 @@ function buildReport(outcome, audit, reviewed, evidenceLines) {
     describeFindings('Unverified (the verifier failed; re-verify before any PASS)', audit.unverified),
     `Lenses that did not run (re-run the review): ${outcome.failedLenses.length ? toOneLine(outcome.failedLenses.join(', ')) : 'none'}`,
     `Refuted: ${audit.refuted.length}`,
+    ...(outcome.needsFixesRound >= NEEDS_FIXES_ROUND_CAP && outcome.verdict === 'NEEDS_FIXES' ? [describeStepBack(outcome.needsFixesRound)] : []),
     describeLensNotes(audit.lensNotes || []),
     evidenceLines.join('\n'),
   ].join('\n\n')
@@ -412,6 +421,10 @@ function describeFindings(title, findings) {
     return `- [${toOneLine(f.impact)}${adjusted}${unreproduced}] ${toOneLine(f.lens)}/${toOneLine(f.id)}: ${toOneLine(f.summary)}\n  At: ${toOneLine(f.file)} - ${toOneLine(f.quote)}\n  Repro: ${hasRepro(f) ? toOneLine(f.repro) : 'none'}\n  Fix: ${toOneLine(f.proposal)}`
   })
   return `${title} (${findings.length}):\n${items.join('\n')}`
+}
+
+function describeStepBack(round) {
+  return `Step back: NEEDS_FIXES round ${round} on root ${rootRunId} (cap ${NEEDS_FIXES_ROUND_CAP}). Before another fix, reconsider the approach and tell the owner what keeps failing.`
 }
 
 function describeLensNotes(lensNotes) {

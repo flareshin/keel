@@ -37,3 +37,21 @@ class PrepareTest(unittest.TestCase):
     def test_prepare_refusesOptionLikeRef(self):
         with self.assertRaises(writers.Usage):
             prepare.prepare_target({'repo': self.repo.path, 'base': '--help'})
+
+    def test_prepare_countsNeedsFixesLinksInTheRootChain_whenRootRunIdIsGiven(self):
+        root_tree = self.box.keel('snapshot', self.repo.path).json['tree']
+        self.box.review(self.repo, verdict='NEEDS_FIXES')
+        self.repo.write('fix.py', 'print(2)\n')
+        delta_tree = self.box.keel('snapshot', self.repo.path).json['tree']
+        self.box.review(self.repo, run_id='rv-delta-0002', root_run_id='rv-root-0001', since=root_tree, verdict='NEEDS_FIXES')
+        self.repo.write('fix.py', 'print(3)\n')
+        self.box.review(self.repo, run_id='rv-delta-0003', root_run_id='rv-root-0001', since=delta_tree)
+        diffs = [{'repo': self.repo.path, 'base': self.base}]
+
+        delta = self.box.keel('review', 'prepare', stdin=json.dumps({'diffs': diffs, 'lenses': [], 'rootRunId': 'rv-root-0001'}))
+        root = self.box.keel('review', 'prepare', stdin=json.dumps({'diffs': diffs, 'lenses': []}))
+        other = self.box.keel('review', 'prepare', stdin=json.dumps({'diffs': diffs, 'lenses': [], 'rootRunId': 'rv-other-0001'}))
+
+        self.assertEqual((delta.rc, delta.json['needs_fixes_rounds']), (0, 2))
+        self.assertEqual(root.json['needs_fixes_rounds'], 0)
+        self.assertEqual(other.json['needs_fixes_rounds'], 0)

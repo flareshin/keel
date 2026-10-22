@@ -6,7 +6,7 @@ import os
 from typing import Dict, Optional, Tuple
 
 from evidence import env, gitcmd, registry, store
-from evidence.chain import build_chains
+from evidence.chain import Chain, build_chains
 
 REVIEW_CLAIM_KEYS = ("v", "repo_root", "review_base", "head", "snapshot_tree", "since", "run_id",
                      "root_run_id", "review_kind")
@@ -106,13 +106,17 @@ def write_approval(root_run_id: str, kind: str) -> dict:
 
 def chain_heads(root_run_id: str) -> Dict[str, dict]:
     """Newest chain head per repo for one root."""
-    heads = {}
+    return {repo_key: chain.head for repo_key, chain in newest_chains(root_run_id).items()}
+
+
+def newest_chains(root_run_id: str) -> Dict[str, Chain]:
+    chains = {}
     for repo_key in store.repo_keys("review"):
         for chain in build_chains(store.load("review", repo_key)):
             if chain.root_run_id == root_run_id:
-                heads[repo_key] = chain.head
+                chains[repo_key] = chain
                 break
-    return heads
+    return chains
 
 
 def _validated_claim(claim) -> dict:

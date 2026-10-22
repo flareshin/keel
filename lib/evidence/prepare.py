@@ -14,7 +14,15 @@ def review(request: dict) -> dict:
     lenses_path = Path(env.data_dir()) / 'workflows/review-lenses.json'
     lenses = json.loads(lenses_path.read_text()) if 'lenses' not in request else {}
     return {'diff_outputs': outputs, 'run_id_output': env.new_id('rv', env.utc_now(), env.RUN_ID_RANDOM_BYTES),
-            'lenses_output': {'lenses': lenses.get('lenses', []), 'guardrails': lenses.get('guardrails', '')}}
+            'lenses_output': {'lenses': lenses.get('lenses', []), 'guardrails': lenses.get('guardrails', '')},
+            'needs_fixes_rounds': count_needs_fixes_rounds(request.get('rootRunId'))}
+
+
+def count_needs_fixes_rounds(root_run_id) -> int:
+    if not isinstance(root_run_id, str):
+        return 0
+    chains = writers.newest_chains(root_run_id).values()
+    return max((sum(link['verdict'] == 'NEEDS_FIXES' for link in chain.links) for chain in chains), default=0)
 
 
 def prepare_target(target: dict) -> dict:

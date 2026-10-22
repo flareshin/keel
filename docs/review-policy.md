@@ -77,6 +77,12 @@ Start a full review when the requirement or review base changes, prior evidence
 is missing or invalid, or the new scope cannot be assessed as a bounded delta.
 Do not restart the entire review merely because a small fix was made.
 
+A Claude review chain that reaches its third NEEDS_FIXES ends its report with a
+`Step back` line. Before another fix, reconsider the approach and tell the owner
+what keeps failing. `keel review prepare` counts the earlier NEEDS_FIXES links
+of the `rootRunId` chain. The line is a prompt for the author and owner; it does
+not change the verdict or any gate.
+
 [C-verbatim-fix] A fix that applies a reviewer's exact replacement text
 verbatim, and changes nothing else, closes that finding without a delta review.
 The reviewer chose the text, so the author does not judge it. The text must come

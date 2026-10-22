@@ -5,11 +5,12 @@ import { FireLog } from "../lib/hookkit/fires.ts";
 import * as protocol from "../lib/hookkit/protocol.ts";
 import type { Payload } from "../lib/hookkit/protocol.ts";
 import {
-  expandUser, getField, isRecord, isTruthy, joinPath, normalizePath, PY_SPACE, PY_WORD, pythonStr, sortedByCodePoint, strip,
+  expandUser, getField, isRecord, isTruthy, joinPath, normalizePath, PY_SPACE, PY_WORD, pythonStr, sortedByCodePoint, SPACE_CLASS, strip,
+  testCaseFolded, WORD_BOUNDARY,
 } from "../lib/hookkit/pycompat.ts";
 import { dumpsAscii, loads, parsePayload } from "../lib/hookkit/pyjson.ts";
 import { dirname, readTextFile } from "../lib/hookkit/pypath.ts";
-import { AttributeError, describeError, pythonErrorName, pythonTypeName, readStdin, stripChars, ValueError } from "../lib/hookkit/pyruntime.ts";
+import { AttributeError, describeError, pythonErrorName, pythonList, pythonTypeName, readStdin, stripChars, ValueError } from "../lib/hookkit/pyruntime.ts";
 import { OSError, run, TimeoutExpired } from "../lib/hookkit/subprocess.ts";
 import type { CompletedProcess } from "../lib/hookkit/subprocess.ts";
 import { commandWritesFiles } from "../lib/hookkit/shell.ts";
@@ -17,29 +18,31 @@ import { contentOf, iterEntries, roleOf, textOf, toolUses } from "../lib/hookkit
 
 const HOOK = "report-gate";
 const CLI_TIMEOUT_SECONDS = 20;
-const SPACE = `[${PY_SPACE}]`;
 const DIGIT = "\\p{Nd}";
-const WORD = `[${PY_WORD}]`;
-const WORD_BOUNDARY = `(?:(?<=${WORD})(?!${WORD})|(?<!${WORD})(?=${WORD}))`;
 
-export const EVIDENCE_RE = new RegExp(
-  `Tests run:${SPACE}*${DIGIT}` +
-  `|${WORD_BOUNDARY}${DIGIT}+${SPACE}+pass(?:ed|ing)${WORD_BOUNDARY}` +
-  `|${WORD_BOUNDARY}${DIGIT}[${DIGIT},]*${SPACE}+(?:[a-z]+${SPACE}+)?(?:tests?|specs?|checks?|cases?|suites?)${SPACE}+pass(?:ed|ing)${WORD_BOUNDARY}` +
-  `|${WORD_BOUNDARY}${DIGIT}+${SPACE}*/${SPACE}*${DIGIT}+${SPACE}+(?:tests?${SPACE}+|checks?${SPACE}+)?pass(?:ed|ing)${WORD_BOUNDARY}` +
-  `|${WORD_BOUNDARY}Ran ${DIGIT}+ tests?${WORD_BOUNDARY}|#${SPACE}*pass${SPACE}+${DIGIT}` +
-  `|exit(?:ed)?(?:${SPACE}+(?:with${SPACE}+)?(?:code|status))?[:= ]*0${WORD_BOUNDARY}|\\$\\?${SPACE}*=?${SPACE}*0` +
-  `|grep${SPACE}+-c|wc${SPACE}+-[lc]|diff --git|files? changed|[${PY_WORD}./~-]+\\.[A-Za-z]{1,5}:${DIGIT}+` +
-  `|UNVERIFIED${SPACE}*:|NOT VERIFIED`,
+const EVIDENCE_RE = new RegExp(
+  `Tests run:${SPACE_CLASS}*${DIGIT}` +
+  `|${WORD_BOUNDARY}${DIGIT}+${SPACE_CLASS}+pass(?:ed|ing)${WORD_BOUNDARY}` +
+  `|${WORD_BOUNDARY}${DIGIT}[${DIGIT},]*${SPACE_CLASS}+(?:[a-z]+${SPACE_CLASS}+)?(?:tests?|specs?|checks?|cases?|suites?)${SPACE_CLASS}+pass(?:ed|ing)${WORD_BOUNDARY}` +
+  `|${WORD_BOUNDARY}${DIGIT}+${SPACE_CLASS}*/${SPACE_CLASS}*${DIGIT}+${SPACE_CLASS}+(?:tests?${SPACE_CLASS}+|checks?${SPACE_CLASS}+)?pass(?:ed|ing)${WORD_BOUNDARY}` +
+  `|${WORD_BOUNDARY}Ran ${DIGIT}+ tests?${WORD_BOUNDARY}|#${SPACE_CLASS}*pass${SPACE_CLASS}+${DIGIT}` +
+  `|exit(?:ed)?(?:${SPACE_CLASS}+(?:with${SPACE_CLASS}+)?(?:code|status))?[:= ]*0${WORD_BOUNDARY}|\\$\\?${SPACE_CLASS}*=?${SPACE_CLASS}*0` +
+  `|grep${SPACE_CLASS}+-c|wc${SPACE_CLASS}+-[lc]|diff --git|files? changed|[${PY_WORD}./~-]+\\.[A-Za-z]{1,5}:${DIGIT}+` +
+  `|UNVERIFIED${SPACE_CLASS}*:|NOT VERIFIED`,
   "iu",
 );
+
+export function hasEvidenceToken(report: string): boolean {
+  return testCaseFolded(EVIDENCE_RE, report);
+}
+
 const VERDICT_RE = new RegExp(
   `${WORD_BOUNDARY}(?:PASS|BLOCK|ASK|READY_TO_MERGE|NEEDS_FIXES|SHIP_READY|BUGS_FOUND|BLOCKED|INVESTIGATE_FURTHER)${WORD_BOUNDARY}` +
-  `|VERDICT${SPACE}*:`,
+  `|VERDICT${SPACE_CLASS}*:`,
   "u",
 );
 const REVIEW_VERDICTS: ReadonlyMap<string, string> = new Map([["VERDICT: PASS", "PASS"], ["VERDICT: NEEDS_FIXES", "NEEDS_FIXES"]]);
-const KEEL_EVIDENCE_RE = new RegExp(`(?<![^\\n])${SPACE}*KEEL-EVIDENCE: (\\{[^\\n]*\\})${SPACE}*(?=\\n|$)`, "gu");
+const KEEL_EVIDENCE_RE = new RegExp(`(?<![^\\n])${SPACE_CLASS}*KEEL-EVIDENCE: (\\{[^\\n]*\\})${SPACE_CLASS}*(?=\\n|$)`, "gu");
 export const REPORT_START = "<<<KEEL-REPORT";
 export const REPORT_END = "KEEL-REPORT>>>";
 const SCOPE_RE = /\[SCOPE\][ \t]*([^\n]+)/g;
@@ -80,7 +83,7 @@ class TurnState {
       return;
     }
     if (!isRecord(data)) throw new AttributeError(`'${pythonTypeName(data)}' object has no attribute 'get'`);
-    this.flaggedPaths = listOf(getField(data, "paths"));
+    this.flaggedPaths = pythonList(getField(data, "paths")) as string[];
     this.evidenceDenied = isTruthy(getField(data, "ev"));
     this.handedBack = isTruthy(getField(data, "hb"));
   }
@@ -95,13 +98,6 @@ class TurnState {
 
 function isReadFailure(error: unknown): boolean {
   return error instanceof ValueError || typeof (error as NodeJS.ErrnoException).code === "string";
-}
-
-function listOf(value: unknown): string[] {
-  if (!isTruthy(value)) return [];
-  if (Array.isArray(value)) return [...value] as string[];
-  if (typeof value === "string") return Array.from(value);
-  throw new TypeError(`'${pythonTypeName(value)}' object is not iterable`);
 }
 
 class AgentTranscript {
@@ -362,13 +358,13 @@ export function withoutReportMarkers(report: string | null): string | null {
 }
 
 function comparableLines(text: string): string[] {
-  const trimmedLines = text.split("\n").map((line) => line.replace(new RegExp(`${SPACE}+$`), ""));
+  const trimmedLines = text.split("\n").map((line) => line.replace(new RegExp(`${SPACE_CLASS}+$`), ""));
   return stripChars(trimmedLines.join("\n"), "\n").split("\n");
 }
 
 function verdictOf(report: string): string | null {
-  const firstLine = report.replace(new RegExp(`^${SPACE}+`), "").split("\n")[0] ?? "";
-  return REVIEW_VERDICTS.get(firstLine.replace(new RegExp(`${SPACE}+$`), "")) ?? null;
+  const firstLine = report.replace(new RegExp(`^${SPACE_CLASS}+`), "").split("\n")[0] ?? "";
+  return REVIEW_VERDICTS.get(firstLine.replace(new RegExp(`${SPACE_CLASS}+$`), "")) ?? null;
 }
 
 function hasEvidenceLine(report: string): boolean {
@@ -379,7 +375,7 @@ function lacksEvidence(report: string, needsEvidence: boolean, fires: FireLog): 
   const stripped = strip(report);
   const exempt = !(needsEvidence || VERDICT_RE.test(stripped)) || stripped.startsWith("{") || stripped.startsWith("[");
   if (exempt) return false;
-  const hasToken = EVIDENCE_RE.test(stripped);
+  const hasToken = hasEvidenceToken(stripped);
   fires.append("K2", hasToken ? "pass" : "deny");
   return !hasToken;
 }

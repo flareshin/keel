@@ -5,6 +5,9 @@ import {
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { KEEL_HOME } from "./helpers.ts";
+import type { HookSandbox } from "./helpers.ts";
+import { buildAdversarialSet } from "./hook-parity-adversarial.ts";
+import type { AdversarialCase } from "./hook-parity-adversarial.ts";
 
 const RECORDER = join(import.meta.dirname, "hook_parity_record.py");
 const RUN_TIMEOUT_MS = 60_000;
@@ -14,6 +17,8 @@ const EXCERPT_CHARACTERS = 240;
 const FIRES_TIMESTAMP = /^(\{"ts": ")[^"]*(")/;
 const HANDOFF_TIMESTAMP = /^(> Generated )\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ /m;
 const UNREADABLE = "<unreadable>";
+const GIT_DIRECTORY = ".git";
+const REMOTES_TREE = "remotes";
 
 interface Case {
   id: string;
@@ -25,6 +30,7 @@ interface Case {
   env: Record<string, string>;
   python: string;
   snapshot: string;
+  root: string;
 }
 
 interface Observation {
@@ -36,6 +42,7 @@ interface Observation {
 
 export interface ParityReport {
   cases: number;
+  adversarial: number;
   mismatches: number;
   perHook: Map<string, number>;
   details: string[];
@@ -44,26 +51,44 @@ export interface ParityReport {
 
 export function runParity(): ParityReport {
   const base = realpathSync(mkdtempSync(join(tmpdir(), "keel-parity-")));
+  const adversarial = buildAdversarialSet();
   try {
     const casesDir = join(base, "cases");
     const sandboxRoot = join(base, "sandbox");
     const recorder = record(casesDir, sandboxRoot);
-    const report: ParityReport = { cases: 0, mismatches: 0, perHook: new Map(), details: [], recorder };
-    for (const testCase of loadCases(casesDir)) {
-      const expected = observe(testCase, sandboxRoot, "python");
-      const actual = observe(testCase, sandboxRoot, "node");
-      const differences = compare(expected, actual);
-      report.cases += 1;
-      report.perHook.set(testCase.script, (report.perHook.get(testCase.script) ?? 0) + 1);
-      if (differences.length > 0) {
-        report.mismatches += 1;
-        report.details.push(`case ${testCase.id} (${testCase.test}) ${testCase.script}:\n  ${differences.join("\n  ")}`);
-      }
+    const report: ParityReport = { cases: 0, adversarial: 0, mismatches: 0, perHook: new Map(), details: [], recorder };
+    for (const testCase of loadCases(casesDir, sandboxRoot)) replay(testCase, report);
+    for (const testCase of snapshotAdversarialCases(adversarial, join(base, "adversarial"))) {
+      replay(testCase, report);
+      report.adversarial += 1;
     }
     return report;
   } finally {
+    adversarial.sandbox.close();
     rmSync(base, { recursive: true, force: true });
   }
+}
+
+function replay(testCase: Case, report: ParityReport): void {
+  const expected = observe(testCase, "python");
+  const actual = observe(testCase, "node");
+  const differences = compare(expected, actual);
+  report.cases += 1;
+  report.perHook.set(testCase.script, (report.perHook.get(testCase.script) ?? 0) + 1);
+  if (differences.length > 0) {
+    report.mismatches += 1;
+    report.details.push(`case ${testCase.id} (${testCase.test}) ${testCase.script}:\n  ${differences.join("\n  ")}`);
+  }
+}
+
+function snapshotAdversarialCases(adversarial: { sandbox: HookSandbox; cases: AdversarialCase[] }, snapshot: string): Case[] {
+  const sandbox = adversarial.sandbox;
+  copyTree(sandbox.root, snapshot);
+  return adversarial.cases.map((adversarialCase, index) => ({
+    id: `adversarial-${String(index + 1).padStart(4, "0")}`, test: adversarialCase.name, script: adversarialCase.script,
+    args: adversarialCase.args, cwd: adversarialCase.cwd, stdin: adversarialCase.stdin, env: sandbox.env, python: "python3",
+    snapshot, root: sandbox.root,
+  }));
 }
 
 function record(casesDir: string, sandboxRoot: string): ParityReport["recorder"] {
@@ -72,15 +97,16 @@ function record(casesDir: string, sandboxRoot: string): ParityReport["recorder"]
   return JSON.parse(result.stdout.trim().split("\n").pop() ?? "{}");
 }
 
-function loadCases(casesDir: string): Case[] {
+function loadCases(casesDir: string, sandboxRoot: string): Case[] {
   return readdirSync(casesDir).sort().map((id) => {
     const directory = join(casesDir, id);
     const recorded = JSON.parse(readFileSync(join(directory, "case.json"), "utf8"));
-    return { id, ...recorded, snapshot: join(directory, "root") } as Case;
+    return { id, ...recorded, snapshot: join(directory, "root"), root: sandboxRoot } as Case;
   });
 }
 
-function observe(testCase: Case, sandboxRoot: string, runtime: "python" | "node"): Observation {
+function observe(testCase: Case, runtime: "python" | "node"): Observation {
+  const sandboxRoot = testCase.root;
   rmSync(sandboxRoot, { recursive: true, force: true });
   copyTree(testCase.snapshot, sandboxRoot);
   const entry = join(KEEL_HOME, runtime === "python" ? testCase.script : testCase.script.replace(/\.py$/, ".ts"));
@@ -126,7 +152,7 @@ function readTree(root: string): Map<string, string> {
     for (const name of readdirSync(directory).sort()) {
       const path = join(directory, name);
       const key = relative(root, path);
-      if (name === ".git" || key === "remotes") continue;
+      if (isUncompared(name, key)) continue;
       const status = lstatSync(path);
       if (status.isSymbolicLink()) files.set(key, `-> ${readlinkSync(path)}`);
       else if (status.isDirectory()) {
@@ -137,6 +163,10 @@ function readTree(root: string): Map<string, string> {
   };
   visit(root);
   return files;
+}
+
+function isUncompared(name: string, key: string): boolean {
+  return name === GIT_DIRECTORY || key === REMOTES_TREE;
 }
 
 function readOrMark(path: string): string {
@@ -175,7 +205,7 @@ function excerpt(value: unknown): string {
 }
 
 export function summary(report: ParityReport): string {
-  return `parity: ${report.cases} cases, ${report.mismatches} mismatches`;
+  return `parity: ${report.cases - report.adversarial} recorded + ${report.adversarial} adversarial cases, ${report.mismatches} mismatches`;
 }
 
 if (import.meta.main) {

@@ -6,6 +6,9 @@ import type { CompletedProcess } from "./subprocess.ts";
 
 export const PY_SPACE = String.raw`\t-\r\x1c-\x20\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000`;
 export const PY_WORD = String.raw`\p{L}\p{N}_`;
+export const SPACE_CLASS = `[${PY_SPACE}]`;
+export const WORD_CLASS = `[${PY_WORD}]`;
+export const WORD_BOUNDARY = `(?:(?<=${WORD_CLASS})(?!${WORD_CLASS})|(?<!${WORD_CLASS})(?=${WORD_CLASS}))`;
 
 const LEADING_SPACE = new RegExp(`^[${PY_SPACE}]+`);
 const TRAILING_SPACE = new RegExp(`[${PY_SPACE}]+$`);
@@ -39,6 +42,10 @@ export function hasField(record: Record<string, unknown>, key: string): boolean 
 
 export function foldDottedAndDotlessI(text: string): string {
   return text.replace(DOTTED_OR_DOTLESS_I, "i");
+}
+
+export function testCaseFolded(pattern: RegExp, text: string): boolean {
+  return pattern.test(foldDottedAndDotlessI(text));
 }
 
 export function codePointLength(text: string): number {
@@ -403,5 +410,11 @@ export function pythonJsonDumps(value: unknown): string {
     const members = Object.entries(value).filter(([, item]) => item !== undefined);
     return "{" + members.map(([key, item]) => `${JSON.stringify(key)}: ${pythonJsonDumps(item)}`).join(", ") + "}";
   }
+  if (typeof value === "number" && !Number.isFinite(value)) return nonFiniteNumberText(value);
   return JSON.stringify(value);
+}
+
+function nonFiniteNumberText(value: number): string {
+  if (Number.isNaN(value)) return "NaN";
+  return value > 0 ? "Infinity" : "-Infinity";
 }

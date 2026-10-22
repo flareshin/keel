@@ -3,16 +3,19 @@ import { describe, it } from "node:test";
 import { GIT_GUARD, HANDOFF, MODEL_ASSIGN, REPORT_GATE, ENV_PREFLIGHT } from "./helpers.ts";
 import { runParity, summary } from "./hook-parity.ts";
 
-const MIN_CASES = 300;
+const MIN_RECORDED_CASES = 300;
+const MIN_ADVERSARIAL_CASES = 50;
 const PARITY_TIMEOUT_MS = 30 * 60_000;
 const PYTHON_ENTRIES = [GIT_GUARD, HANDOFF, MODEL_ASSIGN, REPORT_GATE, ENV_PREFLIGHT].map((entry) => entry.replace(/\.ts$/, ".py"));
 
 describe("hook parity with the Python hooks", () => {
-  it("replays every run of the Python hook tests through python and node with identical results", { timeout: PARITY_TIMEOUT_MS }, () => {
+  it("replays every run of the Python hook tests and the adversarial payloads through python and node and compares stdout, stderr, exit code and every file outside .git and remotes", { timeout: PARITY_TIMEOUT_MS }, () => {
     const report = runParity();
     console.log(summary(report));
     assert.equal(report.recorder.failures + report.recorder.errors, 0, "the Python hook tests failed while recording");
-    assert.ok(report.cases >= MIN_CASES, `only ${report.cases} cases recorded`);
+    const recorded = report.cases - report.adversarial;
+    assert.ok(recorded >= MIN_RECORDED_CASES, `only ${recorded} cases recorded`);
+    assert.ok(report.adversarial >= MIN_ADVERSARIAL_CASES, `only ${report.adversarial} adversarial cases`);
     for (const entry of PYTHON_ENTRIES) assert.ok((report.perHook.get(entry) ?? 0) > 0, `no case recorded for ${entry}`);
     assert.equal(report.mismatches, 0, report.details.slice(0, 10).join("\n"));
   });

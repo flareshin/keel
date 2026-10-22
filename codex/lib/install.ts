@@ -6,7 +6,7 @@ import type { CommandResult } from "./command.ts";
 import { digest, fingerprint, readJson, writeAtomic } from "./files.ts";
 import type { ManagedFile } from "./files.ts";
 import { pythonFailureMessage, ValueError } from "./pyerrors.ts";
-import { absolutePath, childPath, isDirectory, isFile, parentOf, purePath, readText, resolvePath, shellQuote } from "./pyfs.ts";
+import { absolutePath, childPath, isAbsolute, isDirectory, isFile, nameOf, parentOf, purePath, readText, resolvePath, shellQuote } from "./pyfs.ts";
 import { pythonJsonDumps } from "./pyjson.ts";
 import type { JsonValue } from "./pyjson.ts";
 import { applySkillPlan, planSkills, realSkillFiles, withInstallationLock } from "./skill_registry.ts";
@@ -14,7 +14,6 @@ import type { SkillFiles, SkillPlan } from "./skill_registry.ts";
 
 export const KEEL_ROOT = parentOf(parentOf(parentOf(resolvePath(import.meta.filename))));
 export const STATE_NAME = "keel-codex-state.json";
-export const HOOK_RUNTIME = process.execPath;
 export const HOOK_SCRIPT = "codex/hooks/pre-tool-use.ts";
 
 const REFUSED_EXIT_CODE = 3;
@@ -56,6 +55,15 @@ function environmentPath(name: string, fallback: string): string {
   return expandUser(purePath(process.env[name] ?? fallback));
 }
 
+export function hookRuntime(binary: string = process.execPath, searchPath: string = process.env["PATH"] ?? ""): string {
+  const actual = resolvePath(binary);
+  for (const directory of searchPath.split(":").filter(isAbsolute)) {
+    const launcher = childPath(directory, nameOf(binary));
+    if (isFile(launcher) && resolvePath(launcher) === actual) return launcher;
+  }
+  return binary;
+}
+
 export function main(argv: readonly string[]): CommandResult {
   let parsed: Map<string, string | true>;
   try {
@@ -95,7 +103,7 @@ export function buildFiles(codexHome: string, overlay: string, data: string, age
     [principles, owner, runtime, "## Runtime paths", locations, `- keel CLI: \`${childPath(keelRoot, "bin/keel")}\`\n`].join("\n");
   paths.push(["KEEL_CODEX_HOME", codexHome], ["KEEL_AGENTS_HOME", agentsHome]);
   const assignments = paths.map(([key, value]) => `${key}=${shellQuote(value)}`).join(" ");
-  const command = `${assignments} ${shellQuote(HOOK_RUNTIME)} ${shellQuote(childPath(keelRoot, HOOK_SCRIPT))}`;
+  const command = `${assignments} ${shellQuote(hookRuntime())} ${shellQuote(childPath(keelRoot, HOOK_SCRIPT))}`;
   const hooks: JsonValue = {
     hooks: {
       PreToolUse: [{

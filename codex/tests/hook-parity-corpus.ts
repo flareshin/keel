@@ -7,6 +7,28 @@ const NORMAL_CONFIG = "[features]\nhooks = true\n";
 const DISABLED_HOOKS = "[features]\nhooks = false\n";
 const OWNER_MODEL = 'model = "owner-model"\n';
 
+const DEEP_NESTING = [3000, 20000];
+
+function deepArray(depth: number): string {
+  return "[".repeat(depth) + "]".repeat(depth);
+}
+
+function deepObject(depth: number): string {
+  return '{"a": '.repeat(depth) + "1" + "}".repeat(depth);
+}
+
+function tomlArrays(depth: number): string {
+  return `a = ${"[".repeat(depth)}${"]".repeat(depth)}\n`;
+}
+
+function tomlInlineTables(depth: number): string {
+  return `a = ${"{a=".repeat(depth)}1${"}".repeat(depth)}\n`;
+}
+
+function tomlArraysOfInlineTables(depth: number): string {
+  return `a = ${"[{a=".repeat(depth)}1${"}]".repeat(depth)}\n`;
+}
+
 function payload(toolName: unknown, toolInput: unknown, extra: Record<string, unknown> = {}): string {
   return JSON.stringify({ tool_name: toolName, tool_input: toolInput, hook_event_name: "PreToolUse", session_id: "parity", ...extra });
 }
@@ -278,6 +300,71 @@ export function hookCases(paths: Paths): HookCase[] {
   patch("patch no trailing newline", "*** Add File: a.txt\n+x");
   patch("patch many files", Array.from({ length: 25 }, (_unused, index) => `*** Add File: f${index}.txt\n+${index}`).join("\n"));
   add("patch cwd missing", payload("apply_patch", { command: `${PATCH_BEGIN}*** Add File: notes.txt\n+x${PATCH_END}` }));
+
+  const rawPayload = (toolName: string, toolInput: string, extra = ""): string =>
+    `{"tool_name": ${toolName}, "tool_input": ${toolInput}, "cwd": ${JSON.stringify(repo)}${extra}}`;
+  const protectedWrite = JSON.stringify({ file_path: `${profile}/hooks.json`, content: "x" });
+  const benignWrite = JSON.stringify({ file_path: `${profile}/notes.txt`, content: "x" });
+  for (const depth of DEEP_NESTING) {
+    add(`deep array beside protected write (${depth})`, rawPayload('"Write"', protectedWrite, `, "deep": ${deepArray(depth)}`));
+    add(`deep object beside protected write (${depth})`, rawPayload('"Write"', protectedWrite, `, "deep": ${deepObject(depth)}`));
+    add(`deep array beside allowed write (${depth})`, rawPayload('"Write"', benignWrite, `, "deep": ${deepArray(depth)}`));
+    add(`deep object beside allowed write (${depth})`, rawPayload('"Write"', benignWrite, `, "deep": ${deepObject(depth)}`));
+    add(`deep array inside tool_input (${depth})`, rawPayload('"Write"', `{"file_path": ${JSON.stringify(`${profile}/notes.txt`)}, "content": ${deepArray(depth)}}`));
+    add(`deep array beside force push (${depth})`, rawPayload('"Bash"', '{"command": "git push --force origin main"}', `, "deep": ${deepArray(depth)}`));
+    add(`deep array as tool_name (${depth})`, rawPayload(deepArray(depth), "{}"));
+    add(`deep object as tool_name (${depth})`, rawPayload(deepObject(depth), "{}"));
+    add(`deep array as cwd (${depth})`, `{"tool_name": "Bash", "tool_input": {"command": "git status"}, "cwd": ${deepArray(depth)}}`);
+    add(`deep array then malformed tail (${depth})`, rawPayload('"Write"', protectedWrite, `, "deep": ${deepArray(depth)} x`));
+  }
+
+  for (const [name, content, options] of [
+    ["toml arrays below the recursion limit", tomlArrays(300), {}],
+    ["toml arrays far above the recursion limit", tomlArrays(700), { crash: true }],
+    ["toml arrays thousands deep", tomlArrays(5000), { crash: true }],
+    ["toml inline tables below the recursion limit", tomlInlineTables(200), {}],
+    ["toml inline tables far above the recursion limit", tomlInlineTables(600), { crash: true }],
+    ["toml arrays of inline tables below the limit", tomlArraysOfInlineTables(100), {}],
+    ["toml arrays of inline tables far above the limit", tomlArraysOfInlineTables(400), { crash: true }],
+    ["toml deep array in hooks table", `[hooks]\nx = ${"[".repeat(600)}${"]".repeat(600)}\n`, { crash: true }],
+  ] as const) write(name, `${profile}/config.toml`, content, options);
+  write("write over a deep existing config", `${profile}/config.toml`, OWNER_MODEL, { config: tomlArrays(600), crash: true });
+  write("write over a deep but loadable existing config", `${profile}/config.toml`, OWNER_MODEL, { config: tomlArrays(300) });
+  edit("edit a deep existing config", `${profile}/config.toml`, { old_string: "a", new_string: "b" }, { config: tomlArrays(600), crash: true });
+
+  const surrogateTargets: Array<[string, string]> = [
+    ["lone high surrogate", "\ud800"], ["lone low surrogate", "\udfff"], ["surrogate inside a name", "x\ud800.txt"],
+    ["run of surrogates", "\ud800\ud801z"], ["escaped byte then surrogate", "\udc80\ud800"], ["escaped byte alone", "\udc80x"],
+    ["escaped byte range edges", "\udc80\udcff"], ["surrogate in a parent directory", "\ud800/child.txt"],
+    ["surrogate after dotdot", "sub/../\ud800"],
+  ];
+  for (const [name, suffix] of surrogateTargets) {
+    write(`write target with ${name}`, `${repo}/${suffix}`, "x");
+    write(`write profile target with ${name}`, `${profile}/${suffix}`, "x");
+    write(`write relative target with ${name}`, suffix, "x");
+    edit(`edit target with ${name}`, `${repo}/${suffix}`, { old_string: "a", new_string: "b" });
+    patch(`patch target with ${name}`, `*** Add File: ${suffix}\n+x`);
+    bash(`shell redirect to ${name}`, `echo x > ${repo}/${suffix}`);
+    bash(`shell rm of ${name}`, `rm ${repo}/${suffix}`);
+    bash(`shell tee into profile with ${name}`, `echo x | tee ${profile}/${suffix}`);
+    bash(`shell cp to ${name}`, `cp x ${repo}/${suffix}`);
+  }
+  bash("shell glob with surrogate", `rm ${repo}/\ud800*`);
+  bash("shell glob over profile with surrogate", `rm ${profile}/\ud800*`);
+  bash("shell cd into surrogate directory then write", `cd ${repo}/\ud800 && echo x > out.txt`);
+  bash("shell write with surrogate in quotes", `echo x > "${repo}/\ud800 b"`);
+  bash("cwd with surrogate", "git status", { cwd: `${repo}/\ud800` });
+  bash("cwd with escaped byte", "git status", { cwd: `${repo}/\udc80` });
+  add("write with surrogate cwd", payload("Write", { file_path: "a.txt", content: "x" }, { cwd: `${repo}\ud800` }));
+  add("write with surrogate file_path and no cwd", payload("Write", { file_path: "\ud800", content: "x" }));
+
+  for (const [name, toolName] of [
+    ["control character", ["a\u0001"]], ["no-break space", ["a b"]], ["both", ["Bash", "\u0001", " "]],
+    ["line separators", [" \u0085"]], ["zero width and soft hyphen", ["​­"]], ["delete character", ["x\u007f"]],
+    ["nested list", [["\u0001", " "], []]], ["dict with control keys", { "k\u0001": "v ", " ": [null, true, false, 1.5] }],
+    ["astral and lone surrogate", ["😀", "\ud800"]], ["quotes of both kinds", ["it's", 'say "hi"', "both ' \""]],
+    ["single string with control character", "Ba\u0001sh"], ["non-breaking string", "Bash "], ["empty list", []], ["number list", [1, 2.5, -3e-7, 1e22]],
+  ] as const) add(`tool_name ${name}`, payload(toolName, { command: "ls" }));
 
   return cases;
 }

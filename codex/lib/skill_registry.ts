@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { isDeepStrictEqual } from "node:util";
 import { isRecord, isSystemError, sortedByCodePoint } from "../../hooks/lib/hookkit/pycompat.ts";
@@ -47,20 +48,51 @@ function sleep(milliseconds: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
 
-function ownerIsGone(lock: string): boolean {
-  let owner: number;
+const OWNER_PROCESS_ID = /^[0-9]+$/;
+const startedAfterLock = new Map<string, boolean>();
+
+function ownerProcessId(lock: string): number | null {
   try {
-    owner = Number(readFileSync(`${lock}/owner`, "utf8"));
+    const text = readFileSync(`${lock}/owner`, "utf8");
+    const id = OWNER_PROCESS_ID.test(text) ? Number(text) : 0;
+    return id > 0 ? id : null;
   } catch (error) {
     if (!isSystemError(error)) throw error;
-    return Date.now() - statSync(lock).mtimeMs > UNOWNED_LOCK_GRACE_MILLISECONDS;
+    return null;
   }
+}
+
+function processIsAlive(id: number): boolean {
   try {
-    process.kill(owner, 0);
-    return false;
+    process.kill(id, 0);
+    return true;
   } catch (error) {
-    return isSystemError(error) && error.code === "ESRCH";
+    return !(isSystemError(error) && error.code === "ESRCH");
   }
+}
+
+function processStartedAfter(id: number, moment: number): boolean {
+  const key = `${id}@${moment}`;
+  const known = startedAfterLock.get(key);
+  if (known !== undefined) return known;
+  const listing = spawnSync("ps", ["-o", "lstart=", "-p", String(id)], { encoding: "utf8", env: { ...process.env, LC_ALL: "C" } });
+  const started = Date.parse(listing.stdout.trim());
+  const later = listing.status === 0 && !Number.isNaN(started) && started > moment;
+  startedAfterLock.set(key, later);
+  return later;
+}
+
+export function lockIsStale(lock: string, now: number = Date.now()): boolean {
+  let modified: number;
+  try {
+    modified = statSync(lock).mtimeMs;
+  } catch (error) {
+    if (isSystemError(error)) return false;
+    throw error;
+  }
+  const owner = ownerProcessId(lock);
+  if (owner === null) return now - modified > UNOWNED_LOCK_GRACE_MILLISECONDS;
+  return !processIsAlive(owner) || processStartedAfter(owner, modified);
 }
 
 function removeStaleLock(lock: string): void {
@@ -84,7 +116,7 @@ function acquireLock(lock: string): void {
     } catch (error) {
       if (!isSystemError(error) || error.code !== "EEXIST") throw error;
     }
-    if (ownerIsGone(lock)) removeStaleLock(lock);
+    if (lockIsStale(lock)) removeStaleLock(lock);
     else if (Date.now() > deadline) throw new OSError(`timed out waiting for ${lock}`, "ETIMEDOUT");
     else sleep(LOCK_POLL_MILLISECONDS);
   }

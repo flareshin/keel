@@ -1,15 +1,16 @@
 import { readFileSync } from "node:fs";
 import { userInfo } from "node:os";
-import { expandUser, glob, isRecord, isTruthy, pythonStr, splitlines, strip } from "../../hooks/lib/hookkit/pycompat.ts";
+import { expandUser, glob, isRecord, isTruthy, splitlines, strip } from "../../hooks/lib/hookkit/pycompat.ts";
 import { resolveDirectory, steps, writeTargets } from "../../hooks/lib/hookkit/shell.ts";
 import { OSError, run } from "../../hooks/lib/hookkit/subprocess.ts";
 import type { CompletedProcess } from "../../hooks/lib/hookkit/subprocess.ts";
 import { emit } from "../lib/command.ts";
 import type { CommandResult } from "../lib/command.ts";
-import { completeEdit, validateUpdate } from "../lib/config_policy.ts";
+import { completeEdit, HOOK_CALLER_FRAMES, validateUpdate } from "../lib/config_policy.ts";
 import { osErrorMessage, pythonFailureMessage, ValueError } from "../lib/pyerrors.ts";
 import { childPath, decodeUtf8, decodeUtf8WithSurrogateEscape, hasGlobMagic, isStrictAncestor, parentOf, pathExists, purePath, pythonStdinIsLenient, readText, resolvePath, translateNewlines } from "../lib/pyfs.ts";
 import { pythonJsonDumps, pythonJsonLoads } from "../lib/pyjson.ts";
+import { pythonValueStr } from "../lib/pystr.ts";
 import type { JsonValue } from "../lib/pyjson.ts";
 
 const KEEL = parentOf(parentOf(parentOf(resolvePath(import.meta.filename))));
@@ -64,7 +65,7 @@ export function normalize(payload: unknown): Call[] {
     if (name === "Bash" && typeof tool["command"] !== "string") throw new ValueError("Bash command is missing");
     return [payload as Call];
   }
-  if (name !== "apply_patch") throw new ValueError(`unsupported guarded tool: ${pythonStr(name)}`);
+  if (name !== "apply_patch") throw new ValueError(`unsupported guarded tool: ${pythonValueStr(name)}`);
   const patch = tool["command"];
   if (typeof patch !== "string") throw new ValueError("apply_patch command is missing");
   const calls: Call[] = [];
@@ -100,7 +101,7 @@ export function protectAdapter(call: Call, accountHome: string = userInfo().home
   const defaultProfile = childPath(accountHome, ".codex");
   const records = new Set([profile, defaultProfile].flatMap((root) => SESSION_FOLDERS.map((name) => resolvePath(childPath(root, name)))));
   const config = resolvePath(childPath(profile, "config.toml"));
-  const cwd = pythonStr(isTruthy(call["cwd"]) ? call["cwd"] : process.cwd());
+  const cwd = pythonValueStr(isTruthy(call["cwd"]) ? call["cwd"] : process.cwd());
   if (call.tool_name === "Bash") {
     protectShell(call.tool_input["command"] as string, cwd, new Set([...protectedPaths, config]), records);
     return;
@@ -112,7 +113,7 @@ export function protectAdapter(call: Call, accountHome: string = userInfo().home
   }
   if (path === config) {
     const candidate = completeEdit(path, call.tool_input);
-    validateUpdate(pathExists(path) ? readText(path) : "", candidate);
+    validateUpdate(pathExists(path) ? readText(path) : "", candidate, HOOK_CALLER_FRAMES);
   }
 }
 

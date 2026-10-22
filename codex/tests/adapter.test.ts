@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import {
   chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync,
-  unlinkSync, writeFileSync,
+  unlinkSync, utimesSync, writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -11,11 +11,11 @@ import { run } from "../../hooks/lib/hookkit/subprocess.ts";
 import type { CompletedProcess } from "../../hooks/lib/hookkit/subprocess.ts";
 import { withEnv } from "../../tests/hooks/helpers.ts";
 import { completeEdit, validateUpdate } from "../lib/config_policy.ts";
-import { fingerprint } from "../lib/files.ts";
+import { digest, fingerprint } from "../lib/files.ts";
 import { buildFiles, buildSkillLinks, reconcile } from "../lib/install.ts";
 import { ValueError } from "../lib/pyerrors.ts";
 import { pythonJsonLoads } from "../lib/pyjson.ts";
-import { applySkillPlan, planSkills, realSkillFiles, replaceLink } from "../lib/skill_registry.ts";
+import { applySkillPlan, lockIsStale, planSkills, realSkillFiles, replaceLink } from "../lib/skill_registry.ts";
 import type { SkillFiles } from "../lib/skill_registry.ts";
 import { main as runHook, normalize, protectAdapter, runGuard } from "../hooks/pre-tool-use.ts";
 import type { Call } from "../hooks/pre-tool-use.ts";
@@ -37,6 +37,11 @@ function read(path: string): string {
 
 function readJsonFile(path: string): Record<string, any> {
   return pythonJsonLoads(read(path)) as Record<string, any>;
+}
+
+function pythonDigest(kind: string, content: Buffer): string {
+  const script = "import hashlib, sys; sys.stdout.write(hashlib.sha256(sys.argv[1].encode() + b'\\0' + sys.stdin.buffer.read()).hexdigest())";
+  return spawnSync("python3", ["-I", "-c", script, kind], { input: content, encoding: "utf8" }).stdout;
 }
 
 function runNode(script: string, args: string[], env: NodeJS.ProcessEnv, input?: string) {
@@ -283,7 +288,7 @@ describe("installation", () => {
     assert.equal(retry.status, 0, retry.stdout + retry.stderr);
     assert.equal(runSourceLink(second, "--check").status, 0);
     const saved = readJsonFile(state)["owned"];
-    for (const path of [join(profile, "AGENTS.md"), join(profile, "hooks.json")]) assert.equal(saved[path], fingerprint(path));
+    for (const path of [join(profile, "AGENTS.md"), join(profile, "hooks.json")]) assert.equal(saved[path], pythonDigest("file", readFileSync(path)));
   });
 
   it("test_refresh_dryRunLeavesOwnedLinksAndRegistryUntouched", () => {
@@ -385,6 +390,158 @@ describe("installation", () => {
     assert.equal(existsSync(lock), false);
   });
 
+  describe("lock ownership", () => {
+    const HOUR_SECONDS = 3600;
+    const lockWith = (owner: string | null, ageSeconds: number): string => {
+      const lock = join(home, ".agents", "keel-codex-skills.lock.d");
+      mkdirSync(lock, { recursive: true });
+      if (owner !== null) writeFileSync(join(lock, "owner"), owner);
+      const modified = Date.now() / 1000 - ageSeconds;
+      utimesSync(lock, modified, modified);
+      return lock;
+    };
+
+    for (const owner of ["", "abc", "0", "-5", "12abc", "1.5", " "]) {
+      it(`reclaims a lock whose owner file holds ${JSON.stringify(owner)} once the grace period has passed`, () => {
+        assert.equal(lockIsStale(lockWith(owner, HOUR_SECONDS)), true);
+      });
+
+      it(`waits for a fresh lock whose owner file holds ${JSON.stringify(owner)}`, () => {
+        assert.equal(lockIsStale(lockWith(owner, 0)), false);
+      });
+    }
+
+    it("keeps a lock held by this live process", () => {
+      assert.equal(lockIsStale(lockWith(String(process.pid), 0)), false);
+    });
+
+    it("reclaims a lock whose process id now belongs to a process started after the lock", () => {
+      const unrelated = spawn("sleep", ["30"]);
+      try {
+        assert.ok(unrelated.pid !== undefined);
+        assert.equal(lockIsStale(lockWith(String(unrelated.pid), HOUR_SECONDS)), true);
+      } finally {
+        unrelated.kill();
+      }
+    });
+
+    it("keeps a lock whose live owner started before the lock was taken", () => {
+      const holder = spawn("sleep", ["30"]);
+      try {
+        assert.ok(holder.pid !== undefined);
+        assert.equal(lockIsStale(lockWith(String(holder.pid), 0)), false);
+      } finally {
+        holder.kill();
+      }
+    });
+
+    it("link --write proceeds past a stale lock with an empty owner file", () => {
+      const lock = lockWith("", HOUR_SECONDS);
+      const run = runLink("--write");
+      assert.equal(run.status, 0, run.stderr);
+      assert.equal(existsSync(lock), false);
+    });
+  });
+
+  describe("hook command", () => {
+    const PAYLOAD_ENV = { PATH: "/usr/bin:/bin" };
+
+    function nodeLauncher(name: string): string {
+      const directory = join(home, name);
+      mkdirSync(directory);
+      symlinkSync(process.execPath, join(directory, "node"));
+      return directory;
+    }
+
+    function installedCommand(searchPath: string): string {
+      const run = spawnSync(process.execPath, [LINK, "--home", home, "--write"], { env: { ...env, PATH: searchPath }, encoding: "utf8" });
+      assert.equal(run.status, 0, run.stderr);
+      return readJsonFile(join(home, ".codex/hooks.json"))["hooks"]["PreToolUse"][0]["hooks"][0]["command"];
+    }
+
+    function commandFor(runtime: string): string {
+      return [
+        `KEEL_HOME=${KEEL}`, `KEEL_OVERLAY_DIR=${home}/overlay`, `KEEL_DATA_DIR=${home}/data`, `KEEL_CODEX_HOME=${home}/.codex`,
+        `KEEL_AGENTS_HOME=${home}/.agents`, runtime, `${KEEL}/codex/hooks/pre-tool-use.ts`,
+      ].join(" ");
+    }
+
+    it("writes the PATH launcher of the running node, not its version-specific install path", () => {
+      assert.match(home, /^[A-Za-z0-9_\/.-]+$/);
+      const launcher = nodeLauncher("launcher");
+      assert.equal(installedCommand(`${launcher}:${process.env["PATH"]}`), commandFor(`${launcher}/node`));
+    });
+
+    it("installs a command that runs the TypeScript hook and denies a protected write", () => {
+      const launcher = nodeLauncher("launcher");
+      const command = installedCommand(`${launcher}:${process.env["PATH"]}`);
+      const write = { tool_name: "Write", tool_input: { file_path: `${home}/.codex/hooks.json`, content: "x" }, cwd: home, session_id: "link-test" };
+      const run = spawnSync("sh", ["-c", command], { input: JSON.stringify(write), encoding: "utf8", env: { ...PAYLOAD_ENV, HOME: home } });
+      assert.equal(run.status, 0, run.stderr);
+      const decision = (pythonJsonLoads(run.stdout) as Record<string, any>)["hookSpecificOutput"];
+      assert.equal(decision["permissionDecision"], "deny");
+      assert.equal(decision["permissionDecisionReason"], `keel Codex guard: generated Codex configuration must be changed through codex/bin/link: ${home}/.codex/hooks.json`);
+    });
+
+    it("falls back to the binary path when no PATH entry is the running node", () => {
+      const impostor = join(home, "impostor");
+      mkdirSync(impostor);
+      writeFileSync(join(impostor, "node"), "#!/bin/sh\n");
+      chmodSync(join(impostor, "node"), 0o755);
+      assert.equal(installedCommand(`${impostor}:${join(home, "missing")}:relative/bin::`), commandFor(process.execPath));
+    });
+  });
+
+  describe("interoperating with the Python installer on the same profile", () => {
+    const PYTHON_LINK = join(ADAPTER, "bin", "link");
+
+    function runPythonLink(...args: string[]) {
+      const result = spawnSync("python3", [PYTHON_LINK, "--home", home, ...args], { encoding: "utf8", env });
+      return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+    }
+
+    const HOOKS_ONLY = { actions: [] as string[], problems: [] as string[] };
+
+    it("lets Python verify and refresh a TypeScript install, rewriting only the hook command", () => {
+      assert.equal(runLink("--write").status, 0);
+      const hooks = join(home, ".codex/hooks.json");
+      const typescriptHooks = read(hooks);
+      const check = runPythonLink("--check");
+      assert.equal(check.status, 1, check.stderr);
+      assert.deepEqual(pythonJsonLoads(check.stdout), { ...HOOKS_ONLY, actions: [hooks] });
+      assert.equal(runPythonLink("--write").status, 0);
+      assert.notEqual(read(hooks), typescriptHooks);
+      assert.match(read(hooks), /pre-tool-use\.py"/);
+      const back = runLink("--check");
+      assert.equal(back.status, 1, back.stderr);
+      assert.deepEqual(pythonJsonLoads(back.stdout), { ...HOOKS_ONLY, actions: [hooks] });
+    });
+
+    it("lets Python unlink a TypeScript install and TypeScript unlink a Python install", () => {
+      assert.equal(runLink("--write").status, 0);
+      const first = runPythonLink("--unlink");
+      assert.equal(first.status, 0, first.stderr);
+      assert.equal(existsSync(join(home, ".codex/hooks.json")), false);
+      assert.equal(existsSync(join(home, ".codex/keel-codex-state.json")), false);
+      assert.equal(runPythonLink("--write").status, 0);
+      const second = runLink("--unlink");
+      assert.equal(second.status, 0, second.stderr);
+      assert.equal(existsSync(join(home, ".codex/AGENTS.md")), false);
+      assert.equal(existsSync(join(home, ".codex/keel-codex-state.json")), false);
+    });
+
+    it("records the same ownership digests and skill registry as Python", () => {
+      assert.equal(runLink("--write").status, 0);
+      const written = { state: readJsonFile(join(home, ".codex/keel-codex-state.json")), registry: read(join(home, ".agents/keel-codex-skills.json")) };
+      assert.equal(runPythonLink("--unlink").status, 0);
+      rmSync(join(home, ".agents"), { recursive: true, force: true });
+      assert.equal(runPythonLink("--write").status, 0);
+      const agents = join(home, ".codex/AGENTS.md");
+      assert.equal(readJsonFile(join(home, ".codex/keel-codex-state.json"))["owned"][agents], written.state["owned"][agents]);
+      assert.equal(read(join(home, ".agents/keel-codex-skills.json")), written.registry);
+    });
+  });
+
   it("test_legacyOwnership_preservesSkillOnUnlink", () => {
     assert.equal(runLink("--write").status, 0);
     const statePath = join(home, ".codex/keel-codex-state.json");
@@ -407,6 +564,14 @@ function isSymlink(path: string): boolean {
     return false;
   }
 }
+
+describe("ownership digests", () => {
+  it("hash the kind, a NUL byte and the UTF-8 content, as the Python installer records them", () => {
+    assert.equal(digest("file", "x"), "24e5fa83ea3d78ba97ff36665723f0df9e3d179e110965a34b679ad5ad27eaab");
+    assert.equal(digest("link", "/a/b"), "8f4a147acc2778b4d17f7113578e7ff8fd04c72279c09865028f0d5257d1e4c7");
+    assert.equal(digest("file", "\u00e9"), "5eb5e24ec91d24caac54c01428c2f2c8bf2c4c6f65817ff1c2db9405c6fa7765");
+  });
+});
 
 describe("hookkit run", () => {
   it("feeds input to the child and reports its streams and exit code", () => {

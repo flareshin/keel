@@ -54,11 +54,72 @@ export function pythonJsonLoads(text: string): JsonValue {
   return value;
 }
 
-function scanValue(text: string, index: number): [JsonValue, number] {
+type Frame = { items: JsonValue[] } | { members: { [key: string]: JsonValue }; key: string };
+
+function scanValue(text: string, start: number): [JsonValue, number] {
+  const open: Frame[] = [];
+  let index = start;
+  for (;;) {
+    let value: JsonValue;
+    const opening = text[index];
+    if (opening === "[" || opening === "{") {
+      const first = skipWhitespace(text, index + 1);
+      if (text[first] !== (opening === "[" ? "]" : "}")) {
+        if (opening === "[") {
+          open.push({ items: [] });
+          index = first;
+        } else {
+          const [key, valueStart] = scanMemberKey(text, first);
+          open.push({ members: {}, key });
+          index = valueStart;
+        }
+        continue;
+      }
+      value = opening === "[" ? [] : {};
+      index = first + 1;
+    } else {
+      [value, index] = scanScalar(text, index);
+    }
+    for (;;) {
+      const frame = open[open.length - 1];
+      if (frame === undefined) return [value, index];
+      if ("items" in frame) frame.items.push(value);
+      else Object.defineProperty(frame.members, frame.key, { value, enumerable: true, writable: true, configurable: true });
+      index = skipWhitespace(text, index);
+      const closer = "items" in frame ? "]" : "}";
+      if (text[index] === closer) {
+        open.pop();
+        value = "items" in frame ? frame.items : frame.members;
+        index += 1;
+        continue;
+      }
+      if (text[index] !== ",") throw new JSONDecodeError("Expecting ',' delimiter", text, index);
+      const comma = index;
+      index = skipWhitespace(text, index + 1);
+      if (text[index] === closer) {
+        throw new JSONDecodeError(`Illegal trailing comma before end of ${"items" in frame ? "array" : "object"}`, text, comma);
+      }
+      if (!("items" in frame)) {
+        const [key, valueStart] = scanMemberKey(text, index);
+        frame.key = key;
+        index = valueStart;
+      }
+      break;
+    }
+  }
+}
+
+function scanMemberKey(text: string, index: number): [string, number] {
+  if (text[index] !== '"') throw new JSONDecodeError("Expecting property name enclosed in double quotes", text, index);
+  const [key, afterKey] = scanString(text, index);
+  const colon = skipWhitespace(text, afterKey);
+  if (text[colon] !== ":") throw new JSONDecodeError("Expecting ':' delimiter", text, colon);
+  return [key, skipWhitespace(text, colon + 1)];
+}
+
+function scanScalar(text: string, index: number): [JsonValue, number] {
   const character = text[index];
   if (character === '"') return scanString(text, index);
-  if (character === "{") return scanObject(text, index + 1);
-  if (character === "[") return scanArray(text, index + 1);
   if (text.startsWith("null", index)) return [null, index + 4];
   if (text.startsWith("true", index)) return [true, index + 4];
   if (text.startsWith("false", index)) return [false, index + 5];
@@ -124,42 +185,6 @@ function hexUnit(text: string, unit: number, afterDigits: number): number {
   return parseInt(digits, 16);
 }
 
-function scanArray(text: string, start: number): [JsonValue[], number] {
-  const items: JsonValue[] = [];
-  let index = skipWhitespace(text, start);
-  if (text[index] === "]") return [items, index + 1];
-  for (;;) {
-    const [value, end] = scanValue(text, index);
-    items.push(value);
-    index = skipWhitespace(text, end);
-    if (text[index] === "]") return [items, index + 1];
-    if (text[index] !== ",") throw new JSONDecodeError("Expecting ',' delimiter", text, index);
-    const comma = index;
-    index = skipWhitespace(text, index + 1);
-    if (text[index] === "]") throw new JSONDecodeError("Illegal trailing comma before end of array", text, comma);
-  }
-}
-
-function scanObject(text: string, start: number): [{ [key: string]: JsonValue }, number] {
-  const members: { [key: string]: JsonValue } = {};
-  let index = skipWhitespace(text, start);
-  if (text[index] === "}") return [members, index + 1];
-  for (;;) {
-    if (text[index] !== '"') throw new JSONDecodeError("Expecting property name enclosed in double quotes", text, index);
-    const [key, afterKey] = scanString(text, index);
-    index = skipWhitespace(text, afterKey);
-    if (text[index] !== ":") throw new JSONDecodeError("Expecting ':' delimiter", text, index);
-    const [value, afterValue] = scanValue(text, skipWhitespace(text, index + 1));
-    Object.defineProperty(members, key, { value, enumerable: true, writable: true, configurable: true });
-    index = skipWhitespace(text, afterValue);
-    if (text[index] === "}") return [members, index + 1];
-    if (text[index] !== ",") throw new JSONDecodeError("Expecting ',' delimiter", text, index);
-    const comma = index;
-    index = skipWhitespace(text, index + 1);
-    if (text[index] === "}") throw new JSONDecodeError("Illegal trailing comma before end of object", text, comma);
-  }
-}
-
 const ASCII_PRINTABLE_ONLY = /[^ -~]|["\\]/g;
 const CONTROL_AND_QUOTES = /[\x00-\x1f"\\]/g;
 const SHORT_ESCAPES: Record<string, string> = { '"': '\\"', "\\": "\\\\", "\b": "\\b", "\f": "\\f", "\n": "\\n", "\r": "\\r", "\t": "\\t" };
@@ -195,25 +220,44 @@ export function pythonFloatRepr(value: number): string {
 }
 
 export function pythonJsonDumps(value: JsonValue | undefined, options: DumpOptions = {}): string {
-  return encode(value ?? null, { ensureAscii: true, sortKeys: false, ...options }, 0);
+  const settings = { ensureAscii: true, sortKeys: false, ...options };
+  const output: string[] = [];
+  const pending: Array<string | { value: JsonValue; level: number }> = [{ value: value ?? null, level: 0 }];
+  while (pending.length > 0) {
+    const item = pending.pop() as string | { value: JsonValue; level: number };
+    if (typeof item === "string") output.push(item);
+    else for (const step of encodeStep(item.value, settings, item.level)) pending.push(step);
+  }
+  return output.join("");
 }
 
-function encode(value: JsonValue, options: DumpOptions, level: number): string {
-  if (value === null) return "null";
-  if (typeof value === "boolean") return value ? "true" : "false";
-  if (typeof value === "bigint") return value.toString();
-  if (typeof value === "number") return pythonFloatRepr(value);
-  if (typeof value === "string") return quoteString(value, options.ensureAscii ?? true);
-  if (Array.isArray(value)) return wrap("[", "]", value.map((item) => encode(item, options, level + 1)), options, level);
-  const keys = Object.keys(value).filter((key) => value[key] !== undefined);
-  if (options.sortKeys) keys.sort(compareCodePoints);
-  const members = keys.map((key) => `${quoteString(key, options.ensureAscii ?? true)}: ${encode(value[key] ?? null, options, level + 1)}`);
-  return wrap("{", "}", members, options, level);
-}
-
-function wrap(open: string, close: string, items: readonly string[], options: DumpOptions, level: number): string {
-  if (items.length === 0) return open + close;
-  if (options.indent === undefined) return open + items.join(", ") + close;
-  const inner = "\n" + " ".repeat(options.indent * (level + 1));
-  return open + inner + items.join("," + inner) + "\n" + " ".repeat(options.indent * level) + close;
+function encodeStep(value: JsonValue, options: DumpOptions, level: number): Array<string | { value: JsonValue; level: number }> {
+  if (value === null) return ["null"];
+  if (typeof value === "boolean") return [value ? "true" : "false"];
+  if (typeof value === "bigint") return [value.toString()];
+  if (typeof value === "number") return [pythonFloatRepr(value)];
+  if (typeof value === "string") return [quoteString(value, options.ensureAscii ?? true)];
+  const isArray = Array.isArray(value);
+  let keys: string[] = [];
+  if (!isArray) {
+    keys = Object.keys(value).filter((key) => value[key] !== undefined);
+    if (options.sortKeys) keys.sort(compareCodePoints);
+  }
+  const count = isArray ? value.length : keys.length;
+  const [open, close] = isArray ? ["[", "]"] : ["{", "}"];
+  if (count === 0) return [open + close];
+  const inner = options.indent === undefined ? "" : "\n" + " ".repeat(options.indent * (level + 1));
+  const separator = options.indent === undefined ? ", " : "," + inner;
+  const outer = options.indent === undefined ? "" : "\n" + " ".repeat(options.indent * level);
+  const steps: Array<string | { value: JsonValue; level: number }> = [open + inner];
+  for (let position = 0; position < count; position += 1) {
+    if (position > 0) steps.push(separator);
+    if (isArray) steps.push({ value: value[position] as JsonValue, level: level + 1 });
+    else {
+      const key = keys[position] as string;
+      steps.push(`${quoteString(key, options.ensureAscii ?? true)}: `, { value: (value as { [key: string]: JsonValue })[key] ?? null, level: level + 1 });
+    }
+  }
+  steps.push(outer + close);
+  return steps.reverse();
 }

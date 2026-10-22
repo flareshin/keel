@@ -6,8 +6,9 @@ import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 
 const ADAPTER = realpathSync(join(import.meta.dirname, ".."));
-const HASH = /\b[0-9a-f]{64}\b/g;
-const HOOK_COMMAND = /\S+ \S*pre-tool-use\.(?:py|ts)/g;
+const HOOK_SCRIPT_PATH = /\S*codex\/hooks\/pre-tool-use\.(?:py|ts)/;
+const RUNTIME_TOKEN = new RegExp(` \\S+ (?=${HOOK_SCRIPT_PATH.source})`, "g");
+const HOOKS_JSON_DIGEST = /(\/hooks\.json": ")[0-9a-f]{64}(")/g;
 const TEMPORARY_NAME = /(\/\.[A-Za-z0-9._-]+?)\.[a-z0-9_]{8}'/g;
 const LOCK_ARTIFACT = /\.agents\/keel-codex-skills\.lock(?:\.d)?$/;
 const MISMATCHES_SHOWN = 6;
@@ -36,7 +37,12 @@ function put(path: string, content: string | Buffer): void {
   writeFileSync(path, content);
 }
 
-function snapshot(root: string): Record<string, string> {
+function normalizeHookCommand(text: string, implementation: "python" | "typescript"): string {
+  const counterpart = implementation === "python" ? text.replaceAll("codex/hooks/pre-tool-use.py", "codex/hooks/pre-tool-use.ts") : text;
+  return counterpart.replace(RUNTIME_TOKEN, " <runtime> ");
+}
+
+function snapshot(root: string, implementation: "python" | "typescript"): Record<string, string> {
   const files: Record<string, string> = {};
   const walk = (directory: string): void => {
     for (const name of readdirSync(directory).sort()) {
@@ -49,7 +55,7 @@ function snapshot(root: string): Record<string, string> {
         files[relative] = "dir";
         walk(path);
       } else {
-        const text = readFileSync(path).toString("latin1").replace(HOOK_COMMAND, "<runtime> <hook>").replace(HASH, "<sha256>");
+        const text = normalizeHookCommand(readFileSync(path).toString("latin1"), implementation).replace(HOOKS_JSON_DIGEST, "$1<hooks-sha256>$2");
         files[relative] = `file:${(stat.mode & 0o777).toString(8)}:${text}`;
       }
     }
@@ -68,9 +74,9 @@ function runStep(implementation: "python" | "typescript", step: Step, root: stri
   const result = spawnSync(command[0] as string, [...command.slice(1), ...step.args], { env, encoding: "utf8", cwd: root });
   return {
     status: result.status,
-    stdout: result.stdout.replace(HOOK_COMMAND, "<runtime> <hook>"),
+    stdout: normalizeHookCommand(result.stdout, implementation),
     stderr: result.stderr.replace(TEMPORARY_NAME, "$1.<temporary>'"),
-    files: snapshot(root),
+    files: snapshot(root, implementation),
   };
 }
 
@@ -181,6 +187,19 @@ const SCENARIOS: Scenario[] = [
       withFiles(config("--profile", "{root}/profile", "--file", "{root}/err3.toml"), { "err3.toml": "😀 = 1" }),
     ],
   },
+  {
+    name: "config file argument is normalised like pathlib",
+    steps: [
+      config("--profile", "{root}/profile", "--file", ""),
+      config("--profile", "{root}/profile", "--file", "."),
+      withFiles(config("--profile", "{root}/profile", "--file", "{root}/dir/"), { "dir/x": "y" }),
+      config("--profile", "{root}/profile", "--file", "./missing.toml"),
+      config("--profile", "{root}/profile", "--file", "{root}//double//slash.toml"),
+      config("--profile", "{root}/profile", "--file", "a/./b/../c.toml"),
+      config("--profile", "{root}/profile", "--file", "missing.toml/"),
+      config("--profile", "{root}/profile", "--file", "//{root}/two-slashes.toml"),
+    ],
+  },
   { name: "config through env codex home", steps: [{ ...withFiles(config("--file", "{root}/c.toml"), { "c.toml": GOOD_CONFIG }), env: { CODEX_HOME: "{root}/envprofile" } }] },
   { name: "config tilde profile", steps: [withFiles(config("--profile", "~/tilde", "--file", "{root}/c.toml"), { "c.toml": GOOD_CONFIG })] },
   { name: "config relative file", steps: [withFiles(config("--profile", "{root}/p", "--file", "c.toml"), { "c.toml": GOOD_CONFIG })] },
@@ -235,4 +254,40 @@ describe("link and config parity with the Python entries", () => {
     assert.ok(invocations >= 100, `${invocations} invocations`);
     assert.equal(mismatches.length, 0, mismatches.slice(0, MISMATCHES_SHOWN).join("\n"));
   });
+});
+
+describe("config crash parity on deeply nested TOML", () => {
+  const SHAPES: Record<string, (depth: number) => string> = {
+    arrays: (depth) => `a = ${"[".repeat(depth)}${"]".repeat(depth)}\n`,
+    "inline tables": (depth) => `a = ${"{a=".repeat(depth)}1${"}".repeat(depth)}\n`,
+  };
+
+  function exitStatus(implementation: "python" | "typescript", text: string): number | null {
+    const root = realpathSync(mkdtempSync(join(realpathSync(tmpdir()), "keel-config-deep-")));
+    try {
+      put(join(root, "candidate.toml"), text);
+      const command = implementation === "python" ? ["python3", join(ADAPTER, "bin", "config")] : [process.execPath, join(ADAPTER, "bin", "config.ts")];
+      const args = ["--profile", join(root, "profile"), "--file", join(root, "candidate.toml")];
+      return spawnSync(command[0] as string, [...command.slice(1), ...args], { env: { ...process.env, HOME: root }, encoding: "utf8" }).status;
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  for (const [name, shape] of Object.entries(SHAPES)) {
+    it(`crashes on ${name} at the same depth as Python`, () => {
+      let low = 1;
+      let high = 700;
+      while (low < high) {
+        const middle = Math.floor((low + high) / 2);
+        if (exitStatus("python", shape(middle)) === 0) low = middle + 1;
+        else high = middle;
+      }
+      console.log(`parity config deep ${name}: python first crashes at depth ${low}`);
+      assert.equal(exitStatus("python", shape(low - 1)), 0);
+      assert.equal(exitStatus("python", shape(low)), 1);
+      assert.equal(exitStatus("typescript", shape(low - 1)), 0);
+      assert.equal(exitStatus("typescript", shape(low)), 1);
+    });
+  }
 });

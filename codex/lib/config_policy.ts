@@ -8,6 +8,8 @@ import { childPath, pathExists, purePath, readText, resolvePath } from "./pyfs.t
 import { tomlEquals, tomlLoads } from "./toml.ts";
 
 const REFUSED_EXIT_CODE = 3;
+export const CONFIG_COMMAND_CALLER_FRAMES = 3;
+export const HOOK_CALLER_FRAMES = 4;
 
 const CONFIG_PARSER: CommandParser = {
   prog: "config",
@@ -44,7 +46,7 @@ export function main(argv: readonly string[]): CommandResult {
   try {
     const profile = (parsed.get("profile") as string | undefined) ?? defaultProfile();
     const path = resolvePath(childPath(expandUser(purePath(profile)), "config.toml"));
-    const candidate = readText(parsed.get("file") as string);
+    const candidate = readText(purePath(parsed.get("file") as string));
     validateUpdate(pathExists(path) ? readText(path) : "", candidate);
     writeAtomic(path, candidate);
     return { code: 0, stdout: `Updated ${path}; hook configuration preserved.\n`, stderr: "" };
@@ -55,9 +57,9 @@ export function main(argv: readonly string[]): CommandResult {
   }
 }
 
-export function validateUpdate(current: string, candidate: string): void {
-  const before = tomlLoads(current);
-  const after = tomlLoads(candidate);
+export function validateUpdate(current: string, candidate: string, callerFrames: number = CONFIG_COMMAND_CALLER_FRAMES): void {
+  const before = tomlLoads(current, callerFrames);
+  const after = tomlLoads(candidate, callerFrames);
   const features = after.get("features") ?? new Map();
   if (!(features instanceof Map)) throw new ValueError("features must be a TOML table");
   if (features.has("hooks") && features.get("hooks") !== true) throw new ValueError("F-hookskip: features.hooks must remain enabled");

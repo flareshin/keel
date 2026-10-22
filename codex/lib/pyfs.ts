@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { lstatSync, readFileSync, readlinkSync, statSync } from "node:fs";
 import type { Stats } from "node:fs";
 import { isSystemError } from "../../hooks/lib/hookkit/pycompat.ts";
-import { ValueError } from "./pyerrors.ts";
+import { UnicodeEncodeError, ValueError } from "./pyerrors.ts";
 
 const ROOT = "/";
 const MAX_SYMLINK_HOPS = 40;
@@ -13,6 +13,14 @@ const ASCII_LIMIT = 0x80;
 const CONTINUATION_LOW = 0x80;
 const CONTINUATION_HIGH = 0xbf;
 const SURROGATE_ESCAPE_BASE = 0xdc00;
+const ESCAPED_BYTE_FIRST = 0xdc80;
+const ESCAPED_BYTE_LAST = 0xdcff;
+const HIGH_SURROGATE_FIRST = 0xd800;
+const HIGH_SURROGATE_LAST = 0xdbff;
+const LOW_SURROGATE_FIRST = 0xdc00;
+const LOW_SURROGATE_LAST = 0xdfff;
+const ANY_SURROGATE = /[\ud800-\udfff]/;
+const BYTE_MASK = 0xff;
 
 export function purePath(path: string): string {
   if (path === "") return ".";
@@ -61,7 +69,6 @@ function componentsOf(path: string): string[] {
 }
 
 export function resolvePath(path: string): string {
-  if (path.includes("\0")) throw new ValueError("lstat: embedded null character in path");
   const pending = componentsOf(absolutePath(path)).reverse();
   let resolved = ROOT;
   let hops = 0;
@@ -84,12 +91,54 @@ export function resolvePath(path: string): string {
   return resolved;
 }
 
+function isLoneSurrogate(text: string, index: number): boolean {
+  const unit = text.charCodeAt(index);
+  if (unit < HIGH_SURROGATE_FIRST || unit > LOW_SURROGATE_LAST) return false;
+  if (unit <= HIGH_SURROGATE_LAST) {
+    const next = text.charCodeAt(index + 1);
+    return !(next >= LOW_SURROGATE_FIRST && next <= LOW_SURROGATE_LAST);
+  }
+  const before = text.charCodeAt(index - 1);
+  return !(before >= HIGH_SURROGATE_FIRST && before <= HIGH_SURROGATE_LAST);
+}
+
+function surrogateFailure(text: string, index: number): UnicodeEncodeError {
+  const first = Array.from(text.slice(0, index)).length;
+  let end = index + 1;
+  while (end < text.length && isLoneSurrogate(text, end)) end += 1;
+  const last = first + (end - index) - 1;
+  const unit = text.charCodeAt(index).toString(16).padStart(4, "0");
+  const subject = last === first ? `character '\\u${unit}' in position ${first}` : `characters in position ${first}-${last}`;
+  return new UnicodeEncodeError(`'utf-8' codec can't encode ${subject}: surrogates not allowed`);
+}
+
+export function encodeFileSystemPath(path: string): Buffer {
+  if (!ANY_SURROGATE.test(path)) return Buffer.from(path, "utf8");
+  const pieces: Buffer[] = [];
+  let plainStart = 0;
+  for (let index = 0; index < path.length; index += 1) {
+    if (!isLoneSurrogate(path, index)) continue;
+    const unit = path.charCodeAt(index);
+    if (unit < ESCAPED_BYTE_FIRST || unit > ESCAPED_BYTE_LAST) throw surrogateFailure(path, index);
+    pieces.push(Buffer.from(path.slice(plainStart, index), "utf8"), Buffer.from([unit & BYTE_MASK]));
+    plainStart = index + 1;
+  }
+  pieces.push(Buffer.from(path.slice(plainStart), "utf8"));
+  return Buffer.concat(pieces);
+}
+
+function pathBytes(path: string): Buffer {
+  const bytes = encodeFileSystemPath(path);
+  if (bytes.includes(0)) throw new ValueError("lstat: embedded null character in path");
+  return bytes;
+}
+
 function statOrNull(path: string, follow: boolean): Stats | null {
-  if (path.includes("\0")) return null;
   try {
-    return follow ? statSync(path) : lstatSync(path);
+    const bytes = pathBytes(path);
+    return follow ? statSync(bytes) : lstatSync(bytes);
   } catch (error) {
-    if (isSystemError(error)) return null;
+    if (error instanceof ValueError || isSystemError(error)) return null;
     throw error;
   }
 }
@@ -115,8 +164,9 @@ export function fileMode(path: string): number {
 }
 
 function linkTarget(path: string): string | null {
+  const bytes = pathBytes(path);
   try {
-    return lstatSync(path).isSymbolicLink() ? readlinkSync(path) : null;
+    return lstatSync(bytes).isSymbolicLink() ? decodeUtf8WithSurrogateEscape(readlinkSync(bytes, { encoding: "buffer" })) : null;
   } catch (error) {
     if (isSystemError(error)) return null;
     throw error;
@@ -206,16 +256,17 @@ export function translateNewlines(text: string): string {
 }
 
 function readBytes(path: string): Buffer {
+  const bytes = encodeFileSystemPath(path);
+  if (bytes.includes(0)) throw new ValueError("embedded null byte");
   try {
-    return readFileSync(path);
+    return readFileSync(bytes);
   } catch (error) {
-    if (isSystemError(error) && error.path === undefined) error.path = path;
+    if (isSystemError(error)) error.path = path;
     throw error;
   }
 }
 
 export function readText(path: string): string {
-  if (path.includes("\0")) throw new ValueError("embedded null byte");
   return translateNewlines(decodeUtf8(readBytes(path)));
 }
 

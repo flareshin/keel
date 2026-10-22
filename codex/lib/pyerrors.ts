@@ -10,6 +10,13 @@ export class ValueError extends Error {
   }
 }
 
+export class UnicodeEncodeError extends ValueError {
+  constructor(message: string) {
+    super(message);
+    this.name = "UnicodeEncodeError";
+  }
+}
+
 const ERROR_TEXT: Record<string, string> = {
   EPERM: "Operation not permitted",
   ENOENT: "No such file or directory",

@@ -3,7 +3,8 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { isTestPath, TEST_BASENAME_GLOBS, TEST_SEGMENTS } from "../../skills/readable-code/scripts/rule-checks.ts";
+import { foldDottedAndDotlessI as hookkitFold } from "../../hooks/lib/hookkit/pycompat.ts";
+import { foldDottedAndDotlessI, isTestPath, TEST_BASENAME_GLOBS, TEST_SEGMENTS } from "../../skills/readable-code/scripts/rule-checks.ts";
 import { Isolated, KEEL_HOME, RULE_CHECKS } from "./helpers.ts";
 
 const ANY_LINE = "const v: any = 1\n";
@@ -13,6 +14,15 @@ const SIGNAL_LINE = /^signal K5\.(?:[1-9]|1[0-6]) \S+ .{1,160}$/;
 function signalSet(...pairs: Array<[string, string]>): Set<string> {
   return new Set(pairs.map(([id, where]) => `${id} ${where}`));
 }
+
+describe("rule-checks standalone copy of the dotted-I fold", () => {
+  it("maps U+0130 and U+0131 to i and agrees with the hookkit helper it stands in for", () => {
+    assert.equal(foldDottedAndDotlessI("\u0130\u0131x\u00e9"), "iix\u00e9");
+    for (const text of ["", "plain", "\u0130NDEX", "\u0131", "mix\u0130\u0131ed", "\ud83d\ude00\u0130", "TEST\u0130"]) {
+      assert.equal(foldDottedAndDotlessI(text), hookkitFold(text), text);
+    }
+  });
+});
 
 describe("rule-checks CLI", () => {
   let fixture: Isolated;

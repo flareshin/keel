@@ -6,6 +6,7 @@ import math
 import os
 import pathlib
 import shlex
+import subprocess
 import sys
 import tomllib
 
@@ -97,6 +98,92 @@ def resolve(path):
         return failure(error)
 
 
+def py_str(text):
+    return {'ok': str(json.loads(text))}
+
+
+def toml_recursion_threshold(kind, extra_frames):
+    shapes = {'array': ('a = ', '[', '', ']'), 'inline': ('a = ', '{a=', '1', '}'),
+              'array_of_inline': ('a = ', '[{a=', '1', '}]')}
+    head, open_, inner, close = shapes[kind]
+
+    def attempt(depth):
+        try:
+            tomllib.loads(head + open_ * depth + inner + close * depth + '\n')
+        except RecursionError:
+            return True
+        except ValueError:
+            return False
+        return False
+
+    def frames_here():
+        count, frame = 0, sys._getframe()
+        while frame is not None:
+            count, frame = count + 1, frame.f_back
+        return count
+
+    tomllib.loads('a = 1')
+
+    def search(remaining):
+        if remaining:
+            return search(remaining - 1)
+        low, high = 1, 4000
+        while low < high:
+            middle = (low + high) // 2
+            if attempt(middle):
+                high = middle
+            else:
+                low = middle + 1
+        return {'ok': {'threshold': low, 'callerFrames': frames_here()}}
+
+    return search(extra_frames)
+
+
+COLD_PROBE = """
+import re, sys, tomllib
+re.compile("x")
+def descend(remaining, text):
+    if remaining:
+        return descend(remaining - 1, text)
+    count, frame = 0, sys._getframe()
+    while frame is not None:
+        count, frame = count + 1, frame.f_back
+    try:
+        tomllib.loads(text)
+        crashed = False
+    except RecursionError:
+        crashed = True
+    except ValueError:
+        crashed = False
+    print(count, int(crashed))
+descend(int(sys.argv[1]), sys.argv[2])
+"""
+
+
+def toml_cold_recursion_threshold(kind, extra_frames):
+    shapes = {'array': ('[', '1', ']'), 'inline': ('{a=', '1', '}'), 'array_of_inline': ('[{a=', '1', '}]')}
+    open_, inner, close = shapes[kind]
+    caller_frames = 0
+
+    def crashes(depth):
+        nonlocal caller_frames
+        text = 'a = ' + open_ * depth + inner + close * depth + '\n'
+        result = subprocess.run([sys.executable, '-I', '-c', COLD_PROBE, str(extra_frames), text],
+                                capture_output=True, text=True, check=True)
+        caller_frames, crashed = map(int, result.stdout.split())
+        return bool(crashed)
+
+    low, high = 1, 4000
+    while low < high:
+        middle = (low + high) // 2
+        if crashes(middle):
+            high = middle
+        else:
+            low = middle + 1
+    lazy = hasattr(sys.modules.get('tomllib._parser'), '__lazy_modules__') or sys.version_info >= (3, 15)
+    return {'ok': {'threshold': low, 'callerFrames': caller_frames, 'lazy': lazy}}
+
+
 def pure(path):
     pure_path = pathlib.PurePosixPath(path)
     return {'ok': [str(pure_path), str(pure_path.parent), pure_path.name]}
@@ -112,7 +199,7 @@ def os_error(path):
 
 FUNCTIONS = {name: function for name, function in globals().items()
              if name in ('json_loads', 'json_dumps', 'float_repr', 'toml_loads', 'toml_equals', 'py_repr',
-                         'decode_utf8', 'shell_quote', 'resolve', 'pure', 'os_error')}
+                         'decode_utf8', 'shell_quote', 'resolve', 'pure', 'os_error', 'py_str', 'toml_recursion_threshold', 'toml_cold_recursion_threshold')}
 
 
 def main():

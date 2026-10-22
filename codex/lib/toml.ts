@@ -39,6 +39,21 @@ export class TOMLDecodeError extends ValueError {
 
 class NestError extends Error {}
 
+export class RecursionError extends Error {
+  constructor() {
+    super("maximum recursion depth exceeded");
+    this.name = "RecursionError";
+  }
+}
+
+const PYTHON_RECURSION_LIMIT = 1000;
+const FRAMES_FROM_LOADS_TO_KEY_VALUE_PAIR = 2;
+const ARRAY_LEAF_FRAMES = 2;
+const INLINE_TABLE_LEAF_FRAMES = 4;
+const LAZY_REGEX_IMPORT_FRAMES = 22;
+
+let scalarPatternsLoaded = false;
+
 function describePosition(text: string, position: number): string {
   if (position >= text.length) return "end of document";
   const before = text.slice(0, position);
@@ -172,7 +187,7 @@ interface Output {
   flags: Flags;
 }
 
-export function tomlLoads(text: string): TomlTable {
+export function tomlLoads(text: string, callerFrames = 0): TomlTable {
   const source = text.replaceAll("\r\n", "\n");
   const out: Output = { data: new NestedTable(), flags: new Flags() };
   let header: Key = [];
@@ -186,7 +201,7 @@ export function tomlLoads(text: string): TomlTable {
       continue;
     }
     if (KEY_INITIAL_CHARACTERS.has(character)) {
-      position = keyValueRule(source, position, out, header);
+      position = keyValueRule(source, position, out, header, callerFrames + 1 + FRAMES_FROM_LOADS_TO_KEY_VALUE_PAIR);
       position = skipChars(source, position, WHITESPACE);
     } else if (character === "[") {
       out.flags.finalizePending();
@@ -202,6 +217,16 @@ export function tomlLoads(text: string): TomlTable {
     position += 1;
   }
   return out.data.table;
+}
+
+function loadScalarPatterns(frame: number): void {
+  if (scalarPatternsLoaded) return;
+  requireFrames(frame + LAZY_REGEX_IMPORT_FRAMES);
+  scalarPatternsLoaded = true;
+}
+
+function requireFrames(deepest: number): void {
+  if (deepest > PYTHON_RECURSION_LIMIT) throw new RecursionError();
 }
 
 function skipChars(source: string, start: number, characters: ReadonlySet<string>): number {
@@ -268,8 +293,8 @@ function nestOrFail<T>(source: string, position: number, body: () => T): T {
   }
 }
 
-function keyValueRule(source: string, start: number, out: Output, header: Key): number {
-  const [position, key, value] = parseKeyValuePair(source, start);
+function keyValueRule(source: string, start: number, out: Output, header: Key, frame: number): number {
+  const [position, key, value] = parseKeyValuePair(source, start, frame);
   const parent = key.slice(0, -1);
   const stem = key[key.length - 1] ?? "";
   const absoluteParent = [...header, ...parent];
@@ -288,10 +313,10 @@ function keyValueRule(source: string, start: number, out: Output, header: Key): 
   return position;
 }
 
-function parseKeyValuePair(source: string, start: number): [number, Key, TomlValue] {
+function parseKeyValuePair(source: string, start: number, frame: number): [number, Key, TomlValue] {
   const [afterKey, key] = parseKey(source, start);
   if (source[afterKey] !== "=") throw new TOMLDecodeError("Expected '=' after a key in a key/value pair", source, afterKey);
-  const [position, value] = parseValue(source, skipChars(source, afterKey + 1, WHITESPACE));
+  const [position, value] = parseValue(source, skipChars(source, afterKey + 1, WHITESPACE), frame + 1);
   return [position, key, value];
 }
 
@@ -318,13 +343,14 @@ function parseKeyPart(source: string, position: number): [number, string] {
   throw new TOMLDecodeError("Invalid initial character for a key part", source, position);
 }
 
-function parseArray(source: string, start: number): [number, TomlValue[]] {
+function parseArray(source: string, start: number, frame: number): [number, TomlValue[]] {
+  requireFrames(frame + ARRAY_LEAF_FRAMES);
   const array: TomlValue[] = [];
   let position = skipCommentsAndArrayWhitespace(source, start + 1);
   if (source.startsWith("]", position)) return [position + 1, array];
   for (;;) {
     let value: TomlValue;
-    [position, value] = parseValue(source, position);
+    [position, value] = parseValue(source, position, frame + 1);
     array.push(value);
     position = skipCommentsAndArrayWhitespace(source, position);
     const character = source.slice(position, position + 1);
@@ -335,7 +361,8 @@ function parseArray(source: string, start: number): [number, TomlValue[]] {
   }
 }
 
-function parseInlineTable(source: string, start: number): [number, TomlTable] {
+function parseInlineTable(source: string, start: number, frame: number): [number, TomlTable] {
+  requireFrames(frame + INLINE_TABLE_LEAF_FRAMES);
   const nested = new NestedTable();
   const flags = new Flags();
   let position = skipCommentsAndArrayWhitespace(source, start + 1);
@@ -343,7 +370,7 @@ function parseInlineTable(source: string, start: number): [number, TomlTable] {
   for (;;) {
     let key: Key;
     let value: TomlValue;
-    [position, key, value] = parseKeyValuePair(source, position);
+    [position, key, value] = parseKeyValuePair(source, position, frame + 1);
     const stem = key[key.length - 1] ?? "";
     if (flags.is(key, FROZEN)) throw new TOMLDecodeError(`Cannot mutate immutable namespace ${keyRepr(key)}`, source, position);
     const nest = nestOrFail(source, position, () => nested.getOrCreateNest(key.slice(0, -1), false));
@@ -439,7 +466,7 @@ function parseBasicString(source: string, start: number, multiline: boolean): [n
   }
 }
 
-function parseValue(source: string, position: number): [number, TomlValue] {
+function parseValue(source: string, position: number, frame: number): [number, TomlValue] {
   const character = source[position];
   if (character === '"') {
     return source.startsWith('"""', position) ? parseMultilineString(source, position, false) : parseBasicString(source, position + 1, false);
@@ -449,8 +476,9 @@ function parseValue(source: string, position: number): [number, TomlValue] {
   }
   if (character === "t" && source.startsWith("true", position)) return [position + 4, true];
   if (character === "f" && source.startsWith("false", position)) return [position + 5, false];
-  if (character === "[") return parseArray(source, position);
-  if (character === "{") return parseInlineTable(source, position);
+  if (character === "[") return parseArray(source, position, frame + 1);
+  if (character === "{") return parseInlineTable(source, position, frame + 1);
+  loadScalarPatterns(frame);
   DATE_TIME.lastIndex = position;
   const dateTime = DATE_TIME.exec(source);
   if (dateTime !== null) return [position + dateTime[0].length, temporalFromMatch(dateTime, source, position)];

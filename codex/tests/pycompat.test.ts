@@ -8,7 +8,8 @@ import { decodeUtf8, nameOf, parentOf, purePath, readText, resolvePath, shellQuo
 import { JSONDecodeError, pythonFloatRepr, pythonJsonDumps, pythonJsonLoads } from "../lib/pyjson.ts";
 import type { JsonValue } from "../lib/pyjson.ts";
 import { pythonRepr } from "../lib/pyrepr.ts";
-import { TOMLDecodeError, tomlEquals, tomlLoads } from "../lib/toml.ts";
+import { pythonValueStr } from "../lib/pystr.ts";
+import { RecursionError, TOMLDecodeError, tomlEquals, tomlLoads } from "../lib/toml.ts";
 import { canonicalToml, mutate, outcomeOf, pythonReference, seededRandom } from "./pyref.ts";
 import type { Outcome, ReferenceCall } from "./pyref.ts";
 
@@ -113,6 +114,110 @@ describe("pyjson parity with python json", () => {
   });
 });
 
+describe("deeply nested documents", () => {
+  const nestingOf = (value: JsonValue): number => {
+    let depth = 0;
+    let current: JsonValue | undefined = value;
+    while (Array.isArray(current) || (typeof current === "object" && current !== null)) {
+      depth += 1;
+      current = Array.isArray(current) ? current[0] : Object.values(current)[0];
+    }
+    return depth;
+  };
+
+  for (const depth of [3000, 20000]) {
+    it(`loads and dumps JSON nested ${depth} levels deep like json (no stack overflow)`, () => {
+      const arrays = "[".repeat(depth) + "]".repeat(depth);
+      const objects = '{"a": '.repeat(depth) + "1" + "}".repeat(depth);
+      assert.equal(nestingOf(pythonJsonLoads(arrays)), depth);
+      assert.equal(nestingOf(pythonJsonLoads(objects)), depth);
+      assert.equal(pythonJsonDumps(pythonJsonLoads(arrays)), arrays);
+      assert.equal(pythonJsonDumps(pythonJsonLoads(objects)), objects);
+    });
+  }
+
+  it("reports a malformed deep document at the same position as json", () => {
+    const text = "[".repeat(3000) + "1,]" + "]".repeat(2999);
+    assert.throws(() => pythonJsonLoads(text), (error: unknown) => error instanceof JSONDecodeError &&
+      error.message === "Illegal trailing comma before end of array: line 1 column 3002 (char 3001)");
+  });
+
+  const SHAPES = ["array", "inline", "array_of_inline"] as const;
+  const SHAPE_TEXT: Record<(typeof SHAPES)[number], (depth: number) => string> = {
+    array: (depth) => "a = " + "[".repeat(depth) + "]".repeat(depth) + "\n",
+    inline: (depth) => "a = " + "{a=".repeat(depth) + "1" + "}".repeat(depth) + "\n",
+    array_of_inline: (depth) => "a = " + "[{a=".repeat(depth) + "1" + "}]".repeat(depth) + "\n",
+  };
+
+  function firstRecursionDepth(shape: (typeof SHAPES)[number], callerFrames: number, load: typeof tomlLoads = tomlLoads): number {
+    let low = 1;
+    let high = 4000;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      try {
+        load(SHAPE_TEXT[shape](middle), callerFrames);
+        low = middle + 1;
+      } catch (error) {
+        if (!(error instanceof RecursionError)) throw error;
+        high = middle;
+      }
+    }
+    return low;
+  }
+
+  it("raises RecursionError for deeply nested TOML at the depth where tomllib does", () => {
+    tomlLoads("a = 1");
+    const calls: ReferenceCall[] = SHAPES.flatMap((shape) => [0, 1, 2, 3, 4, 5, 6, 7].map((extra) => ({ fn: "toml_recursion_threshold", args: [shape, extra] })));
+    const references = pythonReference(process.cwd(), calls);
+    const found = calls.map((call, index) => {
+      const reference = (references[index] as Outcome).ok as { threshold: number; callerFrames: number };
+      return { shape: call.args[0], extra: call.args[1], python: reference.threshold, typescript: firstRecursionDepth(call.args[0] as (typeof SHAPES)[number], reference.callerFrames) };
+    });
+    const wrong = found.filter((item) => item.python !== item.typescript);
+    console.log(`parity toml recursion: ${found.length} cases, ${wrong.length} mismatches`);
+    assert.deepEqual(wrong, []);
+  });
+
+  const SCALAR_SHAPE_TEXT: Record<(typeof SHAPES)[number], (depth: number) => string> = {
+    array: (depth) => "a = " + "[".repeat(depth) + "1" + "]".repeat(depth) + "\n",
+    inline: SHAPE_TEXT.inline,
+    array_of_inline: SHAPE_TEXT.array_of_inline,
+  };
+
+  it("charges Python 3.15's deferred regex import to the first scalar parsed in a fresh interpreter", async () => {
+    const calls: ReferenceCall[] = SHAPES.flatMap((shape) => [0, 1, 2, 3, 4].map((extra) => ({ fn: "toml_cold_recursion_threshold", args: [shape, extra] })));
+    const references = pythonReference(process.cwd(), calls);
+    const found: Array<{ shape: unknown; extra: unknown; python: number; typescript: number }> = [];
+    for (const [index, call] of calls.entries()) {
+      const reference = (references[index] as Outcome).ok as { threshold: number; callerFrames: number; lazy: boolean };
+      if (!reference.lazy) return;
+      const fresh = (await import(`../lib/toml.ts?cold=${index}`)) as { tomlLoads: typeof tomlLoads; RecursionError: typeof RecursionError };
+      let low = 1;
+      let high = 4000;
+      while (low < high) {
+        const middle = Math.floor((low + high) / 2);
+        const isolated = (await import(`../lib/toml.ts?cold=${index}-${middle}`)) as typeof fresh;
+        try {
+          isolated.tomlLoads(SCALAR_SHAPE_TEXT[call.args[0] as (typeof SHAPES)[number]](middle), reference.callerFrames);
+          low = middle + 1;
+        } catch (error) {
+          if (!(error instanceof isolated.RecursionError)) throw error;
+          high = middle;
+        }
+      }
+      found.push({ shape: call.args[0], extra: call.args[1], python: reference.threshold, typescript: low });
+    }
+    const wrong = found.filter((item) => item.python !== item.typescript);
+    console.log(`parity toml cold recursion: ${found.length} cases, ${wrong.length} mismatches`);
+    assert.deepEqual(wrong, []);
+  });
+
+  it("makes the TOML recursion failure a crash, not a refusal", () => {
+    assert.ok(!(new RecursionError() instanceof ValueError));
+    assert.throws(() => tomlLoads(SHAPE_TEXT.array(2000)), RecursionError);
+  });
+});
+
 describe("tomllib port parity with python tomllib", () => {
   it("parses malformed and valid documents like tomllib.loads", () => {
     const random = seededRandom(20261023);
@@ -199,6 +304,17 @@ describe("python text and path helpers", () => {
     compare("utf8 decode", calls, actual, pythonReference(sandbox, calls), false);
   });
 
+  it("renders values inside containers like str(), including control and no-break characters", () => {
+    const documents = [
+      '["a\\u0001"]', '["a", "b"]', '{"k": ["x\\u00a0y", null, true, false, 12, 1.5, -2.5e-7, 1e22, 0.1]}', "[[], {}, [[]]]",
+      '["it\'s", "say \\"hi\\"", "both \' \\"", "\\ud83d\\ude00", "\\u200b\\ud800", "\\u0000\\u007f\\u0085\\u2028"]', '"plain"', "null", "true",
+      "12345678901234567890", "[NaN, Infinity, -Infinity]", '{"a": {"b": [1, {"c": "\\n\\t\\r\\\\"}]}}', "[" + "[".repeat(2999) + "]".repeat(2999) + "]",
+    ];
+    const calls = documents.map((text) => ({ fn: "py_str", args: [text] }));
+    const actual = documents.map((text) => outcomeOf(() => pythonValueStr(pythonJsonLoads(text))));
+    compare("container str", calls, actual, pythonReference(process.cwd(), calls), false);
+  });
+
   it("shell quoting matches shlex.quote", () => {
     const texts = ["", "plain", "with space", "it's", "a\"b", "$HOME", "~/x", "a=b", "a,b:c@d%e+f", "\u00e9", "line\nbreak", "/usr/bin/node", "-x", "a b'c"];
     const calls = texts.map((text) => ({ fn: "shell_quote", args: [text] }));
@@ -210,6 +326,7 @@ describe("python text and path helpers", () => {
       "", ".", "..", "/", "//", "///x", "//x//y", "a//b/./c/", "real", "real/", "real/../real/file.txt", "alias", "alias/inner", "alias/../alias",
       "relative-link", "relative-link/..", "relative-link/../file.txt", "dangling", "dangling/child", "loop-a", "loop-a/x", "nope/../real",
       "real/file.txt/child", "/nonexistent/a/b", "real/inner/../../alias/inner", "\u00e9/\ud83d\ude00", "a\u0000b", "/tmp/../tmp", "/private/../etc",
+      "\ud800", "real/x\ud800.txt", "real/\ud800\ud801y/z", "a\udc80/b", "\udc80\ud800", "real/\udfff", "\ud800\u0000", "\u0000\ud800", "real/inner/../\ud800",
     ];
     const resolveCalls = paths.map((path) => ({ fn: "resolve", args: [path] }));
     compare("resolve", resolveCalls, paths.map((path) => outcomeOf(() => resolvePath(path))), pythonReference(sandbox, resolveCalls));
@@ -218,7 +335,7 @@ describe("python text and path helpers", () => {
   });
 
   it("OS and decoding failures read like python exceptions", () => {
-    const paths = ["missing.txt", "real", "secret.txt", "bad.txt", "real/file.txt/child", "dangling", "loop-a", "a\u0000b"];
+    const paths = ["missing.txt", "real", "secret.txt", "bad.txt", "real/file.txt/child", "dangling", "loop-a", "a\u0000b", "\ud800", "real/\ud800\ud801", "\udc80x", "\udc80\ud800x"];
     const calls = paths.map((path) => ({ fn: "os_error", args: [path] }));
     const actual = paths.map((path) => outcomeOf(() => {
       try {

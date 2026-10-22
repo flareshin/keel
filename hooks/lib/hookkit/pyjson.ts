@@ -90,19 +90,21 @@ class Document {
         position = opening.valueStart;
         continue;
       }
-      let finished = opening ?? this.scanScalar(position);
-      for (;;) {
-        const container = open.at(-1);
-        if (container === undefined) return finished;
-        addMember(container, finished.value);
-        const step = this.stepInContainer(container, finished.end);
-        if (!step.closed) {
-          position = step.position;
-          break;
-        }
-        finished = { value: container.kind === "array" ? container.items : container.members, end: step.position };
-        open.pop();
-      }
+      const next = this.closeFinishedContainers(open, opening ?? this.scanScalar(position));
+      if ("end" in next) return next;
+      position = next.valueStart;
+    }
+  }
+
+  private closeFinishedContainers(open: OpenContainer[], finished: Parsed): Parsed | { valueStart: number } {
+    for (;;) {
+      const container = open.at(-1);
+      if (container === undefined) return finished;
+      addMember(container, finished.value);
+      const step = this.stepInContainer(container, finished.end);
+      if (!step.closed) return { valueStart: step.position };
+      finished = { value: container.kind === "array" ? container.items : container.members, end: step.position };
+      open.pop();
     }
   }
 

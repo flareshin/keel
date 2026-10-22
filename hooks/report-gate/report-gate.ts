@@ -170,50 +170,6 @@ function textValue(value: unknown): string {
   return pythonStr(isTruthy(value) ? value : "");
 }
 
-class UncheckableReport extends Error {
-  readonly reason: RecursionError;
-
-  constructor(reason: RecursionError) {
-    super(reason.message);
-    this.reason = reason;
-  }
-}
-
-function whileDeciding<T>(read: () => T): T {
-  try {
-    return read();
-  } catch (error) {
-    if (error instanceof RecursionError) throw new UncheckableReport(error);
-    throw error;
-  }
-}
-
-function refusalMessage(): string {
-  return protocol.formatMessage(HOOK, "could not check this report; refusing it", [["K2", UNCHECKABLE_TEXT]]);
-}
-
-function refuseHandback(): number {
-  return protocol.deny(refusalMessage());
-}
-
-function refuseStop(stopHookActive: boolean): number {
-  return stopHookActive ? protocol.EXIT_PASS : protocol.blockStop(refusalMessage());
-}
-
-function refuseUnparsedPayload(raw: string, error: RecursionError): number {
-  new FireLog(HOOK, null).append("K2", "error", { detail: describeError(error) });
-  const event = UNPARSED_EVENT.exec(raw)?.[1];
-  if (event === "PreToolUse" && UNPARSED_HANDBACK_TOOL.test(raw)) return refuseHandback();
-  if (event === "SubagentStop") return refuseStop(UNPARSED_STOP_RETRY.test(raw));
-  return protocol.EXIT_PASS;
-}
-
-function refuseUncheckable(payload: Payload, error: UncheckableReport, fires: FireLog): number {
-  fires.append("K2", "error", { detail: describeError(error.reason) });
-  if (getField(payload, "hook_event_name") === "PreToolUse") return refuseHandback();
-  return refuseStop(isTruthy(getField(payload, "stop_hook_active")));
-}
-
 function main(): number {
   const raw = readStdin();
   let payload: Payload;
@@ -299,6 +255,50 @@ function judgeStop(payload: Payload, fires: FireLog): number {
   if (lacksEvidence(report, transcript.needsEvidence, fires)) return protocol.blockStop(evidenceMessage());
   writeReviewEvidence(report, payload, agentTranscript, transcript, "SubagentStop", fires);
   return protocol.EXIT_PASS;
+}
+
+class UncheckableReport extends Error {
+  readonly reason: RecursionError;
+
+  constructor(reason: RecursionError) {
+    super(reason.message);
+    this.reason = reason;
+  }
+}
+
+function whileDeciding<T>(read: () => T): T {
+  try {
+    return read();
+  } catch (error) {
+    if (error instanceof RecursionError) throw new UncheckableReport(error);
+    throw error;
+  }
+}
+
+function refuseUnparsedPayload(raw: string, error: RecursionError): number {
+  new FireLog(HOOK, null).append("K2", "error", { detail: describeError(error) });
+  const event = UNPARSED_EVENT.exec(raw)?.[1];
+  if (event === "PreToolUse" && UNPARSED_HANDBACK_TOOL.test(raw)) return refuseHandback();
+  if (event === "SubagentStop") return refuseStop(UNPARSED_STOP_RETRY.test(raw));
+  return protocol.EXIT_PASS;
+}
+
+function refuseUncheckable(payload: Payload, error: UncheckableReport, fires: FireLog): number {
+  fires.append("K2", "error", { detail: describeError(error.reason) });
+  if (getField(payload, "hook_event_name") === "PreToolUse") return refuseHandback();
+  return refuseStop(isTruthy(getField(payload, "stop_hook_active")));
+}
+
+function refuseHandback(): number {
+  return protocol.deny(refusalMessage());
+}
+
+function refuseStop(stopHookActive: boolean): number {
+  return stopHookActive ? protocol.EXIT_PASS : protocol.blockStop(refusalMessage());
+}
+
+function refusalMessage(): string {
+  return protocol.formatMessage(HOOK, "could not check this report; refusing it", [["K2", UNCHECKABLE_TEXT]]);
 }
 
 function findHandbackTranscript(payload: Payload): string | null {

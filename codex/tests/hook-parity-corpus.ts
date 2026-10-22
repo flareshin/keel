@@ -386,5 +386,46 @@ export function hookCases(paths: Paths): HookCase[] {
   add("integral float cwd beside a decoy integer directory", withCwd("1.0"));
   add("integer cwd", withCwd("1"));
 
+  const textVariables: Array<[string, Record<string, string>]> = [
+    ["default", {}],
+    ["utf8 mode off in the C locale via LANG", { PYTHONUTF8: "0", LANG: "C" }],
+    ["utf8 mode off, LANG C and LC_CTYPE C.UTF-8 as a Python parent exports it", { PYTHONUTF8: "0", LANG: "C", LC_CTYPE: "C.UTF-8" }],
+    ["utf8 mode off with only LC_CTYPE C.UTF-8", { PYTHONUTF8: "0", LC_CTYPE: "C.UTF-8" }],
+    ["utf8 mode off with LC_CTYPE UTF-8", { PYTHONUTF8: "0", LC_CTYPE: "UTF-8" }],
+    ["utf8 mode off with no locale variables", { PYTHONUTF8: "0" }],
+    ["utf8 mode off with LC_ALL C", { PYTHONUTF8: "0", LC_ALL: "C" }],
+    ["utf8 mode off with LC_ALL C and no coercion", { PYTHONUTF8: "0", LC_ALL: "C", PYTHONCOERCECLOCALE: "0" }],
+    ["utf8 mode off with LC_CTYPE C and no coercion", { PYTHONUTF8: "0", LC_CTYPE: "C", PYTHONCOERCECLOCALE: "0" }],
+    ["utf8 mode off with LC_ALL overriding LC_CTYPE", { PYTHONUTF8: "0", LC_ALL: "en_US.UTF-8", LC_CTYPE: "C" }],
+    ["utf8 mode off with LC_CTYPE overriding LANG", { PYTHONUTF8: "0", LC_CTYPE: "en_US.UTF-8", LANG: "C" }],
+    ["utf8 mode off in a UTF-8 locale", { PYTHONUTF8: "0", LANG: "en_US.UTF-8" }],
+    ["utf8 mode off in a Latin-1 locale", { PYTHONUTF8: "0", LC_ALL: "en_US.ISO8859-1" }],
+    ["utf8 mode off in an ASCII locale", { PYTHONUTF8: "0", LC_ALL: "en_US.US-ASCII" }],
+    ["utf8 mode off in a missing locale", { PYTHONUTF8: "0", LANG: "xx_YY.UTF-8" }],
+    ["utf8 mode off with a missing LC_ALL", { PYTHONUTF8: "0", LC_ALL: "xx_YY.UTF-8" }],
+    ["utf8 mode on in the C locale", { PYTHONUTF8: "1", LANG: "C" }],
+    ["utf8 mode empty value", { PYTHONUTF8: "", LC_ALL: "C" }],
+    ["io encoding utf-8", { PYTHONIOENCODING: "utf-8" }],
+    ["io encoding utf-8 with surrogateescape", { PYTHONIOENCODING: "utf-8:surrogateescape", PYTHONUTF8: "0", LANG: "en_US.UTF-8" }],
+    ["io errors strict only", { PYTHONIOENCODING: ":strict" }],
+    ["io errors replace only", { PYTHONIOENCODING: ":replace" }],
+    ["io errors ignore only", { PYTHONIOENCODING: ":ignore" }],
+    ["io errors backslashreplace only", { PYTHONIOENCODING: ":backslashreplace" }],
+    ["io encoding ascii", { PYTHONIOENCODING: "ascii" }],
+    ["io encoding ascii with replace", { PYTHONIOENCODING: "ascii:replace" }],
+    ["io encoding latin-1", { PYTHONIOENCODING: "latin-1" }],
+    ["io encoding with an empty spec in the C locale", { PYTHONIOENCODING: ":", PYTHONUTF8: "0", LC_ALL: "C" }],
+  ];
+  const textInputs: Array<[string, Buffer]> = [
+    ["valid non-ascii", Buffer.from(`{"tool_name": "Bash", "tool_input": {"command": "echo héllo 😀"}, "cwd": ${JSON.stringify(repo)}}`)],
+    ["invalid start byte", Buffer.concat([Buffer.from('{"tool_name": "Bash", "tool_input": {"command": "echo '), Buffer.from([0xff]), Buffer.from(`"}, "cwd": ${JSON.stringify(repo)}}`)])],
+    ["truncated sequence", Buffer.concat([Buffer.from('{"tool_name": "Bash", "tool_input": {"command": "echo '), Buffer.from([0xe2, 0x82]), Buffer.from(`"}, "cwd": ${JSON.stringify(repo)}}`)])],
+    ["bad continuation", Buffer.concat([Buffer.from('{"tool_name": "Bash", "tool_input": {"command": "echo '), Buffer.from([0xc3, 0x28]), Buffer.from(`"}, "cwd": ${JSON.stringify(repo)}}`)])],
+    ["invalid byte before a protected write", Buffer.concat([Buffer.from(`{"tool_name": "Write", "tool_input": {"file_path": ${JSON.stringify(`${profile}/hooks.json`)}, "content": "`), Buffer.from([0xc3, 0x28]), Buffer.from(`"}, "cwd": ${JSON.stringify(repo)}}`)])],
+  ];
+  for (const [variablesName, env] of textVariables) {
+    for (const [inputName, stdin] of textInputs) add(`stdin ${inputName} with ${variablesName}`, stdin, { env });
+  }
+
   return cases;
 }

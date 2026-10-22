@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
+import { withoutLocale } from "./locale-env.ts";
 
 const ADAPTER = join(import.meta.dirname, "..");
 const PYTHON_HOOK = join(ADAPTER, "hooks", "pre-tool-use.py");
@@ -92,7 +93,7 @@ function buildSandbox(paths: Paths, config: string | Buffer | null): void {
 
 function environmentFor(paths: Paths, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
-  for (const [name, value] of Object.entries(process.env)) if (!name.startsWith("KEEL_") && !name.startsWith("CODEX_")) env[name] = value;
+  for (const [name, value] of Object.entries(withoutLocale(process.env))) if (!name.startsWith("KEEL_") && !name.startsWith("CODEX_")) env[name] = value;
   return {
     ...env, HOME: paths.home, KEEL_CODEX_HOME: paths.profile, KEEL_AGENTS_HOME: paths.agents, KEEL_DATA_DIR: paths.data,
     KEEL_OVERLAY_DIR: paths.overlay, GIT_CONFIG_GLOBAL: join(paths.root, "gitconfig"), GIT_CONFIG_NOSYSTEM: "1", ...extra,

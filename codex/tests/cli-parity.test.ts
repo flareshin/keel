@@ -4,6 +4,7 @@ import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
+import { withoutLocale } from "./locale-env.ts";
 
 const ADAPTER = realpathSync(join(import.meta.dirname, ".."));
 const HOOK_SCRIPT_PATH = /\S*codex\/hooks\/pre-tool-use\.(?:py|ts)/;
@@ -65,7 +66,7 @@ function snapshot(root: string, implementation: "python" | "typescript"): Record
 }
 
 function runStep(implementation: "python" | "typescript", step: Step, root: string): Observation {
-  const env: NodeJS.ProcessEnv = { ...process.env, HOME: root, KEEL_OVERLAY_DIR: join(root, "overlay"), KEEL_DATA_DIR: join(root, "data"), ...step.env };
+  const env: NodeJS.ProcessEnv = { ...withoutLocale(process.env), HOME: root, KEEL_OVERLAY_DIR: join(root, "overlay"), KEEL_DATA_DIR: join(root, "data"), ...step.env };
   delete env["CODEX_HOME"];
   Object.assign(env, step.env);
   const command = implementation === "python"
@@ -273,7 +274,7 @@ describe("config crash parity on deeply nested TOML", () => {
       put(join(root, "candidate.toml"), text);
       const command = implementation === "python" ? ["python3", join(ADAPTER, "bin", "config")] : [process.execPath, join(ADAPTER, "bin", "config.ts")];
       const args = ["--profile", join(root, "profile"), "--file", join(root, "candidate.toml")];
-      return spawnSync(command[0] as string, [...command.slice(1), ...args], { env: { ...process.env, HOME: root }, encoding: "utf8" }).status;
+      return spawnSync(command[0] as string, [...command.slice(1), ...args], { env: { ...withoutLocale(process.env), HOME: root }, encoding: "utf8" }).status;
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

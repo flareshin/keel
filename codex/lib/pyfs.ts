@@ -192,13 +192,13 @@ function utf8Shape(lead: number): Utf8Shape | null {
   return null;
 }
 
-interface Utf8Problem {
+export interface Utf8Problem {
   start: number;
   end: number;
   reason: string;
 }
 
-function utf8Problem(bytes: Buffer, from: number): Utf8Problem | null {
+export function utf8Problem(bytes: Buffer, from: number): Utf8Problem | null {
   let index = from;
   while (index < bytes.length) {
     const lead = bytes[index] ?? 0;
@@ -220,7 +220,7 @@ function utf8Problem(bytes: Buffer, from: number): Utf8Problem | null {
   return null;
 }
 
-function decodeFailure(bytes: Buffer, problem: Utf8Problem): string {
+export function decodeFailure(bytes: Buffer, problem: Utf8Problem): string {
   const where = problem.end - problem.start === 1
     ? `byte 0x${(bytes[problem.start] ?? 0).toString(16).padStart(2, "0")} in position ${problem.start}`
     : `bytes in position ${problem.start}-${problem.end - 1}`;
@@ -243,12 +243,6 @@ export function decodeUtf8WithSurrogateEscape(bytes: Buffer): string {
     for (let index = problem.start; index < problem.end; index += 1) text += String.fromCharCode(SURROGATE_ESCAPE_BASE + (bytes[index] ?? 0));
     from = problem.end;
   }
-}
-
-export function pythonStdinIsLenient(env: NodeJS.ProcessEnv = process.env): boolean {
-  if (env["PYTHONUTF8"] !== "0") return true;
-  const locale = env["LC_ALL"] || env["LC_CTYPE"] || env["LANG"] || "";
-  return locale === "" || locale === "C" || locale === "POSIX";
 }
 
 export function translateNewlines(text: string): string {

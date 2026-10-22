@@ -9,6 +9,7 @@ import { decodeUtf8, nameOf, parentOf, purePath, readText, resolvePath, shellQuo
 import { JSONDecodeError, PyFloat, pythonFloatRepr, pythonJsonDumps, pythonJsonLoads } from "../lib/pyjson.ts";
 import type { JsonValue } from "../lib/pyjson.ts";
 import { pythonRepr } from "../lib/pyrepr.ts";
+import { decodeStdin, stdinCodec } from "../lib/pystdin.ts";
 import { pythonValueStr } from "../lib/pystr.ts";
 import { RecursionError, TOMLDecodeError, tomlEquals, tomlLoads } from "../lib/toml.ts";
 import { canonicalToml, mutate, outcomeOf, pythonReference, seededRandom } from "./pyref.ts";
@@ -251,6 +252,70 @@ describe("tomllib port parity with python tomllib", () => {
   it("raises TOMLDecodeError with python positions", () => {
     assert.throws(() => tomlLoads("a = 1\nb = $"), (error: unknown) =>
       error instanceof TOMLDecodeError && error.message === "Invalid value (at line 2, column 5)");
+  });
+});
+
+describe("stdin decoding follows Python's locale, UTF-8 mode and PYTHONIOENCODING rules", () => {
+  const LOCALES = [undefined, "", "C", "POSIX", "C.UTF-8", "C.utf8", "UTF-8", "en_US.UTF-8", "xx_YY.UTF-8", "en_US.ISO8859-1", "en_US.US-ASCII", "en_US"];
+  const CHOICES: Record<string, Array<string | undefined>> = {
+    LC_ALL: LOCALES, LC_CTYPE: LOCALES, LANG: LOCALES,
+    PYTHONUTF8: [undefined, undefined, "0", "0", "1", ""],
+    PYTHONCOERCECLOCALE: [undefined, undefined, "0", "1"],
+    PYTHONIOENCODING: [undefined, undefined, undefined, "utf-8", "UTF8", ":strict", ":replace", ":ignore", ":backslashreplace", ":surrogateescape", "ascii", "ascii:replace", "latin-1", "utf-8:surrogateescape", "utf-8:strict", ":", "bogus"],
+  };
+  const PYTHON_TO_CODEC: Record<string, string> = { "utf-8": "utf-8", ascii: "ascii", "iso8859-1": "latin-1" };
+  const INPUTS = ["", Buffer.from("plain ascii").toString("hex"), "c3a9", "ff", "e282", "c328", "6162ff63", "e282ac41ff", "f09f9880", "80", "c3a9c3", "6162e28241"];
+
+  function samples(count: number): Array<Record<string, string>> {
+    const random = seededRandom(20261024);
+    const environments: Array<Record<string, string>> = [
+      {}, { PYTHONUTF8: "0" }, { PYTHONUTF8: "0", LANG: "C" }, { PYTHONUTF8: "0", LC_CTYPE: "C.UTF-8" }, { PYTHONUTF8: "0", LANG: "C", LC_CTYPE: "C.UTF-8" },
+      { PYTHONUTF8: "0", LC_ALL: "C" }, { PYTHONUTF8: "0", LC_ALL: "en_US.UTF-8", LC_CTYPE: "C" }, { PYTHONUTF8: "0", LANG: "en_US.UTF-8" },
+    ];
+    for (let index = 0; index < count; index += 1) {
+      const chosen: Record<string, string> = {};
+      for (const [name, options] of Object.entries(CHOICES)) {
+        const value = options[Math.floor(random() * options.length)];
+        if (value !== undefined) chosen[name] = value;
+      }
+      environments.push(chosen);
+    }
+    return environments;
+  }
+
+  function codecOutcome(environment: Record<string, string>): Outcome {
+    return outcomeOf(() => {
+      const { encoding, errors } = stdinCodec(environment);
+      return [encoding, errors];
+    });
+  }
+
+  it("picks the same encoding and error handler as sys.stdin for every variable combination", () => {
+    const environments = samples(500);
+    const calls = environments.map((environment) => ({ fn: "stdin_codec", args: [environment] }));
+    const expected = pythonReference(process.cwd(), calls).map((outcome) => outcome.error === undefined
+      ? { ok: [PYTHON_TO_CODEC[(outcome.ok as string[])[0] as string] ?? (outcome.ok as string[])[0], (outcome.ok as string[])[1]] }
+      : { error: "fatal" });
+    const actual = environments.map((environment) => {
+      const outcome = codecOutcome(environment);
+      return outcome.error === undefined ? outcome : { error: "fatal" };
+    });
+    compare("stdin codec", calls, actual, expected, false);
+  });
+
+  it("decodes valid and invalid bytes like sys.stdin.read() under each combination", () => {
+    const environments = samples(60);
+    const pairs = environments.flatMap((environment) => INPUTS.map((hex) => [environment, hex] as const));
+    const calls = pairs.map(([environment, hex]) => ({ fn: "stdin_decode", args: [environment, hex] }));
+    const expected = pythonReference(process.cwd(), calls);
+    const actual = pairs.map(([environment, hex]) => {
+      try {
+        return { ok: Array.from(decodeStdin(Buffer.from(hex, "hex"), environment), (character) => character.codePointAt(0) as number) };
+      } catch (error) {
+        return error instanceof ValueError ? { error: error.message } : { error: "crash" };
+      }
+    });
+    compare("stdin decode", calls, actual, expected, false);
   });
 });
 

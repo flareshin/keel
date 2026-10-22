@@ -93,6 +93,7 @@ function translate(pattern: string, start: Dialect): string {
       const backreference = NAMED_BACKREFERENCE.exec(rest)
       const comment = COMMENT_GROUP.exec(rest)
       if (backreference) {
+        rejectBackreferenceUnderIFamilyFolding(dialect)
         output += `\\k<${backreference[1]}>`
         index += backreference[0].length
       } else if (comment) {
@@ -213,7 +214,12 @@ function translateNumericEscape(chars: string[], at: number, dialect: Dialect): 
     return { text: codePointLiteral(octalCodePoint(octalDigitsFrom(chars, at, 3)), dialect), length: 3 }
   }
   const reference = isDecimalDigit(second) ? first + second : first
+  rejectBackreferenceUnderIFamilyFolding(dialect)
   return { text: `(?:\\${reference})`, length: reference.length }
+}
+
+function rejectBackreferenceUnderIFamilyFolding(dialect: Dialect): void {
+  if (foldsIFamily(dialect)) throw new PyRegexError("unsupported backreference under ignore-case")
 }
 
 function octalDigitsFrom(chars: string[], at: number, limit: number): string {

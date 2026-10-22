@@ -104,7 +104,7 @@ ship-gate classifies the outgoing paths with the overlay's `risk-rules.tsv`; evi
 | standard (default) | anything no rule matches | `lens-review` chain + tests; approval at merge |
 | heavy | money, inventory writes, schema, batch, external contracts | `lens-review` chain + tests; approval at merge |
 
-K3 also applies: a logic path with no test path in the same range is denied, unless the chain head's `KEEL-EVIDENCE` carries a `no_test_reason` (DESIGN.md §5.4; lens-review does not emit it yet).
+K3 also applies: a logic path with no test path in the same range is denied, unless the chain head's `KEEL-EVIDENCE` carries a `no_test_reason` (lens-review does not emit it yet), or the path's change only deletes ordinary whole-line comments. DESIGN.md §5.4 defines both.
 
 ### Threat model
 

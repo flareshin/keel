@@ -280,16 +280,14 @@ class ReviewEvalCliTest(unittest.TestCase):
         self.assertEqual((changed.returncode, changed_report["same_grade"]), (1, 0))
         self.assertEqual(len(self.calls()), 1)
 
-    def test_gradesTheLatestLensReviewRecordOfTheSession(self) -> None:
-        hit = result([finding("{{REPO}}/calc.py:6")])
-        self.play([{"records": [
-            {"startTime": 1, "result": {"verdict": "ERROR", "error": "earlier attempt"}},
-            {"startTime": 5, "result": hit},
-            {"startTime": 9, "workflowName": "other-workflow", "result": result()},
-        ]}])
-        completed, report = self.run_eval("--case", "mean-1", "--repeat", "1")
+    def test_gradesTheLatestLensReviewRecordOfTheSession_whateverTheFileOrder(self) -> None:
+        latest = {"startTime": 9, "result": result([finding("{{REPO}}/calc.py:6")])}
+        earlier = {"startTime": 1, "result": {"verdict": "ERROR", "error": "earlier attempt"}}
+        newest_other = {"startTime": 20, "workflowName": "other-workflow", "result": result()}
+        self.play([{"records": [latest, earlier, newest_other]}, {"records": [earlier, latest, newest_other]}])
+        completed, report = self.run_eval("--case", "mean-1", "--repeat", "2")
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual((report["faults"], report["numbers"]["train"]["hits"]), ([], 1))
+        self.assertEqual((report["faults"], report["numbers"]["train"]["hits"]), ([], 2))
 
     def test_killedRecord_resultWithoutBlockingList_andTimeout_areFaults(self) -> None:
         cases = [

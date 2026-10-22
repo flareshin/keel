@@ -137,17 +137,17 @@ function runCli(argv: readonly string[], scan: ScanTree = scanTree): number {
   if (typeof parsed === "number") return parsed;
   if (parsed.selfTest) return runSelfTest();
   if (!parsed.repo || !parsed.base) return usageError("--repo and --base are required");
-  let result: { signals: Signal[]; summary: Summary };
+  let scanResult: { signals: Signal[]; summary: Summary };
   try {
-    result = scan(parsed.repo, parsed.base, parsed.head);
+    scanResult = scan(parsed.repo, parsed.base, parsed.head);
   } catch (error) {
     process.stderr.write((error instanceof Error ? error.stack : String(error)) + "\n");
     process.stdout.write(`summary repos=0 scanned_lines=0 signals=0 unscanned=none blocked=.(crashed: ${pythonExceptionName(error)})\n`);
     return 2;
   }
-  for (const signal of result.signals) process.stdout.write(`signal ${signal.id} ${signal.where} ${signal.text}\n`);
-  process.stdout.write(formatSummary(result.summary, result.signals.length) + "\n");
-  return result.summary.blocked.length > 0 ? 2 : 0;
+  for (const signal of scanResult.signals) process.stdout.write(`signal ${signal.id} ${signal.where} ${signal.text}\n`);
+  process.stdout.write(formatSummary(scanResult.summary, scanResult.signals.length) + "\n");
+  return scanResult.summary.blocked.length > 0 ? 2 : 0;
 }
 
 interface Arguments {

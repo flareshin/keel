@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { basename, dirname } from "node:path";
-import { canonicalCodec, decodeWithCodec, resolveStdinEncoding, UnsupportedStdinEncoding, UTF8_BOM } from "./pycodecs.ts";
+import { canonicalCodec, decodeWithCodec, PythonStartupFailure, resolveStdinEncoding, UnsupportedStdinEncoding, UTF8_BOM } from "./pycodecs.ts";
 
 export interface StdinCodec {
   name: string;
@@ -56,6 +56,10 @@ function defaultCodec(env: NodeJS.ProcessEnv): StdinCodec {
 }
 
 export function stdinCodec(env: NodeJS.ProcessEnv = process.env): StdinCodec {
+  const utf8Mode = env["PYTHONUTF8"];
+  if (utf8Mode !== undefined && utf8Mode !== "" && utf8Mode !== "0" && utf8Mode !== "1") {
+    throw new PythonStartupFailure("preconfig_init_utf8_mode: invalid PYTHONUTF8 environment variable value", "", "preinitializing");
+  }
   const [encodingName = "", errorsName = ""] = (env["PYTHONIOENCODING"] ?? "").split(/:(.*)/s);
   if (encodingName !== "") return { name: encodingName, errors: errorsName !== "" ? errorsName : "strict" };
   const base = defaultCodec(env);
@@ -63,9 +67,14 @@ export function stdinCodec(env: NodeJS.ProcessEnv = process.env): StdinCodec {
 }
 
 export function decodeStdin(bytes: Buffer, env: NodeJS.ProcessEnv = process.env): string {
+  return readStdin(() => bytes, env);
+}
+
+export function readStdin(readInput: () => Buffer, env: NodeJS.ProcessEnv = process.env): string {
   const { name, errors } = stdinCodec(env);
   const encoding = resolveStdinEncoding(name);
   if (encoding.kind === "unsupported") throw new UnsupportedStdinEncoding(encoding.name);
+  const bytes = readInput();
   if (encoding.codec === "utf_8_sig" && bytes.length < UTF8_BOM.length && bytes.every((byte, index) => byte === UTF8_BOM[index])) return "";
   return decodeWithCodec(encoding.codec, bytes, errors);
 }

@@ -44,6 +44,10 @@ def json_loads(text):
         return failure(error)
 
 
+def json_roundtrip(text):
+    return {'ok': json.dumps(json.loads(text))}
+
+
 def json_dumps(value, indent, sort_keys, ensure_ascii):
     return {'ok': json.dumps(value, indent=indent, sort_keys=sort_keys, ensure_ascii=ensure_ascii)}
 
@@ -284,7 +288,7 @@ def os_error(path):
 
 
 FUNCTIONS = {name: function for name, function in globals().items()
-             if name in ('json_loads', 'json_dumps', 'float_repr', 'toml_loads', 'toml_equals', 'py_repr',
+             if name in ('json_loads', 'json_roundtrip', 'json_dumps', 'float_repr', 'toml_loads', 'toml_equals', 'py_repr',
                          'decode_utf8', 'shell_quote', 'resolve', 'pure', 'os_error', 'py_str', 'toml_recursion_threshold', 'toml_cold_recursion_threshold', 'stdin_codec', 'stdin_decode', 'codec_table', 'codec_sample', 'codec_bytes', 'codec_encode', 'codec_decode', 'codec_lookup')}
 
 

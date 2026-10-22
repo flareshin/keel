@@ -175,9 +175,9 @@ class NestedTable {
   appendNestToList(key: Key): void {
     const container = this.getOrCreateNest(key.slice(0, -1));
     const last = key[key.length - 1] ?? "";
-    const list = container.get(last);
-    if (list === undefined) container.set(last, [new Map()]);
-    else if (Array.isArray(list)) list.push(new Map());
+    const tableArray = container.get(last);
+    if (tableArray === undefined) container.set(last, [new Map()]);
+    else if (Array.isArray(tableArray)) tableArray.push(new Map());
     else throw new NestError("An object other than list found behind this key");
   }
 }
@@ -426,37 +426,37 @@ function parseLiteralString(source: string, start: number): [number, string] {
 function parseMultilineString(source: string, start: number, literal: boolean): [number, string] {
   let position = start + 3;
   if (source.startsWith("\n", position)) position += 1;
-  let result: string;
+  let multilineText: string;
   const delimiter = literal ? "'" : '"';
   if (literal) {
     const end = skipUntil(source, position, "'''", true, true);
-    result = source.slice(position, end);
+    multilineText = source.slice(position, end);
     position = end + 3;
   } else {
-    [position, result] = parseBasicString(source, position, true);
+    [position, multilineText] = parseBasicString(source, position, true);
   }
-  if (!source.startsWith(delimiter, position)) return [position, result];
+  if (!source.startsWith(delimiter, position)) return [position, multilineText];
   position += 1;
-  if (!source.startsWith(delimiter, position)) return [position, result + delimiter];
-  return [position + 1, result + delimiter.repeat(2)];
+  if (!source.startsWith(delimiter, position)) return [position, multilineText + delimiter];
+  return [position + 1, multilineText + delimiter.repeat(2)];
 }
 
 function parseBasicString(source: string, start: number, multiline: boolean): [number, string] {
-  let result = "";
+  let parsedText = "";
   let position = start;
   let chunkStart = start;
   for (;;) {
     const character = source[position];
     if (character === undefined) throw new TOMLDecodeError("Unterminated string", source, position);
     if (character === '"') {
-      if (!multiline) return [position + 1, result + source.slice(chunkStart, position)];
-      if (source.startsWith('"""', position)) return [position + 3, result + source.slice(chunkStart, position)];
+      if (!multiline) return [position + 1, parsedText + source.slice(chunkStart, position)];
+      if (source.startsWith('"""', position)) return [position + 3, parsedText + source.slice(chunkStart, position)];
       position += 1;
     } else if (character === "\\") {
-      result += source.slice(chunkStart, position);
+      parsedText += source.slice(chunkStart, position);
       let parsed: string;
       [position, parsed] = parseEscape(source, position, multiline);
-      result += parsed;
+      parsedText += parsed;
       chunkStart = position;
     } else if (isIllegalInString(character, multiline)) {
       throw new TOMLDecodeError(`Illegal character ${pythonRepr(character)}`, source, position);

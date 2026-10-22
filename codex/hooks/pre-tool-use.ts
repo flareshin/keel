@@ -11,7 +11,7 @@ import { osErrorMessage, pythonFailureMessage, ValueError } from "../lib/pyerror
 import { childPath, hasGlobMagic, isStrictAncestor, parentOf, pathExists, purePath, readText, resolvePath, translateNewlines } from "../lib/pyfs.ts";
 import { isJsonObject, isTruthy, pythonJsonDumps, pythonJsonLoads } from "../lib/pyjson.ts";
 import { PythonStartupFailure } from "../lib/pycodecs.ts";
-import { decodeStdin, encodeStdout } from "../lib/pystdin.ts";
+import { readStdin, encodeStdout } from "../lib/pystdin.ts";
 import { pythonValueStr } from "../lib/pystr.ts";
 import type { JsonValue } from "../lib/pyjson.ts";
 
@@ -35,7 +35,7 @@ export type GuardRunner = (command: readonly string[], input: string) => Complet
 
 export function main(readInput: () => Buffer, runner: GuardRunner = spawnGuard): CommandResult {
   try {
-    const calls = normalize(pythonJsonLoads(translateNewlines(decodeStdin(readInput()))));
+    const calls = normalize(pythonJsonLoads(translateNewlines(readStdin(readInput))));
     const contexts: string[] = [];
     for (const call of calls) {
       protectAdapter(call);

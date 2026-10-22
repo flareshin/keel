@@ -76,11 +76,11 @@ export function main(argv: readonly string[]): CommandResult {
   const home = resolvePath(expandUser(purePath((parsed.get("home") as string | undefined) ?? expandUser("~"))));
   const codexHome = resolvePath(environmentPath("CODEX_HOME", childPath(home, ".codex")));
   const overlay = resolvePath(environmentPath("KEEL_OVERLAY_DIR", childPath(home, "git/keel-overlay")));
-  const data = absolutePath(environmentPath("KEEL_DATA_DIR", childPath(home, ".claude")));
+  const keelDataDirectory = absolutePath(environmentPath("KEEL_DATA_DIR", childPath(home, ".claude")));
   const agentsHome = childPath(home, ".agents");
   try {
     return withInstallationLock(agentsHome, mode.write || mode.unlink, () => {
-      const desired = mode.unlink ? new Map<string, ManagedFile>() : buildFiles(codexHome, overlay, data, agentsHome);
+      const desired = mode.unlink ? new Map<string, ManagedFile>() : buildFiles(codexHome, overlay, keelDataDirectory, agentsHome);
       const skills = mode.unlink ? new Map<string, ManagedFile>() : buildSkillLinks(home, overlay);
       return reconcile(desired, skills, agentsHome, childPath(codexHome, STATE_NAME), mode);
     });

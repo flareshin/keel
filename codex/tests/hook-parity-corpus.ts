@@ -71,6 +71,12 @@ export function hookCases(paths: Paths): HookCase[] {
   add("tool_name null", payload(null, {}));
   add("tool_name number", payload(7, {}));
   add("tool_name list", payload(["Bash", "x"], {}));
+  for (const [name, object] of [
+    ["descending numeric keys", '{"2":0,"1":0}'],
+    ["duplicate numeric key", '{"2":1,"a":2,"1":3,"2":4}'],
+    ["nested numeric keys", '{"outer":{"3":0,"1":1,"2":2}}'],
+    ["numeric keys and prototype name", '{"__proto__":{"2":0,"1":1},"1":0,"0":1}'],
+  ]) add(`tool_name ${name}`, `{"tool_name":${object},"tool_input":{}}`);
   add("tool_name object", payload({ a: "b" }, {}));
   add("tool_name lowercase", payload("bash", { command: "ls" }));
   add("Bash without command", payload("Bash", {}));
@@ -390,6 +396,10 @@ export function hookCases(paths: Paths): HookCase[] {
   const CRASHING_HANDLER_SAFE_INPUTS = ["ascii only", "byte order mark first", "valid non-ascii", "iso2022 escape sequence", "empty input"];
   const textVariables: Array<[string, Record<string, string>, StdinDivergence?]> = [
     ["default", {}],
+    ["utf8 invalid value", { PYTHONUTF8: "2" }],
+    ["utf8 invalid with encoding override", { PYTHONUTF8: "bogus", PYTHONIOENCODING: "utf-8" }],
+    ["utf8 invalid precedes unknown encoding", { PYTHONUTF8: "2", PYTHONIOENCODING: "bogus" }],
+    ["utf8 invalid precedes unsupported encoding", { PYTHONUTF8: "bogus", PYTHONIOENCODING: "utf-16" }],
     ["utf8 mode off in the C locale via LANG", { PYTHONUTF8: "0", LANG: "C" }],
     ["utf8 mode off, LANG C and LC_CTYPE C.UTF-8 as a Python parent exports it", { PYTHONUTF8: "0", LANG: "C", LC_CTYPE: "C.UTF-8" }],
     ["utf8 mode off with only LC_CTYPE C.UTF-8", { PYTHONUTF8: "0", LC_CTYPE: "C.UTF-8" }],
@@ -477,7 +487,7 @@ export function hookCases(paths: Paths): HookCase[] {
   ];
   for (const [variablesName, env, divergence] of textVariables) {
     for (const [inputName, stdin] of textInputs) {
-      const startupFailure = variablesName === "io encoding unknown name" || variablesName === "io encoding dotted module name" || variablesName.startsWith("io encoding non-text");
+      const startupFailure = variablesName.startsWith("utf8 invalid") || variablesName === "io encoding unknown name" || variablesName === "io encoding dotted module name" || variablesName.startsWith("io encoding non-text");
       const crashes = !startupFailure && /xmlcharrefreplace|namereplace|unknown/.test(variablesName) && !CRASHING_HANDLER_SAFE_INPUTS.includes(inputName);
       add(`stdin ${inputName} with ${variablesName}`, stdin, { env, crash: crashes, divergence, startupFailure });
     }

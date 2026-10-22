@@ -6,7 +6,7 @@ import { after, before, describe, it } from "node:test";
 import { pythonStr as hookkitStr } from "../../hooks/lib/hookkit/pycompat.ts";
 import { osErrorMessage, pythonFailureMessage, ValueError } from "../lib/pyerrors.ts";
 import { decodeUtf8, nameOf, parentOf, purePath, readText, resolvePath, shellQuote, translateNewlines } from "../lib/pyfs.ts";
-import { JSONDecodeError, PyFloat, pythonFloatRepr, pythonJsonDumps, pythonJsonLoads } from "../lib/pyjson.ts";
+import { cloneJson, JSONDecodeError, PyFloat, pythonFloatRepr, pythonJsonDumps, pythonJsonLoads } from "../lib/pyjson.ts";
 import type { JsonValue } from "../lib/pyjson.ts";
 import { pythonRepr } from "../lib/pyrepr.ts";
 import { pythonValueStr } from "../lib/pystr.ts";
@@ -62,6 +62,33 @@ const TOML_BASES = [
 const TOML_ALPHABET = [...'[]{}=".,\'#\n\\ _-+:0123456789abtrufalsenidTZxuUeE\t\r\u00e9\ud83d\ude00\u0000\u007f'];
 
 describe("pyjson parity with python json", () => {
+  it("preserves numeric JSON member insertion order in dumps, representations and clones", () => {
+    const documents = [
+      '{"2":0,"1":0}', '{"2":1,"a":2,"1":3,"2":4}',
+      '{"4294967294":0,"2":1,"4294967295":2,"01":3,"1":4}',
+      '{"outer":{"2":0,"1":1},"array":[{"3":0,"1":1,"2":2}]}',
+      '{"__proto__":{"2":0,"1":1},"constructor":2,"1":3,"0":4}',
+    ];
+    const dumps = pythonReference(process.cwd(), documents.map((text) => ({ fn: "json_roundtrip", args: [text] })));
+    const strings = pythonReference(process.cwd(), documents.map((text) => ({ fn: "py_str", args: [text] })));
+    documents.forEach((text, index) => {
+      const parsed = pythonJsonLoads(text);
+      assert.deepEqual({ ok: pythonJsonDumps(parsed) }, dumps[index], text);
+      assert.deepEqual({ ok: pythonJsonDumps(cloneJson(parsed)) }, dumps[index], `clone ${text}`);
+      assert.deepEqual({ ok: pythonValueStr(parsed) }, strings[index], `repr ${text}`);
+    });
+  });
+
+  it("keeps overwritten keys in place and appends deleted then reinserted JSON members", () => {
+    const parsed = pythonJsonLoads('{"2":0,"1":1,"a":2}') as Record<string, JsonValue>;
+    parsed["2"] = 3;
+    assert.deepEqual(Object.keys(parsed), ["2", "1", "a"]);
+    delete parsed["2"];
+    parsed["2"] = 4;
+    assert.deepEqual(Object.keys(parsed), ["1", "a", "2"]);
+    assert.equal(pythonJsonDumps(parsed), '{"1": 1, "a": 2, "2": 4}');
+  });
+
   it("loads malformed and valid documents like json.loads", () => {
     const random = seededRandom(20261022);
     const documents = [...JSON_BASES];

@@ -114,9 +114,9 @@ function classifyArgument(options: readonly CommandOption[], text: string): Clas
   if (text.length === 1) return { positional: true };
   if (text.includes("=")) {
     const cut = text.indexOf("=");
-    const flag = text.slice(0, cut);
-    const named = options.find((option) => option.flags.includes(flag));
-    if (named !== undefined) return { positional: false, candidate: { option: named, flag, explicit: text.slice(cut + 1), viaEquals: true }, text };
+    const optionFlag = text.slice(0, cut);
+    const named = options.find((option) => option.flags.includes(optionFlag));
+    if (named !== undefined) return { positional: false, candidate: { option: named, flag: optionFlag, explicit: text.slice(cut + 1), viaEquals: true }, text };
   }
   const matches = abbreviationMatches(options, text);
   if (matches.length > 1) return { positional: false, candidate: null, text, ambiguous: matches.map((match) => match.flag) };

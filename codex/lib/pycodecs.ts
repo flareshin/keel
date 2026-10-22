@@ -61,10 +61,12 @@ export function normalizeCodecName(name: string): string {
 export class PythonStartupFailure extends Error {
   readonly stderr: string;
 
-  constructor(header: string, detail: string) {
-    super(detail);
+  constructor(header: string, detail: string, runtimeState: "core initialized" | "preinitializing" = "core initialized") {
+    super(detail || header);
     this.name = "PythonStartupFailure";
-    this.stderr = `Fatal Python error: ${header}\nPython runtime state: core initialized\n${detail}\n\nCurrent thread 0x0000000000000000 (most recent call first):\n`;
+    this.stderr = runtimeState === "preinitializing"
+      ? `Fatal Python error: ${header}\nPython runtime state: preinitializing\n\n`
+      : `Fatal Python error: ${header}\nPython runtime state: core initialized\n${detail}\n\nCurrent thread 0x0000000000000000 (most recent call first):\n`;
   }
 }
 

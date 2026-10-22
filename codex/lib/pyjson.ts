@@ -78,12 +78,12 @@ function scanValue(text: string, start: number): [JsonValue, number] {
           index = first;
         } else {
           const [key, valueStart] = scanMemberKey(text, first);
-          open.push({ members: {}, key });
+          open.push({ members: orderedJsonObject(), key });
           index = valueStart;
         }
         continue;
       }
-      value = opening === "[" ? [] : {};
+      value = opening === "[" ? [] : orderedJsonObject();
       index = first + 1;
     } else {
       [value, index] = scanScalar(text, index);
@@ -115,6 +115,25 @@ function scanValue(text: string, start: number): [JsonValue, number] {
       break;
     }
   }
+}
+
+function orderedJsonObject(): { [key: string]: JsonValue } {
+  const memberNames: Array<string | symbol> = [];
+  return new Proxy<{ [key: string]: JsonValue }>({}, {
+    ownKeys: () => [...memberNames],
+    defineProperty(target, key, descriptor) {
+      const exists = Object.hasOwn(target, key);
+      if (!Reflect.defineProperty(target, key, descriptor)) return false;
+      if (!exists) memberNames.push(key);
+      return true;
+    },
+    deleteProperty(target, key) {
+      if (!Reflect.deleteProperty(target, key)) return false;
+      const position = memberNames.indexOf(key);
+      if (position >= 0) memberNames.splice(position, 1);
+      return true;
+    },
+  });
 }
 
 function scanMemberKey(text: string, index: number): [string, number] {
@@ -152,17 +171,17 @@ function parseNumber(match: RegExpExecArray): number | bigint | PyFloat {
 
 function scanString(text: string, quote: number): [string, number] {
   let index = quote + 1;
-  let result = "";
+  let parsedText = "";
   for (;;) {
     STRING_BREAK.lastIndex = index;
     const found = STRING_BREAK.exec(text);
     if (found === null) throw new JSONDecodeError("Unterminated string starting at", text, quote);
-    result += text.slice(index, found.index);
+    parsedText += text.slice(index, found.index);
     const terminator = found[0];
-    if (terminator === '"') return [result, found.index + 1];
+    if (terminator === '"') return [parsedText, found.index + 1];
     if (terminator !== "\\") throw new JSONDecodeError("Invalid control character at", text, found.index);
     const [piece, next] = scanEscape(text, found.index, quote);
-    result += piece;
+    parsedText += piece;
     index = next;
   }
 }
@@ -210,7 +229,7 @@ export function isJsonObject(value: unknown): value is { [key: string]: JsonValu
 
 function emptyLike(value: JsonValue): JsonValue {
   if (Array.isArray(value)) return [];
-  return isJsonObject(value) ? {} : value;
+  return isJsonObject(value) ? orderedJsonObject() : value;
 }
 
 export function cloneJson<T extends JsonValue>(value: T): T {

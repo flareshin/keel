@@ -6,6 +6,7 @@ import { withEnv } from "../../tests/hooks/helpers.ts";
 import { describe, it } from "node:test";
 import { canonicalCodec, decodeWithCodec, PythonStartupFailure, PythonUncaughtError, resolveStdinEncoding, UnsupportedStdinEncoding } from "../lib/pycodecs.ts";
 import { NON_TEXT_ENCODINGS, PYTHON_CODEC_ALIAS_NAMES, TEXT_ENCODING_NAMES } from "../lib/pycodec_names.ts";
+import { main as runHook } from "../hooks/pre-tool-use.ts";
 import { ValueError } from "../lib/pyerrors.ts";
 import { decodeStdin, stdinCodec } from "../lib/pystdin.ts";
 import { pythonReference, seededRandom } from "./pyref.ts";
@@ -43,7 +44,7 @@ function normalizedReference(outcome: Outcome): Outcome {
 
 function codecPolicies(environments: Array<Record<string, string>>): Outcome[] {
   const stdin = pythonReference(process.cwd(), environments.map((env) => ({ fn: "stdin_codec", args: [env] })));
-  return pythonReference(process.cwd(), environments.map((env, index) => {
+  const policies = pythonReference(process.cwd(), environments.map((env, index) => {
     const selected = (stdin[index]?.ok as string[] | undefined)?.[0] ?? "bogus";
     const canonical = PYTHON_TO_CODEC[selected] ?? selected.replaceAll("-", "_");
     const locale = env["LC_ALL"] || env["LC_CTYPE"] || env["LANG"];
@@ -51,6 +52,7 @@ function codecPolicies(environments: Array<Record<string, string>>): Outcome[] {
     const encoding = (env["PYTHONIOENCODING"] ?? "").split(":")[0] || localeCodeset || selected;
     return { fn: "codec_lookup", args: [encoding] };
   }));
+  return policies.map((policy, index) => stdin[index]?.error === undefined ? policy : stdin[index] as Outcome);
 }
 
 function policyExpectation(reference: Outcome, policy: Outcome): Outcome {
@@ -65,7 +67,7 @@ describe("stdin decoding follows Python's locale, UTF-8 mode and PYTHONIOENCODIN
     "ko_KR.CP949", "ru_RU.KOI8-R", "ru_RU.CP1251", "el_GR.ISO8859-7", "be_BY.CP1131", "sr_RS.UTF-8@latin", "en_US.UTF-8@euro", "xx_YY.UTF-8@euro"];
   const CHOICES: Record<string, Array<string | undefined>> = {
     LC_ALL: LOCALES, LC_CTYPE: LOCALES, LANG: LOCALES,
-    PYTHONUTF8: [undefined, undefined, "0", "0", "1", ""],
+    PYTHONUTF8: [undefined, undefined, "0", "0", "1", "", "2", "bogus"],
     PYTHONCOERCECLOCALE: [undefined, undefined, "0", "1"],
     PYTHONIOENCODING: [undefined, undefined, undefined, "utf-8", "UTF8", ":strict", ":replace", ":ignore", ":backslashreplace", ":surrogateescape", "ascii", "ascii:replace", "latin-1", "utf-8:surrogateescape",
       "utf-8:strict", ":", "bogus", "u8", "cp65001", "cp1252", "utf-8-sig", ":surrogatepass", "utf-8:surrogatepass", "cp819", "windows-1252:replace", "euc-kr", "koi8-r:ignore",
@@ -92,6 +94,26 @@ describe("stdin decoding follows Python's locale, UTF-8 mode and PYTHONIOENCODIN
     }
     return environments;
   }
+
+  it("fails before reading input or calling guards for every invalid PYTHONUTF8 option", () => {
+    const invalid = ["2", "bogus", "01", "+1", "-0", " 1", "1 ", "00", "true"];
+    for (const mode of invalid) {
+      for (const encoding of [null, "utf-8", "bogus", "utf-16"]) {
+        let reads = 0;
+        let calls = 0;
+        const outcome = withEnv({ PYTHONUTF8: mode, PYTHONIOENCODING: encoding }, () => runHook(() => {
+          reads += 1;
+          return Buffer.from('{"tool_name":"Bash","tool_input":{"command":"echo hi"}}');
+        }, () => {
+          calls += 1;
+          return { returncode: 0, stdout: "", stderr: "" };
+        }));
+        assert.deepEqual(outcome, { code: 1, stdout: "", stderr: "Fatal Python error: preconfig_init_utf8_mode: invalid PYTHONUTF8 environment variable value\nPython runtime state: preinitializing\n\n" }, `${mode} / ${encoding}`);
+        assert.equal(reads, 0, `${mode} / ${encoding} read input`);
+        assert.equal(calls, 0, `${mode} / ${encoding} called a guard`);
+      }
+    }
+  });
 
   it("picks the same codec class and error handler as sys.stdin for every variable combination", () => {
     const environments = samples(500);

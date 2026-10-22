@@ -8,12 +8,12 @@ const MAX_BMP = 0xffff;
 
 export function pythonRepr(text: string): string {
   const quote = text.includes("'") && !text.includes('"') ? '"' : "'";
-  let result = quote;
+  let quotedText = quote;
   for (const character of text) {
-    if (character === quote) result += "\\" + quote;
-    else result += SHORT_ESCAPES[character] ?? (character !== " " && NOT_PRINTABLE.test(character) ? hexEscape(character) : character);
+    if (character === quote) quotedText += "\\" + quote;
+    else quotedText += SHORT_ESCAPES[character] ?? (character !== " " && NOT_PRINTABLE.test(character) ? hexEscape(character) : character);
   }
-  return result + quote;
+  return quotedText + quote;
 }
 
 function hexEscape(character: string): string {

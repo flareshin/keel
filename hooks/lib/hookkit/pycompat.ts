@@ -1,7 +1,7 @@
 import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import type { Dirent } from "node:fs";
 import { userInfo } from "node:os";
-import { ValueError } from "./pyruntime.ts";
+import { RecursionError, ValueError } from "./pyruntime.ts";
 import { OSError, run, TimeoutExpired } from "./subprocess.ts";
 import type { CompletedProcess } from "./subprocess.ts";
 
@@ -386,24 +386,26 @@ export function expandVars(path: string): string {
   });
 }
 
-function pythonRepr(value: unknown): string {
-  if (typeof value === "string") {
-    const quote = value.includes("'") && !value.includes('"') ? '"' : "'";
-    const escaped = value.replaceAll("\\", "\\\\").replaceAll("\n", "\\n").replaceAll("\r", "\\r").replaceAll("\t", "\\t");
-    return quote + (quote === "'" ? escaped.replaceAll("'", "\\'") : escaped) + quote;
-  }
-  return pythonStr(value);
+export const MAX_JSON_DEPTH = 10000;
+
+function pythonReprText(value: string): string {
+  const quote = value.includes("'") && !value.includes('"') ? '"' : "'";
+  const escaped = value.replaceAll("\\", "\\\\").replaceAll("\n", "\\n").replaceAll("\r", "\\r").replaceAll("\t", "\\t");
+  return quote + (quote === "'" ? escaped.replaceAll("'", "\\'") : escaped) + quote;
 }
 
-export function pythonStr(value: unknown): string {
+function pythonScalarText(value: unknown): string {
   if (value === null || value === undefined) return "None";
   if (value === true) return "True";
   if (value === false) return "False";
-  if (typeof value === "string") return value;
-  if (Array.isArray(value)) return "[" + value.map(pythonRepr).join(", ") + "]";
-  if (isRecord(value)) return "{" + Object.entries(value).map(([key, item]) => `${pythonRepr(key)}: ${pythonRepr(item)}`).join(", ") + "}";
+  if (typeof value === "string") return pythonReprText(value);
   if (typeof value === "number" && !Number.isFinite(value)) return pythonFloatSpelling(value);
   return String(value);
+}
+
+export function pythonStr(value: unknown): string {
+  if (typeof value === "string") return value;
+  return renderNested(value, STR_RENDERING);
 }
 
 function pythonFloatSpelling(value: number): string {
@@ -411,7 +413,7 @@ function pythonFloatSpelling(value: number): string {
   return value > 0 ? "inf" : "-inf";
 }
 
-interface JsonContainer {
+interface Container {
   source: object;
   opener: string;
   closer: string;
@@ -419,54 +421,92 @@ interface JsonContainer {
   keys: string[] | null;
 }
 
-interface OpenJsonContainer extends JsonContainer {
+interface OpenContainer extends Container {
   index: number;
 }
 
-function jsonContainerOf(value: unknown): JsonContainer | null {
-  if (Array.isArray(value)) return { source: value, opener: "[", closer: "]", items: value.map((item) => (item === undefined ? null : item)), keys: null };
+interface Rendering {
+  containerOf(value: unknown): Container | null;
+  scalarText(value: unknown): string;
+  keyText(key: string): string;
+  selfReferenceText(container: Container): string;
+  tooDeepMessage: string;
+}
+
+function arrayOrRecordContainer(value: unknown, entriesOf: (record: Record<string, unknown>) => Array<[string, unknown]>, itemOf: (item: unknown) => unknown): Container | null {
+  if (Array.isArray(value)) return { source: value, opener: "[", closer: "]", items: value.map(itemOf), keys: null };
   if (!isRecord(value)) return null;
-  const members = Object.entries(value).filter(([, item]) => item !== undefined);
+  const members = entriesOf(value);
   return { source: value, opener: "{", closer: "}", items: members.map(([, item]) => item), keys: members.map(([key]) => key) };
 }
 
-function jsonMemberPrefix(container: JsonContainer, index: number): string {
-  return container.keys === null ? "" : `${JSON.stringify(container.keys[index])}: `;
-}
+const STR_RENDERING: Rendering = {
+  containerOf: (value) => arrayOrRecordContainer(value, Object.entries, (item) => item),
+  scalarText: pythonScalarText,
+  keyText: pythonReprText,
+  selfReferenceText: (container) => (container.opener === "[" ? "[...]" : "{...}"),
+  tooDeepMessage: "maximum recursion depth exceeded while getting the repr of an object",
+};
+
+const JSON_DUMPS_RENDERING: Rendering = {
+  containerOf: (value) => arrayOrRecordContainer(value, (record) => Object.entries(record).filter(([, item]) => item !== undefined), (item) => (item === undefined ? null : item)),
+  scalarText: (value) => (typeof value === "number" && !Number.isFinite(value) ? nonFiniteNumberText(value) : JSON.stringify(value)),
+  keyText: (key) => JSON.stringify(key),
+  selfReferenceText: () => {
+    throw new ValueError("Circular reference detected");
+  },
+  tooDeepMessage: "maximum recursion depth exceeded while encoding a JSON object",
+};
 
 export function pythonJsonDumps(value: unknown): string {
+  return renderNested(value, JSON_DUMPS_RENDERING);
+}
+
+function renderNested(value: unknown, rendering: Rendering): string {
   const parts: string[] = [];
-  const open: OpenJsonContainer[] = [];
+  const open: OpenContainer[] = [];
   const active = new Set<object>();
   let next = value;
   for (;;) {
-    const container = jsonContainerOf(next);
+    const container = rendering.containerOf(next);
     if (container === null) {
-      parts.push(typeof next === "number" && !Number.isFinite(next) ? nonFiniteNumberText(next) : JSON.stringify(next));
+      parts.push(rendering.scalarText(next));
+    } else if (open.length >= MAX_JSON_DEPTH) {
+      throw new RecursionError(rendering.tooDeepMessage);
+    } else if (active.has(container.source)) {
+      parts.push(rendering.selfReferenceText(container));
     } else if (container.items.length === 0) {
       parts.push(container.opener + container.closer);
     } else {
-      if (active.has(container.source)) throw new ValueError("Circular reference detected");
       active.add(container.source);
       open.push({ ...container, index: 0 });
-      parts.push(container.opener + jsonMemberPrefix(container, 0));
+      parts.push(container.opener + memberPrefix(container, 0, rendering));
       next = container.items[0];
       continue;
     }
-    for (;;) {
-      const innermost = open.at(-1);
-      if (innermost === undefined) return parts.join("");
-      innermost.index += 1;
-      if (innermost.index < innermost.items.length) {
-        parts.push(", " + jsonMemberPrefix(innermost, innermost.index));
-        next = innermost.items[innermost.index];
-        break;
-      }
-      parts.push(innermost.closer);
-      active.delete(innermost.source);
-      open.pop();
-    }
+    const following = closeFinishedContainers(open, active, parts, rendering);
+    if (following === null) return parts.join("");
+    next = following.value;
   }
+}
+
+function closeFinishedContainers(open: OpenContainer[], active: Set<object>, parts: string[], rendering: Rendering): { value: unknown } | null {
+  for (;;) {
+    const innermost = open.at(-1);
+    if (innermost === undefined) return null;
+    innermost.index += 1;
+    if (innermost.index < innermost.items.length) {
+      parts.push(", " + memberPrefix(innermost, innermost.index, rendering));
+      return { value: innermost.items[innermost.index] };
+    }
+    parts.push(innermost.closer);
+    active.delete(innermost.source);
+    open.pop();
+  }
+}
+
+function memberPrefix(container: Container, index: number, rendering: Rendering): string {
+  return container.keys === null ? "" : `${rendering.keyText(container.keys[index] ?? "")}: `;
 }
 
 function nonFiniteNumberText(value: number): string {

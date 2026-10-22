@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { join } from "node:path";
-import { pythonJsonDumps } from "../../hooks/lib/hookkit/pycompat.ts";
+import { MAX_JSON_DEPTH, pythonJsonDumps, pythonStr } from "../../hooks/lib/hookkit/pycompat.ts";
 import { fnmatchCase } from "../../hooks/lib/hookkit/pyfnmatch.ts";
 import { dumpsAscii, JSONDecodeError, loads, parsePayload } from "../../hooks/lib/hookkit/pyjson.ts";
 import { dirname, readTextFile, realpath, shlexQuote } from "../../hooks/lib/hookkit/pypath.ts";
-import { describeError, pythonErrorName, ValueError } from "../../hooks/lib/hookkit/pyruntime.ts";
+import { describeError, pythonErrorName, RecursionError, ValueError } from "../../hooks/lib/hookkit/pyruntime.ts";
 import { Sandbox } from "./helpers.ts";
 
 function decodeFailure(text: string): string {
@@ -22,7 +22,8 @@ function decodeFailure(text: string): string {
 const DIGIT_LIMIT_MESSAGE = "Exceeds the limit (4300 digits) for integer string conversion: value has 4301 digits; use sys.set_int_max_str_digits() to increase the limit";
 const AT_LIMIT = "1".repeat(4300);
 const OVER_LIMIT = "1".repeat(4301);
-const DEEP_LEVELS = [3000, 100000];
+const DEEP_LEVELS = [3000, 9999];
+const PAST_THE_BOUND = [10001, 140000, 1000000];
 
 function valueErrorMessage(text: string): string {
   try {
@@ -40,6 +41,12 @@ function nestedArrays(depth: number): string {
 
 function nestedObjects(depth: number): string {
   return '{"a":'.repeat(depth) + "1" + "}".repeat(depth);
+}
+
+function loadsDeep(depth: number): unknown {
+  let value: unknown[] = [];
+  for (let level = 1; level < depth; level += 1) value = [value];
+  return value;
 }
 
 function depthOf(value: unknown, child: (node: unknown) => unknown): number {
@@ -131,11 +138,26 @@ describe("pyjson", () => {
     assert.equal(decodeFailure("[".repeat(3000) + "]".repeat(2999)), "Expecting ',' delimiter: line 1 column 6000 (char 5999)");
     assert.equal(decodeFailure(nestedArrays(3000) + "x"), "Extra data: line 1 column 6001 (char 6000)");
     assert.equal(decodeFailure('{"a":'.repeat(3000)), "Expecting value: line 1 column 15001 (char 15000)");
-    assert.equal(decodeFailure("[".repeat(100000)), "Expecting value: line 1 column 100001 (char 100000)");
-    assert.equal(decodeFailure("[".repeat(100000) + "]".repeat(99999)), "Expecting ',' delimiter: line 1 column 200000 (char 199999)");
-    assert.equal(decodeFailure(nestedArrays(100000) + "x"), "Extra data: line 1 column 200001 (char 200000)");
-    assert.equal(decodeFailure('{"a":'.repeat(100000)), "Expecting value: line 1 column 500001 (char 500000)");
-    assert.equal(decodeFailure(nestedObjects(100000).slice(0, -1)), "Expecting ',' delimiter: line 1 column 600001 (char 600000)");
+    assert.equal(decodeFailure("[".repeat(9999)), "Expecting value: line 1 column 10000 (char 9999)");
+    assert.equal(decodeFailure("[".repeat(9999) + "]".repeat(9998)), "Expecting ',' delimiter: line 1 column 19998 (char 19997)");
+    assert.equal(decodeFailure(nestedArrays(9999) + "x"), "Extra data: line 1 column 19999 (char 19998)");
+    assert.equal(decodeFailure('{"a":'.repeat(9999)), "Expecting value: line 1 column 49996 (char 49995)");
+    assert.equal(decodeFailure(nestedObjects(9999).slice(0, -1)), "Expecting ',' delimiter: line 1 column 59995 (char 59994)");
+    assert.equal(decodeFailure(nestedObjects(9999) + "x"), "Extra data: line 1 column 59996 (char 59995)");
+  });
+
+  it("loads_throwsARecursionErrorThatIsNotAValueError_pastTheDepthBound", () => {
+    assert.equal(MAX_JSON_DEPTH, 10000);
+    assert.doesNotThrow(() => loads(nestedArrays(MAX_JSON_DEPTH)));
+    assert.doesNotThrow(() => loads(nestedObjects(MAX_JSON_DEPTH)));
+    for (const depth of PAST_THE_BOUND) {
+      for (const text of ["[".repeat(depth), nestedArrays(depth), nestedObjects(depth), `{"deep": ${nestedArrays(depth)}, "n": ${OVER_LIMIT}}`]) {
+        assert.throws(() => loads(text), (error: Error) => error instanceof RecursionError && !(error instanceof ValueError) && error.name === "RecursionError", `${depth}`);
+      }
+    }
+    assert.throws(() => loads(nestedArrays(MAX_JSON_DEPTH).replace("[]", "[[]]")), RecursionError);
+    assert.throws(() => loads("[".repeat(MAX_JSON_DEPTH + 1)), { message: "maximum recursion depth exceeded while decoding a JSON array from a unicode string" });
+    assert.throws(() => loads('{"a":'.repeat(MAX_JSON_DEPTH + 1)), { message: "maximum recursion depth exceeded while decoding a JSON object from a unicode string" });
   });
 
   it("parsePayload_readsAnObjectWithADeepMember_andRaisesValueErrorForAnOverLimitMember", () => {
@@ -173,6 +195,38 @@ describe("dumpsAscii", () => {
     }
     assert.equal(pythonJsonDumps(loads(nestedObjects(3000))), '{"a": '.repeat(3000) + "1" + "}".repeat(3000));
     assert.equal(pythonJsonDumps({ k: [{}, [], { a: [1, { b: null }] }] }), '{"k": [{}, [], {"a": [1, {"b": null}]}]}');
+  });
+
+  it("dumpsAndRendersPastTheDepthBound_throwRecursionErrors_thatAreNotValueErrors", () => {
+    for (const depth of PAST_THE_BOUND) {
+      const arrays = loadsDeep(depth);
+      for (const render of [pythonJsonDumps, dumpsAscii, pythonStr, (value: unknown) => pythonStr([value])]) {
+        assert.throws(() => render(arrays), (error: Error) => error instanceof RecursionError && !(error instanceof ValueError), `${depth}`);
+      }
+    }
+    assert.doesNotThrow(() => pythonJsonDumps(loadsDeep(MAX_JSON_DEPTH)));
+    assert.doesNotThrow(() => pythonStr(loadsDeep(MAX_JSON_DEPTH)));
+  });
+
+  it("pythonStr_rendersDeepListsAndDicts_asPythonDoes", () => {
+    for (const depth of DEEP_LEVELS) {
+      assert.equal(pythonStr(loadsDeep(depth)), nestedArrays(depth), `${depth}`);
+      assert.equal(pythonStr(loads(`{"k": ${nestedArrays(depth)}}`)), `{'k': ${nestedArrays(depth)}}`, `${depth}`);
+    }
+    assert.equal(pythonStr(loads(nestedObjects(3000))), "{'a': ".repeat(3000) + "1" + "}".repeat(3000));
+    const sample = [["x", null, true, 1.5, NaN, Infinity], { k: "it's" }, ["a'b\"c"], {}, []];
+    assert.equal(pythonStr(sample), `[['x', None, True, 1.5, nan, inf], {'k': "it's"}, ['a\\'b"c'], {}, []]`);
+  });
+
+  it("pythonStr_printsEllipsis_forAContainerThatHoldsItself", () => {
+    const list: unknown[] = [];
+    list.push(list);
+    const dict: Record<string, unknown> = {};
+    dict["a"] = dict;
+    assert.equal(pythonStr(list), "[[...]]");
+    assert.equal(pythonStr([list]), "[[[...]]]");
+    assert.equal(pythonStr(dict), "{'a': {...}}");
+    assert.equal(pythonStr({ k: [dict] }), "{'k': [{'a': {...}}]}");
   });
 
   it("raisesValueError_forAContainerThatHoldsItself", () => {

@@ -8,7 +8,7 @@ import * as env from "../../hooks/lib/hookkit/env.ts";
 import { FireLog } from "../../hooks/lib/hookkit/fires.ts";
 import * as protocol from "../../hooks/lib/hookkit/protocol.ts";
 import { JSONDecodeError, parsePayload } from "../../hooks/lib/hookkit/pyjson.ts";
-import { ValueError } from "../../hooks/lib/hookkit/pyruntime.ts";
+import { RecursionError, ValueError } from "../../hooks/lib/hookkit/pyruntime.ts";
 import * as pycompat from "../../hooks/lib/hookkit/pycompat.ts";
 import * as repo from "../../hooks/lib/hookkit/repo.ts";
 import { readTsv } from "../../hooks/lib/hookkit/overlay.ts";
@@ -392,9 +392,15 @@ describe("overlay and transcript files", () => {
   });
 
   it("iterEntries_readsADeeplyNestedLine_likePython", () => {
-    const deep = "[".repeat(100000) + "]".repeat(100000);
+    const deep = "[".repeat(9999) + "]".repeat(9999);
     const path = sandbox.write(join(sandbox.root, "deep.jsonl"), `{"a": 1}\n{"deep": ${deep}}\n{"b": 2}\n`);
     assert.deepEqual(Array.from(transcript.iterEntries(path)).map((entry) => Object.keys(entry)), [["a"], ["deep"], ["b"]]);
+  });
+
+  it("iterEntries_raisesRecursionError_whenALineNestsPastTheDepthBound", () => {
+    const deep = "[".repeat(140000) + "]".repeat(140000);
+    const path = sandbox.write(join(sandbox.root, "past-bound.jsonl"), `{"a": 1}\n{"deep": ${deep}}\n`);
+    assert.throws(() => Array.from(transcript.iterEntries(path)), RecursionError);
   });
 
   it("iterEntries_raisesValueError_whenALineHoldsAnIntegerOverTheDigitLimit", () => {

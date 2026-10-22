@@ -8,7 +8,7 @@ import {
 } from "../lib/hookkit/pycompat.ts";
 import { dumpsAscii, parsePayload } from "../lib/hookkit/pyjson.ts";
 import { dirname, isDirectory, isFile, readTextFile } from "../lib/hookkit/pypath.ts";
-import { describeError, printLine, readStdin, stripChars, ValueError, writeStderr } from "../lib/hookkit/pyruntime.ts";
+import { describeError, printLine, readStdin, stripChars, RecursionError, ValueError, writeStderr } from "../lib/hookkit/pyruntime.ts";
 import { findToplevel, findUpstream, gitOutput } from "../lib/hookkit/repo.ts";
 
 const HOOK = "handoff";
@@ -70,6 +70,10 @@ function snapshotBeforeCompaction(raw: string): number {
   try {
     payload = parsePayload(raw);
   } catch (error) {
+    if (error instanceof RecursionError) {
+      new FireLog(HOOK, null).append(RULE, "error", { detail: describeError(error) });
+      return protocol.EXIT_PASS;
+    }
     if (!(error instanceof ValueError)) throw error;
   }
   const session = getField(payload, "session_id") as string | null;

@@ -1,5 +1,5 @@
-import { codePointLength, isRecord, pythonJsonDumps } from "./pycompat.ts";
-import { ValueError } from "./pyruntime.ts";
+import { codePointLength, isRecord, MAX_JSON_DEPTH, pythonJsonDumps } from "./pycompat.ts";
+import { RecursionError, ValueError } from "./pyruntime.ts";
 
 const JSON_WHITESPACE = " \t\n\r";
 const NUMBER = /-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][-+]?[0-9]+)?/y;
@@ -53,6 +53,8 @@ type OpenContainer =
   | { kind: "array"; items: unknown[] }
   | { kind: "object"; members: Record<string, unknown>; key: string };
 
+type Opening = Parsed | { container: OpenContainer; valueStart: number };
+
 interface ContainerStep {
   closed: boolean;
   position: number;
@@ -82,43 +84,41 @@ class Document {
     const open: OpenContainer[] = [];
     let position = start;
     for (;;) {
-      let value: unknown;
-      const first = this.text[position];
-      if (first === "[") {
-        position = this.skipWhitespace(position + 1);
-        if (this.text[position] !== "]") {
-          open.push({ kind: "array", items: [] });
-          continue;
-        }
-        value = [];
-        position += 1;
-      } else if (first === "{") {
-        const keyStart = this.skipWhitespace(position + 1);
-        if (this.text[keyStart] === "}") {
-          value = {};
-          position = keyStart + 1;
-        } else if (this.text[keyStart] === '"') {
-          const key = this.scanKey(keyStart);
-          open.push({ kind: "object", members: {}, key: key.name });
-          position = key.valueStart;
-          continue;
-        } else {
-          throw new SyntaxProblem("Expecting property name enclosed in double quotes", keyStart);
-        }
-      } else {
-        ({ value, end: position } = this.scanScalar(position));
+      const opening = this.openContainer(position, open.length);
+      if (opening !== null && "container" in opening) {
+        open.push(opening.container);
+        position = opening.valueStart;
+        continue;
       }
+      let finished = opening ?? this.scanScalar(position);
       for (;;) {
         const container = open.at(-1);
-        if (container === undefined) return { value, end: position };
-        addMember(container, value);
-        const step = this.stepInContainer(container, position);
-        position = step.position;
-        if (!step.closed) break;
-        value = container.kind === "array" ? container.items : container.members;
+        if (container === undefined) return finished;
+        addMember(container, finished.value);
+        const step = this.stepInContainer(container, finished.end);
+        if (!step.closed) {
+          position = step.position;
+          break;
+        }
+        finished = { value: container.kind === "array" ? container.items : container.members, end: step.position };
         open.pop();
       }
     }
+  }
+
+  private openContainer(position: number, depth: number): Opening | null {
+    const first = this.text[position];
+    if (first !== "[" && first !== "{") return null;
+    if (depth >= MAX_JSON_DEPTH) throw new RecursionError(`maximum recursion depth exceeded while decoding a JSON ${first === "[" ? "array" : "object"} from a unicode string`);
+    const afterOpener = this.skipWhitespace(position + 1);
+    if (first === "[") {
+      if (this.text[afterOpener] === "]") return { value: [], end: afterOpener + 1 };
+      return { container: { kind: "array", items: [] }, valueStart: afterOpener };
+    }
+    if (this.text[afterOpener] === "}") return { value: {}, end: afterOpener + 1 };
+    if (this.text[afterOpener] !== '"') throw new SyntaxProblem("Expecting property name enclosed in double quotes", afterOpener);
+    const key = this.scanKey(afterOpener);
+    return { container: { kind: "object", members: {}, key: key.name }, valueStart: key.valueStart };
   }
 
   private stepInContainer(container: OpenContainer, afterValue: number): ContainerStep {

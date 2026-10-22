@@ -3,7 +3,7 @@ import { FireLog } from "../lib/hookkit/fires.ts";
 import { getField, isTruthy, joinPath, PY_SPACE, PY_WORD, pythonStr } from "../lib/hookkit/pycompat.ts";
 import { isFile, readTextFile } from "../lib/hookkit/pypath.ts";
 import { parsePayload } from "../lib/hookkit/pyjson.ts";
-import { describeError, readStdin, ValueError } from "../lib/hookkit/pyruntime.ts";
+import { describeError, readStdin, RecursionError, ValueError } from "../lib/hookkit/pyruntime.ts";
 import * as protocol from "../lib/hookkit/protocol.ts";
 import type { Payload } from "../lib/hookkit/protocol.ts";
 
@@ -36,7 +36,9 @@ function main(): number {
     payload = parsePayload(readStdin());
   } catch (error) {
     if (error instanceof ValueError) return protocol.EXIT_PASS;
-    throw error;
+    if (!(error instanceof RecursionError)) throw error;
+    new FireLog(HOOK, null).append(RULE, "error", { detail: describeError(error) });
+    return protocol.EXIT_PASS;
   }
   const fires = new FireLog(HOOK, getField(payload, "session_id") as string | null);
   try {

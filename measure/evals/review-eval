@@ -1,17 +1,4 @@
 #!/usr/bin/env python3
-"""measure/evals/review-eval [--split train|holdout] [--case ID] [--repeat N] [--model M] [--timeout-seconds S] [--dry-run]
-measure/evals/review-eval --regrade RAW_DIR
-
-Scores keel's reviewer (the lens-review workflow, through adversarial-audit) on the cases in
-measure/evals/review/cases/<id>/ (keel's, then the overlay's): each case is built as a base commit plus its change,
-and a headless `claude -p` runs lens-review on that range, REPEAT times. A defect case's run is a hit when a
-merge-blocking finding quotes the case's file within 3 lines of its line; a clean (control) case's run is noisy when it
-has any merge-blocking finding. Prints recall, noise and run-to-run variance per split; a run with no completed workflow
-record is a fault, never a miss. A full run without faults appends one line to logs/keel-review-eval.jsonl.
-Hand-run only: each review spends a dozen reviewer agents. Exit 0 measured, 1 faults or regrade disagreement, 2 usage or data error.
---regrade grades a raw dir's saved workflow records again with the current grader and cases, calls no claude, and
-prints how many runs grade the same as when they ran.
-"""
 from __future__ import annotations
 
 import argparse
@@ -99,7 +86,6 @@ def positive_int(value: str) -> int:
 
 
 def plan_problem(cases: list[ReviewCase]) -> str | None:
-    """No case, no claude, or a case whose repo does not build: found before any review spends tokens."""
     if not cases:
         return "no case selected"
     if shutil.which(CLAUDE_BINARY) is None:
@@ -125,7 +111,6 @@ def run_config(args: argparse.Namespace, cases: list[ReviewCase]) -> dict:
 
 
 def reviewer_fingerprint(config_dir: str) -> dict:
-    """sha256 of the workflow files the CLI loads: which reviewer version these numbers belong to."""
     fingerprint = {}
     for name in REVIEWER_FILES:
         path = os.path.join(config_dir, "workflows", name)

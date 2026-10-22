@@ -1,4 +1,3 @@
-"""Reviewer eval cases: keel's and the overlay's `measure/evals/review/cases/<id>/`, each a base tree plus the change under review."""
 from __future__ import annotations
 
 import json
@@ -48,7 +47,6 @@ class ReviewCase:
 
 
 def load_review_cases(checkouts: list[str]) -> list[ReviewCase]:
-    """Every case directory of every checkout, sorted by id within a checkout; one id twice anywhere is an error."""
     cases: list[ReviewCase] = []
     seen: dict[str, str] = {}
     for checkout in checkouts:

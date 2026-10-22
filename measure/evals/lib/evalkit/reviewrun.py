@@ -1,4 +1,3 @@
-"""One reviewer run: the case as a two-commit repo, `claude -p` asked to run lens-review on it, then the workflow's own record."""
 from __future__ import annotations
 
 import glob
@@ -11,6 +10,7 @@ from dataclasses import dataclass
 from evalkit.liveconfig import project_dir_for
 from evalkit.reviewcases import ReviewCase
 from evalkit.runner import CLAUDE_BINARY, NEUTRAL_PROJECT_NAME, UNSIGNED, project_identity, run_claude
+from evalkit.stream import summarize_stream
 from measurekit.gitutil import GitError, run_git
 
 WORKFLOW = "lens-review"
@@ -35,7 +35,6 @@ class ReviewRun:
 
 
 def review_command(model: str) -> list[str]:
-    """Hooks stay on: keel's git-guard refuses a child claude that switches them off, and production reviews run with them."""
     return [
         CLAUDE_BINARY, "-p", "--model", model, "--output-format", "stream-json", "--verbose", "--strict-mcp-config",
         "--allowedTools", ALLOWED_TOOLS, "--disallowedTools", DENIED_TOOLS, "--max-turns", str(MAX_TURNS),
@@ -54,7 +53,6 @@ def review_prompt(case: ReviewCase, repo: str, base: str, head: str) -> str:
 
 
 def build_case_repo(case: ReviewCase, parent: str) -> tuple[str, str, str]:
-    """`<parent>/app` holding the case's base tree as one commit and its change as the next; returns (repo, base, head)."""
     repo = os.path.join(parent, NEUTRAL_PROJECT_NAME)
     if os.path.isdir(case.base_dir):
         shutil.copytree(case.base_dir, repo)
@@ -92,26 +90,14 @@ def run_review(case: ReviewCase, command: list[str], config_dir: str, timeout_se
         prompt = review_prompt(case, repo, base, head)
         exit_code, timed_out, stream_text = run_claude(command, prompt, repo, timeout_seconds)
         project_dir = project_dir_for(repo, config_dir)
-        record = find_workflow_record(project_dir, session_id_of(stream_text))
+        record = find_workflow_record(project_dir, (summarize_stream(stream_text.splitlines()).init or {}).get("session_id"))
         shutil.rmtree(project_dir, ignore_errors=True)
         return ReviewRun(stream_text, record, exit_code, timed_out, repo)
     finally:
         shutil.rmtree(parent, ignore_errors=True)
 
 
-def session_id_of(stream_text: str) -> str | None:
-    for line in stream_text.splitlines():
-        try:
-            event = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(event, dict) and event.get("type") == "system" and event.get("subtype") == "init":
-            return event.get("session_id")
-    return None
-
-
 def find_workflow_record(project_dir: str, session_id: str | None) -> dict | None:
-    """The session's last lens-review record, by its start time; None when the session ran none or left no id."""
     if not session_id:
         return None
     records = []
@@ -127,7 +113,6 @@ def find_workflow_record(project_dir: str, session_id: str | None) -> dict | Non
 
 
 def run_fault(run: ReviewRun, timeout_seconds: int) -> str | None:
-    """Why a run measures nothing; such a run is never counted as a miss or as noise."""
     if run.timed_out:
         return "timed out after %ds" % timeout_seconds
     record = run.workflow_record

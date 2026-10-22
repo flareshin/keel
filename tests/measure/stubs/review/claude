@@ -1,14 +1,9 @@
 #!/usr/bin/env python3
-"""Stand-in for `claude -p` in reviewer eval tests: plays the next round of $KEEL_TEST_SCENARIOS/review.json. No model, no network.
-
-review.json holds {"rounds": [{"status": "completed", "result": {...}, "record": true, "exit": 0}, ...]}; call k plays
-rounds[k % len]. A round with "record" true (the default) leaves a lens-review workflow record where the CLI keeps one,
-with every "{{REPO}}" in its result replaced by the cwd. Every call appends {"argv", "cwd", "prompt"} to calls.jsonl.
-"""
 import json
 import os
 import re
 import sys
+import time
 
 SCENARIO_DIR = os.environ["KEEL_TEST_SCENARIOS"]
 CALLS_LOG = os.path.join(SCENARIO_DIR, "calls.jsonl")
@@ -23,21 +18,31 @@ def main() -> int:
         rounds = json.load(handle)["rounds"]
     scenario = rounds[call_index % len(rounds)]
     session_id = "session-%d" % call_index
-    if scenario.get("record", True):
-        _write_record(session_id, scenario)
     print(json.dumps({"type": "system", "subtype": "init", "session_id": session_id, "model": "stub-model"}))
+    sys.stdout.flush()
+    for index, record in enumerate(_records_of(scenario)):
+        _write_record(session_id, index, record)
+    time.sleep(scenario.get("sleep", 0))
     print(json.dumps({"type": "result", "subtype": "success", "result": "VERDICT: done"}))
     return scenario.get("exit", 0)
 
 
-def _write_record(session_id: str, scenario: dict) -> None:
-    slug = re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(os.getcwd()))
-    directory = os.path.join(os.environ["CLAUDE_CONFIG_DIR"], "projects", slug, session_id, "workflows")
+def _records_of(scenario: dict) -> list:
+    if "records" in scenario:
+        return scenario["records"]
+    if not scenario.get("record", True):
+        return []
+    return [{"status": scenario.get("status", "completed"), "result": scenario.get("result")}]
+
+
+def _write_record(session_id: str, index: int, record: dict) -> None:
+    repo = os.path.realpath(os.getcwd())
+    directory = os.path.join(os.environ["CLAUDE_CONFIG_DIR"], "projects", re.sub(r"[^A-Za-z0-9]", "-", repo), session_id, "workflows")
     os.makedirs(directory, exist_ok=True)
-    result = json.loads(json.dumps(scenario.get("result")).replace("{{REPO}}", os.path.realpath(os.getcwd())))
-    record = {"workflowName": "lens-review", "status": scenario.get("status", "completed"), "startTime": 1, "result": result}
-    with open(os.path.join(directory, "wf_stub.json"), "w", encoding="utf-8") as handle:
-        json.dump(record, handle)
+    body = {"workflowName": record.get("workflowName", "lens-review"), "status": record.get("status", "completed"),
+            "startTime": record.get("startTime", 1), "result": json.loads(json.dumps(record.get("result")).replace("{{REPO}}", repo))}
+    with open(os.path.join(directory, "wf_stub_%d.json" % index), "w", encoding="utf-8") as handle:
+        json.dump(body, handle)
 
 
 def _previous_calls() -> int:

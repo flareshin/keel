@@ -1,7 +1,3 @@
-"""Grading one lens-review result against its case, and the suite numbers: recall, noise, run-to-run variance.
-
-Deterministic on purpose: a hit is a merge-blocking finding at the known file within LINE_TOLERANCE lines of the known line.
-"""
 from __future__ import annotations
 
 import re
@@ -42,8 +38,6 @@ def _at_location(finding: object, location: Location) -> bool:
 
 
 def _quoted_lines(finding: dict, expected_file: str) -> list[tuple[int, int]]:
-    """Line ranges the finding's quote gives for the expected file: `path:line[-end]` refs naming it, and bare `:line`
-    refs when the finding's own file is it."""
     quote = str(finding.get("quote") or "")
     ranges = [_range(start, end) for path, start, end in PATH_LINE_REF.findall(quote) if _same_file(path, expected_file)]
     if _same_file(str(finding.get("file") or ""), expected_file):
@@ -52,7 +46,6 @@ def _quoted_lines(finding: dict, expected_file: str) -> list[tuple[int, int]]:
 
 
 def _same_file(path: str, expected_file: str) -> bool:
-    """Reviewers quote absolute paths, repo-relative paths or a trailing part such as the file name; any of them names it."""
     path = path.strip().replace("\\", "/")
     return bool(path) and (path == expected_file or path.endswith("/" + expected_file) or expected_file.endswith("/" + path))
 
@@ -62,7 +55,6 @@ def _range(start: str, end: str) -> tuple[int, int]:
 
 
 def suite_numbers(grades: list[RunGrade]) -> dict:
-    """Recall and noise per split, run-to-run variance and per-case agreement; faulted runs never reach here."""
     numbers = {split: _split_numbers([grade for grade in grades if grade.case.split == split]) for split in SPLITS}
     train = numbers[SPLITS[0]]
     numbers["headroom"] = not (train["recall"] == 1.0 and train["noise_rate"] == 0.0)
@@ -83,7 +75,6 @@ def _split_numbers(grades: list[RunGrade]) -> dict:
 
 
 def _recall_stdev(defect: list[RunGrade]) -> float | None:
-    """Population stdev of recall across repeat indexes: repeat k's recall is over the defect cases that have a run k."""
     by_run: dict[int, list[bool]] = {}
     for grade in defect:
         by_run.setdefault(grade.run, []).append(grade.hit)
@@ -92,7 +83,6 @@ def _recall_stdev(defect: list[RunGrade]) -> float | None:
 
 
 def _case_agreement(grades: list[RunGrade]) -> float | None:
-    """Share of cases with two or more runs whose runs all pass or all fail."""
     outcomes: dict[str, set[bool]] = {}
     counts: dict[str, int] = {}
     for grade in grades:

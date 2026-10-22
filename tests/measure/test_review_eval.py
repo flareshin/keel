@@ -1,6 +1,6 @@
-"""measure/evals/review-eval: case loading, the case repo, the hit and noise grader, the suite numbers, and the CLI against a stub claude."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -64,12 +64,9 @@ class CasesTest(unittest.TestCase):
         shutil.rmtree(self.root, ignore_errors=True)
 
     def test_load_mergesKeelAndOverlayCases(self) -> None:
-        # given
         write_case(self.keel, "mean-1")
         write_case(self.overlay, "control-1", lens="control", split="holdout")
-        # when
         cases = load_review_cases([self.keel, self.overlay])
-        # then
         self.assertEqual([(case.id, case.split, case.is_clean, len(case.locations)) for case in cases],
                          [("mean-1", "train", False, 1), ("control-1", "holdout", True, 0)])
 
@@ -104,12 +101,9 @@ class BuildTest(unittest.TestCase):
         shutil.rmtree(self.root, ignore_errors=True)
 
     def test_build_commitsTheBaseThenTheChange(self) -> None:
-        # given
         write_case(self.keel, "mean-1")
         case = load_review_cases([self.keel])[0]
-        # when
         repo, base, head = build_case_repo(case, os.path.join(self.root, "work"))
-        # then
         self.assertEqual(run_git(repo, ["show", base + ":calc.py"]), BASE_TEXT)
         self.assertIn("+def mean(items):", run_git(repo, ["diff", base, head]))
         self.assertEqual(run_git(repo, ["status", "--porcelain"]), "")
@@ -178,16 +172,13 @@ class GradeTest(unittest.TestCase):
         self.assertEqual((noisy.passed, noisy.blocking, noisy.hit), (False, 2, False))
 
     def test_suiteNumbers_recallNoiseVarianceAgreement(self) -> None:
-        # given: the defect hit on run 1 and missed on run 2; the clean case was noisy once in two runs
         grades = [
             grade_result(self.defect, 1, result([finding("calc.py:6")])),
             grade_result(self.defect, 2, result()),
             grade_result(self.clean, 1, result()),
             grade_result(self.clean, 2, result([finding("calc.py:1")])),
         ]
-        # when
         numbers = suite_numbers(grades)
-        # then
         self.assertEqual({key: numbers["train"][key] for key in ("defect_runs", "hits", "recall", "clean_runs", "noisy_runs", "noise_rate", "blocking_per_clean_run", "recall_stdev")},
                          {"defect_runs": 2, "hits": 1, "recall": 0.5, "clean_runs": 2, "noisy_runs": 1, "noise_rate": 0.5, "blocking_per_clean_run": 0.5, "recall_stdev": 0.5})
         self.assertEqual((numbers["case_agreement"], numbers["headroom"], numbers["holdout"]["recall"]), (0.0, True, None))
@@ -231,12 +222,9 @@ class ReviewEvalCliTest(unittest.TestCase):
             return [json.loads(line) for line in handle]
 
     def test_fullRun_printsRecallNoiseAndVariance_andLogsOneSummaryLine(self) -> None:
-        # given: cases run in id order (control-1, mean-1, mean-2), twice each; mean-2 misses on its second run
         hit = {"result": result([finding("{{REPO}}/calc.py:6 `return sum(items) / len(items)`")])}
         self.play([{"result": result()}, {"result": result()}, hit, hit, hit, {"result": result()}])
-        # when
         completed, report = self.run_eval("--repeat", "2")
-        # then
         self.assertEqual(completed.returncode, 0, completed.stderr)
         numbers = report["numbers"]
         self.assertEqual((numbers["train"]["recall"], numbers["train"]["noise_rate"], numbers["holdout"]["recall"], numbers["holdout"]["recall_stdev"]), (1.0, 0.0, 0.5, 0.5))
@@ -246,7 +234,6 @@ class ReviewEvalCliTest(unittest.TestCase):
         self.assertEqual(os.listdir(os.path.join(self.box.data, "projects")), [])
 
     def test_prompt_namesTheWorkflowTheBuiltRangeAndTheCallerSkill(self) -> None:
-        # given
         expect_path = os.path.join(self.box.keel, CASES, "mean-1", "expect.json")
         with open(expect_path, encoding="utf-8") as handle:
             expect = json.load(handle)
@@ -254,9 +241,7 @@ class ReviewEvalCliTest(unittest.TestCase):
         with open(expect_path, "w", encoding="utf-8") as handle:
             json.dump(expect, handle)
         self.play([{"result": result()}])
-        # when
         completed, _ = self.run_eval("--case", "mean-1", "--repeat", "1")
-        # then
         self.assertEqual(completed.returncode, 0, completed.stderr)
         call = self.calls()[0]
         workflow_args = json.loads(call["prompt"].splitlines()[1])
@@ -267,11 +252,8 @@ class ReviewEvalCliTest(unittest.TestCase):
         self.assertEqual(self.summary_lines(), [])
 
     def test_runWithoutAWorkflowRecord_isAFault_notAMiss(self) -> None:
-        # given
         self.play([{"record": False}])
-        # when
         completed, report = self.run_eval("--case", "mean-1", "--repeat", "1")
-        # then
         self.assertEqual(completed.returncode, 1)
         self.assertEqual((report["faults"][0]["case"], report["numbers"]["train"]["defect_runs"]), ("mean-1", 0))
         self.assertIn("no lens-review workflow record", report["faults"][0]["reason"])
@@ -288,18 +270,51 @@ class ReviewEvalCliTest(unittest.TestCase):
         self.assertEqual((completed.returncode, self.summary_lines()), (1, []))
 
     def test_regrade_gradesTheSameRecordsTheSame_andCatchesAChangedGrade(self) -> None:
-        # given
         self.play([{"result": result([finding("{{REPO}}/calc.py:6")])}])
         _, report = self.run_eval("--case", "mean-1", "--repeat", "1")
         raw_dir = report["raw_dir"]
-        # when
         same, same_report = self.run_eval("--regrade", raw_dir)
         write_case_location(self.box.keel, "mean-1", 1)
         changed, changed_report = self.run_eval("--regrade", raw_dir)
-        # then
         self.assertEqual((same.returncode, same_report["same_grade"], same_report["runs"]), (0, 1, 1))
         self.assertEqual((changed.returncode, changed_report["same_grade"]), (1, 0))
         self.assertEqual(len(self.calls()), 1)
+
+    def test_gradesTheLatestLensReviewRecordOfTheSession(self) -> None:
+        hit = result([finding("{{REPO}}/calc.py:6")])
+        self.play([{"records": [
+            {"startTime": 1, "result": {"verdict": "ERROR", "error": "earlier attempt"}},
+            {"startTime": 5, "result": hit},
+            {"startTime": 9, "workflowName": "other-workflow", "result": result()},
+        ]}])
+        completed, report = self.run_eval("--case", "mean-1", "--repeat", "1")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual((report["faults"], report["numbers"]["train"]["hits"]), ([], 1))
+
+    def test_killedRecord_resultWithoutBlockingList_andTimeout_areFaults(self) -> None:
+        cases = [
+            ({"status": "killed", "result": result()}, (), "status 'killed'"),
+            ({"result": {"verdict": "PASS"}}, (), "no blocking list"),
+            ({"result": result(), "sleep": 5}, ("--timeout-seconds", "1"), "timed out after 1s"),
+        ]
+        for scenario, extra, reason in cases:
+            with self.subTest(reason=reason):
+                self.play([scenario])
+                completed, report = self.run_eval("--case", "mean-1", "--repeat", "1", *extra)
+                self.assertEqual(completed.returncode, 1)
+                self.assertIn(reason, report["faults"][0]["reason"])
+                self.assertEqual(report["numbers"]["train"]["defect_runs"], 0)
+
+    def test_reportAndSummaryLine_carryTheReviewerFingerprint(self) -> None:
+        workflow = os.path.join(self.box.data, "workflows", "lens-review.js")
+        os.makedirs(os.path.dirname(workflow))
+        with open(workflow, "w", encoding="utf-8") as handle:
+            handle.write("export const meta = {}\n")
+        self.play([{"result": result()}])
+        completed, report = self.run_eval("--repeat", "1")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        expected = {"lens-review.js": hashlib.sha256(b"export const meta = {}\n").hexdigest(), "adversarial-audit.js": None}
+        self.assertEqual((report["reviewer"], self.summary_lines()[0]["reviewer"]), (expected, expected))
 
     def test_dryRun_buildsEveryCaseAndCallsNothing(self) -> None:
         completed, plan = self.run_eval("--dry-run")

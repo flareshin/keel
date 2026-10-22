@@ -6,13 +6,13 @@ import { readTsv } from "../lib/hookkit/overlay.ts";
 import * as protocol from "../lib/hookkit/protocol.ts";
 import type { Payload } from "../lib/hookkit/protocol.ts";
 import {
-  basename, expandUser, getField, isRecord, isTruthy, joinPath, normalizePath, partition, PY_SPACE, PY_WORD, pythonStr,
-  sortedByCodePoint, splitlines, strip, truncate,
+  basename, expandUser, getField, isRecord, isTruthy, joinPath, normalizePath, partition, PY_SPACE, pythonStr, sortedByCodePoint,
+  SPACE_CLASS, splitlines, strip, testCaseFolded, truncate, WORD_BOUNDARY,
 } from "../lib/hookkit/pycompat.ts";
 import { fnmatchCase } from "../lib/hookkit/pyfnmatch.ts";
 import { loads, parsePayload } from "../lib/hookkit/pyjson.ts";
 import { dirname, isDirectory, isFile, readTextFile, realpath, shlexQuote } from "../lib/hookkit/pypath.ts";
-import { AttributeError, describeError, pythonErrorName, pythonTypeName, readStdin, ValueError } from "../lib/hookkit/pyruntime.ts";
+import { AttributeError, describeError, pythonErrorName, pythonList, pythonTypeName, readStdin, ValueError } from "../lib/hookkit/pyruntime.ts";
 import { currentBranch, findRepoKey, findToplevel, git, gitOutput, isCommit } from "../lib/hookkit/repo.ts";
 import {
   ghSubcommandArgv, gitDirectory, gitSubcommandIndex, isConfigRead, readPushArguments, resolveDirectory, steps, writeTargets,
@@ -73,16 +73,13 @@ const PROTECTED_TEXT: Readonly<Record<string, string>> = {
   [F_HOOKSKIP]: "keel-fires.jsonl is written only by the hooks, never by a tool call: %s.",
 };
 
-const SPACE = `[${PY_SPACE}]`;
-const WORD = `[${PY_WORD}]`;
-const WORD_BOUNDARY = `(?:(?<=${WORD})(?!${WORD})|(?<!${WORD})(?=${WORD}))`;
 const AI_TOOLS = "(claude|anthropic|codex|openai)";
 const ATTRIBUTION_RE = new RegExp(
-  `co-authored-by:${SPACE}*${AI_TOOLS}` +
+  `co-authored-by:${SPACE_CLASS}*${AI_TOOLS}` +
   `|(generated|created|written|authored|co-authored|assisted|aided|helped|powered|built|made|developed` +
-  `|drafted|produced|crafted|implemented|reviewed)${SPACE}+(with|by|using|via)${SPACE}[^\\n]{0,24}${AI_TOOLS}` +
+  `|drafted|produced|crafted|implemented|reviewed)${SPACE_CLASS}+(with|by|using|via)${SPACE_CLASS}[^\\n]{0,24}${AI_TOOLS}` +
   `|${AI_TOOLS}[${PY_SPACE}._-]+(generated|assisted|authored|written|created|powered)` +
-  `|(help|assistance|thanks)${SPACE}+(of|from|to)${SPACE}[^\\n]{0,16}${AI_TOOLS}` +
+  `|(help|assistance|thanks)${SPACE_CLASS}+(of|from|to)${SPACE_CLASS}[^\\n]{0,16}${AI_TOOLS}` +
   `|(https?://|//|@)(anthropic|claude)\\.(com|ai)|(anthropic|claude)\\.(com|ai)/` +
   "|\u{1F916}",
   "iu",
@@ -185,16 +182,8 @@ function fillIn(template: string, value: string): string {
 
 function editedText(toolArgs: Payload): string {
   const parts: unknown[] = ["content", "new_string", "new_source"].map((key) => getField(toolArgs, key));
-  for (const edit of iterable(getField(toolArgs, "edits"))) parts.push(isRecord(edit) ? getField(edit, "new_string") : null);
+  for (const edit of pythonList(getField(toolArgs, "edits"))) parts.push(isRecord(edit) ? getField(edit, "new_string") : null);
   return parts.filter((part): part is string => typeof part === "string").join("\n");
-}
-
-function iterable(value: unknown): unknown[] {
-  if (!isTruthy(value)) return [];
-  if (Array.isArray(value)) return value;
-  if (typeof value === "string") return Array.from(value);
-  if (typeof value === "object") return Object.keys(value as object);
-  throw new TypeError(`'${pythonTypeName(value)}' object is not iterable`);
 }
 
 function checkBash(command: string, cwd: string): Violation[] {
@@ -390,7 +379,7 @@ function checkPrText(ghArgv: readonly string[], step: Step, callHeredocs: readon
   if (ghArgv[1] !== "pr" || ghArgv.length < 3 || !PR_TEXT_SUBCOMMANDS.has(ghArgv[2] ?? "")) return [];
   const args = ghArgv.slice(3);
   const texts = [...args, ...callHeredocs, ...readMessageFiles(args, PR_FILE_OPTIONS, step)];
-  if (!ATTRIBUTION_RE.test(texts.join("\n"))) return [];
+  if (!testCaseFolded(ATTRIBUTION_RE, texts.join("\n"))) return [];
   return [{
     ruleId: F_ATTRIBUTION,
     text: "AI-tool attribution in a PR title or body, a merge commit message, or text this call writes for them; remove it.",
@@ -399,7 +388,7 @@ function checkPrText(ghArgv: readonly string[], step: Step, callHeredocs: readon
 
 function checkCommit(args: readonly string[], step: Step, repoDirectory: string, earlierSteps: readonly Step[], callHeredocs: readonly string[]): Violation[] {
   const violations: Violation[] = [];
-  if (ATTRIBUTION_RE.test(commitMessageTexts(args, step, callHeredocs).join("\n"))) {
+  if (testCaseFolded(ATTRIBUTION_RE, commitMessageTexts(args, step, callHeredocs).join("\n"))) {
     violations.push({ ruleId: F_ATTRIBUTION, text: "AI-tool attribution in the commit message; remove it." });
   }
   const toplevel = findToplevel(repoDirectory);
@@ -447,13 +436,13 @@ function pushedRanges(toplevel: string, push: PushRequest): Array<[revisions: st
 
 function checkPushRange(toplevel: string, repoKey: string | null, revisions: readonly string[], label: string): Violation[] {
   const violations: Violation[] = [];
-  if (ATTRIBUTION_RE.test(gitOutput(["log", "--pretty=%B", ...revisions], toplevel) || "")) {
+  if (testCaseFolded(ATTRIBUTION_RE, gitOutput(["log", "--pretty=%B", ...revisions], toplevel) || "")) {
     violations.push({
       ruleId: F_ATTRIBUTION, repo: repoKey,
       text: `AI-tool attribution in a commit message of ${label}; reword it (last commit: \`git commit --amend\`) before pushing.`,
     });
   }
-  const names = strip(gitOutput(["log", "--name-only", "--pretty=", ...revisions], toplevel) || "").split(new RegExp(`${SPACE}+`));
+  const names = strip(gitOutput(["log", "--name-only", "--pretty=", ...revisions], toplevel) || "").split(new RegExp(`${SPACE_CLASS}+`));
   const paths = sortedByCodePoint(new Set(names.filter((name) => name !== "")));
   return [...violations, ...repoRuleViolations(repoKey, paths, [ACTION_DENY_PATH])];
 }
@@ -491,7 +480,7 @@ export function scanStagedSecrets(toplevel: string, repoKey: string | null, time
   if (result.returncode !== BOUNDARY_EXIT_HITS) throw new GuardError(`boundary scanner exit ${result.returncode}`);
   const report = loads(result.stdout);
   if (!isRecord(report)) throw noGet(report);
-  const described = iterable(getField(report, "hits")).map((hit) => {
+  const described = pythonList(getField(report, "hits")).map((hit) => {
     if (!isRecord(hit)) throw noGet(hit);
     return `${pythonStr(getField(hit, "file"))}:${pythonStr(getField(hit, "line"))} (${pythonStr(getField(hit, "rule"))})`;
   });
@@ -615,7 +604,7 @@ function isClaudeSettingsFile(path: string): boolean {
 function failClosed(raw: string, error: unknown): number {
   const { session, command } = salvage(raw);
   new FireLog(HOOK, session).append(F_ATTRIBUTION, "error", { detail: describeError(error) });
-  if (!LOOKS_GUARDED_RE.test(raw)) return protocol.EXIT_PASS;
+  if (!testCaseFolded(LOOKS_GUARDED_RE, raw)) return protocol.EXIT_PASS;
   const bullet: protocol.Bullet = [
     F_ATTRIBUTION, `The guard could not check this commit, push, PR text or protected write (${pythonErrorName(error)}).`,
   ];

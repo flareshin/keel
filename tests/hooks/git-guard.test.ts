@@ -240,6 +240,15 @@ describe("HookSkipTest", () => {
     assert.ok(result.stderr.includes("disableAllHooks"), result.stderr);
   });
 
+  it("claude_denied_whenSettingsHoldNonFiniteNumbers", () => {
+    for (const literal of ["NaN", "Infinity", "-Infinity"]) {
+      const plain = guard(`claude -p hi --settings '{"disableAllHooks": true, "x": ${literal}}'`);
+      assertDenied(plain, "F-hookskip");
+      const escaped = guard(`claude -p hi --settings '{"disableAll\\u0048ooks": true, "x": ${literal}}'`);
+      assertDenied(escaped, "F-hookskip");
+    }
+  });
+
   it("claude_passes_whenWriteToolsAreDisallowed", () => {
     assertPassed(guard("claude -p --settings '{\"disableAllHooks\": true}' --disallowedTools Bash,Edit,Write 'hello'"));
     assertPassed(guard("claude -p --settings '{\"disableAllHooks\": true}' --disallowedTools Bash Edit Write -- 'hello'"));
@@ -641,6 +650,33 @@ describe("AttributionTest", () => {
   });
 });
 
+describe("AttributionCaseFoldingTest", () => {
+  let repo: string;
+
+  beforeEach(() => {
+    repo = sandbox.makeRepo("example", "app");
+  });
+
+  it("commit_denied_whenDottedOrDotlessIStandsForIInAttribution", () => {
+    for (const message of ["Wr\u0130tten by Claude", "Wr\u0131tten by Claude", "Co-Authored-By: Anthrop\u0131c", "Generated using Opena\u0130"]) {
+      assertDenied(guard(`git commit -m '${message}'`, repo), "F-attribution");
+    }
+  });
+
+  it("prText_denied_whenDottedIStandsForIInAttribution", () => {
+    assertDenied(guard("gh pr create --title x --body 'Generated w\u0130th Claude'", repo), "F-attribution");
+  });
+
+  it("pushedCommit_denied_whenItsMessageHasDottedIInAttribution", () => {
+    sandbox.git(repo, "commit", "-q", "--allow-empty", "-m", "Wr\u0130tten by Claude");
+    assertDenied(guard("git push origin main", repo), "F-attribution");
+  });
+
+  it("commit_passes_whenTheTextIsNotAnAttribution", () => {
+    assertPassed(guard("git commit -m 'Written by hand \u0130 \u0131'", repo));
+  });
+});
+
 describe("PushRangeWithoutUpstreamTest", () => {
   let repo: string;
 
@@ -1026,6 +1062,12 @@ describe("FailClosedTest", () => {
   it("guard_denies_whenPayloadUnparseableAndLooksLikeAPrMerge", () => {
     for (const command of ["gh pr merge 7 --body x", "gh -R acme/app pr merge 7"]) {
       assert.equal(sandbox.runHook(GIT_GUARD, { raw: `{"tool_input": {"command": "${command}"` }).code, 2);
+    }
+  });
+
+  it("guard_denies_whenUnparseablePayloadSpellsAGuardedWordWithDottedOrDotlessI", () => {
+    for (const command of ["git comm\u0130t -m x", "g\u0130t push", "git commit --no-ver\u0130fy", "d\u0131sableAllHooks"]) {
+      assert.equal(sandbox.runHook(GIT_GUARD, { raw: `{"tool_input": {"command": "${command}"` }).code, 2, command);
     }
   });
 

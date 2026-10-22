@@ -66,6 +66,10 @@ export const SEEDED_RULE_IDS: ReadonlySet<string> = new Set([
   "F-force-push", "F-hookskip", "C-dispatch", "C-handoff", "C-isolation", "S-jdk",
 ]);
 
+export const KEEL_EVIDENCE_LINE =
+  'KEEL-EVIDENCE: {"v":1,"repo_root":"/work/app","review_base":"' + "a".repeat(40) + '","head":null,"snapshot_tree":"' + "b".repeat(40) +
+  '","since":null,"run_id":"rv-20261011T085500Z-7f3e21","root_run_id":"rv-20261011T085500Z-7f3e21","review_kind":"lens-review"}';
+
 const HOOK_TIMEOUT_MS = 60_000;
 const GIT_CONFIG = "[user]\n\tname = Test User\n\temail = test@example.invalid\n[init]\n\tdefaultBranch = main\n[commit]\n\tgpgsign = false\n";
 const STUB_SOURCE = (record: string, stdout: string, exitCode: number) =>

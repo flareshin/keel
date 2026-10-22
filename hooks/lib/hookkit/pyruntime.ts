@@ -1,6 +1,6 @@
 import { readSync, writeSync } from "node:fs";
 import { constants } from "node:os";
-import { pythonStr } from "./pycompat.ts";
+import { isRecord, isTruthy, pythonStr } from "./pycompat.ts";
 
 const NEWLINES = /\r\n|\r/g;
 const STDIN = 0;
@@ -22,6 +22,14 @@ export function pythonTypeName(value: unknown): string {
   if (typeof value === "number") return Number.isInteger(value) ? "int" : "float";
   if (typeof value === "string") return "str";
   return Array.isArray(value) ? "list" : "dict";
+}
+
+export function pythonList(value: unknown): unknown[] {
+  if (!isTruthy(value)) return [];
+  if (Array.isArray(value)) return [...value];
+  if (typeof value === "string") return Array.from(value);
+  if (isRecord(value)) return Object.keys(value);
+  throw new TypeError(`'${pythonTypeName(value)}' object is not iterable`);
 }
 
 interface ErrnoClass {

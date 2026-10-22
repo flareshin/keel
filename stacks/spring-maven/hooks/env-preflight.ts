@@ -3,7 +3,7 @@ import { FireLog } from "../../../hooks/lib/hookkit/fires.ts";
 import { readTsv } from "../../../hooks/lib/hookkit/overlay.ts";
 import * as protocol from "../../../hooks/lib/hookkit/protocol.ts";
 import type { Payload } from "../../../hooks/lib/hookkit/protocol.ts";
-import { getField, isTruthy, joinPath, normalizePath, expandUser, partition, pythonStr, strip, arraysEqual, PY_SPACE } from "../../../hooks/lib/hookkit/pycompat.ts";
+import { getField, isTruthy, joinPath, normalizePath, expandUser, partition, pythonStr, strip, arraysEqual, PY_SPACE, testCaseFolded } from "../../../hooks/lib/hookkit/pycompat.ts";
 import { fnmatchCase } from "../../../hooks/lib/hookkit/pyfnmatch.ts";
 import { parsePayload } from "../../../hooks/lib/hookkit/pyjson.ts";
 import { isDirectory } from "../../../hooks/lib/hookkit/pypath.ts";
@@ -172,7 +172,7 @@ function namesJdk(value: string, major: string): boolean {
   const space = `[${PY_SPACE}]`;
   const lookup = new RegExp(`java_home${space}+(?:-v${space}*|--version[${PY_SPACE}=]+)${escaped}(?:\\.0)?(?![0-9.+*])`, "u");
   const path = new RegExp(`${JDK_VENDOR_WORDS}[-_.@/]?${escaped}(?![0-9])`, "iu");
-  return lookup.test(value) || path.test(value);
+  return lookup.test(value) || testCaseFolded(path, value);
 }
 
 function retryCommand(commandLine: string, build: MavenBuild, major: string, cwd: string): string | null {

@@ -76,6 +76,10 @@ describe("python string behaviors", () => {
   it("pythonStr_spellsPythonValues", () => {
     assert.deepEqual([null, true, false, "s", 7, ["a", 1], { k: "v" }].map(pycompat.pythonStr), ["None", "True", "False", "s", "7", "['a', 1]", "{'k': 'v'}"]);
   });
+
+  it("pythonStr_spellsNonFiniteNumbersLikePythonFloat", () => {
+    assert.deepEqual([NaN, Infinity, -Infinity, [NaN], { a: Infinity }].map(pycompat.pythonStr), ["nan", "inf", "-inf", "[nan]", "{'a': inf}"]);
+  });
 });
 
 describe("python path behaviors", () => {
@@ -98,6 +102,15 @@ describe("python path behaviors", () => {
   it("expandVars_replacesOnlyDefinedAsciiNames", () => {
     withEnv({ KEEL_T: "v" }, () => {
       assert.equal(pycompat.expandVars("$KEEL_T/${KEEL_T}/$NOPE_X/é$KEEL_T"), "v/v/$NOPE_X/év");
+    });
+  });
+
+  it("expandVars_keepsTheRestOfTheWord_afterAnUnclosedBrace", () => {
+    withEnv({ KEEL_T: "v" }, () => {
+      assert.equal(pycompat.expandVars("${x$KEEL_T/a"), "${x$KEEL_T/a");
+      assert.equal(pycompat.expandVars("$KEEL_T/${x"), "v/${x");
+      assert.equal(pycompat.expandVars("${KEEL_Tx"), "${KEEL_Tx");
+      assert.equal(pycompat.expandVars("${KEEL_T"), "${KEEL_T");
     });
   });
 
@@ -343,6 +356,14 @@ describe("FireLog", () => {
   it("append_doesNotThrow_whenTheLogCannotBeWritten", () => {
     mkdirSync(join(sandbox.data, "logs", "keel-fires.jsonl"), { recursive: true });
     withEnv({ KEEL_DATA_DIR: sandbox.data }, () => new FireLog("h", "s").append("K1", "pass"));
+  });
+
+  it("append_throws_whenTheRecordCannotBeSerialized", () => {
+    const loop: Record<string, unknown> = {};
+    loop["self"] = loop;
+    withEnv({ KEEL_DATA_DIR: sandbox.data }, () => {
+      assert.throws(() => new FireLog("h", "s").append("K1", "pass", { context: loop }));
+    });
   });
 });
 

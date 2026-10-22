@@ -42,6 +42,21 @@ describe("pyjson", () => {
     for (const [text, message] of expected) assert.equal(decodeFailure(text), message, JSON.stringify(text));
   });
 
+  it("loads_returnsNonFiniteNumbers_forTheLiteralsPythonAccepts", () => {
+    const parsed = loads('{"a": [NaN, Infinity, -Infinity], "b": NaN}') as { a: number[]; b: number };
+    assert.ok(Number.isNaN(parsed.b));
+    assert.ok(Number.isNaN(parsed.a[0]));
+    assert.deepEqual(parsed.a.slice(1), [Infinity, -Infinity]);
+    assert.equal(decodeFailure("NaNx"), "Extra data: line 1 column 4 (char 3)");
+    assert.equal(decodeFailure("Infinit"), "Expecting value: line 1 column 1 (char 0)");
+    assert.equal(decodeFailure("{NaN: 1}"), "Expecting property name enclosed in double quotes: line 1 column 2 (char 1)");
+  });
+
+  it("loads_keepsDuplicateAndPrototypeKeysAsOwnMembers", () => {
+    assert.deepEqual(Object.entries(loads('{"a": 1, "b": 2, "a": 3}') as object), [["a", 3], ["b", 2]]);
+    assert.deepEqual(Object.keys(loads('{"__proto__": {"x": 1}}') as object), ["__proto__"]);
+  });
+
   it("loads_countsPositionsInCodePointsAndLinesInNewlines", () => {
     assert.equal(decodeFailure('"\u{1F600}\u{1F600}" x'), "Extra data: line 1 column 6 (char 5)");
     assert.equal(decodeFailure('{"a":\n  1,\n  }'), "Illegal trailing comma before end of object: line 2 column 4 (char 9)");
@@ -63,6 +78,12 @@ describe("dumpsAscii", () => {
       dumpsAscii(value),
       '{"a": ["\\u00e9", "\\ud83d\\ude00", "\\u007f", "x\\ny"], "b": {"c": null, "d": 1.5}}',
     );
+  });
+
+  it("writesNonFiniteNumbers_asPythonDoes_andRoundTripsThem", () => {
+    const text = '{"a": NaN, "b": [Infinity, -Infinity], "c": 1.5}';
+    assert.equal(dumpsAscii(loads(text)), text);
+    assert.equal(pythonJsonDumps(loads(text)), text);
   });
 
   it("keepsNonAsciiText_unlessAsked", () => {

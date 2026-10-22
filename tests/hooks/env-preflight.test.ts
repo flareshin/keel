@@ -123,6 +123,11 @@ describe("PassTest", () => {
     assertPassed(check("JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home ./mvnw verify"));
   });
 
+  it("mvn_passes_whenVendorWordSpellsIWithDottedOrDotlessI", () => {
+    assertPassed(check("JAVA_HOME=/opt/temur\u0130n-17 mvn test"));
+    assertPassed(check("JAVA_HOME=/opt/temur\u0131n-17 mvn test"));
+  });
+
   it("mvn_passes_whenExportedBefore", () => {
     assertPassed(check(`export ${PIN_17} && mvn test`));
   });

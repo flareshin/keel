@@ -3,7 +3,8 @@ import { ValueError } from "./pyruntime.ts";
 
 const JSON_WHITESPACE = " \t\n\r";
 const NUMBER = /-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][-+]?[0-9]+)?/y;
-const NON_FINITE_LITERALS = ["NaN", "Infinity", "-Infinity"];
+const NON_FINITE_LITERALS: ReadonlyMap<string, number> = new Map([["NaN", NaN], ["Infinity", Infinity], ["-Infinity", -Infinity]]);
+const KEYWORD_LITERALS: ReadonlyMap<string, null | boolean> = new Map([["null", null], ["true", true], ["false", false]]);
 const BYTE_ORDER_MARK = "﻿";
 
 export class JSONDecodeError extends ValueError {
@@ -28,15 +29,10 @@ export function parsePayload(raw: string): Record<string, unknown> {
 export function loads(text: string): unknown {
   if (text.startsWith(BYTE_ORDER_MARK)) throw decodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)", text, 0);
   try {
-    new Document(text).check();
+    return new Document(text).parse();
   } catch (error) {
     if (error instanceof SyntaxProblem) throw decodeError(error.message, text, error.position);
     throw error;
-  }
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new ValueError("JSON number literals NaN, Infinity and -Infinity are not supported");
   }
 }
 
@@ -47,6 +43,11 @@ function decodeError(message: string, text: string, position: number): JSONDecod
   return new JSONDecodeError(`${message}: line ${lineNumber} column ${column} (char ${codePointLength(before)})`);
 }
 
+interface Parsed {
+  value: unknown;
+  end: number;
+}
+
 class Document {
   readonly text: string;
 
@@ -54,10 +55,11 @@ class Document {
     this.text = text;
   }
 
-  check(): void {
-    const start = this.skipWhitespace(0);
-    const end = this.skipWhitespace(this.value(start));
+  parse(): unknown {
+    const parsed = this.value(this.skipWhitespace(0));
+    const end = this.skipWhitespace(parsed.end);
     if (end !== this.text.length) throw new SyntaxProblem("Extra data", end);
+    return parsed.value;
   }
 
   private skipWhitespace(position: number): number {
@@ -66,17 +68,22 @@ class Document {
     return end;
   }
 
-  private value(start: number): number {
+  private value(start: number): Parsed {
     const first = this.text[start];
-    if (first === '"') return this.string(start + 1);
+    if (first === '"') return this.stringValue(start);
     if (first === "{") return this.object(start + 1);
     if (first === "[") return this.array(start + 1);
-    for (const literal of ["null", "true", "false"]) if (this.text.startsWith(literal, start)) return start + literal.length;
+    for (const [literal, value] of KEYWORD_LITERALS) if (this.text.startsWith(literal, start)) return { value, end: start + literal.length };
     NUMBER.lastIndex = start;
     const number = NUMBER.exec(this.text);
-    if (number) return start + number[0].length;
-    for (const literal of NON_FINITE_LITERALS) if (this.text.startsWith(literal, start)) return start + literal.length;
+    if (number) return { value: JSON.parse(number[0]), end: start + number[0].length };
+    for (const [literal, value] of NON_FINITE_LITERALS) if (this.text.startsWith(literal, start)) return { value, end: start + literal.length };
     throw new SyntaxProblem("Expecting value", start);
+  }
+
+  private stringValue(quote: number): Parsed {
+    const end = this.string(quote + 1);
+    return { value: JSON.parse(this.text.slice(quote, end)), end };
   }
 
   private string(contentStart: number): number {
@@ -119,18 +126,20 @@ class Document {
     return parseInt(digits, 16);
   }
 
-  private object(afterBrace: number): number {
+  private object(afterBrace: number): Parsed {
+    const members: Record<string, unknown> = {};
     let position = this.skipWhitespace(afterBrace);
-    if (this.text[position] === "}") return position + 1;
+    if (this.text[position] === "}") return { value: members, end: position + 1 };
     if (this.text[position] !== '"') throw new SyntaxProblem("Expecting property name enclosed in double quotes", position);
     for (;;) {
-      position = this.string(position + 1);
-      position = this.skipWhitespace(position);
+      const key = this.stringValue(position);
+      position = this.skipWhitespace(key.end);
       if (this.text[position] !== ":") throw new SyntaxProblem("Expecting ':' delimiter", position);
-      position = this.value(this.skipWhitespace(position + 1));
-      position = this.skipWhitespace(position);
+      const member = this.value(this.skipWhitespace(position + 1));
+      Object.defineProperty(members, key.value as string, { value: member.value, enumerable: true, writable: true, configurable: true });
+      position = this.skipWhitespace(member.end);
       const separator = this.text[position];
-      if (separator === "}") return position + 1;
+      if (separator === "}") return { value: members, end: position + 1 };
       if (separator !== ",") throw new SyntaxProblem("Expecting ',' delimiter", position);
       const comma = position;
       position = this.skipWhitespace(position + 1);
@@ -140,13 +149,16 @@ class Document {
     }
   }
 
-  private array(afterBracket: number): number {
+  private array(afterBracket: number): Parsed {
+    const items: unknown[] = [];
     let position = this.skipWhitespace(afterBracket);
-    if (this.text[position] === "]") return position + 1;
+    if (this.text[position] === "]") return { value: items, end: position + 1 };
     for (;;) {
-      position = this.skipWhitespace(this.value(position));
+      const item = this.value(position);
+      items.push(item.value);
+      position = this.skipWhitespace(item.end);
       const separator = this.text[position];
-      if (separator === "]") return position + 1;
+      if (separator === "]") return { value: items, end: position + 1 };
       if (separator !== ",") throw new SyntaxProblem("Expecting ',' delimiter", position);
       const comma = position;
       position = this.skipWhitespace(position + 1);

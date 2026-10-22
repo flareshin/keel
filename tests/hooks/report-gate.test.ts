@@ -3,15 +3,12 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { join } from "node:path";
 import {
-  AGENT_ID, assertBulletIdsSeeded, assertFired, HookSandbox, KEEL_HOME, preToolUse, REPORT_GATE, SESSION_ID, subagentStop,
+  AGENT_ID, assertBulletIdsSeeded, assertFired, HookSandbox, KEEL_EVIDENCE_LINE, KEEL_HOME, preToolUse, REPORT_GATE, SESSION_ID, subagentStop,
 } from "./helpers.ts";
 import type { Fire, HookResult } from "./helpers.ts";
-import { evidenceMessage, EVIDENCE_RE, REPORT_END, REPORT_START, withoutReportMarkers } from "../../hooks/report-gate/report-gate.ts";
+import { evidenceMessage, hasEvidenceToken, REPORT_END, REPORT_START, withoutReportMarkers } from "../../hooks/report-gate/report-gate.ts";
 
-const EVIDENCE_LINE =
-  'KEEL-EVIDENCE: {"v":1,"repo_root":"/work/app","review_base":"' + "a".repeat(40) + '","head":null,"snapshot_tree":"' + "b".repeat(40) +
-  '","since":null,"run_id":"rv-20261011T085500Z-7f3e21","root_run_id":"rv-20261011T085500Z-7f3e21","review_kind":"lens-review"}';
-const PASS_REPORT = "VERDICT: PASS\nNo findings. 3 files changed, 40 insertions(+).\n" + EVIDENCE_LINE;
+const PASS_REPORT = "VERDICT: PASS\nNo findings. 3 files changed, 40 insertions(+).\n" + KEEL_EVIDENCE_LINE;
 const FRAMED_PASS_REPORT = `<<<KEEL-REPORT\n${PASS_REPORT}\nKEEL-REPORT>>>`;
 const UNPROVEN_REPORT = "Done. All good, VERDICT: PASS";
 const PROVEN_REPORT = "Done.\nRan 12 tests in 0.4s\nOK";
@@ -64,6 +61,13 @@ describe("HandbackEvidenceTest", () => {
     assertFired(sandbox, "K2", "deny", "report-gate");
   });
 
+  it("handback_passesWithK2Pass_whenEvidenceTokenSpellsIWithDottedOrDotlessI", () => {
+    for (const report of ["Done. VERDICT: PASS, 3 tests pass\u0131ng", "Done. VERDICT: PASS. NOT VER\u0130F\u0130ED", "Done. VERDICT: PASS, 4 f\u0131les changed"]) {
+      assert.equal(handback(report).code, 0, report);
+    }
+    assert.deepEqual(sandbox.fires().filter((fire) => fire.outcome === "deny"), []);
+  });
+
   it("handback_passes_whenSecondCallInSameTurnStillLacksEvidence", () => {
     handback(UNPROVEN_REPORT);
     assert.equal(handback(UNPROVEN_REPORT).code, 0);
@@ -114,7 +118,16 @@ describe("HandbackEvidenceTest", () => {
   });
 
   it("evidenceMessage_containsNoEvidenceTokenButUnverified_soParrotingCannotPass", () => {
-    assert.equal(EVIDENCE_RE.test(evidenceMessage().replaceAll("UNVERIFIED:", "")), false);
+    assert.equal(hasEvidenceToken(evidenceMessage().replaceAll("UNVERIFIED:", "")), false);
+  });
+});
+
+describe("TurnStateFileTest", () => {
+  it("handback_logsNoError_whenStateFileHoldsADictForPaths", () => {
+    const state = join(sandbox.data, "state", "keel", "report-gate", `${SESSION_ID}-${AGENT_ID}.json`);
+    sandbox.write(state, '{"paths": {"/old/a.py": 1, "/old/b.py": 2}, "ev": false, "hb": false}');
+    assert.equal(handback(PROVEN_REPORT, { toolUses: [editIn(scope, "a.py")] }).code, 0);
+    assert.deepEqual(sandbox.fires().filter((fire) => fire.outcome === "error"), []);
   });
 });
 
@@ -174,13 +187,25 @@ describe("HandbackReviewEvidenceTest", () => {
     assertFired(sandbox, "K1", "record", "report-gate");
   });
 
+  it("handback_forwardsNonFiniteNumbers_asPythonJsonDoes", () => {
+    for (const literal of ["NaN", "Infinity", "-Infinity"]) {
+      sandbox.close();
+      sandbox = new HookSandbox();
+      sandbox.env["KEEL_CLI"] = sandbox.stub("keel", { stdout: CLI_RESPONSE });
+      sandbox.putStubClaudeOnPath();
+      assert.equal(handback(PASS_REPORT.replace('"v":1,', `"v":1,"x":${literal},`)).code, 0);
+      const stdin = sandbox.stubCalls("keel")[0]?.stdin ?? "";
+      assert.ok(stdin.startsWith(`{"keel_evidence": {"v": 1, "x": ${literal}, "repo_root"`), stdin);
+    }
+  });
+
   it("handback_sendsNeedsFixes_whenFirstLineIsVerdictNeedsFixes", () => {
     handback(PASS_REPORT.replace("VERDICT: PASS", "VERDICT: NEEDS_FIXES"));
     assert.equal(keelRequests()[0].verdict, "NEEDS_FIXES");
   });
 
   it("handback_sendsOneRequestPerRepo_whenSeveralEvidenceLines", () => {
-    handback(PASS_REPORT + "\n" + EVIDENCE_LINE.replace("/work/app", "/work/lib"));
+    handback(PASS_REPORT + "\n" + KEEL_EVIDENCE_LINE.replace("/work/app", "/work/lib"));
     assert.equal(sandbox.stubCalls("keel").length, 2);
   });
 

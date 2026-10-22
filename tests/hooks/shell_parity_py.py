@@ -1,9 +1,3 @@
-"""Companion of shell-parity.ts: runs the Python hookkit.shell on the calls the TypeScript port is compared with.
-
-usage: python3 -I shell_parity_py.py <hooks/lib dir> corpus <python file>...   -> JSON list of string literals
-       python3 -I shell_parity_py.py <hooks/lib dir> run                       -> JSON calls on stdin; on stdout
-                                                                                  {"results": [...], "coverage": {...}}
-"""
 import ast
 import json
 import os

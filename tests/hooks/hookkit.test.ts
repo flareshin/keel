@@ -625,6 +625,12 @@ describe("KnownValuesTest", () => {
     });
   });
 
+  it("load_matchesSecretKeyNames_withPythonIgnoreCaseForDottedAndDotlessI", () => {
+    sandbox.write(join(sandbox.home, "turkic.yml"), "credentİal: dotted-value-1\nCREDENTıAL: dotless-value-1\n");
+    const path = sandbox.write(join(sandbox.overlay, "turkic.tsv"), `source\tpattern\nfile\t${sandbox.home}/turkic.yml\n`);
+    assert.deepEqual(knownvalues.load(path).map((known) => known.value), ["dotted-value-1", "dotless-value-1"]);
+  });
+
   it("load_findsNoValue_forAnEnvRowNamingAnObjectMember", () => {
     const path = sandbox.write(join(sandbox.overlay, "members.tsv"), "source\tpattern\nenv\tconstructor\nenv\ttoString\n");
     assert.deepEqual(knownvalues.load(path), []);

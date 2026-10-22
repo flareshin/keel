@@ -1,4 +1,4 @@
-import { basename, codePointLength, environmentValue, expandUser, glob, PY_SPACE, PY_WORD, sortedByCodePoint, splitlines, tryReadText } from "./pycompat.ts";
+import { basename, codePointLength, environmentValue, expandUser, foldDottedAndDotlessI, glob, PY_SPACE, PY_WORD, sortedByCodePoint, splitlines, tryReadText } from "./pycompat.ts";
 import { OverlayDataError, readTsv } from "./overlay.ts";
 
 export const HEADER = ["source", "pattern"] as const;
@@ -93,7 +93,7 @@ function fileValues(file: string): KnownValue[] {
   const values: KnownValue[] = [];
   for (const line of lines) {
     const match = KEY_VALUE_RE.exec(line);
-    if (match && SECRET_KEY_RE.test(match[1] ?? "")) {
+    if (match && SECRET_KEY_RE.test(foldDottedAndDotlessI(match[1] ?? ""))) {
       const value = (match[2] ?? "").replace(TRAILING_COMMENT_RE, "").replace(/^["']+|["']+$/g, "");
       values.push({ value, key: match[1] ?? "", origin: basename(file) });
     }

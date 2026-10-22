@@ -4,7 +4,6 @@ import { delimiter, dirname, join } from "node:path";
 
 export const KEEL_HOME = realpathSync(join(import.meta.dirname, "..", ".."));
 
-/** Run `body` with `changes` applied to process.env (a null value unsets the variable); `clear` empties it first. */
 export function withEnv<T>(changes: Record<string, string | null>, body: () => T, options: { clear?: boolean } = {}): T {
   const saved = { ...process.env };
   try {
@@ -20,7 +19,6 @@ export function withEnv<T>(changes: Record<string, string | null>, body: () => T
   }
 }
 
-/** Temp data/overlay/home directories for tests that read or write hookkit's files. */
 export class Sandbox {
   readonly root: string;
   readonly data: string;
@@ -45,7 +43,6 @@ export class Sandbox {
     return path;
   }
 
-  /** A `claude --version` stub; returns the PATH that finds it first. */
   stubClaude(version = "9.9.9"): string {
     const path = this.write(join(this.root, "stubs", "claude"), `#!/bin/bash\necho '${version} (Claude Code)'\n`);
     chmodSync(path, 0o755);

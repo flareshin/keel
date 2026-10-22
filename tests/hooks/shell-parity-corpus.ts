@@ -1,6 +1,4 @@
-/** Hand-written spellings that stress the shell parser; the parity run feeds them to both implementations. */
 export const ADVERSARIAL_SPELLINGS: readonly string[] = [
-  // quoting
   "echo 'a b' \"c d\" e\\ f",
   "echo \"a\\\"b\" 'c\\d' \"e\\\\f\" \"g\\$h\" \"i\\`j\" \"k\\lm\"",
   "echo \"unterminated",
@@ -19,7 +17,6 @@ export const ADVERSARIAL_SPELLINGS: readonly string[] = [
   "echo é 日本語 😀 'ü' \"ß\" \\😀",
   "git -C /tmp/日本 push origin 😀",
   "echo ${A}${B} $A$B \"$A\"'$B'",
-  // separators and chains
   "a;b&&c||d|e|&f&g",
   "a ; ; b && && c",
   "a & b &",
@@ -37,7 +34,6 @@ export const ADVERSARIAL_SPELLINGS: readonly string[] = [
   "# only a comment",
   "",
   " \t ",
-  // redirections
   "cmd > out 2> err < in",
   "cmd >> log 2>&1 &> both &>> bothlog",
   "cmd >| force <> rw",
@@ -52,7 +48,6 @@ export const ADVERSARIAL_SPELLINGS: readonly string[] = [
   "cat <<< 'here string' > out",
   "cat <(echo a) >(tee b)",
   "diff <(sort a) <(sort b)",
-  // heredocs
   "cat <<EOF\nhello\nEOF",
   "cat <<'EOF' > out.txt\n$(not run)\nEOF\necho after",
   "cat <<-EOF\n\tindented\n\tEOF\ndone",
@@ -74,11 +69,18 @@ export const ADVERSARIAL_SPELLINGS: readonly string[] = [
   "echo éopen('x','w')",
   "echo open('x', mode='a')",
   "echo path.open('wb') && Path('x').write_text('1')",
-  // substitutions and code strings
   "echo $(git push origin x)",
   "echo `git push origin x` `date`",
   "echo \"$(git push)\" '$(not)' `unterminated",
   "echo $(unterminated",
+  "echo $(printf ')'; git push -f)",
+  "echo $(echo \\)); git push",
+  "echo $(printf 'unterminated ; git push -f)",
+  "cat <(printf ')'; git push -f)",
+  "cat <(echo \\)); git push",
+  "tee >(printf ')'; git push -f)",
+  "<<$(git push)",
+  "<<$(git push)\nbody\n",
   "echo $(echo $(echo $(deep)))",
   "echo $(a; b) $(c && d)",
   "x=$(git push) y=`date` echo $x",
@@ -96,7 +98,6 @@ export const ADVERSARIAL_SPELLINGS: readonly string[] = [
   "bash -c 'bash -c \"git push\"'",
   "env bash -c 'git push'",
   "sudo bash -c 'git push'",
-  // wrappers
   "env A=1 B=2 git push",
   "env -i A=1 git push",
   "env -u A git push",
@@ -142,7 +143,6 @@ export const ADVERSARIAL_SPELLINGS: readonly string[] = [
   "\"$(git --exec-path)\"/git-push origin x",
   "git-",
   "git-Push origin",
-  // assignments
   "A=1 B=2",
   "A=1 B=2 cmd",
   "A='x y' B=\"p q\" cmd",
@@ -157,7 +157,6 @@ export const ADVERSARIAL_SPELLINGS: readonly string[] = [
   "FOO=bar export FOO",
   "1A=1 cmd",
   "=1 cmd",
-  // directories
   "cd",
   "cd -",
   "cd ~",
@@ -193,7 +192,6 @@ export const ADVERSARIAL_SPELLINGS: readonly string[] = [
   "git -C /x log -C y",
   "git",
   "git --version",
-  // git push / config / gh
   "git push",
   "git push origin",
   "git push -u origin feature",
@@ -205,6 +203,9 @@ export const ADVERSARIAL_SPELLINGS: readonly string[] = [
   "git push --all origin",
   "git push --mirror",
   "git push --exec=/bin/x origin",
+  "git push --exec /bin/x origin main",
+  "git push --receive-pack x origin",
+  "git push --push-option ci.skip origin main",
   "git push -",
   "git push -- origin x",
   "git config user.email",
@@ -225,7 +226,6 @@ export const ADVERSARIAL_SPELLINGS: readonly string[] = [
   "gh pr merge 7 -R o/r",
   "gh -R",
   "gh",
-  // writers
   "cp a b",
   "cp -r a b dest/",
   "cp -t dest a b",
@@ -276,7 +276,6 @@ export const ADVERSARIAL_SPELLINGS: readonly string[] = [
   "echo x > $NOPE_ZZ/a",
   "echo x > \"$HOME/a\"",
   "rm $HOME/x /tmp/y",
-  // unicode and odd characters
   "echo     　",
   "echo a\u0000b",
   "git push origin 🙂‍🙂",

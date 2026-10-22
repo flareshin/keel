@@ -1,6 +1,5 @@
-/** Git facts a hook needs: toplevel, repo key, upstream. */
 import { statSync } from "node:fs";
-import { rstripChar, strip } from "./pycompat.ts";
+import { isSystemError, rstripChar, strip } from "./pycompat.ts";
 import { run } from "./subprocess.ts";
 import type { CompletedProcess } from "./subprocess.ts";
 
@@ -13,12 +12,12 @@ export function git(args: readonly string[], cwd: string): CompletedProcess {
 function isDirectory(path: string): boolean {
   try {
     return statSync(path).isDirectory();
-  } catch {
-    return false;
+  } catch (error) {
+    if (isSystemError(error)) return false;
+    throw error;
   }
 }
 
-/** stdout without the trailing newline, or null when git fails. */
 export function gitOutput(args: readonly string[], cwd: string): string | null {
   if (!isDirectory(cwd)) return null;
   const result = git(args, cwd);
@@ -30,7 +29,6 @@ export function findToplevel(path: string): string | null {
   return gitOutput(["rev-parse", "--show-toplevel"], path);
 }
 
-/** `owner/repo` from any origin form (ssh, https, local path); host ignored. */
 export function normalizeRepoKey(url: string): string | null {
   let trimmed = rstripChar(strip(url), "/");
   if (trimmed.endsWith(".git")) trimmed = trimmed.slice(0, -".git".length);
@@ -52,7 +50,6 @@ export function isCommit(toplevel: string, ref: string): boolean {
   return gitOutput(["rev-parse", "-q", "--verify", ref + "^{commit}"], toplevel) !== null;
 }
 
-/** `<ref>@{u}` when it resolves to a commit, else null. */
 export function findUpstream(toplevel: string, ref: string): string | null {
   const upstream = gitOutput(["rev-parse", "--abbrev-ref", `${ref}@{u}`], toplevel);
   return upstream && isCommit(toplevel, upstream) ? upstream : null;

@@ -1,13 +1,17 @@
 """Companion of shell-parity.ts: runs the Python hookkit.shell on the calls the TypeScript port is compared with.
 
 usage: python3 -I shell_parity_py.py <hooks/lib dir> corpus <python file>...   -> JSON list of string literals
-       python3 -I shell_parity_py.py <hooks/lib dir> run                       -> JSON calls on stdin, JSON results on stdout
+       python3 -I shell_parity_py.py <hooks/lib dir> run                       -> JSON calls on stdin; on stdout
+                                                                                  {"results": [...], "coverage": {...}}
 """
 import ast
 import json
+import os
 import sys
 
 MAX_LITERAL_LENGTH = 1000
+MISSING_PARENT = -1
+PROBED_VARIABLES = {"A", "HOME", "NOT_REMOVED"}
 
 
 def string_literals(paths):
@@ -30,7 +34,7 @@ def command_view(command, index_of):
         "argv": command.argv, "assignments": [list(item) for item in command.assignments],
         "redirects": [[redirect.op, redirect.target] for redirect in command.redirects], "heredocs": command.heredocs,
         "nested": command.nested, "pipes_to_next": command.pipes_to_next,
-        "parent": None if command.parent is None else index_of[id(command.parent)],
+        "parent": None if command.parent is None else index_of.get(id(command.parent), MISSING_PARENT),
     }
 
 
@@ -46,15 +50,17 @@ def steps_view(text, cwd, shell):
     return [{
         "argv": step.argv, "environment": pairs(step.environment), "directory": step.directory,
         "command": command_view(step.command, index_of), "expansion": pairs(step.expansion),
-        "unattributable_options": step.unattributable_options,
+        "unattributable_options": step.unattributable_options, "heredocs": step.heredocs,
     } for step in found]
 
 
 def invocation_view(invocation):
+    probed_names = sorted(invocation.removed_names | PROBED_VARIABLES)
     return {
         "argv": invocation.argv, "assignments": [list(item) for item in invocation.assignments],
         "clears_env": invocation.clears_env, "removed_names": sorted(invocation.removed_names),
         "unattributable_options": invocation.unattributable_options, "moves_directory": invocation.moves_directory,
+        "drops_inherited": [[name, invocation.drops_inherited(name)] for name in probed_names],
     }
 
 
@@ -98,14 +104,58 @@ def run(calls, shell):
     return results
 
 
+class LineCoverage:
+    def __init__(self, path):
+        self.path = path
+        self.executed = set()
+
+    def start(self):
+        sys.settrace(self._on_call)
+
+    def stop(self):
+        sys.settrace(None)
+
+    def _on_call(self, frame, event, argument):
+        return self._on_line if frame.f_code.co_filename == self.path else None
+
+    def _on_line(self, frame, event, argument):
+        if event == "line":
+            self.executed.add(frame.f_lineno)
+        return self._on_line
+
+    def report(self):
+        with open(self.path, encoding="utf-8") as stream:
+            source = stream.read()
+        executable = executable_lines(compile(source, self.path, "exec"))
+        lines = source.splitlines()
+        return {
+            "executable": len(executable),
+            "executed": len(executable & self.executed),
+            "unexecuted": [{"line": number, "text": lines[number - 1].strip()}
+                           for number in sorted(executable - self.executed)],
+        }
+
+
+def executable_lines(code):
+    found = {line for _, _, line in code.co_lines() if line}
+    for constant in code.co_consts:
+        if hasattr(constant, "co_lines"):
+            found |= executable_lines(constant)
+    return found
+
+
 def main():
     hooks_lib, mode, rest = sys.argv[1], sys.argv[2], sys.argv[3:]
     sys.path.insert(0, hooks_lib)
     if mode == "corpus":
         print(json.dumps(string_literals(rest)))
         return
+    coverage = LineCoverage(os.path.join(hooks_lib, "hookkit", "shell.py"))
+    coverage.start()
     from hookkit import shell
-    print(json.dumps(run(json.load(sys.stdin), shell)))
+    results = run(json.load(sys.stdin), shell)
+    coverage.stop()
+    print(json.dumps({"results": results, "coverage": coverage.report()}))
 
 
 main()

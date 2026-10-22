@@ -1,4 +1,3 @@
-/** Append-only decision log `keel-fires.jsonl` (DESIGN Interfaces (f)). */
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { dataDir } from "./env.ts";
@@ -10,7 +9,6 @@ export function utcNow(): string {
   return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
-/** One hook's view of the fires log, bound to the hook name and the payload's session. */
 export class FireLog {
   readonly hook: string;
   readonly session: string;

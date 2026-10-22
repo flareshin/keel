@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { missingFields } from "../../hooks/lib/hookkit/contract.ts";
 import * as env from "../../hooks/lib/hookkit/env.ts";
 import { FireLog } from "../../hooks/lib/hookkit/fires.ts";
@@ -17,6 +17,23 @@ const FIRST_LINE = /^\[[A-Za-z0-9-]+\] (ship-gate|git-guard|report-gate|model-as
 const BULLET = /^- \[[A-Za-z0-9-]+\] \S/;
 const EMIT = join(import.meta.dirname, "protocol-emit.ts");
 
+function directoryServicesOnlyAccount(): string | null {
+  if (process.platform !== "darwin") return null;
+  const listed = spawnSync("dscl", [".", "-list", "/Users"], { encoding: "utf8" });
+  if (listed.status !== 0) return null;
+  const passwdNames = new Set(readFileSync("/etc/passwd", "utf8").split("\n").map((line) => line.split(":")[0]));
+  return listed.stdout.split("\n").find((name) => name !== "" && !name.startsWith("_") && !passwdNames.has(name)) ?? null;
+}
+
+function captured(body: () => unknown): unknown {
+  try {
+    body();
+  } catch (error) {
+    return error;
+  }
+  return undefined;
+}
+
 function emit(name: string, ...args: unknown[]) {
   const result = spawnSync(process.execPath, [EMIT, name, JSON.stringify(args)], { encoding: "utf8" });
   return { code: result.status, stdout: result.stdout, stderr: result.stderr };
@@ -28,6 +45,17 @@ describe("python string behaviors", () => {
     assert.deepEqual(pycompat.splitlines("\n"), [""]);
     assert.deepEqual(pycompat.splitlines(""), []);
     assert.deepEqual(pycompat.splitlines("a\n\n"), ["a", ""]);
+  });
+
+  it("universalNewlineLines_splitsOnCarriageReturnAndLineFeed_notOnOtherUnicodeBreaks", () => {
+    const sandbox = new Sandbox();
+    try {
+      const path = sandbox.write(join(sandbox.root, "lines.txt"), "a\r\nb\rc\nd\x0be\u2028f\n");
+
+      assert.deepEqual(pycompat.universalNewlineLines(path), ["a", "b", "c", "d\x0be\u2028f"]);
+    } finally {
+      sandbox.close();
+    }
   });
 
   it("strip_removesPythonWhitespace_notTheByteOrderMark", () => {
@@ -80,6 +108,101 @@ describe("python path behaviors", () => {
     });
     assert.equal(pycompat.expandUser("~nosuchuserzz/x"), "~nosuchuserzz/x");
   });
+
+  it("expandUser_resolvesAnAccountOnlyDirectoryServicesKnows_likePythonGetpwnam", (context) => {
+    const name = directoryServicesOnlyAccount();
+    if (name === null) return context.skip("no account outside /etc/passwd on this machine");
+
+    const expected = spawnSync("python3", ["-I", "-c", "import os, sys; print(os.path.expanduser(sys.argv[1]))", `~${name}/x`], { encoding: "utf8" });
+
+    assert.equal(expected.status, 0, expected.stderr);
+    assert.notEqual(expected.stdout.trim(), `~${name}/x`);
+    assert.equal(pycompat.expandUser(`~${name}/x`), expected.stdout.trim());
+  });
+
+  it("expandUser_spawnsTheDirectoryLookupOnce_perName", (context) => {
+    if (process.platform !== "darwin") return context.skip("directory services lookup is macOS only");
+    const sandbox = new Sandbox();
+    try {
+      const counter = join(sandbox.root, "dscl-calls");
+      const dscl = sandbox.write(join(sandbox.root, "stubs", "dscl"),
+        `#!/bin/bash\necho call >> '${counter}'\n[ "$4" = /Users/keelstubuser ] || exit 56\necho '<key>dsAttrTypeStandard:NFSHomeDirectory</key><array><string>/stub/h&amp;me/</string><string>/other</string></array>'\n`);
+      chmodSync(dscl, 0o755);
+      writeFileSync(counter, "");
+
+      withEnv({ PATH: join(sandbox.root, "stubs") + delimiter + (process.env["PATH"] ?? "") }, () => {
+        assert.equal(pycompat.expandUser("~keelstubuser/a"), "/stub/h&me/a");
+        assert.equal(pycompat.expandUser("~keelstubuser/b"), "/stub/h&me/b");
+        assert.equal(pycompat.expandUser("~keelmissinguser/a"), "~keelmissinguser/a");
+        assert.equal(pycompat.expandUser("~keelmissinguser/b"), "~keelmissinguser/b");
+      });
+
+      assert.equal(readFileSync(counter, "utf8"), "call\ncall\n");
+    } finally {
+      sandbox.close();
+    }
+  });
+});
+
+describe("isSystemError", () => {
+  it("isSystemError_isTrueForFilesystemFailures_only", () => {
+    assert.equal(pycompat.isSystemError(captured(() => readFileSync("/nonexistent/keel"))), true);
+    assert.equal(pycompat.isSystemError(captured(() => readFileSync("/"))), true);
+    assert.equal(pycompat.isSystemError(captured(() => readFileSync("a\0b"))), false);
+    assert.equal(pycompat.isSystemError(new SyntaxError("bad")), false);
+    assert.equal(pycompat.isSystemError("ENOENT"), false);
+  });
+});
+
+describe("python glob", () => {
+  let sandbox: Sandbox;
+  beforeEach(() => {
+    sandbox = new Sandbox();
+    for (const file of ["cfg/top.conf", "cfg/.dot.conf", "cfg/sub/deep.conf", "cfg/sub/sub2/deeper.conf", "cfg/dirx.conf/inner"]) {
+      sandbox.write(join(sandbox.root, file), "x\n");
+    }
+  });
+  afterEach(() => sandbox.close());
+
+  function matches(pattern: string): string[] {
+    return pycompat.sortedByCodePoint(pycompat.glob(join(sandbox.root, pattern)).map((path) => path.slice(sandbox.root.length + 1)));
+  }
+
+  it("glob_readsDoubleStarAsStar_withoutRecursion", () => {
+    assert.deepEqual(matches("cfg/**/*.conf"), ["cfg/sub/deep.conf"]);
+    assert.deepEqual(matches("cfg/**"), ["cfg/dirx.conf", "cfg/sub", "cfg/top.conf"]);
+    assert.deepEqual(matches("cfg/s*/**/*.conf"), ["cfg/sub/sub2/deeper.conf"]);
+  });
+
+  it("glob_treatsBracesAsLiteralText", () => {
+    assert.deepEqual(matches("cfg/{top,sub/deep}.conf"), []);
+  });
+
+  it("glob_hidesDotfiles_unlessTheSegmentStartsWithADot", () => {
+    assert.deepEqual(matches("cfg/*.conf"), ["cfg/dirx.conf", "cfg/top.conf"]);
+    assert.deepEqual(matches("cfg/.*.conf"), ["cfg/.dot.conf"]);
+    assert.deepEqual(matches("cfg/[.]dot.conf"), []);
+    assert.deepEqual(matches("cfg/.dot.conf"), ["cfg/.dot.conf"]);
+  });
+
+  it("glob_matchesQuestionMarkAndCharacterClasses", () => {
+    assert.deepEqual(matches("cfg/to?.conf"), ["cfg/top.conf"]);
+    assert.deepEqual(matches("cfg/[a-t]op.conf"), ["cfg/top.conf"]);
+    assert.deepEqual(matches("cfg/[!t]*.conf"), ["cfg/dirx.conf"]);
+    assert.deepEqual(matches("cfg/[z-a]op.conf"), []);
+    assert.deepEqual(matches("cfg/[!]op.conf"), []);
+  });
+
+  it("glob_keepsATrailingSlash_forDirectoriesOnly", () => {
+    assert.deepEqual(matches("cfg/*/"), ["cfg/dirx.conf/", "cfg/sub/"]);
+    assert.deepEqual(matches("cfg/*/*"), ["cfg/dirx.conf/inner", "cfg/sub/deep.conf", "cfg/sub/sub2"]);
+  });
+
+  it("glob_returnsAPlainPath_onlyWhenItExists", () => {
+    assert.deepEqual(matches("cfg/top.conf"), ["cfg/top.conf"]);
+    assert.deepEqual(matches("cfg/missing.conf"), []);
+    assert.deepEqual(matches("cfg//*.conf"), ["cfg/dirx.conf", "cfg/top.conf"]);
+  });
 });
 
 describe("pythonJsonDumps", () => {
@@ -91,6 +214,14 @@ describe("pythonJsonDumps", () => {
     const expected = '{"ts": "2026-10-22T01:02:03Z", "detail": "héllo 日本語 \\"q\\" \\\\ \\n tab\\t ctl\\u0001 😀", "n": 3, "ok": true, ' +
       '"none": null, "nested": {"list": [1, "é", {"k": []}, {}], "empty": {}}, "arr": []}';
     assert.equal(pycompat.pythonJsonDumps(fixture), expected);
+  });
+});
+
+describe("pythonJsonDumps semantic limits", () => {
+  it("pythonJsonDumps_reordersIntegerLikeKeys_andPrintsWholeFloatsAsIntegers", () => {
+    const parsed: unknown = JSON.parse('{"command":"ls","2":"x","timeout":1.0}');
+
+    assert.equal(pycompat.pythonJsonDumps(parsed), '{"2": "x", "command": "ls", "timeout": 1}');
   });
 });
 

@@ -1,9 +1,3 @@
-/**
- * Claude Code hook protocol: payload in, decision out (DESIGN Interfaces (g)).
- *
- * Every deny or warn message reads `[<ID>] <hook>: <summary>`, then one `- [<ID>] …` line per finding; a
- * deny ends with what the user can do. Messages are capped so no channel truncates them.
- */
 import { writeSync } from "node:fs";
 import { codePointLength, getField, isRecord, isTruthy, pythonJsonDumps, pythonStr, truncate } from "./pycompat.ts";
 
@@ -40,7 +34,6 @@ export function isSubagent(payload: Payload): boolean {
   return isTruthy(getField(payload, "agent_id"));
 }
 
-/** A deny: `bullets` = [(rule_id, text)]; `nextStep`, its last line, survives the cap. */
 export function formatMessage(hook: string, summary: string, bullets: readonly Bullet[], nextStep: string = ASK_USER): string {
   const message = buildMessage(hook, summary, bullets) + "\n" + nextStep;
   if (codePointLength(message) <= MESSAGE_LIMIT) return message;
@@ -50,7 +43,6 @@ export function formatMessage(hook: string, summary: string, bullets: readonly B
   return truncate(body, MESSAGE_LIMIT - codePointLength(last) - 2) + "…\n" + last;
 }
 
-/** A warn: the same shape without a next step, since nothing is refused. */
 export function formatWarning(hook: string, summary: string, bullets: readonly Bullet[]): string {
   const message = buildMessage(hook, summary, bullets);
   return codePointLength(message) <= MESSAGE_LIMIT ? message : truncate(message, MESSAGE_LIMIT - 1) + "…";
@@ -65,7 +57,6 @@ export function runYourself(command: string): string {
   return RUN_YOURSELF + command;
 }
 
-/** Up to LIST_LIMIT items, comma-separated, then `…and N more`. */
 export function listed(items: readonly unknown[]): string {
   let shown = items.slice(0, LIST_LIMIT).map(pythonStr).join(", ");
   if (items.length > LIST_LIMIT) shown += `, …and ${items.length - LIST_LIMIT} more`;

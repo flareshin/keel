@@ -1,9 +1,7 @@
-/** Claude Code JSONL transcripts: entries and their text. */
-import { fileLines, getField, hasField, isRecord, isTruthy, strip } from "./pycompat.ts";
+import { universalNewlineLines, getField, hasField, isRecord, isTruthy, strip } from "./pycompat.ts";
 
 export type Entry = Record<string, unknown>;
 
-/** Text of a string, a content-block list, or a message wrapper; null when it holds no text. */
 export function textOf(content: unknown): string | null {
   if (typeof content === "string") return content;
   if (isRecord(content)) {
@@ -24,14 +22,14 @@ export function textOf(content: unknown): string | null {
   return null;
 }
 
-/** Each JSON object line; blank and malformed lines are skipped. A file that cannot be read throws. */
 export function* iterEntries(path: string): Generator<Entry> {
-  for (const line of fileLines(path)) {
+  for (const line of universalNewlineLines(path)) {
     let entry: unknown;
     try {
       entry = JSON.parse(strip(line));
-    } catch {
-      continue;
+    } catch (error) {
+      if (error instanceof SyntaxError) continue;
+      throw error;
     }
     if (isRecord(entry)) yield entry;
   }

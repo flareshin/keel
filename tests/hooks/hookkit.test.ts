@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { unlinkSync } from "node:fs";
+import { mkdirSync, unlinkSync } from "node:fs";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { join } from "node:path";
 import * as contract from "../../hooks/lib/hookkit/contract.ts";
@@ -557,6 +557,22 @@ describe("ContractTest", () => {
     });
   });
 
+  it("ccVersion_returnsTheVersion_whenTheCacheCannotBeWritten", () => {
+    const path = sandbox.stubClaude("4.5.6");
+    const blockedDataDir = sandbox.write(join(sandbox.root, "data-is-a-file"), "x");
+    withEnv({ PATH: path, KEEL_DATA_DIR: blockedDataDir }, () => {
+      assert.equal(contract.ccVersion("s4"), "4.5.6");
+    });
+  });
+
+  it("ccVersion_asksClaude_whenTheCacheCannotBeRead", () => {
+    const path = sandbox.stubClaude("7.8.9");
+    mkdirSync(join(sandbox.data, "state", "keel", "sessions", "s5.cc-version"), { recursive: true });
+    withEnv({ PATH: path, KEEL_DATA_DIR: sandbox.data }, () => {
+      assert.equal(contract.ccVersion("s5"), "7.8.9");
+    });
+  });
+
   it("ccVersion_isUnknown_whenClaudeIsNotOnPath", () => {
     withEnv({ PATH: sandbox.root, KEEL_DATA_DIR: sandbox.data }, () => {
       assert.equal(contract.ccVersion("s2"), "unknown");
@@ -579,6 +595,34 @@ describe("KnownValuesTest", () => {
     const values = withEnv({ KEEL_TEST_SECRET: "env-secret-1" }, () => knownvalues.load(table));
     assert.deepEqual(values.map((known) => [known.value, known.key, known.origin]),
                      [["pw-abcdef", "password", "app.yml"], ["key-123456", "auth.key", "app.yml"], ["env-secret-1", "KEEL_TEST_SECRET", "env"]]);
+  });
+
+  describe("file patterns follow Python glob", () => {
+    beforeEach(() => {
+      sandbox.write(join(sandbox.home, "cfg", "top.conf"), "token: top-value-1\n");
+      sandbox.write(join(sandbox.home, "cfg", ".dot.conf"), "token: dot-value-1\n");
+      sandbox.write(join(sandbox.home, "cfg", "sub", "deep.conf"), "token: deep-value-1\n");
+      sandbox.write(join(sandbox.home, "cfg", "sub", "sub2", "deeper.conf"), "token: deeper-value-1\n");
+      mkdirSync(join(sandbox.home, "cfg", "dirx.conf"));
+    });
+
+    function loadedValues(pattern: string): string[] {
+      const path = sandbox.write(join(sandbox.overlay, "globs.tsv"), `source\tpattern\nfile\t${sandbox.home}/cfg/${pattern}\n`);
+      return knownvalues.load(path).map((known) => known.value);
+    }
+
+    it("load_readsDoubleStarAsStar_notAsRecursion", () => {
+      assert.deepEqual(loadedValues("**/*.conf"), ["deep-value-1"]);
+    });
+
+    it("load_treatsBracesAsLiteralText", () => {
+      assert.deepEqual(loadedValues("{top,sub/deep}.conf"), []);
+    });
+
+    it("load_skipsDotfiles_unlessThePatternNamesTheDot", () => {
+      assert.deepEqual(loadedValues("*.conf"), ["top-value-1"]);
+      assert.deepEqual(loadedValues(".*.conf"), ["dot-value-1"]);
+    });
   });
 
   it("load_raises_whenSourceIsUnknown", () => {

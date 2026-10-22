@@ -1,4 +1,3 @@
-/** Locations every keel hook resolves the same way (DESIGN Interfaces (a) and (i)). */
 import { realpathSync } from "node:fs";
 import { dirname } from "node:path";
 import { expandUser, joinPath } from "./pycompat.ts";

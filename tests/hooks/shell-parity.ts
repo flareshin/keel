@@ -1,8 +1,3 @@
-/**
- * Parity evidence for the shell parser port: one corpus of command strings goes through every public function of
- * hookkit/shell.py (via shell_parity_py.py) and hookkit/shell.ts; the JSON-normalized results must be equal.
- * Run: node tests/hooks/shell-parity.ts
- */
 import { spawnSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { isDeepStrictEqual } from "node:util";
@@ -19,10 +14,27 @@ const EXEMPT_PREFIXES = ["/tmp/", "/work/"];
 const ENVIRONMENTS: Array<Array<[string, string]>> = [[], [["A", "/a"], ["APP", "/x/app"]]];
 const FIXTURE_PLACEHOLDERS: Array<[string, string]> = [["{repo}", "/work/repo"], ["{tmp}", "/tmp/outside"], ["{head}", "0123456789abcdef"]];
 const MAX_MISMATCHES_SHOWN = 10;
+const PROBED_VARIABLES = ["A", "HOME", "NOT_REMOVED"];
 
 interface Call {
   fn: string;
   args: unknown[];
+}
+
+interface UnexecutedLine {
+  line: number;
+  text: string;
+}
+
+interface CompanionCoverage {
+  executable: number;
+  executed: number;
+  unexecuted: UnexecutedLine[];
+}
+
+interface CompanionRun {
+  results: Json[];
+  coverage: CompanionCoverage;
 }
 
 export interface ParityReport {
@@ -30,7 +42,22 @@ export interface ParityReport {
   cases: number;
   mismatches: number;
   details: string[];
+  executableLines: number;
+  executedLines: number;
+  allowlistedLines: number;
+  coverageGaps: string[];
 }
+
+interface UnreachableLine extends UnexecutedLine {
+  reason: string;
+}
+
+const UNREACHABLE_LINES: readonly UnreachableLine[] = [
+  {
+    line: 554, text: "moving_options: set, directory_options: set) -> bool:",
+    reason: "second line of a multi-line def signature: no statement runs on it, yet the compiler lists it as a line",
+  },
+];
 
 type Json = unknown;
 
@@ -56,6 +83,8 @@ function invocationView(invocation: shell.Invocation): Json {
     argv: invocation.argv, assignments: invocation.assignments.map((item) => [...item]), clears_env: invocation.clearsEnv,
     removed_names: sortedByCodePoint(invocation.removedNames), unattributable_options: invocation.unattributableOptions,
     moves_directory: invocation.movesDirectory,
+    drops_inherited: sortedByCodePoint(new Set([...invocation.removedNames, ...PROBED_VARIABLES]))
+      .map((name) => [name, invocation.dropsInherited(name)]),
   };
 }
 
@@ -86,7 +115,7 @@ const TYPESCRIPT_TABLE: Record<string, (...args: never[]) => Json> = {
     return found.map((step) => ({
       argv: step.argv, environment: mapPairs(step.environment), directory: step.directory,
       command: commandView(step.command, indexOf), expansion: mapPairs(step.expansion),
-      unattributable_options: step.unattributableOptions,
+      unattributable_options: step.unattributableOptions, heredocs: step.heredocs,
     }));
   },
   unwrap_each: (text: string) => shell.parseCommands(text).map((command) => invocationView(shell.unwrap(command))),
@@ -117,7 +146,7 @@ function runTypeScript(calls: Call[]): Json[] {
   });
 }
 
-function runCompanion(mode: string, input: string, files: string[] = []): Json {
+function runCompanion(mode: string, input: string, files: string[] = []): unknown {
   const result = spawnSync("python3", ["-I", COMPANION, join(ROOT, "hooks", "lib"), mode, ...files], {
     input, encoding: "utf8", maxBuffer: 1 << 30,
   });
@@ -189,7 +218,7 @@ function argvCalls(corpus: string[]): Call[] {
 export function runParity(): ParityReport {
   const corpus = buildCorpus();
   const calls = [...textCalls(corpus), ...argvCalls(corpus)];
-  const expected = runCompanion("run", JSON.stringify(calls)) as Json[];
+  const { results: expected, coverage } = runCompanion("run", JSON.stringify(calls)) as CompanionRun;
   const actual = runTypeScript(calls);
   const details: string[] = [];
   let mismatches = 0;
@@ -200,12 +229,29 @@ export function runParity(): ParityReport {
       details.push(`${call.fn}(${JSON.stringify(call.args)})\n  python:     ${JSON.stringify(expected[index])}\n  typescript: ${JSON.stringify(actual[index])}`);
     }
   });
-  return { corpusSize: corpus.length, cases: calls.length, mismatches, details };
+  return {
+    corpusSize: corpus.length, cases: calls.length, mismatches, details,
+    executableLines: coverage.executable, executedLines: coverage.executed,
+    allowlistedLines: UNREACHABLE_LINES.length, coverageGaps: coverageGaps(coverage.unexecuted),
+  };
+}
+
+function coverageGaps(unexecuted: readonly UnexecutedLine[]): string[] {
+  const describe = (item: UnexecutedLine) => `shell.py:${item.line}: ${item.text}`;
+  const isListed = (item: UnexecutedLine) => UNREACHABLE_LINES.some((listed) => listed.line === item.line && listed.text === item.text);
+  const stale = UNREACHABLE_LINES.filter((listed) => !unexecuted.some((item) => item.line === listed.line && item.text === listed.text));
+  return [
+    ...unexecuted.filter((item) => !isListed(item)).map((item) => `unexecuted ${describe(item)}`),
+    ...stale.map((item) => `allowlist entry no longer unexecuted ${describe(item)}`),
+  ];
 }
 
 if (import.meta.main) {
   const report = runParity();
   for (const detail of report.details) console.error(detail);
+  for (const gap of report.coverageGaps) console.error(gap);
   console.log(`parity: ${report.cases} cases, ${report.mismatches} mismatches`);
-  process.exit(report.mismatches === 0 ? 0 : 1);
+  console.log(`coverage: ${report.executedLines}/${report.executableLines} executable lines of shell.py executed, ` +
+    `${report.allowlistedLines} allowlisted, ${report.coverageGaps.length} gaps`);
+  process.exit(report.mismatches === 0 && report.coverageGaps.length === 0 ? 0 : 1);
 }

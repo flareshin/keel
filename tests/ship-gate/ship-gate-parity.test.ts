@@ -21,8 +21,10 @@ describe("ship-gate parity comparison", () => {
     assert.equal(compare(observation(0, ""), observation(0, "", [["data/a", "x"]])).length, 1);
   });
 
-  it("counts only a python deny that node passes as deny-to-pass", () => {
+  it("counts a python deny that node lets through, by exit 0, exit 1 or a timeout, as deny-to-pass", () => {
     assert.equal(isDenyToPass(observation(DENY, "x"), observation(0, "")), true);
+    assert.equal(isDenyToPass(observation(DENY, "x"), observation(1, "")), true);
+    assert.equal(isDenyToPass(observation(DENY, "x"), { ...observation(0, ""), code: null }), true);
     assert.equal(isDenyToPass(observation(0, ""), observation(DENY, "x")), false);
     assert.equal(isDenyToPass(observation(DENY, "x"), observation(DENY, "x")), false);
   });
@@ -31,9 +33,9 @@ describe("ship-gate parity comparison", () => {
 describe("ship-gate parity listed divergences", () => {
   const label = "gh-answer-nested-200000";
 
-  it("lists the over-bound rows for the gh answer, the evidence file and stdin at both depths", () => {
+  it("lists the over-bound rows for the gh answer, the evidence file, stdin and a list command", () => {
     assert.deepEqual([...EXPECTED_DIVERGENCES.keys()].sort(), [
-      "evidence-file-nested-10001", "evidence-file-nested-200000", "gh-answer-nested-10001", "gh-answer-nested-200000",
+      "command-list-nested-10001", "command-list-nested-9999", "evidence-file-nested-10001", "evidence-file-nested-200000", "gh-answer-nested-10001", "gh-answer-nested-200000",
       "stdin-ls-nested-10001", "stdin-ls-nested-200000", "stdin-push-nested-10001", "stdin-push-nested-200000",
     ]);
     assert.deepEqual([...new Set(EXPECTED_DIVERGENCES.values())], [DENY]);

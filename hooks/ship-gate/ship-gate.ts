@@ -7,7 +7,7 @@ import {
   arraysEqual, basename, getField, joinPath, lstripChar, normalizePath, partition, PY_WORD, pythonStr, truncate,
 } from "../lib/hookkit/pycompat.ts";
 import { isFile, shlexQuote } from "../lib/hookkit/pypath.ts";
-import { AttributeError, pythonTypeName as pythonValueTypeName, readStdin, writeStderr } from "../lib/hookkit/pyruntime.ts";
+import { AttributeError, RecursionError as StrRecursionError, pythonTypeName as pythonValueTypeName, readStdin, writeStderr } from "../lib/hookkit/pyruntime.ts";
 import * as shell from "../lib/hookkit/shell.ts";
 import type { Step } from "../lib/hookkit/shell.ts";
 import { appendLogLine, iso, stateDir, utcNow } from "../../lib/evidence/env.ts";
@@ -15,7 +15,7 @@ import * as gc from "../../lib/evidence/gc.ts";
 import * as gitcmd from "../../lib/evidence/gitcmd.ts";
 import {
   decodeStrict, errorText, isJsonObject, PyFloat, pyRepr, pyStr, pythonJsonLoads, pythonTypeName as errorTypeName, pyStrip, ValueError,
-  pyTruthy, RecursionError, sortedStrings, universalNewlines,
+  pyTruthy, RecursionError as ScannerRecursionError, sortedStrings, universalNewlines,
 } from "../../lib/evidence/pycompat.ts";
 import type { JsonValue } from "../../lib/evidence/pycompat.ts";
 import * as registry from "../../lib/evidence/registry.ts";
@@ -254,17 +254,29 @@ function dispatch(payload: unknown): number {
   return report.emit();
 }
 
+export function isRecursionError(error: unknown): boolean {
+  return error instanceof ScannerRecursionError || error instanceof StrRecursionError;
+}
+
 function failClosed(raw: string, error: unknown): number {
+  if (isRecursionError(error)) return denyTooDeep(raw, error);
   const detail = errorLabel(error);
-  if (error instanceof RecursionError) {
-    return protocol.deny(backslashReplaced(message("internal error; failing closed", [{ ruleId: K1, text: detail }], raw)));
+  let command: string;
+  try {
+    command = bashCommandOf(raw);
+  } catch (inner) {
+    if (isRecursionError(inner)) return denyTooDeep(raw, inner);
+    throw inner;
   }
-  const command = bashCommandOf(raw);
   if (!mayPushOrMerge(command)) {
     writeStderr(backslashReplaced(`ship-gate: internal error on a command that is not a push or merge: ${detail}\n`));
     return protocol.EXIT_PASS;
   }
   return protocol.deny(backslashReplaced(message("internal error; failing closed", [{ ruleId: K1, text: detail }], command)));
+}
+
+function denyTooDeep(raw: string, error: unknown): number {
+  return protocol.deny(backslashReplaced(message("internal error; failing closed", [{ ruleId: K1, text: errorLabel(error) }], raw)));
 }
 
 function bashCommandOf(raw: string): string {

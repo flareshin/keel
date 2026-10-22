@@ -12,17 +12,18 @@ const RECORD_TIMEOUT_MS = 60 * 60_000;
 const MAX_MISMATCHES_SHOWN = 60;
 const EXCERPT_CHARACTERS = 300;
 const DENY_EXIT_CODE = 2;
-const PASS_EXIT_CODE = 0;
 const FIRES_LOG_NAME = "keel-fires.jsonl";
 const FIRES_TIMESTAMP = /"ts": "[^"]*"/g;
 const GIT_STATE = new Set(["HEAD", "config", "packed-refs", "FETCH_HEAD", "refs"]);
 const UNREADABLE = "<unreadable>";
 const OVER_BOUND_NESTINGS = [10001, 200000];
 const OVER_BOUND_KINDS = ["gh-answer", "evidence-file", "stdin-push", "stdin-ls"];
+const COMMAND_DIVERGENT_NESTINGS = [9999, 10001];
 
-export const EXPECTED_DIVERGENCES: ReadonlyMap<string, number> = new Map(
-  OVER_BOUND_NESTINGS.flatMap((depth) => OVER_BOUND_KINDS.map((kind): [string, number] => [`${kind}-nested-${depth}`, DENY_EXIT_CODE])),
-);
+export const EXPECTED_DIVERGENCES: ReadonlyMap<string, number> = new Map([
+  ...OVER_BOUND_NESTINGS.flatMap((depth) => OVER_BOUND_KINDS.map((kind): [string, number] => [`${kind}-nested-${depth}`, DENY_EXIT_CODE])),
+  ...COMMAND_DIVERGENT_NESTINGS.map((depth): [string, number] => [`command-list-nested-${depth}`, DENY_EXIT_CODE]),
+]);
 
 type Suite = (typeof SUITES)[number];
 type Runtime = "python" | "node";
@@ -208,7 +209,7 @@ export function judgeCase(label: string, expected: Observation, actual: Observat
 }
 
 export function isDenyToPass(expected: Observation, actual: Observation): boolean {
-  return expected.code === DENY_EXIT_CODE && actual.code === PASS_EXIT_CODE;
+  return expected.code === DENY_EXIT_CODE && actual.code !== DENY_EXIT_CODE;
 }
 
 function excerpt(value: unknown): string {

@@ -34,6 +34,8 @@ OVER_LIMIT_INTEGER = "1" * (INT_DIGIT_LIMIT + 1)
 DEEP_NESTING = 3000
 BOUND_NESTING = 9999
 OVER_BOUND_NESTINGS = [10001, 200000]
+DEEPEST_PARSED_COMMAND_NESTING = 9998
+COMMAND_DIVERGENT_NESTINGS = [9999, 10001]
 JSON_EDGE_VALUES = [
     OVER_LIMIT_INTEGER, "-" + OVER_LIMIT_INTEGER, "1" * INT_DIGIT_LIMIT, OVER_LIMIT_INTEGER + ".5", OVER_LIMIT_INTEGER + "e2",
     "[" + OVER_LIMIT_INTEGER + "]", '{"a": ' + OVER_LIMIT_INTEGER + "}",
@@ -67,6 +69,13 @@ def send_labeled(sandbox: Sandbox, label: str, stdin: str, extra_env: Optional[D
 
 def over_bound_label(kind: str, depth: int) -> str:
     return "%s-nested-%d" % (kind, depth)
+
+
+def nested_command(depth: int):
+    command = "'; git push origin feature; echo \""
+    for _ in range(depth):
+        command = [command]
+    return command
 
 
 def nested_lists(depth: int) -> str:
@@ -130,6 +139,10 @@ def malformed_payloads(holder: Holder) -> None:
     for depth in OVER_BOUND_NESTINGS:
         for kind, command in [("stdin-push", push), ("stdin-ls", "ls")]:
             send_labeled(sandbox, over_bound_label(kind, depth), payload_text(sandbox, repo, command)[:-1] + ', "extra": ' + nested_lists(depth) + "}")
+    for depth in [DEEP_NESTING, DEEPEST_PARSED_COMMAND_NESTING]:
+        sandbox.hook_raw(payload_text(sandbox, repo, nested_command(depth)))
+    for depth in COMMAND_DIVERGENT_NESTINGS:
+        send_labeled(sandbox, over_bound_label("command-list", depth), payload_text(sandbox, repo, nested_command(depth)))
     for value in JSON_EDGE_VALUES[-4:]:
         sandbox.hook_raw(value + " git push origin feature")
         sandbox.hook_raw(value + " ls")

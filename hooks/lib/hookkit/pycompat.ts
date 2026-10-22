@@ -401,7 +401,13 @@ export function pythonStr(value: unknown): string {
   if (typeof value === "string") return value;
   if (Array.isArray(value)) return "[" + value.map(pythonRepr).join(", ") + "]";
   if (isRecord(value)) return "{" + Object.entries(value).map(([key, item]) => `${pythonRepr(key)}: ${pythonRepr(item)}`).join(", ") + "}";
+  if (typeof value === "number" && !Number.isFinite(value)) return pythonFloatSpelling(value);
   return String(value);
+}
+
+function pythonFloatSpelling(value: number): string {
+  if (Number.isNaN(value)) return "nan";
+  return value > 0 ? "inf" : "-inf";
 }
 
 export function pythonJsonDumps(value: unknown): string {

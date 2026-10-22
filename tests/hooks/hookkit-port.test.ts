@@ -76,6 +76,10 @@ describe("python string behaviors", () => {
   it("pythonStr_spellsPythonValues", () => {
     assert.deepEqual([null, true, false, "s", 7, ["a", 1], { k: "v" }].map(pycompat.pythonStr), ["None", "True", "False", "s", "7", "['a', 1]", "{'k': 'v'}"]);
   });
+
+  it("pythonStr_spellsNonFiniteNumbersLikePythonFloat", () => {
+    assert.deepEqual([NaN, Infinity, -Infinity, [NaN], { a: Infinity }].map(pycompat.pythonStr), ["nan", "inf", "-inf", "[nan]", "{'a': inf}"]);
+  });
 });
 
 describe("python path behaviors", () => {

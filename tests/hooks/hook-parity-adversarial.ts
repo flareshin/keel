@@ -122,10 +122,29 @@ function envPreflightCases(repo: string): AdversarialCase[] {
 
 function modelAssignCases(cwd: string): AdversarialCase[] {
   const prompts = [`Review the diff 日本 \u{1F600} ${DOTTED_I} and return a VERDICT line.`, `Find callers of café ${DOTLESS_I}.`];
-  return prompts.flatMap((prompt, index) => casesFor(`model-assign prompt ${index}`, MODEL_ASSIGN, cwd, preToolUse("Agent", { description: "Find", prompt }, cwd)));
+  const nonFinite = withNonFiniteLiterals(preToolUse("Agent", { description: NEGATIVE_INFINITY_TOKEN, prompt: NAN_TOKEN }, cwd));
+  return [
+    ...prompts.flatMap((prompt, index) => casesFor(`model-assign prompt ${index}`, MODEL_ASSIGN, cwd, preToolUse("Agent", { description: "Find", prompt }, cwd))),
+    rawCase("model-assign non-finite prompt", MODEL_ASSIGN, cwd, nonFinite),
+  ];
 }
 
 function handoffCases(repo: string): AdversarialCase[] {
   const payload = { ...basePayload("PreCompact", repo, "/data/projects/p/café.jsonl", false), trigger: "auto", custom_instructions: "日本" };
-  return casesFor("handoff auto snapshot", HANDOFF, repo, payload, ["--auto"]);
+  const nonFinite = withNonFiniteLiterals({ ...payload, trigger: NAN_TOKEN, transcript_path: INFINITY_TOKEN });
+  return [
+    ...casesFor("handoff auto snapshot", HANDOFF, repo, payload, ["--auto"]),
+    { ...rawCase("handoff non-finite trigger", HANDOFF, repo, nonFinite), args: ["--auto"] },
+  ];
+}
+
+const NAN_TOKEN = "@@NaN@@";
+const INFINITY_TOKEN = "@@Infinity@@";
+const NEGATIVE_INFINITY_TOKEN = "@@-Infinity@@";
+
+function withNonFiniteLiterals(payload: unknown): string {
+  return JSON.stringify(payload)
+    .replaceAll(`"${NAN_TOKEN}"`, "NaN")
+    .replaceAll(`"${INFINITY_TOKEN}"`, "Infinity")
+    .replaceAll(`"${NEGATIVE_INFINITY_TOKEN}"`, "-Infinity");
 }

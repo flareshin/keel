@@ -11,7 +11,8 @@ const LEADING_SPACE = new RegExp(`^[${PY_SPACE}]+`);
 const TRAILING_SPACE = new RegExp(`[${PY_SPACE}]+$`);
 const SPLITLINES_BREAK = /\r\n|[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]/;
 const UNIVERSAL_NEWLINE = /\r\n|[\r\n]/;
-const ENVIRONMENT_VARIABLE = /\$([A-Za-z0-9_]+|\{[^}]*\})/g;
+const ENVIRONMENT_VARIABLE = /\$([A-Za-z0-9_]+|\{[^}]*\}?)/g;
+const DOTTED_OR_DOTLESS_I = /[İı]/g;
 const NON_DECIMAL_DIGITS = String.raw`\u00b2\u00b3\u00b9\u1369-\u1371\u19da\u2070\u2074-\u2079\u2080-\u2089\u2460-\u2468` +
   String.raw`\u2474-\u247c\u2488-\u2490\u24ea\u24f5-\u24fd\u24ff\u2776-\u277e\u2780-\u2788\u278a-\u2792` +
   String.raw`\u{10a40}-\u{10a43}\u{10e60}-\u{10e68}\u{11052}-\u{1105a}\u{1f100}-\u{1f10a}`;
@@ -34,6 +35,10 @@ export function getField(record: Record<string, unknown>, key: string): unknown 
 
 export function hasField(record: Record<string, unknown>, key: string): boolean {
   return Object.hasOwn(record, key);
+}
+
+export function foldDottedAndDotlessI(text: string): string {
+  return text.replace(DOTTED_OR_DOTLESS_I, "i");
 }
 
 export function codePointLength(text: string): number {
@@ -355,15 +360,21 @@ export function expandUser(path: string): string {
 }
 
 function currentHome(): string | null {
-  if (Object.hasOwn(process.env, "HOME")) return process.env["HOME"] ?? "";
+  const home = environmentValue("HOME");
+  if (home !== undefined) return home;
   return tryUserInfo()?.homedir ?? null;
+}
+
+export function environmentValue(name: string): string | undefined {
+  return Object.hasOwn(process.env, name) ? process.env[name] : undefined;
 }
 
 export function expandVars(path: string): string {
   if (!path.includes("$")) return path;
   return path.replace(ENVIRONMENT_VARIABLE, (whole, name: string) => {
+    if (name.startsWith("{") && !name.endsWith("}")) return whole;
     const variable = name.startsWith("{") ? name.slice(1, -1) : name;
-    return Object.hasOwn(process.env, variable) ? (process.env[variable] ?? whole) : whole;
+    return environmentValue(variable) ?? whole;
   });
 }
 

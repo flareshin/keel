@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { describe, test } from 'node:test';
 import type { TestContext } from 'node:test';
 import * as registry from '../../lib/evidence/registry.ts';
@@ -342,6 +343,40 @@ describe('cross-implementation evidence compatibility', () => {
     });
   });
 
+  test('review prepare echoes the number spellings of the lens file byte for byte', (t) => {
+    const { sandbox, repo } = prepare(t);
+    mkdirSync(join(sandbox.data, 'workflows'));
+    writeFileSync(join(sandbox.data, 'workflows', 'review-lenses.json'),
+      '{"guardrails": "g", "lenses": [{"name": "a", "weight": 1.0, "big": 9007199254740993, "tiny": 1e-7, "neg": -0.0, "wide": 1e16, "int": -0, "exp": 2E3}]}');
+    const stdin = JSON.stringify({ diffs: [{ repo: repo.path, base: 'HEAD' }] });
+    const echoed = (['py', 'ts'] as Impl[]).map((impl) => {
+      sandbox.runner = RUNNERS[impl];
+      const run = sandbox.keel(['review', 'prepare'], { stdin });
+      assert.equal(run.rc, 0, run.stderr);
+      return /"lenses_output": (\{.*?\}\]\}),/.exec(run.stdout)![1];
+    });
+    assert.equal(echoed[0], '{"guardrails": "g", "lenses": [{"big": 9007199254740993, "exp": 2000.0, "int": 0, "name": "a", "neg": -0.0, "tiny": 1e-07, "weight": 1.0, "wide": 1e+16}]}');
+    assert.equal(echoed[1], echoed[0]);
+  });
+
+  test('write-review judges the claim version by numeric value like Python', (t) => {
+    const { sandbox, repo } = prepare(t);
+    const base = JSON.stringify(sandbox.reviewRequest(repo));
+    const outcomes: Record<string, Array<[number, string]>> = { py: [], ts: [] };
+    for (const token of ['1', '1.0', '1e0', '10e-1', 'true', '2.0', '0.5', '1.0000000000000001', '9007199254740993']) {
+      const stdin = base.replace('"v":1,', `"v":${token},`);
+      assert.ok(stdin.includes(`"v":${token},`), token);
+      for (const impl of ['py', 'ts'] as Impl[]) {
+        sandbox.runner = RUNNERS[impl];
+        const run = sandbox.keel(['evidence', 'write-review'], { stdin });
+        outcomes[impl]!.push([run.rc, normalize(run.stderr, sandbox.data)]);
+        if (run.rc === 0) rmSync(sandbox.evidenceFiles('review').at(-1)!);
+      }
+    }
+    assert.deepEqual(outcomes['ts'], outcomes['py']);
+    assert.deepEqual(outcomes['py']!.map(([rc]) => rc), [0, 0, 0, 0, 0, 2, 2, 0, 2]);
+  });
+
   test('cli error paths match: usage, refusal and stdin JSON errors', (t) => {
     const { sandbox, repo } = prepare(t);
     sandbox.data = join(sandbox.root, 'data-errors');
@@ -351,6 +386,23 @@ describe('cross-implementation evidence compatibility', () => {
     repo.write('empty.sh', '', true);
     repo.write('not-executable.sh', "#!/bin/sh\necho 'Ran 3 tests'\n");
     repo.write('missing-interpreter.sh', "#!/nonexistent/interpreter\necho 'Ran 3 tests'\n", true);
+    repo.write('empty-interpreter.sh', "#!\necho 'Ran 3 tests'\n", true);
+    repo.write('crlf.sh', "#!/bin/sh\r\necho 'Ran 3 tests'\r\n", true);
+    repo.write('data-interpreter.sh', "#!/etc/hosts\necho 'Ran 3 tests'\n", true);
+    repo.write('ok-interpreter.sh', "#!/bin/sh\necho 'Ran 3 tests'\n", true);
+    repo.write('padded-interpreter.sh', "#! \t/bin/sh\necho 'Ran 3 tests'\n", true);
+    const executeOnly = join(sandbox.root, 'execute-only');
+    const compiled = spawnSync('cc', ['-x', 'c', '-o', executeOnly, '-'], { input: '#include <stdio.h>\nint main(void) { puts("Ran 2 tests"); return 0; }\n' });
+    if (compiled.status === 0) chmodSync(executeOnly, 0o111);
+    else t.diagnostic('execute-only binary case skipped: no working cc');
+    const searchFirst = join(sandbox.root, 'search-first');
+    const searchSecond = join(sandbox.root, 'search-second');
+    for (const directory of [searchFirst, searchSecond]) mkdirSync(directory);
+    writeFileSync(join(searchFirst, 'both'), "echo 'Ran 3 tests'\n", { mode: 0o644 });
+    writeFileSync(join(searchSecond, 'both'), "echo 'Ran 3 tests'\n", { mode: 0o755 });
+    writeFileSync(join(searchFirst, 'later'), "echo 'Ran 3 tests'\n", { mode: 0o755 });
+    writeFileSync(join(searchSecond, 'later'), "#!/bin/sh\necho 'Ran 3 tests'\n", { mode: 0o755 });
+    sandbox.env['PATH'] = [searchFirst, searchSecond, sandbox.env['PATH']].join(':');
     const cases: Array<{ args: string[]; stdin?: string; cwd?: string }> = [
       { args: [] }, { args: ['bogus'] }, { args: ['test', 'x'] }, { args: ['test', '--'] }, { args: ['approve'] }, { args: ['approve', 'x'] },
       { args: ['approve', 'rv-none-0001'] }, { args: ['approve', 'rv-none-0001', '--bogus'] }, { args: ['snapshot'] }, { args: ['snapshot', sandbox.home] },
@@ -370,17 +422,24 @@ describe('cross-implementation evidence compatibility', () => {
       { args: ['test', '--', 'bash', '-c', "printf 'no newline Ran 4 tests'"], cwd: repo.path }, { args: ['test', '--', 'true'], cwd: sandbox.home },
       { args: ['test', '--', './no-shebang.sh'], cwd: repo.path }, { args: ['test', '--', './empty.sh'], cwd: repo.path },
       { args: ['test', '--', './not-executable.sh'], cwd: repo.path }, { args: ['test', '--', './missing-interpreter.sh'], cwd: repo.path },
+      ...(compiled.status === 0 ? [{ args: ['test', '--', executeOnly], cwd: repo.path }] : []), { args: ['test', '--', './empty-interpreter.sh'], cwd: repo.path },
+      { args: ['test', '--', './crlf.sh'], cwd: repo.path }, { args: ['test', '--', './data-interpreter.sh'], cwd: repo.path },
+      { args: ['test', '--', './ok-interpreter.sh'], cwd: repo.path }, { args: ['test', '--', './padded-interpreter.sh'], cwd: repo.path },
+      { args: ['test', '--', './no-shebang.sh/x'], cwd: repo.path }, { args: ['test', '--', '.'], cwd: repo.path },
+      { args: ['test', '--', 'both'], cwd: repo.path }, { args: ['test', '--', 'later'], cwd: repo.path }, { args: ['test', '--', ''], cwd: repo.path },
     ];
+    const mismatches: string[] = [];
     for (const item of cases) {
       const results = (['py', 'ts'] as Impl[]).map((impl) => {
         sandbox.runner = RUNNERS[impl];
         return sandbox.keel(item.args, { stdin: item.stdin, cwd: item.cwd });
       });
-      const label = JSON.stringify(item);
-      assert.equal(results[1]!.rc, results[0]!.rc, label);
-      assert.equal(normalize(results[1]!.stdout, sandbox.data), normalize(results[0]!.stdout, sandbox.data), label);
-      assert.equal(normalize(results[1]!.stderr, sandbox.data), normalize(results[0]!.stderr, sandbox.data), label);
+      const [python, typescript] = results.map((run) => [run.rc, normalize(run.stdout, sandbox.data), normalize(run.stderr, sandbox.data)]);
+      if (!isDeepStrictEqual(typescript, python)) {
+        mismatches.push(`${JSON.stringify(item.args)}: python ${JSON.stringify(python)} typescript ${JSON.stringify(typescript)}`);
+      }
     }
+    assert.deepEqual(mismatches, []);
     for (const impl of ['py', 'ts'] as Impl[]) {
       sandbox.runner = RUNNERS[impl];
       const filesBefore = filesUnder(sandbox.data).length;

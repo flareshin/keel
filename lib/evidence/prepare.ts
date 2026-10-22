@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as env from './env.ts';
 import * as gitcmd from './gitcmd.ts';
-import { decodeStrict, pythonJsonDumps, pythonJsonLoads, universalNewlines } from './pycompat.ts';
+import { decodeStrict, isJsonObject, pythonJsonDumps, pythonJsonLoads, universalNewlines } from './pycompat.ts';
 import * as registry from './registry.ts';
 import * as risk from './risk.ts';
 import * as writers from './writers.ts';
@@ -33,7 +33,7 @@ export function countNeedsFixesRounds(rootRunId: unknown): number {
 }
 
 export function prepareTarget(target: JsonObject): JsonObject {
-  if (target === null || typeof target !== 'object' || Array.isArray(target) || Object.keys(target).some((key) => !TARGET_KEYS.has(key))) {
+  if (!isJsonObject(target) || Object.keys(target).some((key) => !TARGET_KEYS.has(key))) {
     throw new writers.Usage('invalid review target');
   }
   if (typeof target['repo'] !== 'string') throw new writers.Usage('target repository must be a path');

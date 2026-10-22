@@ -2,7 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync
 import { randomBytes } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import * as env from './env.ts';
-import { compareCodePoints, decodeStrict, isDirectory, pyOsErrorMessage, pythonJsonDumps, pythonJsonLoads, sortedStrings, universalNewlines } from './pycompat.ts';
+import { compareCodePoints, decodeStrict, isDirectory, isJsonObject, pyOsErrorMessage, pythonJsonDumps, pythonJsonLoads, sortedStrings, universalNewlines } from './pycompat.ts';
 import type { JsonValue } from './pycompat.ts';
 
 export const REPO_SCOPED_KINDS = ['review', 'tests', 'smoke'];
@@ -108,13 +108,13 @@ export function repoKeys(kind: string): string[] {
 }
 
 export function readFile(path: string): Evidence {
-  let evidence: JsonValue;
+  let evidence: unknown;
   try {
     evidence = pythonJsonLoads(universalNewlines(decodeStrict(readFileSync(path))));
   } catch (error) {
     throw new EvidenceError(`unreadable evidence ${path}: ${readFailure(error)}`);
   }
-  if (evidence === null || typeof evidence !== 'object' || Array.isArray(evidence) || typeof evidence['expires_at'] !== 'string') {
+  if (!isJsonObject(evidence) || typeof evidence['expires_at'] !== 'string') {
     throw new EvidenceError('not an evidence object: ' + path);
   }
   return evidence as Evidence;

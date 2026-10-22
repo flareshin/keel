@@ -5,7 +5,7 @@ import type { Chain } from './chain.ts';
 import * as codexReview from './codex_review.ts';
 import * as env from './env.ts';
 import * as gitcmd from './gitcmd.ts';
-import { JSONDecodeError, decodeStrict, expandUser, isFile, isSystemError, pyRealpath, pyStrip, pythonJsonLoads, sortedStrings, universalNewlines } from './pycompat.ts';
+import { JSONDecodeError, decodeStrict, expandUser, isFile, isJsonObject, isSystemError, pyEquals, pyRealpath, pyStr, pyStrip, pythonJsonLoads, sortedStrings, universalNewlines } from './pycompat.ts';
 import * as registry from './registry.ts';
 import * as store from './store.ts';
 import type { ReviewEvidence } from './store.ts';
@@ -110,7 +110,7 @@ export function newestChains(rootRunId: string): Map<string, Chain> {
 }
 
 function validatedClaim(claim: any): JsonObject {
-  const isObject = claim !== null && typeof claim === 'object' && !Array.isArray(claim);
+  const isObject = isJsonObject(claim);
   const claimKeys = isObject ? Object.keys(claim).filter((key) => key !== NO_TEST_REASON) : [];
   if (!isObject || claimKeys.length !== REVIEW_CLAIM_KEYS.length || !REVIEW_CLAIM_KEYS.every((key) => claimKeys.includes(key))) {
     throw new Usage(`keel_evidence must have exactly the keys ${REVIEW_CLAIM_KEYS.join(', ')} (plus optional ${NO_TEST_REASON})`);
@@ -119,7 +119,7 @@ function validatedClaim(claim: any): JsonObject {
   if (reason !== undefined && reason !== null && !(typeof reason === 'string' && pyStrip(reason))) {
     throw new Usage(`${NO_TEST_REASON} must be a non-empty string`);
   }
-  if (claim['v'] !== 1 && claim['v'] !== true) throw new Usage('keel_evidence.v must be 1');
+  if (!pyEquals(claim['v'], 1)) throw new Usage('keel_evidence.v must be 1');
   if ((claim['head'] === null) === (claim['snapshot_tree'] === null)) {
     throw new Usage('exactly one of head and snapshot_tree must be set');
   }
@@ -136,17 +136,8 @@ function validatedClaim(claim: any): JsonObject {
   return claim;
 }
 
-function pyStr(value: unknown): string {
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number') return String(value);
-  if (value === true) return 'True';
-  if (value === false) return 'False';
-  if (value === null) return 'None';
-  return '[unrepresentable]';
-}
-
 function validatedSource(source: any): JsonObject {
-  const keys = source !== null && typeof source === 'object' && !Array.isArray(source) ? Object.keys(source) : [];
+  const keys = isJsonObject(source) ? Object.keys(source) : [];
   if (keys.length !== SOURCE_KEYS.length || !SOURCE_KEYS.every((key) => keys.includes(key))) {
     throw new Usage('source must have exactly the keys ' + SOURCE_KEYS.join(', '));
   }

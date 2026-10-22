@@ -5,6 +5,16 @@ import { userInfo } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { getSystemErrorMap } from 'node:util';
 
+export class PyFloat {
+  readonly value: number;
+  constructor(value: number) {
+    this.value = value;
+  }
+}
+
+export type JsonValue = null | boolean | number | bigint | string | PyFloat | JsonValue[] | { [key: string]: JsonValue };
+export type PyInt = number | bigint | boolean;
+
 const PYTHON_SPACE = '\\t\\n\\v\\f\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000';
 const PYTHON_SPACE_CLASS = `[${PYTHON_SPACE}]`;
 const LINE_BOUNDARY = /\r\n|[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]/;
@@ -12,11 +22,10 @@ const NON_PRINTABLE = /[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Zl}\p{Zp}\p{Zs}]/u;
 const JSON_WHITESPACE = new Set([' ', '\t', '\n', '\r']);
 const JSON_NUMBER = /-?(?:0|[1-9][0-9]*)(\.[0-9]+)?([eE][-+]?[0-9]+)?/y;
 const JSON_ESCAPES: Record<string, string> = { '"': '"', '\\': '\\', '/': '/', b: '\b', f: '\f', n: '\n', r: '\r', t: '\t' };
-const JSON_CONSTANTS: Array<[string, number | boolean | null]> = [
-  ['null', null], ['true', true], ['false', false], ['NaN', NaN], ['Infinity', Infinity], ['-Infinity', -Infinity],
+const JSON_CONSTANTS: Array<[string, JsonValue]> = [
+  ['null', null], ['true', true], ['false', false],
+  ['NaN', new PyFloat(NaN)], ['Infinity', new PyFloat(Infinity)], ['-Infinity', new PyFloat(-Infinity)],
 ];
-
-export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export const PYTHON_SPACE_PATTERN = PYTHON_SPACE_CLASS;
 
@@ -204,26 +213,51 @@ export function pythonJsonDumps(value: JsonValue | undefined, options: { sortKey
   if (value === null) return 'null';
   if (value === true) return 'true';
   if (value === false) return 'false';
-  if (typeof value === 'number') return dumpNumber(value);
+  if (typeof value === 'number') return Number.isInteger(value) ? String(value) : dumpFloat(value);
+  if (typeof value === 'bigint') return value.toString();
+  if (value instanceof PyFloat) return dumpFloat(value.value);
   if (typeof value === 'string') return dumpString(value);
   if (Array.isArray(value)) return '[' + value.map((item) => pythonJsonDumps(item, options)).join(', ') + ']';
-  if (value !== null && typeof value === 'object') {
+  if (isJsonObject(value)) {
     const keys = options.sortKeys ? sortedStrings(Object.keys(value)) : Object.keys(value);
     return '{' + keys.map((key) => dumpString(key) + ': ' + pythonJsonDumps(value[key], options)).join(', ') + '}';
   }
   throw new TypeError(`Object of type ${typeof value} is not JSON serializable`);
 }
 
-const PYTHON_FLOAT_EXPONENT_BELOW = 1e-4;
-
-function dumpNumber(value: number): string {
+function dumpFloat(value: number): string {
   if (Number.isNaN(value)) return 'NaN';
-  if (value === Infinity) return 'Infinity';
-  if (value === -Infinity) return '-Infinity';
-  if (!Number.isInteger(value) && Math.abs(value) < PYTHON_FLOAT_EXPONENT_BELOW) {
-    return value.toExponential().replace(/e([-+])(\d)$/, 'e$10$2');
+  if (!Number.isFinite(value)) return value < 0 ? '-Infinity' : 'Infinity';
+  return pyFloatRepr(value);
+}
+
+const EXPONENT_FORM = /^(-?)(\d)(?:\.(\d+))?e([+-]\d+)$/;
+const FIRST_EXPONENT_FORM_DECIMAL_POINT = -4;
+const LAST_PLAIN_DECIMAL_POINT = 16;
+
+export function pyFloatRepr(value: number): string {
+  if (Number.isNaN(value)) return 'nan';
+  if (!Number.isFinite(value)) return value < 0 ? '-inf' : 'inf';
+  if (value === 0) return Object.is(value, -0) ? '-0.0' : '0.0';
+  const parts = EXPONENT_FORM.exec(value.toExponential());
+  if (!parts) throw new Error(`unexpected exponent form of ${value}`);
+  const [, sign = '', first = '', rest = '', exponentText = '0'] = parts;
+  const digits = first + rest;
+  const exponent = Number(exponentText);
+  const decimalPoint = exponent + 1;
+  if (decimalPoint <= FIRST_EXPONENT_FORM_DECIMAL_POINT || decimalPoint > LAST_PLAIN_DECIMAL_POINT) {
+    const mantissa = rest ? `${first}.${rest}` : first;
+    return `${sign}${mantissa}e${exponent < 0 ? '-' : '+'}${String(Math.abs(exponent)).padStart(2, '0')}`;
   }
-  return String(value);
+  if (decimalPoint <= 0) return `${sign}0.${'0'.repeat(-decimalPoint)}${digits}`;
+  if (decimalPoint >= digits.length) return `${sign}${digits}${'0'.repeat(decimalPoint - digits.length)}.0`;
+  return `${sign}${digits.slice(0, decimalPoint)}.${digits.slice(decimalPoint)}`;
+}
+
+export function jsonNumber(source: string): number | bigint | PyFloat {
+  if (/[.eE]/.test(source)) return new PyFloat(Number(source));
+  const value = Number(source);
+  return Number.isSafeInteger(value) ? value + 0 : BigInt(source);
 }
 
 function dumpString(value: string): string {
@@ -252,9 +286,13 @@ class StopScan extends Error {
   }
 }
 
+function reviveNumber(_key: string, value: unknown, context?: { source?: string }): unknown {
+  return typeof value === 'number' ? jsonNumber(context!.source!) : value;
+}
+
 export function pythonJsonLoads(text: string): JsonValue {
   try {
-    return JSON.parse(text) as JsonValue;
+    return JSON.parse(text, reviveNumber) as JsonValue;
   } catch (error) {
     if (!(error instanceof SyntaxError)) throw error;
     return scanPythonJson(text);
@@ -400,7 +438,7 @@ function scanPythonJson(text: string): JsonValue {
     }
     const match = matchNumber(position);
     if (match === null) throw new StopScan(position);
-    return [Number(match), position + match.length];
+    return [jsonNumber(match), position + match.length];
   };
 
   const start = skipSpace(0);
@@ -415,6 +453,57 @@ function scanPythonJson(text: string): JsonValue {
   end = skipSpace(end);
   if (end !== document.length) throw new JSONDecodeError('Extra data', document, end);
   return value;
+}
+
+export function isJsonObject(value: unknown): value is Record<string, any> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) && !(value instanceof PyFloat);
+}
+
+export function pyTruthy(value: unknown): boolean {
+  if (value === null || value === undefined || value === false || value === 0 || value === 0n || value === '') return false;
+  if (value instanceof PyFloat) return value.value !== 0;
+  if (Array.isArray(value)) return value.length > 0;
+  if (isJsonObject(value)) return Object.keys(value).length > 0;
+  return true;
+}
+
+export function pyStr(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'bigint') return String(value);
+  if (value instanceof PyFloat) return pyFloatRepr(value.value);
+  if (value === true) return 'True';
+  if (value === false) return 'False';
+  if (value === null) return 'None';
+  return '[unrepresentable]';
+}
+
+function pyNumeric(value: unknown): bigint | number | undefined {
+  if (typeof value === 'boolean') return BigInt(value);
+  if (typeof value === 'bigint') return value;
+  if (typeof value === 'number') return Number.isInteger(value) ? BigInt(value) : value;
+  if (value instanceof PyFloat) return value.value;
+  return undefined;
+}
+
+function numericEquals(left: bigint | number, right: bigint | number): boolean {
+  if (typeof left === typeof right) return left === right;
+  const [exact, inexact] = typeof left === 'bigint' ? [left, right as number] : [right as bigint, left as number];
+  return Number.isInteger(inexact) && BigInt(inexact) === exact;
+}
+
+export function pyEquals(left: unknown, right: unknown): boolean {
+  const leftNumber = pyNumeric(left);
+  const rightNumber = pyNumeric(right);
+  if (leftNumber !== undefined || rightNumber !== undefined) {
+    return leftNumber !== undefined && rightNumber !== undefined && numericEquals(leftNumber, rightNumber);
+  }
+  if (Array.isArray(left)) return Array.isArray(right) && left.length === right.length && left.every((item, index) => pyEquals(item, right[index]));
+  if (isJsonObject(left)) {
+    if (!isJsonObject(right)) return false;
+    const keys = Object.keys(left);
+    return keys.length === Object.keys(right).length && keys.every((key) => Object.hasOwn(right, key) && pyEquals(left[key], right[key]));
+  }
+  return left === right;
 }
 
 const FNMATCH_SPECIALS = new Set('\\^$.*+?()[]{}|/'.split(''));

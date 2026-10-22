@@ -128,6 +128,32 @@ describe('KeelTestCommandTest', () => {
     }
   });
 
+  test('keelTest_forwardsOutputWhileTheCommandRuns_andKeepsStdoutStderrOrder', async (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    const script = "echo first; echo error-first >&2; sleep 1; echo second; echo error-second >&2; echo 'Ran 1 test'";
+    const child = childProcess.spawn('node', [KEEL, 'test', '--', 'bash', '-c', script], { cwd: repo.path, env: sandbox.env });
+    let output = '';
+    let stillRunningAtFirstOutput: boolean | undefined;
+    child.stdout.on('data', (chunk: Buffer) => {
+      stillRunningAtFirstOutput ??= child.exitCode === null && child.signalCode === null;
+      output += chunk.toString();
+    });
+    child.stderr.resume();
+    const exitCode = await new Promise((resolveExit) => child.on('close', resolveExit));
+    assert.equal(exitCode, 0);
+    assert.equal(stillRunningAtFirstOutput, true);
+    assert.equal(output, 'first\nerror-first\nsecond\nerror-second\nRan 1 test\n');
+  });
+
+  test('keelTest_keepsEveryByte_whenOutputIsLargerThanOneRead', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    const run = sandbox.keel(['test', '--', 'bash', '-c', "head -c 300000 /dev/zero | tr '\\0' x; echo; echo 'Ran 1 test'"], { cwd: repo.path });
+    assert.equal(run.rc, 0, run.stderr);
+    assert.equal(run.stdout, 'x'.repeat(300000) + '\nRan 1 test\n');
+  });
+
   test('keelTest_recognizesSurefireTotals_whenPerClassLinesPrecede', (t) => {
     const sandbox = new Sandbox(t);
     const repo = sandbox.clone('acme', 'app');
@@ -426,23 +452,27 @@ describe('KeelEntryPointTest', () => {
   });
 });
 
-describe('EchoedNumberLimitTest', () => {
-  test('writeReview_keepsFloatSpellingOnlyInPython_whenAgentTypeIsAFloatToken (known limit)', (t) => {
-    const sandbox = new Sandbox(t);
-    const repo = sandbox.clone('acme', 'app');
-    repo.branch('feature');
-    repo.commit({ 'src/a.py': 'a\n' });
-    const stdin = JSON.stringify(sandbox.reviewRequest(repo)).replace('"agent_type":"general-purpose"', '"agent_type":1.0');
-    assert.match(stdin, /"agent_type":1\.0/);
-    const persistedAgentType: Record<string, string> = {};
-    for (const [impl, runner] of [['py', ['python3', KEEL_PYTHON]], ['ts', ['node', KEEL]]] as const) {
-      sandbox.runner = [...runner];
-      const written = sandbox.keel(['evidence', 'write-review'], { stdin });
-      assert.equal(written.rc, 0, written.stderr);
-      const file = sandbox.evidenceFiles('review').at(-1)!;
-      persistedAgentType[impl] = /"agent_type": ([^,]*),/.exec(readFileSync(file, 'utf8'))![1]!;
-      rmSync(file);
-    }
-    assert.deepEqual(persistedAgentType, { py: '1.0', ts: '1' });
-  });
+describe('EchoedNumberTest', () => {
+  const NUMBER_TOKENS: Array<[token: string, persisted: string]> = [
+    ['1.0', '1.0'], ['-0.0', '-0.0'], ['1e16', '1e+16'], ['9007199254740993', '9007199254740993'], ['1E2', '100.0'],
+  ];
+
+  for (const [token, persisted] of NUMBER_TOKENS) {
+    test(`writeReview_persistsPythonSpelling_whenAgentTypeIsTheNumberToken ${token}`, (t) => {
+      const sandbox = new Sandbox(t);
+      const repo = sandbox.clone('acme', 'app');
+      repo.branch('feature');
+      repo.commit({ 'src/a.py': 'a\n' });
+      const stdin = JSON.stringify(sandbox.reviewRequest(repo)).replace('"agent_type":"general-purpose"', `"agent_type":${token}`);
+      assert.ok(stdin.includes(`"agent_type":${token},`), stdin);
+      for (const runner of [['python3', KEEL_PYTHON], ['node', KEEL]]) {
+        sandbox.runner = [...runner];
+        const written = sandbox.keel(['evidence', 'write-review'], { stdin });
+        assert.equal(written.rc, 0, written.stderr);
+        const file = sandbox.evidenceFiles('review').at(-1)!;
+        assert.equal(/"agent_type": ([^,]*),/.exec(readFileSync(file, 'utf8'))![1], persisted, runner[0]);
+        rmSync(file);
+      }
+    });
+  }
 });

@@ -22,24 +22,10 @@ sys.path.insert(0, sys.argv[1])
 from evidence import registry, risk, testrun, comment_cleanup, env, codex_lenses
 
 def loads(text):
-    lossy = []
-
-    def parse_float(token):
-        value = float(token)
-        if value.is_integer():
-            lossy.append(token)
-        return value
-
-    def parse_int(token):
-        value = int(token)
-        if abs(value) > 2 ** 53:
-            lossy.append(token)
-        return value
-
     try:
-        return ["ok", json.dumps(json.loads(text, parse_float=parse_float, parse_int=parse_int)), bool(lossy)]
+        return ["ok", json.dumps(json.loads(text))]
     except ValueError as error:
-        return ["err", str(error), False]
+        return ["err", str(error)]
 
 corpus = json.load(sys.stdin)
 out = {
@@ -110,10 +96,11 @@ const FLOAT_VALUES = [0.5, -2.25, 0.1, 0.30000000000000004, 123456.789, 0.0001, 
   9007199254740991, -9007199254740991, 1e15, 123456789012345680000];
 const FLOAT_DOCUMENTS = ['0.5', '-2.25', '[0.1, 0.30000000000000004]', '123456.789', '0.0001', '1e-5', '1.5E-7', '-2.5e-300', '5e-324', '1.7976931348623157e308',
   '1e400', '-1e400', '9007199254740991', '-9007199254740991', '9007199254740992', '{"a": [1.5, -0.25, 1e-10]}', '[0.1e1, 2.5e0]', '0.000123'];
-const KNOWN_NUMBER_LIMITS: Array<[input: string, python: string, typescript: string]> = [
-  ['1.0', '1.0', '1'], ['-0.0', '-0.0', '0'], ['1e2', '100.0', '100'], ['1E5', '100000.0', '100000'], ['[2.50, 3.0]', '[2.5, 3.0]', '[2.5, 3]'],
-  ['12345678901234567890', '12345678901234567890', '12345678901234567000'], ['9007199254740993', '9007199254740993', '9007199254740992'],
-  ['1e16', '1e+16', '10000000000000000'],
+const NUMBER_SPELLINGS: Array<[input: string, dumped: string]> = [
+  ['1.0', '1.0'], ['-0.0', '-0.0'], ['1e2', '100.0'], ['1E5', '100000.0'], ['[2.50, 3.0]', '[2.5, 3.0]'],
+  ['12345678901234567890', '12345678901234567890'], ['9007199254740993', '9007199254740993'], ['-9007199254740993', '-9007199254740993'],
+  ['1e16', '1e+16'], ['-0', '0'], ['[0, 0.0, -0.0, 1e-7, 10.0e0]', '[0, 0.0, -0.0, 1e-07, 10.0]'], ['{"weight": 1.0, "big": 9007199254740993}', '{"weight": 1.0, "big": 9007199254740993}'],
+  ['1e400', 'Infinity'], ['[NaN, 1.0]', '[NaN, 1.0]'], ['123456789012345678901234567890.0', '1.2345678901234568e+29'],
 ];
 const MALFORMED = ['', ' ', '{', '[', '{"a"', '{"a":', '{"a":1', '{"a":1,', '{"a":1,}', '[1,]', '[1 2]', '{"a" 1}', '{1:2}', '"abc',
   '"a\\x"', '"\\u12"', '"\\ud83d\\u12"', '"a\nb"', 'nul', 'tru', '01', '-', '1.', '1e', '.5', '+1', '[1]x', '{"a":1}}', "'a'", '\ufeff{}',
@@ -142,7 +129,7 @@ function buildCorpus() {
   for (let count = 0; count < 400; count++) outputs.push(Array.from({ length: between(0, 6) }, () => pick(fragments)).join(pick(['\n', '\n', '\r\n', '\r', ' '])));
   const dumps: JsonValue[] = [null, true, 1, ...FLOAT_VALUES, 'é😀\u0000\x7f"\\/\b\f\n\r\t', [], {}, { b: 1, a: [1, { d: 'x', c: null }] }, { '😀': 1, '\uffff': 2, 'é': 3, z: 4, '\u{10000}': 5 }];
   for (let count = 0; count < 500; count++) dumps.push(randomJson(0));
-  const loads = [...MALFORMED, ...FLOAT_DOCUMENTS, ...KNOWN_NUMBER_LIMITS.map(([input]) => input)];
+  const loads = [...MALFORMED, ...FLOAT_DOCUMENTS, ...NUMBER_SPELLINGS.map(([input]) => input)];
   for (let count = 0; count < 600; count++) {
     const source = pythonJsonDumps(randomJson(0));
     loads.push(count % 3 === 0 ? source : mutate(count % 3 === 1 ? source : JSON.stringify(JSON.parse(source), null, 1)));
@@ -197,15 +184,6 @@ function tsLoads(text: string): JsonValue {
   }
 }
 
-function sameValuesDespiteNumberSpelling(serialized: JsonValue): JsonValue {
-  const [kind, payload] = serialized as [string, string];
-  try {
-    return [kind, JSON.stringify(JSON.parse(payload))];
-  } catch {
-    return [kind, payload];
-  }
-}
-
 describe('python parity', () => {
   const corpus = buildCorpus();
   const completed = spawnSync('python3', ['-I', '-X', 'utf8', '-c', PYTHON_SIDE, join(KEEL_HOME, 'lib')], {
@@ -214,7 +192,6 @@ describe('python parity', () => {
   assert.equal(completed.status, 0, completed.stderr);
   const python = JSON.parse(completed.stdout);
   let cases = 0;
-  let lossyLoads = 0;
   const mismatches: string[] = [];
 
   function compare<T>(label: string, inputs: readonly unknown[], actual: T[], expected: T[]): void {
@@ -235,20 +212,12 @@ describe('python parity', () => {
     corpus.dumps.map((value) => pythonJsonDumps(value, { sortKeys: true })), python.dumpsSorted));
   test('json.dumps insertion order', () => compare('dumpsInsertion', corpus.dumps, corpus.dumps.map((value) => pythonJsonDumps(value)), python.dumpsInsertion));
   test('json.loads then json.dumps, values and error messages', () => {
-    const actual = corpus.loads.map(tsLoads);
-    const expected = python.loads.map(([kind, payload]: [string, string, boolean]) => [kind, payload]);
-    const spellingLossy = new Set<number>(python.loads.flatMap(([, , lossy]: [string, string, boolean], index: number) => lossy ? [index] : []));
-    assert.ok(spellingLossy.size > 0);
-    lossyLoads = spellingLossy.size;
-    compare('loads', corpus.loads,
-      actual.map((entry, index) => spellingLossy.has(index) ? sameValuesDespiteNumberSpelling(entry) : entry),
-      expected.map((entry: JsonValue, index: number) => spellingLossy.has(index) ? sameValuesDespiteNumberSpelling(entry) : entry));
+    compare('loads', corpus.loads, corpus.loads.map(tsLoads), python.loads);
   });
-  test('number spellings the typescript port cannot keep (known limit)', () => {
-    for (const [input, pythonText, typescriptText] of KNOWN_NUMBER_LIMITS) {
-      const index = corpus.loads.indexOf(input);
-      assert.deepEqual(python.loads[index], ['ok', pythonText, true], input);
-      assert.deepEqual(tsLoads(input), ['ok', typescriptText], input);
+  test('number spellings survive json.loads then json.dumps byte for byte', () => {
+    for (const [input, dumped] of NUMBER_SPELLINGS) {
+      assert.deepEqual(tsLoads(input), ['ok', dumped], input);
+      assert.deepEqual(python.loads[corpus.loads.indexOf(input)], ['ok', dumped], input);
     }
   });
   test('str.strip', () => compare('strip', corpus.text, corpus.text.map(pyStrip), python.strip));
@@ -271,7 +240,7 @@ describe('python parity', () => {
   });
 
   test('summary', (t) => {
-    t.diagnostic(`parity: ${cases} cases, ${mismatches.length} mismatches (${lossyLoads} loads documents compared by value only)`);
+    t.diagnostic(`parity: ${cases} cases, ${mismatches.length} mismatches`);
     assert.deepEqual(mismatches.slice(0, 10), []);
     assert.ok(cases > 3000);
   });

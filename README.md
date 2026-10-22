@@ -34,10 +34,10 @@ The charter lives in [`PRINCIPLES.md`](PRINCIPLES.md). `bin/link` turns it into 
 
 `PRINCIPLES.md` also states:
 
-- **`risk`**: a core experiment. Verification weight is proportional to risk.
+- **`risk`**: how much verification each risk tier needs, and that merging or a deploying push needs the owner's `keel approve`. The ledger and DESIGN.md §1 frame `risk` as a core experiment: verification weight is proportional to risk.
 - **Floor rules**: hook-enforced safety limits. `F-irreversible` (merge, deploy and delete need explicit approval), `F-secrets`, `F-attribution`, `F-force-push` and `F-hookskip` (never switch hooks off).
 
-One more floor row lives only in the ledger: `F-mod-trust` (every installed Claude Code mod is reviewed). It is a prose-layer row with no hook behind it; the smoke `mod-trust` check measures it.
+One more floor row lives only in the ledger: `F-mod-trust` (every installed Claude Code mod is reviewed). It is a prose-layer row with no hook behind it. The smoke `mod-trust` check FAILs on an unreviewed mod; the row's own metric only checks that this smoke check exists.
 
 ## Enforcement ladder
 
@@ -104,7 +104,7 @@ ship-gate classifies the outgoing paths with the overlay's `risk-rules.tsv`; evi
 | standard (default) | anything no rule matches | `lens-review` chain + tests; approval at merge |
 | heavy | money, inventory writes, schema, batch, external contracts | `lens-review` chain + tests; approval at merge |
 
-K3 also applies: a logic path with no test path in the same range is denied.
+K3 also applies: a logic path with no test path in the same range is denied, unless the chain head's `KEEL-EVIDENCE` carries a `no_test_reason` (DESIGN.md §5.4; lens-review does not emit it yet).
 
 ### Threat model
 
@@ -123,7 +123,7 @@ Registered in [`settings/core.json`](settings/core.json). `ship-gate` and `git-g
 | `report-gate` | `PreToolUse` SubagentHandback, `SubagentStop` | K2 (evidence in done/pass claims); writes review evidence from a reviewer's report |
 | `model-assign` | `PreToolUse` Agent, Workflow | `C-dispatch`: every agent dispatch names a model and an effort |
 | `handoff` | `PreCompact` | `C-handoff`: snapshot in-flight work before compaction |
-| `env-preflight` | stack `spring-maven` | `S-jdk`: Maven builds pin the JDK the repo requires |
+| `env-preflight` | `PreToolUse` Bash (stack fragment, registered when the overlay's `stacks.txt` lists `spring-maven`) | `S-jdk`: Maven builds pin the JDK the repo requires |
 
 Each decision is logged to `$KEEL_DATA_DIR/logs/keel-fires.jsonl`: a deny or warn writes one line per `[ID]` in its message, a pass one line, and a call that is no decision (for example a Bash command that is no push, merge or protected write) nothing. Ledger metrics count these lines.
 

@@ -625,6 +625,11 @@ describe("KnownValuesTest", () => {
     });
   });
 
+  it("load_findsNoValue_forAnEnvRowNamingAnObjectMember", () => {
+    const path = sandbox.write(join(sandbox.overlay, "members.tsv"), "source\tpattern\nenv\tconstructor\nenv\ttoString\n");
+    assert.deepEqual(knownvalues.load(path), []);
+  });
+
   it("load_raises_whenSourceIsUnknown", () => {
     const path = sandbox.write(join(sandbox.overlay, "bad.tsv"), "source\tpattern\nurl\thttp://x\n");
     assert.throws(() => knownvalues.load(path), OverlayDataError);

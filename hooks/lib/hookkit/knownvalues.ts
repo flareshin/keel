@@ -1,4 +1,4 @@
-import { basename, codePointLength, expandUser, glob, PY_SPACE, PY_WORD, sortedByCodePoint, splitlines, tryReadText } from "./pycompat.ts";
+import { basename, codePointLength, environmentValue, expandUser, glob, PY_SPACE, PY_WORD, sortedByCodePoint, splitlines, tryReadText } from "./pycompat.ts";
 import { OverlayDataError, readTsv } from "./overlay.ts";
 
 export const HEADER = ["source", "pattern"] as const;
@@ -42,7 +42,7 @@ export function load(path: string): KnownValue[] {
     const source = row["source"];
     const pattern = row["pattern"] ?? "";
     if (source === SOURCE_ENV) {
-      values.push({ value: process.env[pattern] ?? "", key: pattern, origin: SOURCE_ENV });
+      values.push({ value: environmentValue(pattern) ?? "", key: pattern, origin: SOURCE_ENV });
     } else if (source === SOURCE_FILE) {
       for (const file of sortedByCodePoint(glob(expandUser(pattern)))) values.push(...fileValues(file));
     } else {

@@ -101,6 +101,13 @@ describe("python path behaviors", () => {
     });
   });
 
+  it("expandVars_keepsTheRestOfTheWord_afterAnUnclosedBrace", () => {
+    withEnv({ KEEL_T: "v" }, () => {
+      assert.equal(pycompat.expandVars("${x$KEEL_T/a"), "${x$KEEL_T/a");
+      assert.equal(pycompat.expandVars("$KEEL_T/${x"), "v/${x");
+    });
+  });
+
   it("expandUser_readsHomeAtCallTime_andLooksUpNamedAccounts", () => {
     withEnv({ HOME: "/home/u/" }, () => {
       assert.equal(pycompat.expandUser("~/x"), "/home/u/x");
@@ -343,6 +350,14 @@ describe("FireLog", () => {
   it("append_doesNotThrow_whenTheLogCannotBeWritten", () => {
     mkdirSync(join(sandbox.data, "logs", "keel-fires.jsonl"), { recursive: true });
     withEnv({ KEEL_DATA_DIR: sandbox.data }, () => new FireLog("h", "s").append("K1", "pass"));
+  });
+
+  it("append_throws_whenTheRecordCannotBeSerialized", () => {
+    const loop: Record<string, unknown> = {};
+    loop["self"] = loop;
+    withEnv({ KEEL_DATA_DIR: sandbox.data }, () => {
+      assert.throws(() => new FireLog("h", "s").append("K1", "pass", { context: loop }));
+    });
   });
 });
 

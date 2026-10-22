@@ -1,13 +1,16 @@
 import { spawnSync } from 'node:child_process';
 import { chmodSync, closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, sep } from 'node:path';
+import { delimiter, dirname, join, sep } from 'node:path';
 import type { TestContext } from 'node:test';
 
 export const TESTS_DIR = import.meta.dirname;
 export const KEEL_HOME = dirname(dirname(TESTS_DIR));
 export const KEEL = join(KEEL_HOME, 'bin', 'keel.ts');
 export const KEEL_PYTHON = join(KEEL_HOME, 'bin', 'keel');
+export const SHIP_GATE = join(KEEL_HOME, 'hooks', 'ship-gate', 'ship-gate.ts');
+export const SHIP_GATE_PYTHON = join(KEEL_HOME, 'hooks', 'ship-gate', 'ship-gate.py');
+const SETTINGS_PATH = join(KEEL_HOME, 'settings', 'core.json');
 export const DEFAULT_REGISTRY = ['acme/app\tcode\tmain\tacme\trequired'];
 export const PUSH_APPROVAL_REGISTRY = ['acme/app\tcode\tmain\tacme\trequired\ttrue'];
 const REGISTRY_HEADER = 'origin\tgate\tintegration_base\trisk_rules\ttests';
@@ -15,6 +18,11 @@ const REGISTRY_OPTIONAL_COLUMN = 'push_approval';
 export const DEFAULT_RULES = ['acme\tsrc/*/billing/*\theavy', 'acme\tdocs/*\tlight', 'acme\t*.md\tlight',
   'overlay\tsettings/*\tsmoke-only', 'overlay\tledger.tsv\tsmoke-only'];
 export const LOGIC_WITH_TEST = { 'src/a.py': 'print(1)\n', 'tests/test_a.py': 'def test_a():\n    assert True\n' };
+const GH_STUB = `#!/bin/bash
+printf '%s\\n' "\${GH_REPO:+GH_REPO=$GH_REPO }$*" >> "$KEEL_TEST_GH_LOG"
+cat "$KEEL_TEST_GH_RESPONSE"
+`;
+const CLAUDE_STUB = "#!/bin/bash\necho '9.9.9 (Claude Code)'\n";
 const GIT_CONFIG = `[user]
 \tname = Keel Test
 \temail = keel-test@example.com
@@ -26,6 +34,13 @@ const GIT_CONFIG = `[user]
 
 export function readJson(path: string): any {
   return JSON.parse(readFileSync(path, 'utf8'));
+}
+
+export function shipGateTimeout(): number {
+  const registered: number[] = readJson(SETTINGS_PATH).hooks.PreToolUse.flatMap((entry: any) => entry.hooks)
+    .filter((registration: any) => registration.command.includes('ship-gate.')).map((registration: any) => registration.timeout);
+  if (registered.length !== 1) throw new Error(`expected one ship-gate registration, found ${registered.length}`);
+  return registered[0]!;
 }
 
 export class Run {
@@ -42,6 +57,15 @@ export class Run {
   get json(): any {
     return JSON.parse(this.stdout);
   }
+
+  get context(): string {
+    return this.stdout.trim() ? this.json.hookSpecificOutput.additionalContext : '';
+  }
+}
+
+export interface PayloadOptions {
+  agentId?: string;
+  session?: string;
 }
 
 export class Repo {
@@ -77,7 +101,7 @@ export class Repo {
     return full;
   }
 
-  commit(files: Record<string, string | null>, message = 'change'): string {
+  commit(files: Record<string, string | Buffer | null>, message = 'change'): string {
     for (const [relative, content] of Object.entries(files)) {
       if (content === null) unlinkSync(join(this.path, relative));
       else this.write(relative, content);
@@ -123,10 +147,16 @@ export class Sandbox {
   remotes: string;
   env: Record<string, string>;
   runner: string[] = ['node', KEEL];
+  ghLog: string;
+  ghResponse: string;
+  private lockedDirectories: string[] = [];
 
   constructor(t: TestContext, registry: string[] = DEFAULT_REGISTRY, rules: string[] = DEFAULT_RULES) {
     this.root = realpathSync(mkdtempSync(join(tmpdir(), 'keel-ship-gate-')));
-    t.after(() => rmSync(this.root, { recursive: true, force: true }));
+    t.after(() => {
+      for (const directory of this.lockedDirectories) chmodSync(directory, 0o700);
+      rmSync(this.root, { recursive: true, force: true });
+    });
     this.data = join(this.root, 'data');
     this.overlay = join(this.root, 'overlay');
     this.home = join(this.root, 'home');
@@ -134,10 +164,16 @@ export class Sandbox {
     for (const directory of [this.data, this.overlay, this.home, this.remotes]) mkdirSync(directory);
     const gitconfig = join(this.root, 'gitconfig');
     writeFileSync(gitconfig, GIT_CONFIG);
+    this.ghLog = join(this.root, 'gh.log');
+    this.ghResponse = join(this.root, 'gh.json');
+    const ghStub = join(this.root, 'gh');
+    writeFileSync(ghStub, GH_STUB);
+    chmodSync(ghStub, 0o755);
     this.env = {
       PATH: process.env['PATH'] ?? '/usr/bin:/bin', HOME: this.home, LC_ALL: 'C',
       KEEL_DATA_DIR: this.data, KEEL_OVERLAY_DIR: this.overlay, KEEL_HOME,
-      GIT_CONFIG_GLOBAL: gitconfig, GIT_CONFIG_NOSYSTEM: '1',
+      GIT_CONFIG_GLOBAL: gitconfig, GIT_CONFIG_NOSYSTEM: '1', KEEL_GH: ghStub,
+      KEEL_TEST_GH_LOG: this.ghLog, KEEL_TEST_GH_RESPONSE: this.ghResponse,
     };
     if (!this.env['KEEL_DATA_DIR']!.startsWith(this.root + sep)) throw new Error('KEEL_DATA_DIR must be inside the temp dir');
     this.writeRegistry(registry);
@@ -163,6 +199,26 @@ export class Sandbox {
       lines = rows.map((row) => row.split('\t').length === header.split('\t').length ? row : row + '\tfalse');
     }
     this.writeTsv('gated-repos.tsv', header, lines);
+  }
+
+  stubClaude(): void {
+    const stubs = join(this.root, 'stubs');
+    mkdirSync(stubs, { recursive: true });
+    const path = join(stubs, 'claude');
+    writeFileSync(path, CLAUDE_STUB);
+    chmodSync(path, 0o755);
+    this.env['PATH'] = stubs + delimiter + this.env['PATH'];
+  }
+
+  removeRegistry(): void {
+    unlinkSync(join(this.overlay, 'gated-repos.tsv'));
+  }
+
+  makeLogsUnwritable(): void {
+    const logs = join(this.data, 'logs');
+    mkdirSync(logs, { recursive: true });
+    this.lockedDirectories.push(logs);
+    chmodSync(logs, 0o500);
   }
 
   riskRules(rows: string[]): void {
@@ -219,6 +275,43 @@ export class Sandbox {
       input: options.stdin ?? '', encoding: 'utf8', env: this.env, cwd: options.cwd ?? this.root,
     });
     return new Run(completed.status ?? -1, completed.stdout, completed.stderr);
+  }
+
+  hook(payload: unknown, extraEnv: Record<string, string> = {}): Run {
+    return this.hookRaw(JSON.stringify(payload), extraEnv);
+  }
+
+  hookRaw(stdin: string, extraEnv: Record<string, string> = {}): Run {
+    const completed = spawnSync(process.execPath, [SHIP_GATE], { input: stdin, encoding: 'utf8', env: { ...this.env, ...extraEnv } });
+    return new Run(completed.status ?? -1, completed.stdout, completed.stderr);
+  }
+
+  bashPayload(repo: Repo, command: string, options: PayloadOptions = {}): any {
+    const session = options.session ?? 's1';
+    const payload: Record<string, unknown> = {
+      session_id: session, transcript_path: this.mainTranscript(session), cwd: repo.path, permission_mode: 'default',
+      hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, tool_use_id: 'tu1',
+    };
+    if (options.agentId) {
+      payload['agent_id'] = options.agentId;
+      payload['agent_type'] = 'general-purpose';
+    }
+    return payload;
+  }
+
+  push(repo: Repo, command = 'git push origin HEAD', options: PayloadOptions = {}): Run {
+    return this.hook(this.bashPayload(repo, command, options));
+  }
+
+  fires(ruleId?: string, outcome?: string): any[] {
+    let content: string;
+    try {
+      content = readFileSync(join(this.data, 'logs', 'keel-fires.jsonl'), 'utf8');
+    } catch {
+      return [];
+    }
+    const lines = content.split('\n').filter((line) => line.trim()).map((line) => JSON.parse(line));
+    return lines.filter((line) => (ruleId === undefined || line.rule_id === ruleId) && (outcome === undefined || line.outcome === outcome));
   }
 
   evidenceFiles(kind: string): string[] {
@@ -306,6 +399,11 @@ export class Sandbox {
     const run = this.keel(['approve', rootRunId]);
     if (run.rc !== 0) throw new Error(`keel approve failed (${run.rc}): ${run.stderr}`);
     return run;
+  }
+
+  pushBundle(repo: Repo, rootRunId = 'rv-root-0001'): void {
+    this.review(repo, { runId: rootRunId });
+    this.testsEvidence(repo);
   }
 
   fullBundle(repo: Repo, rootRunId = 'rv-root-0001'): void {

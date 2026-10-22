@@ -32,7 +32,22 @@ export interface RunOptions {
   input?: string;
 }
 
+const UNENCODABLE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udc7f\udd00-\udfff]/;
+
+export class UnicodeEncodeError extends Error {}
+
+function rejectUnencodable(command: string[]): void {
+  for (const word of command) {
+    const found = UNENCODABLE_SURROGATE.exec(word);
+    if (found === null) continue;
+    const position = Array.from(word.slice(0, found.index)).length;
+    const digits = found[0].charCodeAt(0).toString(16).padStart(4, '0');
+    throw new UnicodeEncodeError(`'utf-8' codec can't encode character '\\u${digits}' in position ${position}: surrogates not allowed`);
+  }
+}
+
 export function runCaptured(command: string[], options: RunOptions = {}): Completed {
+  rejectUnencodable(command);
   const [program, ...args] = command;
   const result = childProcess.spawnSync(program!, args, {
     env: options.env,

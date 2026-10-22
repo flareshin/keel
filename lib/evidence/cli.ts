@@ -4,7 +4,7 @@ import * as codexReview from './codex_review.ts';
 import * as gc from './gc.ts';
 import * as gitcmd from './gitcmd.ts';
 import * as prepare from './prepare.ts';
-import { JSONDecodeError, pyOsErrorMessage, pythonErrnoName, pythonJsonDumps, pythonJsonLoads, sortedStrings } from './pycompat.ts';
+import { errorText, JSONDecodeError, pythonJsonDumps, pythonJsonLoads, pythonTypeName, sortedStrings } from './pycompat.ts';
 import type { JsonValue } from './pycompat.ts';
 import * as registry from './registry.ts';
 import { printErrorLine, printLine, readStdinText } from './stdio.ts';
@@ -48,25 +48,6 @@ export async function main(argv: string[]): Promise<number> {
     printErrorLine(`keel: internal error: ${pythonTypeName(error)}: ${errorText(error)}`);
     return EXIT_INTERNAL;
   }
-}
-
-function pythonTypeName(error: unknown): string {
-  if (error instanceof JSONDecodeError) return 'JSONDecodeError';
-  if (error instanceof Error) {
-    const named = (error as { pythonName?: string }).pythonName;
-    if (named) return named;
-    const code = (error as NodeJS.ErrnoException).code;
-    if (typeof (error as NodeJS.ErrnoException).errno === 'number') return pythonErrnoName(code);
-    return error.constructor.name;
-  }
-  return typeof error;
-}
-
-function errorText(error: unknown): string {
-  if (error instanceof Error && typeof (error as NodeJS.ErrnoException).errno === 'number') {
-    return pyOsErrorMessage(error as NodeJS.ErrnoException);
-  }
-  return error instanceof Error ? error.message : String(error);
 }
 
 async function dispatch(argv: string[]): Promise<number> {

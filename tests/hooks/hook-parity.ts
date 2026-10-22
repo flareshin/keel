@@ -93,7 +93,7 @@ function observe(testCase: Case, sandboxRoot: string, runtime: "python" | "node"
   return observation;
 }
 
-function copyTree(source: string, destination: string): void {
+export function copyTree(source: string, destination: string): void {
   mkdirSync(destination, { recursive: true });
   for (const name of readdirSync(source)) {
     const from = join(source, name);

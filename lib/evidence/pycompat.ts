@@ -61,8 +61,40 @@ export function decodeReplacing(bytes: Uint8Array): string {
   return new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes);
 }
 
+export class UnicodeDecodeError extends Error {}
+
 export function decodeStrict(bytes: Uint8Array): string {
-  return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+  try {
+    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+  } catch (error) {
+    if (!(error instanceof TypeError)) throw error;
+    throw new UnicodeDecodeError(utf8FailureMessage(bytes));
+  }
+}
+
+function utf8FailureMessage(bytes: Uint8Array): string {
+  let index = 0;
+  while (index < bytes.length) {
+    const lead = bytes[index]!;
+    const length = lead < 0x80 ? 1 : lead >= 0xc2 && lead <= 0xdf ? 2 : lead >= 0xe0 && lead <= 0xef ? 3 : lead >= 0xf0 && lead <= 0xf4 ? 4 : 0;
+    if (length === 0) return utf8Failure(bytes, index, index + 1, 'invalid start byte');
+    for (let offset = 1; offset < length; offset++) {
+      const byte = bytes[index + offset];
+      if (byte === undefined) return utf8Failure(bytes, index, bytes.length, 'unexpected end of data');
+      const low = offset === 1 ? (lead === 0xe0 ? 0xa0 : lead === 0xf0 ? 0x90 : 0x80) : 0x80;
+      const high = offset === 1 ? (lead === 0xed ? 0x9f : lead === 0xf4 ? 0x8f : 0xbf) : 0xbf;
+      if (byte < low || byte > high) return utf8Failure(bytes, index, index + offset, 'invalid continuation byte');
+    }
+    index += length;
+  }
+  return 'invalid utf-8';
+}
+
+function utf8Failure(bytes: Uint8Array, start: number, end: number, reason: string): string {
+  if (end - start === 1) {
+    return `'utf-8' codec can't decode byte 0x${bytes[start]!.toString(16).padStart(2, '0')} in position ${start}: ${reason}`;
+  }
+  return `'utf-8' codec can't decode bytes in position ${start}-${end - 1}: ${reason}`;
 }
 
 export function decodeSurrogateEscape(bytes: Uint8Array): string {
@@ -126,10 +158,15 @@ export function pyReprList(values: string[]): string {
   return '[' + values.map(pyRepr).join(', ') + ']';
 }
 
+const LIBC_DESCRIPTIONS: Record<string, string> = {
+  EEXIST: 'File exists', EISDIR: 'Is a directory', ELOOP: 'Too many levels of symbolic links', ENAMETOOLONG: 'File name too long',
+  ETXTBSY: 'Text file busy',
+};
+
 export function pyOsErrorMessage(error: NodeJS.ErrnoException): string {
   const description = typeof error.errno === 'number' ? getSystemErrorMap().get(error.errno)?.[1] : undefined;
   if (description === undefined) return error.message;
-  const text = description.charAt(0).toUpperCase() + description.slice(1);
+  const text = LIBC_DESCRIPTIONS[error.code ?? ''] ?? description.charAt(0).toUpperCase() + description.slice(1);
   const where = error.path === undefined ? '' : `: ${pyRepr(error.path)}`;
   return `[Errno ${-error.errno!}] ${text}${where}`;
 }
@@ -449,4 +486,23 @@ const ERRNO_EXCEPTION_NAMES: Record<string, string> = {
 
 export function pythonErrnoName(code: string | undefined): string {
   return (code !== undefined && ERRNO_EXCEPTION_NAMES[code]) || 'OSError';
+}
+
+export function pythonTypeName(error: unknown): string {
+  if (error instanceof JSONDecodeError) return 'JSONDecodeError';
+  if (error instanceof Error) {
+    const named = (error as { pythonName?: string }).pythonName;
+    if (named) return named;
+    const code = (error as NodeJS.ErrnoException).code;
+    if (typeof (error as NodeJS.ErrnoException).errno === 'number') return pythonErrnoName(code);
+    return error.constructor.name;
+  }
+  return typeof error;
+}
+
+export function errorText(error: unknown): string {
+  if (error instanceof Error && typeof (error as NodeJS.ErrnoException).errno === 'number') {
+    return pyOsErrorMessage(error as NodeJS.ErrnoException);
+  }
+  return error instanceof Error ? error.message : String(error);
 }

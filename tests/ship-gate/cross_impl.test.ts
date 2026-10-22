@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { describe, test } from 'node:test';
@@ -201,6 +201,15 @@ function normalizedTree(dataDir: string, subdirectory: string): Array<[string, s
     .sort((left, right) => (left[0] + left[1] < right[0] + right[1] ? -1 : 1));
 }
 
+function treeOrEmpty(dataDir: string, subdirectory: string): Array<[string, string]> {
+  try {
+    return normalizedTree(dataDir, subdirectory);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw error;
+  }
+}
+
 function prepare(t: TestContext) {
   const sandbox = new Sandbox(t);
   sandbox.env['GIT_AUTHOR_DATE'] = '2026-01-01T00:00:00Z';
@@ -377,6 +386,30 @@ describe('cross-implementation evidence compatibility', () => {
     assert.deepEqual(outcomes['py']!.map(([rc]) => rc), [0, 0, 0, 0, 0, 2, 2, 0, 2]);
   });
 
+  test('keel test reads output until every holder of the shared descriptor closes it', (t) => {
+    const { sandbox, repo } = prepare(t);
+    const scripts = [
+      "(sleep 1; echo 'Ran 3 tests') &",
+      "(sleep 1; echo 'Ran 3 tests') & exit 3",
+      "(sleep 1; echo 'Ran 3 tests' >&2) & echo foreground; exit 0",
+    ];
+    const outcomes = (['py', 'ts'] as Impl[]).map((impl) => {
+      sandbox.data = join(sandbox.root, `data-background-${impl}`);
+      sandbox.env['KEEL_DATA_DIR'] = sandbox.data;
+      mkdirSync(sandbox.data);
+      sandbox.runner = RUNNERS[impl];
+      const runs = scripts.map((script) => {
+        const run = sandbox.keel(['test', '--', 'bash', '-c', script], { cwd: repo.path });
+        return [run.rc, normalize(run.stdout, sandbox.data), normalize(run.stderr, sandbox.data)];
+      });
+      return { runs, state: treeOrEmpty(sandbox.data, 'state'), logs: treeOrEmpty(sandbox.data, 'logs') };
+    });
+    assert.deepEqual(outcomes[1], outcomes[0]);
+    assert.deepEqual(outcomes[0]!.runs.map(([rc]) => rc), [0, 3, 0]);
+    assert.match(String(outcomes[0]!.runs[0]![1]), /^Ran 3 tests\n$/);
+    assert.equal(outcomes[0]!.state.length, 2);
+  });
+
   test('cli error paths match: usage, refusal and stdin JSON errors', (t) => {
     const { sandbox, repo } = prepare(t);
     sandbox.data = join(sandbox.root, 'data-errors');
@@ -391,6 +424,8 @@ describe('cross-implementation evidence compatibility', () => {
     repo.write('data-interpreter.sh', "#!/etc/hosts\necho 'Ran 3 tests'\n", true);
     repo.write('ok-interpreter.sh', "#!/bin/sh\necho 'Ran 3 tests'\n", true);
     repo.write('padded-interpreter.sh', "#! \t/bin/sh\necho 'Ran 3 tests'\n", true);
+    symlinkSync('loop-b.sh', join(repo.path, 'loop-a.sh'));
+    symlinkSync('loop-a.sh', join(repo.path, 'loop-b.sh'));
     const executeOnly = join(sandbox.root, 'execute-only');
     const compiled = spawnSync('cc', ['-x', 'c', '-o', executeOnly, '-'], { input: '#include <stdio.h>\nint main(void) { puts("Ran 2 tests"); return 0; }\n' });
     if (compiled.status === 0) chmodSync(executeOnly, 0o111);
@@ -411,6 +446,9 @@ describe('cross-implementation evidence compatibility', () => {
       { args: ['evidence', 'record-codex'] }, { args: ['evidence', 'record-codex', '--repo', repo.path] },
       { args: ['evidence', 'record-codex', '--repo', repo.path, '--audits', 'not-a-uuid'] },
       { args: ['evidence', 'write-review'], stdin: '' }, { args: ['evidence', 'write-review'], stdin: '{"a":' }, { args: ['evidence', 'write-review'], stdin: '[1]' },
+      { args: ['evidence', 'write-review'], stdin: '1.0' }, { args: ['evidence', 'write-review'], stdin: '[1.0, 2.5]' }, { args: ['evidence', 'write-review'], stdin: '-0.0' },
+      { args: ['evidence', 'write-review'], stdin: '1e400' }, { args: ['evidence', 'write-review'], stdin: '{"keel_evidence": 1.0, "verdict": "PASS"}' },
+      { args: ['evidence', 'write-review'], stdin: '{"diffs": [{"repo": 1.0}]}' },
       { args: ['evidence', 'write-review'], stdin: '{"a":1}\r\n,' }, { args: ['evidence', 'write-review'], stdin: '{"keel_evidence": {}}' },
       { args: ['evidence', 'write-review'], stdin: '{"keel_evidence": 1, "verdict": "PASS"}' }, { args: ['evidence', 'write-smoke', '--repo', repo.path] },
       { args: ['evidence', 'write-smoke', '--repo', repo.path, '--run', 'nope'] }, { args: ['review'] }, { args: ['review', 'prepare'], stdin: '{}' },
@@ -426,6 +464,7 @@ describe('cross-implementation evidence compatibility', () => {
       { args: ['test', '--', './crlf.sh'], cwd: repo.path }, { args: ['test', '--', './data-interpreter.sh'], cwd: repo.path },
       { args: ['test', '--', './ok-interpreter.sh'], cwd: repo.path }, { args: ['test', '--', './padded-interpreter.sh'], cwd: repo.path },
       { args: ['test', '--', './no-shebang.sh/x'], cwd: repo.path }, { args: ['test', '--', '.'], cwd: repo.path },
+      { args: ['test', '--', './loop-a.sh'], cwd: repo.path }, { args: ['test', '--', './' + 'n'.repeat(300)], cwd: repo.path },
       { args: ['test', '--', 'both'], cwd: repo.path }, { args: ['test', '--', 'later'], cwd: repo.path }, { args: ['test', '--', ''], cwd: repo.path },
     ];
     const mismatches: string[] = [];

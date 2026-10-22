@@ -137,10 +137,26 @@ export function pyReprList(values: string[]): string {
   return '[' + values.map(pyRepr).join(', ') + ']';
 }
 
+const OS_WORDING: Record<string, string> = {
+  EEXIST: 'File exists', EFAULT: 'Bad address', EIO: 'Input/output error', EISDIR: 'Is a directory',
+  ELOOP: 'Too many levels of symbolic links', ENAMETOOLONG: 'File name too long', ENFILE: 'Too many open files in system',
+  ENOMEM: 'Cannot allocate memory', ETXTBSY: 'Text file busy',
+};
+const OS_WORDING_BY_PLATFORM: Record<string, Record<string, string>> = {
+  darwin: { EBUSY: 'Resource busy', ENODEV: 'Operation not supported by device', ENXIO: 'Device not configured' },
+  other: { EBUSY: 'Device or resource busy', ENODEV: 'No such device', ENXIO: 'No such device or address' },
+};
+
+function osWording(code: string | undefined, libuvDescription: string): string {
+  const platformWording = OS_WORDING_BY_PLATFORM[process.platform === 'darwin' ? 'darwin' : 'other']!;
+  const wording = code === undefined ? undefined : OS_WORDING[code] ?? platformWording[code];
+  return wording ?? libuvDescription.charAt(0).toUpperCase() + libuvDescription.slice(1);
+}
+
 export function pyOsErrorMessage(error: NodeJS.ErrnoException): string {
   const description = typeof error.errno === 'number' ? getSystemErrorMap().get(error.errno)?.[1] : undefined;
   if (description === undefined) return error.message;
-  const text = description.charAt(0).toUpperCase() + description.slice(1);
+  const text = osWording(error.code, description);
   const where = error.path === undefined ? '' : `: ${pyRepr(error.path)}`;
   return `[Errno ${-error.errno!}] ${text}${where}`;
 }

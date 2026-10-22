@@ -1,7 +1,7 @@
-import childProcess from 'node:child_process';
+import childProcess, { spawnSync } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
-import { closeSync, mkdtempSync, openSync, readSync, rmSync } from 'node:fs';
+import { closeSync, constants, mkdtempSync, openSync, readSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -103,31 +103,40 @@ interface Launched {
 type Attempt = Launched | { failure: NodeJS.ErrnoException };
 
 async function stream(argv: string[], cwd: string): Promise<[exitCode: number, output: string]> {
-  const capture = openCapture();
+  const pipe = openOutputPipe();
   try {
-    const launched = await launch(argv, cwd, capture);
+    let launched: Launched | null;
+    try {
+      launched = await launch(argv, cwd, pipe.writer);
+    } finally {
+      closeSync(pipe.writer);
+    }
     if (launched === null) return commandNotFound(argv[0]!);
-    return await relayCapture(launched.exited, capture);
+    return await relayUntilClosed(launched.exited, pipe.reader);
   } finally {
-    closeSync(capture);
+    closeSync(pipe.reader);
   }
 }
 
-function openCapture(): number {
+function openOutputPipe(): { reader: number; writer: number } {
   const directory = mkdtempSync(join(tmpdir(), 'keel-test-'));
   try {
-    return openSync(join(directory, 'output'), 'w+', 0o600);
+    const fifo = join(directory, 'output');
+    const made = spawnSync('mkfifo', ['-m', '600', fifo], { encoding: 'utf8' });
+    if (made.status !== 0) throw new Error(`mkfifo failed: ${made.error?.message ?? made.stderr}`);
+    const reader = openSync(fifo, constants.O_RDONLY | constants.O_NONBLOCK);
+    return { reader, writer: openSync(fifo, constants.O_WRONLY) };
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
 }
 
-async function launch(argv: string[], cwd: string, capture: number): Promise<Launched | null> {
+async function launch(argv: string[], cwd: string, writer: number): Promise<Launched | null> {
   const [name, ...args] = argv as [string, ...string[]];
   let firstHardFailure: NodeJS.ErrnoException | null = null;
   let lastFailure: NodeJS.ErrnoException | null = null;
   for (const candidate of searchCandidates(name)) {
-    const attempt = await attemptSpawn(candidate, name, args, cwd, capture);
+    const attempt = await attemptSpawn(candidate, name, args, cwd, writer);
     if ('child' in attempt) return attempt;
     lastFailure = attempt.failure;
     if (!KEEPS_SEARCHING_ERRORS.has(attempt.failure.code!)) firstHardFailure ??= attempt.failure;
@@ -146,10 +155,10 @@ function searchCandidates(name: string): string[] {
   });
 }
 
-async function attemptSpawn(program: string, argv0: string, args: string[], cwd: string, capture: number): Promise<Attempt> {
+async function attemptSpawn(program: string, argv0: string, args: string[], cwd: string, writer: number): Promise<Attempt> {
   let child: ChildProcess;
   try {
-    child = childProcess.spawn(program, args, { cwd, argv0, stdio: ['inherit', capture, capture] });
+    child = childProcess.spawn(program, args, { cwd, argv0, stdio: ['inherit', writer, writer] });
   } catch (error) {
     return { failure: error as NodeJS.ErrnoException };
   }
@@ -160,31 +169,30 @@ async function attemptSpawn(program: string, argv0: string, args: string[], cwd:
   return { child, exited };
 }
 
-async function relayCapture(exited: Promise<number>, capture: number): Promise<[exitCode: number, output: string]> {
+async function relayUntilClosed(exited: Promise<number>, reader: number): Promise<[exitCode: number, output: string]> {
   const chunks: Buffer[] = [];
-  let offset = 0;
-  const forwardNewBytes = () => {
-    for (;;) {
-      const buffer = Buffer.alloc(OUTPUT_READ_BYTES);
-      const length = readSync(capture, buffer, 0, buffer.length, offset);
-      if (length === 0) return;
-      offset += length;
-      const chunk = buffer.subarray(0, length);
+  for (;;) {
+    const chunk = readAvailable(reader);
+    if (chunk === 'pending') {
+      await sleep(OUTPUT_POLL_MS);
+    } else if (chunk.length === 0) {
+      break;
+    } else {
       writeStdout(chunk);
       chunks.push(chunk);
     }
-  };
-  let finished = false;
-  const status = exited.then((code) => {
-    finished = true;
-    return code;
-  });
-  while (!finished) {
-    forwardNewBytes();
-    await Promise.race([status, sleep(OUTPUT_POLL_MS)]);
   }
-  forwardNewBytes();
-  return [await status, decodeReplacing(Buffer.concat(chunks))];
+  return [await exited, decodeReplacing(Buffer.concat(chunks))];
+}
+
+function readAvailable(reader: number): Buffer | 'pending' {
+  const buffer = Buffer.alloc(OUTPUT_READ_BYTES);
+  try {
+    return buffer.subarray(0, readSync(reader, buffer, 0, buffer.length, null));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EAGAIN') return 'pending';
+    throw error;
+  }
 }
 
 function commandNotFound(name: string): [exitCode: number, output: string] {

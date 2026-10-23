@@ -46,6 +46,7 @@ const DERIVE_RUN_ID_COMMAND = `printf 'rv-%s-%s\\n' "$(date -u +%Y%m%dT%H%M%SZ)"
 const LOAD_LENSES_COMMAND = `jq -c '{lenses, guardrails}' ${DEFAULT_LENSES_FILE}`
 const REPORT_START = '<<<KEEL-REPORT'
 const REPORT_END = 'KEEL-REPORT>>>'
+const HARNESS_NOTICE = /^\[harness: [^\n]*\]\n\s*\n/
 const RULE_CHECKS_SUMMARY = /summary repos=\d+ scanned_lines=\d+ signals=\d+ unscanned=[^\n]*? blocked=(\S+)/g
 const TRAILING_QUOTE_OR_PUNCTUATION = /[`'".,;:)\]]+$/
 const EVIDENCE_PREFIX = 'KEEL-EVIDENCE: '
@@ -94,16 +95,15 @@ const evidenceLines = reviewed.map((target) => buildEvidenceLine(target, runId, 
 const expectedReport = buildReport(outcome, audit, reviewed, evidenceLines)
 
 phase('Report')
-const handedBack = await handBackReport(expectedReport)
-const handBackProblem = findHandBackProblem(handedBack, expectedReport, evidenceLines)
-if (handBackProblem) return failed(`reporter agent: ${handBackProblem}`, expectedReport)
+const handBack = await handBackWithOneRetry(expectedReport, evidenceLines)
+if (handBack.problem) return failed(`reporter agent: ${handBack.problem}`, expectedReport)
 
 return {
   verdict: outcome.verdict,
   runId,
   rootRunId,
   fixableFindings: outcome.fixableFindings,
-  report: handedBack,
+  report: handBack.message,
   evidence: evidenceLines.map((line) => JSON.parse(line.slice(EVIDENCE_PREFIX.length))),
   lensesFired: outcome.lensesFired,
   failedLenses: outcome.failedLenses,
@@ -446,12 +446,25 @@ function toOneLine(text) {
   return String(text).replace(LINE_BREAKS, JOINED_LINES)
 }
 
-function handBackReport(report) {
-  const prompt = `Your final message must be exactly the report between the two marker lines below, character for character: no text before or after it, no markdown fences, no edits. The two marker lines frame the report and are not part of your message: it starts with the line that begins VERDICT: and ends with the last line before the closing marker. Do not run any tool and do not judge the report.
+async function handBackWithOneRetry(report, evidenceLines) {
+  const first = withoutHarnessNotice(await handBackReport(report, ''))
+  const firstProblem = findHandBackProblem(first, report, evidenceLines)
+  if (!firstProblem) return { message: first }
+  log(`reporter agent: ${firstProblem}; asking once more`)
+  const second = withoutHarnessNotice(await handBackReport(report, `Your previous message was rejected: ${firstProblem}. `))
+  return { message: second, problem: findHandBackProblem(second, report, evidenceLines) }
+}
+
+function handBackReport(report, rejection) {
+  const prompt = `${rejection}Your final message must be exactly the report between the two marker lines below, character for character: no text before or after it, no markdown fences, no edits. The two marker lines frame the report and are not part of your message: it starts with the line that begins VERDICT: and ends with the last line before the closing marker. Do not run any tool and do not judge the report.
 ${REPORT_START}
 ${report}
 ${REPORT_END}`
   return agent(prompt, { label: 'report', phase: 'Report', model: MECHANICAL_MODEL, effort: MECHANICAL_EFFORT, agentType: REPORTER_TYPE })
+}
+
+function withoutHarnessNotice(message) {
+  return typeof message === 'string' ? message.replace(HARNESS_NOTICE, '') : message
 }
 
 function findHandBackProblem(message, expectedReport, evidenceLines) {

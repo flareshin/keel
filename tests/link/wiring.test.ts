@@ -129,6 +129,11 @@ describe("link gate on failure", () => {
     assert.ok(!problemKinds(box.runLink("--check")).includes("gate-onfailure-missing"))
   })
 
+  it("check_acceptsATimeoutAbove2To53_asANumericTimeout", () => {
+    box.writeKeel("settings/core.json", `{"hooks": {"PreToolUse": [{"matcher": "Edit", "hooks": [{"type": "command", "command": "node {{KEEL}}/hooks/git-guard/git-guard.ts", "timeout": 9007199254740993, "onFailure": "block"}]}]}}`)
+    assert.ok(!problemKinds(box.runLink("--check")).includes("gate-onfailure-missing"))
+  })
+
   it("check_skipsGateHookOnAToolItDoesNotGate", () => {
     writeCoreHook("Skill", { type: "command", command: "node {{KEEL}}/hooks/ship-gate/ship-gate.ts", timeout: 30 })
     assertExit(box.runLink("--write"), 0)

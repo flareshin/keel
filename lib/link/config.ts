@@ -2,7 +2,7 @@ import path from "node:path"
 
 import * as env from "../../measure/lib/measurekit/env.ts"
 import { isDir, resolveLinks } from "../../measure/lib/measurekit/files.ts"
-import { isJsonObject } from "../../measure/lib/measurekit/json.ts"
+import { isExactInteger, isJsonObject, sortedKeys } from "../../measure/lib/measurekit/json.ts"
 import type { JsonValue } from "../../measure/lib/measurekit/json.ts"
 import { runProcess } from "../../measure/lib/measurekit/subprocess.ts"
 
@@ -40,9 +40,10 @@ export function runGit(cwd: string, ...args: string[]): string | null {
 }
 
 export function canonicalJson(value: JsonValue | undefined): string {
+  if (isExactInteger(value)) return value.rawJSON
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(", ")}]`
   if (isJsonObject(value)) {
-    const members = Object.keys(value).sort().map((key) => `${JSON.stringify(key)}: ${canonicalJson(value[key])}`)
+    const members = sortedKeys(value).map((key) => `${JSON.stringify(key)}: ${canonicalJson(value[key])}`)
     return `{${members.join(", ")}}`
   }
   return JSON.stringify(value ?? null)

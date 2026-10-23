@@ -319,6 +319,27 @@ describe("link outcomes that changed when the Python emulation was removed", () 
   })
 })
 
+describe("an empty recorded backup counts as no backup", () => {
+  for (const empty of ["[]", "{}"]) {
+    it(`settingsBackupField${empty === "[]" ? "EmptyList" : "EmptyObject"}_isReplacedByTheNextWrite_soUnlinkExits0`, () => {
+      const box = new LinkSandbox({ root: SCRATCH_ROOT })
+      try {
+        box.writeData("settings.json", LIVE_SETTINGS_WITH_MODEL)
+        assert.equal(box.runLinkWith([process.execPath, LINK_ENTRY], "--write").status, 0)
+        const state = JSON.parse(box.readData(LINK_STATE)) as Record<string, unknown>
+        box.writeData(LINK_STATE, JSON.stringify({ ...state, pre_keel_settings_backup: JSON.parse(empty) }))
+        const forced = box.runLinkWith([process.execPath, LINK_ENTRY], "--write", "--force")
+        assert.equal(forced.status, 0, forced.stderr)
+        assert.equal(JSON.parse(box.readData(LINK_STATE)).pre_keel_settings_backup, null)
+        const unlinked = box.runLinkWith([process.execPath, LINK_ENTRY], "--unlink")
+        assert.equal(unlinked.status, 0, unlinked.stderr)
+      } finally {
+        box.remove()
+      }
+    })
+  }
+})
+
 describe("a settings backup that is not a string is refused where python reads it as a file descriptor", () => {
   for (const divergence of NON_STRING_SETTINGS_BACKUPS) {
     const streams = divergence.redirected.map((stream) => stream[0]?.toUpperCase() + stream.slice(1)).join("And")

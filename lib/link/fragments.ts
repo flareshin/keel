@@ -2,7 +2,7 @@ import fs from "node:fs"
 import path from "node:path"
 
 import { InvalidUtf8Error, isFile, readUtf8 } from "../../measure/lib/measurekit/files.ts"
-import { isJsonObject, parseJson } from "../../measure/lib/measurekit/json.ts"
+import { isJsonObject, parseJsonKeepingIntegers } from "../../measure/lib/measurekit/json.ts"
 import type { JsonObject, JsonValue } from "../../measure/lib/measurekit/json.ts"
 import { activeStackNames, StackNameError } from "../../measure/lib/measurekit/ledger.ts"
 import { canonicalJson, expandPlaceholders, Refused } from "./config.ts"
@@ -57,7 +57,7 @@ export function activeStacks(paths: KeelPaths): string[] {
 function loadFragment(fragmentPath: string, paths: KeelPaths): JsonObject {
   let fragment: JsonValue
   try {
-    fragment = parseJson(readUtf8(fragmentPath))
+    fragment = parseJsonKeepingIntegers(readUtf8(fragmentPath))
   } catch (error) {
     if (error instanceof SyntaxError || error instanceof InvalidUtf8Error) throw new Refused(`${fragmentPath}: invalid JSON (${error.message})`)
     throw error

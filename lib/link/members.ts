@@ -9,6 +9,12 @@ export function setMember(object: JsonObject, key: string, value: JsonValue): vo
   Object.defineProperty(object, key, { value, enumerable: true, writable: true, configurable: true })
 }
 
+export function recordsNoBackup(value: JsonValue | undefined): boolean {
+  if (Array.isArray(value)) return value.length === 0
+  if (isJsonObject(value)) return Object.keys(value).length === 0
+  return !value
+}
+
 export function objectMember(object: JsonObject, key: string): JsonObject {
   const value = member(object, key)
   return isJsonObject(value) ? value : {}

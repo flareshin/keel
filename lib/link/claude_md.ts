@@ -2,9 +2,9 @@ import fs from "node:fs"
 import path from "node:path"
 
 import { entryExists, firstLine, isFile, isSymlink, readUtf8 } from "../../measure/lib/measurekit/files.ts"
-import { isJsonObject } from "../../measure/lib/measurekit/json.ts"
 import type { JsonValue } from "../../measure/lib/measurekit/json.ts"
 import { Refused } from "./config.ts"
+import { recordsNoBackup } from "./members.ts"
 import type { KeelPaths } from "./config.ts"
 
 export const HEADER =
@@ -40,12 +40,6 @@ export function restoreMovedAside(file: string, backupPath: JsonValue | undefine
   if (!entryExists(backupPath) || entryExists(file)) return null
   fs.renameSync(backupPath, file)
   return { op: RESTORE_OP, path: file, from: backupPath }
-}
-
-function recordsNoBackup(value: JsonValue | undefined): boolean {
-  if (Array.isArray(value)) return value.length === 0
-  if (isJsonObject(value)) return Object.keys(value).length === 0
-  return !value
 }
 
 function readWithFinalNewline(file: string): string {

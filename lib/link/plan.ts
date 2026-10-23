@@ -4,6 +4,7 @@ import path from "node:path"
 import { entryExists, isFile, isSymlink, readUtf8, resolveLinks } from "../../measure/lib/measurekit/files.ts"
 import { iterRegistrations } from "../../measure/lib/measurekit/hook_settings.ts"
 import type { Registration } from "../../measure/lib/measurekit/hook_settings.ts"
+import { isJsonNumber } from "../../measure/lib/measurekit/json.ts"
 import type { JsonObject } from "../../measure/lib/measurekit/json.ts"
 import { hookRowsInForce, loadLedgersFrom } from "../../measure/lib/measurekit/ledger.ts"
 import { runProcess } from "../../measure/lib/measurekit/subprocess.ts"
@@ -227,7 +228,7 @@ function isGate(registration: Registration): boolean {
 }
 
 function failsClosed(hook: JsonObject): boolean {
-  return hook["onFailure"] === FAIL_CLOSED && typeof hook["timeout"] === "number"
+  return hook["onFailure"] === FAIL_CLOSED && isJsonNumber(hook["timeout"])
 }
 
 function isFirstWriteOverOwnedKeys(paths: KeelPaths, live: settingsJson.LiveSettings): boolean {

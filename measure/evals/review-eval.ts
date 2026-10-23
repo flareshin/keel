@@ -13,7 +13,7 @@ import { appendJsonl, readJsonl } from "../lib/measurekit/datafiles.ts"
 import { compactUtcSeconds, utcSeconds } from "../lib/measurekit/dates.ts"
 import * as env from "../lib/measurekit/env.ts"
 import { isFile, readUtf8 } from "../lib/measurekit/files.ts"
-import { displayText, isJsonObject, parseJson, stringifySorted } from "../lib/measurekit/json.ts"
+import { displayText, isJsonObject, JSON_INDENT, parseJson, stringifySorted } from "../lib/measurekit/json.ts"
 import type { JsonObject } from "../lib/measurekit/json.ts"
 import { CaseError, SPLITS } from "./lib/evalkit/cases.ts"
 import { cliConfigDir } from "./lib/evalkit/liveconfig.ts"
@@ -31,7 +31,6 @@ const DEFAULT_TIMEOUT_SECONDS = 1800
 const RAW_DIR_PREFIX = "keel-review-eval-"
 const SUMMARY_LOG = "keel-review-eval.jsonl"
 const REVIEWER_FILES = ["lens-review.js", "adversarial-audit.js"]
-const JSON_INDENT = 2
 const COMMAND: CommandSpec = {
   prog: "measure/evals/review-eval",
   usage: "measure/evals/review-eval [-h] [--split {train,holdout}] [--case CASE] [--repeat N] [--model MODEL] [--timeout-seconds S] [--dry-run] [--regrade RAW_DIR]",

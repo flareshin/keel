@@ -6,14 +6,14 @@ import { compactUtcSeconds } from "../../measure/lib/measurekit/dates.ts"
 import { isFile, readUtf8 } from "../../measure/lib/measurekit/files.ts"
 import { isCommandHook, iterHookEntries } from "../../measure/lib/measurekit/hook_settings.ts"
 import type { Registration } from "../../measure/lib/measurekit/hook_settings.ts"
-import { isJsonObject, parseJson } from "../../measure/lib/measurekit/json.ts"
+import { isJsonObject, JSON_INDENT, parseJson, parseJsonKeepingIntegers } from "../../measure/lib/measurekit/json.ts"
 import type { JsonObject, JsonValue } from "../../measure/lib/measurekit/json.ts"
 import { writeTextAtomic, makedirs } from "./atomic.ts"
 import { canonicalJson, Refused } from "./config.ts"
 import type { KeelPaths } from "./config.ts"
 import { OWNED_KEYS } from "./fragments.ts"
 import { skipWhitespace, valueEnd } from "./json_spans.ts"
-import { member, objectMember, setMember } from "./members.ts"
+import { member, objectMember, recordsNoBackup, setMember } from "./members.ts"
 
 export const FILE_NAME = "settings.json"
 export const PRE_KEEL_BACKUP = "pre_keel_settings_backup"
@@ -24,7 +24,6 @@ const PRIVATE_FILE_MODE = 0o600
 const PRIVATE_DIR_MODE = 0o700
 const NO_PRE_KEEL_FILE = "none"
 const LINK_STATE_SCHEMA = 1
-const JSON_INDENT = 2
 
 export class LinkStateError extends Error {}
 
@@ -53,7 +52,7 @@ export function readLiveSettings(file: string): LiveSettings {
   const text = readUtf8(file)
   let values: JsonValue
   try {
-    values = parseJson(text)
+    values = parseJsonKeepingIntegers(text)
   } catch (error) {
     if (error instanceof SyntaxError) throw new Refused(`${file}: invalid JSON (${error.message}); fix it by hand first`)
     throw error
@@ -127,8 +126,8 @@ export function recordLastWrite(paths: KeelPaths, merged: JsonObject, backupPath
   const state: JsonObject = {
     schema: LINK_STATE_SCHEMA,
     settings_owned_sha256: ownedDigests,
-    [PRE_KEEL_BACKUP]: member(previous, PRE_KEEL_BACKUP) || preKeelRecord(backupPath),
-    [PRE_KEEL_CLAUDE_MD]: member(previous, PRE_KEEL_CLAUDE_MD) || claudeMdBackup,
+    [PRE_KEEL_BACKUP]: recordedOr(member(previous, PRE_KEEL_BACKUP), preKeelRecord(backupPath)),
+    [PRE_KEEL_CLAUDE_MD]: recordedOr(member(previous, PRE_KEEL_CLAUDE_MD), claudeMdBackup),
   }
   writePrivate(linkStatePath(paths), JSON.stringify(state, null, JSON_INDENT) + "\n")
 }
@@ -159,6 +158,10 @@ function asLinkStateObject(value: JsonValue, what: string): JsonObject {
   return value
 }
 
+function recordedOr(recorded: JsonValue | undefined, fresh: string | null): JsonValue {
+  return recordsNoBackup(recorded) ? fresh : (recorded as JsonValue)
+}
+
 function preKeelRecord(backupPath: string | null): string | null {
   if (backupPath === null) return null
   return isFile(backupPath) ? backupPath : NO_PRE_KEEL_FILE
@@ -173,7 +176,7 @@ function recordedSettingsBackup(paths: KeelPaths): string | null | undefined {
 function resolvePreKeelOwnedKeys(recorded: string | null | undefined): JsonObject | null {
   if (recorded === NO_PRE_KEEL_FILE) return {}
   if (!recorded || !isFile(recorded)) return null
-  const preKeel = parseJson(readUtf8(recorded))
+  const preKeel = parseJsonKeepingIntegers(readUtf8(recorded))
   if (Array.isArray(preKeel) || typeof preKeel === "string") return ownedKeysOfNonObjectBackup(preKeel, recorded)
   if (!isJsonObject(preKeel)) throw new TypeError(`${recorded}: the pre-keel settings backup is not a JSON object`)
   const owned: JsonObject = {}
@@ -190,7 +193,7 @@ function ownedKeysOfNonObjectBackup(preKeel: JsonValue[] | string, recorded: str
 function resolveRestoredSettingsText(liveText: string, preKeelOwned: JsonObject, recorded: string): string | null {
   let live: JsonValue | null
   try {
-    live = parseJson(liveText)
+    live = parseJsonKeepingIntegers(liveText)
   } catch (error) {
     if (!(error instanceof SyntaxError)) throw error
     live = null
@@ -324,9 +327,9 @@ function fillEmptyObject(text: string, closingBrace: number, merged: JsonObject)
 
 function verifySplice(original: string, spliced: string, merged: JsonObject): void {
   const expected: JsonObject = {}
-  for (const [key, value] of Object.entries(parseJson(original) as JsonObject)) if (!OWNED_KEYS.includes(key)) setMember(expected, key, value)
+  for (const [key, value] of Object.entries(parseJsonKeepingIntegers(original) as JsonObject)) if (!OWNED_KEYS.includes(key)) setMember(expected, key, value)
   for (const [key, value] of Object.entries(merged)) setMember(expected, key, value)
-  if (canonicalJson(parseJson(spliced)) !== canonicalJson(expected)) throw new SpliceError("settings splice produced different values than the merge")
+  if (canonicalJson(parseJsonKeepingIntegers(spliced)) !== canonicalJson(expected)) throw new SpliceError("settings splice produced different values than the merge")
   if (JSON.stringify(rawSpansOfUnowned(spliced)) !== JSON.stringify(rawSpansOfUnowned(original))) {
     throw new SpliceError("settings splice changed bytes of a key keel does not own")
   }

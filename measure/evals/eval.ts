@@ -13,7 +13,7 @@ import { compactUtcSeconds, utcSeconds } from "../lib/measurekit/dates.ts"
 import * as env from "../lib/measurekit/env.ts"
 import { InvalidUtf8Error, isDir, isSystemError, readUtf8, resolveLinks, splitLines } from "../lib/measurekit/files.ts"
 import { GitError } from "../lib/measurekit/gitutil.ts"
-import { displayText, isJsonObject, parseJson, stringifySorted } from "../lib/measurekit/json.ts"
+import { displayText, isJsonObject, JSON_INDENT, parseJson, stringifySorted } from "../lib/measurekit/json.ts"
 import type { JsonObject, JsonValue } from "../lib/measurekit/json.ts"
 import { allRows, loadLedgersFrom } from "../lib/measurekit/ledger.ts"
 import { Case, CaseError, loadCases, selectCases, SPLITS, splitGaps } from "./lib/evalkit/cases.ts"
@@ -32,7 +32,6 @@ const CASE_SUFFIX = ".case"
 const SKILL_ENFORCEMENT = "skill:"
 const RAW_DIR_PREFIX = "keel-eval-"
 const RUN_RECORD_KEYS = ["case", "run", "kind", "exit", "timed_out", "changed"]
-const JSON_INDENT = 2
 const COMMAND: CommandSpec = {
   prog: "measure/evals/eval",
   usage: "measure/evals/eval [-h] [--regrade RAW_DIR] [--model MODEL] [--split {train,holdout}] [--case CASE] [--repeat N] [--timeout-seconds S] [--dry-run] ID",

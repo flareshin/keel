@@ -353,7 +353,7 @@ describe("file checks", () => {
   it("dangling_recursesIntoSubdirectoriesInUtf16Order_likeTheBaseWalk", () => {
     const { box } = harness
     const skills = path.join(box.data, "skills")
-    for (const [directory, name] of [["\u{1F600}", "x"], ["\uFF10", "y"]]) {
+    for (const [directory, name] of [["\u{1F600}", "x"], ["\uFF10", "y"]] as const) {
       fs.mkdirSync(path.join(skills, directory), { recursive: true })
       fs.symlinkSync(path.join(box.root, "gone"), path.join(skills, directory, name))
     }

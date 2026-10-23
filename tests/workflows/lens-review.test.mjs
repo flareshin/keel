@@ -676,6 +676,20 @@ test('lensReview_asksTheReporterOnceMore_whenItsFirstHandBackWrapsTheReportInASt
   assert.equal(calls[1].opts.agentType, 'keel-reporter')
 })
 
+test('lensReview_acceptsTheRetriedReport_whenTheHarnessPrependsItsNoticeToTheSecondHandBack', async () => {
+  let handBacks = 0
+  const report = (prompt) => {
+    handBacks += 1
+    const body = reportBetweenMarkers(prompt)
+    return handBacks === 1 ? `${RECORDED_STRIPPED_MARKER}\n${body}` : `${RECORDED_HARNESS_NOTICE}\n\n${body}`
+  }
+  const rt = createRuntime({ respond: responder({ report }) })
+  const result = await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
+  assert.equal(result.verdict, 'PASS')
+  assert.match(result.report, /^VERDICT: PASS\n/)
+  assert.equal(reportCalls(rt).length, 2)
+})
+
 test('lensReview_returnsErrorAfterOneRetry_whenTheReporterFailsTwice', async () => {
   const rt = createRuntime({ respond: responder({ report: (prompt) => `${RECORDED_STRIPPED_MARKER}\n${reportBetweenMarkers(prompt)}` }) })
   const result = await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES })

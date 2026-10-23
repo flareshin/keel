@@ -4,7 +4,7 @@ import fs from "node:fs"
 import path from "node:path"
 
 import { readFixtureOutcomes, summarizeStderr, summarizeStdout, summarizeTree } from "./outcomes.ts"
-import { LINK_ENTRY, LinkSandbox, maskDigests, normalizeStamps, onlyBackup, scratchRoot, snapshotTree } from "./helpers.ts"
+import { LINK_ENTRY, LinkSandbox, listedDrops, maskDigests, normalizeStamps, onlyBackup, scratchRoot, snapshotTree } from "./helpers.ts"
 import type { LinkResult, RedirectedStream } from "./helpers.ts"
 
 const SCRATCH_ROOT = scratchRoot()
@@ -338,6 +338,25 @@ describe("an empty recorded backup counts as no backup", () => {
       }
     })
   }
+})
+
+describe("unlink restores a pre-keel integer above 2^53 exactly", () => {
+  it("ownedEnvIntegerAbove2To53_comesBackUnroundedAfterAdoptThenUnlink", () => {
+    const box = new LinkSandbox({ root: SCRATCH_ROOT })
+    const run = (...args: string[]) => box.runLinkWith([process.execPath, LINK_ENTRY], ...args)
+    try {
+      box.writeData("settings.json", '{"env": {"BIG": 12345678901234567890}, "model": "x"}\n')
+      const accepted = path.join(box.root, "accepted-drops.txt")
+      fs.writeFileSync(accepted, listedDrops(run("--write", "--adopt")).map((drop) => drop + "\n").join(""))
+      const adopted = run("--write", "--adopt", "--force", "--accept-drops", accepted)
+      assert.equal(adopted.status, 0, adopted.stderr)
+      const unlinked = run("--unlink")
+      assert.equal(unlinked.status, 0, unlinked.stderr)
+      assert.equal(box.readData("settings.json"), '{"env": {\n  "BIG": 12345678901234567890\n}, "model": "x"}\n')
+    } finally {
+      box.remove()
+    }
+  })
 })
 
 describe("a settings backup that is not a string is refused where python reads it as a file descriptor", () => {

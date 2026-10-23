@@ -21,25 +21,32 @@ All notable changes to keel are recorded here. The format follows
   and `internal error: Error: EISDIR: ...` replace Python class names); the review-eval stderr summary prints
   numbers as JavaScript does (`recall 1`, `none`).
 - Command lines: option prefixes are no longer expanded (`--gen`, `--sin=2020-1-1` and `--s` now exit 2 as unknown
-  options); `--repeat` and `--timeout-seconds` take ASCII digits only (` 1_0 ` and other scripts' digits now exit 2);
+  options); `--repeat` and `--timeout-seconds` take ASCII digits only (` 1_0 `, `+5` and other scripts' digits now exit 2,
+  leading zeros such as `010` still work); `-h` given as an option value (`--since -h`) is a value, not a help request,
+  so it still exits 2; `measure/boundary --range=` exits 2 with `--range takes <old>..<new>` (it was an internal error, 70);
   dates (`--since`, `review_by`, `grace_until`) take ASCII digits, one or two for month and day, and no space padding.
 - `boundary/regex.txt` and `measure/boundary-generic.tsv` are JavaScript `RegExp` syntax; a leading `(?i)` still
   makes a line case-insensitive. Python-only forms change meaning or exit 2 (`x{,3}` is literal text, `(?P<n>...)` and
   `(?x)` do not compile), `\d`, `\w` and `\b` are ASCII, and case folding no longer equates `İ` or `ı` with `i`.
-- Text files are split into lines at `\r\n`, `\r` and `\n` only. A ` `, `\f` or `\v` no longer starts a line, which
+- Text files are split into lines at `\r\n`, `\r` and `\n` only. A `\u2028`, `\f` or `\v` no longer starts a line, which
   moves boundary hit line numbers and keeps a bullet after one of them out of the `[ID]` tagging check.
 - Metric runners must print a JSON integer count: `true` and `false` are now an error (FAIL, a `recheck` proposal, a
   weekly `error` entry), `1.0` counts as 1, and a count beyond 2^53 is printed as the nearest double
   (`12345678901234567890` becomes `12345678901234567000`). Floats in runner items print in JavaScript form (`1.0` is `1`).
-- Every text input is decoded as strict UTF-8 in full. A `CLAUDE.md` with an invalid byte past its first 8 KiB now
-  makes `bin/link --check`, `--unlink` and `measure/evals/eval --dry-run` exit 70, as an invalid byte earlier already did.
+- A `fires:` or `evals:` metric no longer counts a log record whose `ts` is not a string (Python counted it by its text,
+  so `"ts": null` read as `None` and fell inside every window).
+- The files read through `readUtf8` (ledgers, TSV and JSONL data, link manifests, settings, fragments, link state,
+  `CLAUDE.md`, `PRINCIPLES.md`, skills, eval cases and fixtures) are decoded as strict UTF-8 in full. A `CLAUDE.md` with
+  an invalid byte past its first 8 KiB now makes `bin/link --check`, `--unlink` and `measure/evals/eval --dry-run`
+  exit 70, as an invalid byte earlier already did. The boundary scan alone decodes leniently on purpose: it replaces
+  invalid bytes so it can still scan such a file, as before.
 - `bin/link`: a `settings.json` holding `NaN` or `Infinity` is refused as invalid JSON (exit 3, was a drift report);
   a lone surrogate in a settings value is written as a `\udXXX` escape (`--write` exit 0, was 70) and shown as U+FFFD
   on stderr; integer-like keys inside an owned object (`env`, `permissions`) are written first, in ascending order;
   a drift report counts a non-list value where a list belongs as 0 items instead of failing or counting characters.
-- The `settings_owned_sha256` digests in `state/keel/link-state.json` hash the same text as before (sorted keys,
-  `", "` and `": "` separators, non-ASCII as is) for strings, integers, booleans, null, lists and objects; only floats
-  are written differently (`10.0` is `10`, `1e-07` is `1e-7`).
+- The `settings_owned_sha256` digests in `state/keel/link-state.json` hash the same text as before (keys sorted
+  by code point, `", "` and `": "` separators, non-ASCII as is) for strings, integers (also beyond 2^53, which settings and
+  fragments keep exact), booleans, null, lists and objects; only floats are written differently (`10.0` is `10`, `1e-07` is `1e-7`).
 
 ### Removed
 - The Python-emulation modules `measure/lib/measurekit/{pydate,pydict,pyerrno,pyerrors,pyio,pyjson,pypath,pyregex,

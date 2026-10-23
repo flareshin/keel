@@ -36,13 +36,14 @@ function addThirdReview(sandbox: Sandbox, repo: Repo, files: Record<string, stri
 }
 
 describe('ApprovedSeriesTest', () => {
-  test('commentDeletion_reusesApprovedSeries_afterLastReview', (t) => {
+  test('pythonCommentDeletion_requiresFreshEvidence_afterLastReview_thatPythonReused', (t) => {
     const [sandbox, repo] = stages(t);
     addThirdReview(sandbox, repo, { 'src/second.py': '# Ordinary explanation.\nsecond = 3\n', 'tests/test_second.py': 'assert 3 == 3\n' });
     sandbox.testsEvidence(repo);
     repo.commit({ 'src/second.py': 'second = 3\n' });
     const result = sandbox.push(repo, PUSH_FEATURE);
-    assert.equal(result.rc, 0, result.stderr);
+    assert.equal(result.rc, 2, result.stderr);
+    assert.ok(result.stderr.includes('src/second.py'), result.stderr);
   });
 
   test('adjacent_approved_changes_reuse_both_reviews', (t) => {

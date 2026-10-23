@@ -25,10 +25,13 @@ const UNREADABLE = "<unreadable>";
 const OVER_BOUND_NESTINGS = [10001, 200000];
 const OVER_BOUND_KINDS = ["gh-answer", "evidence-file", "stdin-push", "stdin-ls"];
 const COMMAND_DIVERGENT_NESTINGS = [9999, 10001];
+const PYTHON_COMMENT_DELETION_TESTS = ["0003", "0469", "0470", "0474", "0475", "0476", "0477"];
+const PYTHON_COMMENT_DELETION_SUITES = ["python-keel", "ts-keel"];
 
 export const EXPECTED_DIVERGENCES: ReadonlyMap<string, number> = new Map([
   ...OVER_BOUND_NESTINGS.flatMap((depth) => OVER_BOUND_KINDS.map((kind): [string, number] => [`${kind}-nested-${depth}`, DENY_EXIT_CODE])),
   ...COMMAND_DIVERGENT_NESTINGS.map((depth): [string, number] => [`command-list-nested-${depth}`, DENY_EXIT_CODE]),
+  ...PYTHON_COMMENT_DELETION_SUITES.flatMap((suite) => PYTHON_COMMENT_DELETION_TESTS.map((number): [string, number] => [`py-comment-deletion-${suite}-${number}`, DENY_EXIT_CODE])),
 ]);
 
 export type Suite = (typeof SUITES)[number];

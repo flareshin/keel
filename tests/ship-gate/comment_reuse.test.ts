@@ -13,12 +13,20 @@ function check(path: string, before: string, after: string): boolean {
 describe('CommentDeletionTest', () => {
   test('comments_reuseCode_whenWholeOrdinaryCommentsAreRemoved', () => {
     const cases: Array<[string, string, string]> = [
-      ['a.py', '# Explain the value.\nx = "# literal"\n', 'x = "# literal"\n'],
       ['a.ts', '// Explain the value.\nconst x = "// literal";\n', 'const x = "// literal";\n'],
       ['a.js', '/* Explain\n the value. */\nconst x = 1;\n', 'const x = 1;\n'],
       ['A.java', 'class A {\n  // Explain the value.\n  int x = 1;\n}\n', 'class A {\n  int x = 1;\n}\n'],
     ];
     for (const [path, before, after] of cases) assert.equal(check(path, before, after), true, path);
+  });
+
+  test('comments_invalidateEvidence_inPythonSourcesThatPythonOnceReused', () => {
+    const cases: Array<[recordedPython: boolean, path: string, before: string, after: string]> = [
+      [true, 'a.py', '# Explain the value.\nx = "# literal"\n', 'x = "# literal"\n'],
+    ];
+    for (const [recordedPython, path, before, after] of cases) {
+      assert.equal(check(path, before, after), false, `${path} ${JSON.stringify(before)} (Python recorded ${recordedPython})`);
+    }
   });
 
   test('comments_refuseCodeStringsModesAndUnsupportedSyntax', () => {
@@ -28,6 +36,7 @@ describe('CommentDeletionTest', () => {
       ['a.py', '"""description"""\nx = 1\n', 'x = 1\n'],
       ['a.py', 'x = 1 # note\n', 'x = 1\n'],
       ['a.py', '# note\nx = 1\n', 'x=1\n'],
+      ['a.py', 's = f"""{x=\n# hello there\n}"""\nprint(s)\n', 's = f"""{x=\n}"""\nprint(s)\n'],
       ['a.js', 'const x = 1;\n', '// note\nconst x = 1;\n'],
       ['a.js', '// note\nconst x = /pattern/;\n', 'const x = /pattern/;\n'],
       ['a.ts', '// note\nconst x = `text`;\n', 'const x = `text`;\n'],
@@ -63,6 +72,8 @@ describe('CommentDeletionTest', () => {
 });
 
 const PUSH_FEATURE = 'git push origin feature';
+const DENIED_WHERE_PYTHON_PASSED = 2;
+const CHANGED_AFTER_REVIEW = 'content or mode changed after review';
 
 class CommentReuseFixture {
   box: Sandbox;
@@ -83,18 +94,17 @@ class CommentReuseFixture {
 }
 
 describe('CommentReuseGateTest', () => {
-  test('push_reusesApprovedReviewAndTests_afterPureCommentDeletion', (t) => {
+  test('push_requiresFreshEvidence_afterPythonCommentDeletion_thatPythonReused', (t) => {
     const f = new CommentReuseFixture(t);
     f.repo.commit({ 'src/a.py': 'print(1)\n' });
 
     const result = f.box.push(f.repo, PUSH_FEATURE);
 
-    assert.equal(result.rc, 0, result.stderr);
-    assert.equal(f.box.evidenceFiles('review').length, 1);
-    assert.equal(f.box.evidenceFiles('tests').length, 1);
+    assert.equal(result.rc, DENIED_WHERE_PYTHON_PASSED, result.stderr);
+    assert.ok(result.stderr.includes(CHANGED_AFTER_REVIEW), result.stderr);
   });
 
-  test('merge_reusesApprovedReviewAndTests_afterPureCommentDeletion', (t) => {
+  test('merge_requiresFreshEvidence_afterPythonCommentDeletion_thatPythonReused', (t) => {
     const f = new CommentReuseFixture(t);
     f.repo.commit({ 'src/a.py': 'print(1)\n' });
     f.repo.git('push', '-q', 'origin', 'feature');
@@ -105,16 +115,18 @@ describe('CommentReuseGateTest', () => {
 
     const result = f.box.push(f.repo, 'gh pr merge 7 --squash --match-head-commit ' + f.repo.head());
 
-    assert.equal(result.rc, 0, result.stderr);
+    assert.equal(result.rc, DENIED_WHERE_PYTHON_PASSED, result.stderr);
+    assert.ok(result.stderr.includes(CHANGED_AFTER_REVIEW), result.stderr);
   });
 
-  test('push_reusesEvidence_whenOnlyTestCommentsAreDeleted', (t) => {
+  test('push_requiresFreshEvidence_whenOnlyPythonTestCommentsAreDeleted_thatPythonReused', (t) => {
     const f = new CommentReuseFixture(t);
     f.repo.commit({ 'tests/test_a.py': 'def test_a():\n    assert True\n' });
 
     const result = f.box.push(f.repo, PUSH_FEATURE);
 
-    assert.equal(result.rc, 0, result.stderr);
+    assert.equal(result.rc, DENIED_WHERE_PYTHON_PASSED, result.stderr);
+    assert.ok(result.stderr.includes(CHANGED_AFTER_REVIEW), result.stderr);
   });
 
   test('push_stillRequiresApproval_afterPureCommentDeletion', (t) => {
@@ -139,7 +151,7 @@ describe('CommentReuseGateTest', () => {
     }
   });
 
-  test('push_reusesEvidence_withoutNewTestInCommentOnlyRange', (t) => {
+  test('push_requiresFreshEvidence_withoutNewTestInPythonCommentOnlyRange_thatPythonReused', (t) => {
     const f = new CommentReuseFixture(t);
     f.repo.git('push', '-q', 'origin', 'HEAD:main');
     f.repo.git('fetch', '-q', 'origin');
@@ -147,7 +159,8 @@ describe('CommentReuseGateTest', () => {
 
     const result = f.box.push(f.repo, PUSH_FEATURE);
 
-    assert.equal(result.rc, 0, result.stderr);
+    assert.equal(result.rc, DENIED_WHERE_PYTHON_PASSED, result.stderr);
+    assert.ok(result.stderr.includes(CHANGED_AFTER_REVIEW), result.stderr);
   });
 
   test('push_refusesModeChanges_evenAfterPureCommentDeletion', (t) => {

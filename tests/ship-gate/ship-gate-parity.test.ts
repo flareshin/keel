@@ -60,9 +60,13 @@ describe("ship-gate parity checkout repo key", () => {
 describe("ship-gate parity listed divergences", () => {
   const label = "gh-answer-nested-200000";
 
-  it("lists the over-bound rows for the gh answer, the evidence file, stdin and a list command", () => {
+  it("lists the over-bound rows for the gh answer, the evidence file, stdin and a list command, and the python comment deletions that no longer keep evidence", () => {
     assert.deepEqual([...EXPECTED_DIVERGENCES.keys()].sort(), [
       "command-list-nested-10001", "command-list-nested-9999", "evidence-file-nested-10001", "evidence-file-nested-200000", "gh-answer-nested-10001", "gh-answer-nested-200000",
+      "py-comment-deletion-python-keel-0003", "py-comment-deletion-python-keel-0469", "py-comment-deletion-python-keel-0470", "py-comment-deletion-python-keel-0474",
+      "py-comment-deletion-python-keel-0475", "py-comment-deletion-python-keel-0476", "py-comment-deletion-python-keel-0477",
+      "py-comment-deletion-ts-keel-0003", "py-comment-deletion-ts-keel-0469", "py-comment-deletion-ts-keel-0470", "py-comment-deletion-ts-keel-0474",
+      "py-comment-deletion-ts-keel-0475", "py-comment-deletion-ts-keel-0476", "py-comment-deletion-ts-keel-0477",
       "stdin-ls-nested-10001", "stdin-ls-nested-200000", "stdin-push-nested-10001", "stdin-push-nested-200000",
     ]);
     assert.deepEqual([...new Set(EXPECTED_DIVERGENCES.values())], [DENY]);

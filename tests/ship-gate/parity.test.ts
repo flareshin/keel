@@ -164,6 +164,7 @@ describe('python parity', () => {
   const corpus = buildCorpus();
   const python = recordedAnswers<typeof corpus, Record<string, any>>('ship-gate-parity', [corpus])[0] as Record<string, any>;
   let cases = 0;
+  let intendedDivergences = 0;
   const mismatches: string[] = [];
 
   function compare<T>(label: string, inputs: readonly unknown[], actual: T[], expected: T[]): void {
@@ -196,8 +197,13 @@ describe('python parity', () => {
   test('str.splitlines', () => compare('splitlines', corpus.text, corpus.text.map(pySplitLines), python.splitlines));
   test('str.split', () => compare('split', corpus.text, corpus.text.map(pySplitWhitespace), python.split));
   test('repr(str)', () => compare('repr', corpus.text, corpus.text.map(pyRepr), python.repr));
-  test('only_comment_deletions', () => compare('comments', corpus.comments,
-    corpus.comments.map(([path, before, after]) => onlyCommentDeletions(path, Buffer.from(before), Buffer.from(after))), python.comments));
+  test('only_comment_deletions', () => {
+    const isPython = ([path]: readonly [string, string, string]) => path.endsWith('.py');
+    const expected = corpus.comments.map((input, index) => (isPython(input) ? false : python.comments[index]));
+    compare('comments', corpus.comments,
+      corpus.comments.map(([path, before, after]) => onlyCommentDeletions(path, Buffer.from(before), Buffer.from(after))), expected);
+    intendedDivergences += corpus.comments.filter((input, index) => isPython(input) && python.comments[index] === true).length;
+  });
   test('os.path.expanduser', { skip: recordedPlatformMatches() ? false : 'account home directories were recorded on darwin' }, () => {
     const saved = process.env['HOME'];
     process.env['HOME'] = RECORDED_HOME;
@@ -219,8 +225,9 @@ describe('python parity', () => {
   });
 
   test('summary', (t) => {
-    t.diagnostic(`parity: ${cases} cases, ${mismatches.length} mismatches`);
+    t.diagnostic(`parity: ${cases} cases, ${mismatches.length} mismatches, ${intendedDivergences} intended divergences`);
     assert.deepEqual(mismatches.slice(0, 10), []);
+    assert.ok(intendedDivergences > 0);
     assert.ok(cases > 3000);
   });
 });

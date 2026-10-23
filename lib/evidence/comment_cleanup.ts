@@ -1,7 +1,6 @@
 import { posix } from 'node:path';
 import * as gitcmd from './gitcmd.ts';
 import { PYTHON_SPACE_PATTERN, UnicodeDecodeError, decodeStrict, pyStrip } from './pycompat.ts';
-import { pythonCommentSpans } from './python_comments.ts';
 
 const MAX_SOURCE_BYTES = 1024 * 1024;
 const PYTHON_SPACE_MEMBERS = PYTHON_SPACE_PATTERN.slice(1, -1);
@@ -15,7 +14,7 @@ const PROTECTED_KEYWORDS = 'copyright|licen[cs]e|spdx|notice|rights reserved|tra
 const DOTTED_OR_DOTLESS_I = '[i\\u0130\\u0131]';
 const PROTECTED = new RegExp(
   PROTECTED_KEYWORDS.replaceAll('i', DOTTED_OR_DOTLESS_I).replace('<space>', `[${PYTHON_SPACE_MEMBERS}-]`), 'iu');
-const SUPPORTED_SUFFIXES = ['.py', '.js', '.ts', '.java'];
+const SUPPORTED_SUFFIXES = ['.js', '.ts', '.java'];
 const REGULAR_FILE_MODES = ['100644', '100755'];
 const FORBIDDEN_CHARS = ['\0', '\ufeff', '\u2028', '\u2029'];
 type Span = [start: number, end: number, body: string];
@@ -72,7 +71,7 @@ export function onlyCommentDeletions(path: string, before: Buffer, after: Buffer
     return false;
   }
   if (old.replaceAll('\r\n', '').includes('\r') || FORBIDDEN_CHARS.some((char) => old.includes(char))) return false;
-  const spans = suffix === '.py' ? pythonCommentSpans(old) : slashComments(old, suffix);
+  const spans = slashComments(old, suffix);
   if (spans === null) return false;
   const chunks: Array<[text: string, removable: boolean]> = [];
   let cursor = 0;

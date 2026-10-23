@@ -4,6 +4,7 @@ import { describe, it } from "node:test"
 
 import { pythonJsonDumps, pythonJsonLoads, pythonJsonRawDecode } from "../../measure/lib/measurekit/pyjson.ts"
 import { shlexQuote } from "../../measure/lib/measurekit/shlex.ts"
+import { recordedAnswers } from "../recorded.ts"
 
 const PYTHON_ORACLE = String.raw`
 import json, shlex, sys
@@ -30,7 +31,7 @@ function askPython(cases: Case[]): unknown[] {
 }
 
 function compare(cases: Case[], actual: unknown[]): void {
-  const expected = askPython(cases)
+  const expected = recordedAnswers("link-compat", cases, askPython)
   const mismatches = cases.flatMap((entry, index) => (JSON.stringify(expected[index]) === JSON.stringify(actual[index]) ? [] : [{ entry, expected: expected[index], actual: actual[index] }]))
   assert.deepEqual(mismatches, [])
 }

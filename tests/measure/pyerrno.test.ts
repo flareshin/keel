@@ -10,6 +10,7 @@ import { knownErrnoCodes } from "../../measure/lib/measurekit/pyerrno.ts"
 import { OsError } from "../../measure/lib/measurekit/pyerrors.ts"
 import { readBytes } from "../../measure/lib/measurekit/pyio.ts"
 import { runProcess } from "../../measure/lib/measurekit/subprocess.ts"
+import { recordedAnswers, recordedPlatformMatches } from "../recorded.ts"
 
 const PYTHON_ORACLE = String.raw`
 import json, os, sys
@@ -73,11 +74,16 @@ before(() => {
 
 after(() => fs.rmSync(root, { recursive: true, force: true }))
 
-function pythonAnswers(): { errnos: Record<string, [string, string]>; operations: Record<string, string> } {
+type PythonAnswers = { errnos: Record<string, [string, string]>; operations: Record<string, string> }
+
+function pythonAnswers(): PythonAnswers {
   const request = { errnos: Object.fromEntries(knownErrnoCodes().map((code) => [code, os.constants.errno[code as keyof typeof os.constants.errno]])), operations: Object.keys(OPERATIONS) }
-  const completed = spawnSync("python3", ["-I", "-c", PYTHON_ORACLE, root], { input: JSON.stringify(request), encoding: "utf8" })
-  assert.equal(completed.status, 0, completed.stderr)
-  return JSON.parse(completed.stdout)
+  const askPython = ([question]: (typeof request)[]): PythonAnswers[] => {
+    const completed = spawnSync("python3", ["-I", "-c", PYTHON_ORACLE, root], { input: JSON.stringify(question), encoding: "utf8" })
+    assert.equal(completed.status, 0, completed.stderr)
+    return [JSON.parse(completed.stdout)]
+  }
+  return recordedAnswers("measure-pyerrno", [request], askPython, { "{{ROOT}}": root })[0] as PythonAnswers
 }
 
 function internalErrorOf(operation: () => void): string {
@@ -89,7 +95,7 @@ function internalErrorOf(operation: () => void): string {
   return "no error"
 }
 
-describe("errno text matches python", () => {
+describe("errno text matches python", { skip: recordedPlatformMatches() ? false : "errno wording was recorded on darwin" }, () => {
   it("everyKnownErrnoCode_hasPythonsClassAndStrerror", () => {
     const answers = pythonAnswers().errnos
     for (const code of knownErrnoCodes()) {

@@ -128,11 +128,12 @@ describe("python path behaviors", () => {
     const name = directoryServicesOnlyAccount();
     if (name === null) return context.skip("no account outside /etc/passwd on this machine");
 
-    const expected = spawnSync("python3", ["-I", "-c", "import os, sys; print(os.path.expanduser(sys.argv[1]))", `~${name}/x`], { encoding: "utf8" });
+    const home = spawnSync("dscl", [".", "-read", `/Users/${name}`, "NFSHomeDirectory"], { encoding: "utf8" });
 
-    assert.equal(expected.status, 0, expected.stderr);
-    assert.notEqual(expected.stdout.trim(), `~${name}/x`);
-    assert.equal(pycompat.expandUser(`~${name}/x`), expected.stdout.trim());
+    assert.equal(home.status, 0, home.stderr);
+    const directory = /^NFSHomeDirectory: (\S+)$/m.exec(home.stdout)?.[1];
+    assert.ok(directory, home.stdout);
+    assert.equal(pycompat.expandUser(`~${name}/x`), `${directory.replace(/\/+$/, "")}/x`);
   });
 
   it("expandUser_spawnsTheDirectoryLookupOnce_perName", (context) => {

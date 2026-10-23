@@ -9,8 +9,8 @@ export const STANDARD = 'standard';
 export const HEAVY = 'heavy';
 export const CLASS_ORDER = [SMOKE_ONLY, LIGHT, STANDARD, HEAVY];
 const LOGIC_CLASSES = [STANDARD, HEAVY];
-const TEST_SEGMENTS = new Set(['test', 'tests', '__tests__']);
-const TEST_BASENAME_GLOBS = ['test_*.py', '*_test.*', '*.test.*', '*.spec.*'];
+export const TEST_SEGMENTS = new Set(['test', 'tests', '__tests__']);
+export const TEST_BASENAME_GLOBS = ['test_*.py', '*_test.*', '*.test.*', '*.spec.*'];
 
 export interface PathRisk {
   path: string;

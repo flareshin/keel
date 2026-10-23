@@ -7,6 +7,7 @@ import { driftedOwnedKeys, listDroppedItems, spliceOwnedKeys } from "../../lib/l
 import { errorName } from "../../measure/lib/measurekit/pyerrors.ts"
 import { pythonJsonLoads } from "../../measure/lib/measurekit/pyjson.ts"
 import type { JsonObject } from "../../measure/lib/measurekit/pyvalue.ts"
+import { recordedAnswers } from "../recorded.ts"
 import { KEEL_ROOT } from "./helpers.ts"
 
 const PYTHON_ORACLE = String.raw`
@@ -127,7 +128,7 @@ function typescriptResult(operation: string, first: string, second: string): unk
 }
 
 function assertParity(cases: Case[]): void {
-  const expected = askPython(cases)
+  const expected = recordedAnswers("link-settings-parity", cases, askPython)
   const bad = cases.flatMap(([operation, first, second], index) => {
     const actual = typescriptResult(operation, first, second)
     return JSON.stringify(actual) === JSON.stringify(expected[index]) ? [] : [{ operation, first, second, expected: expected[index], actual }]

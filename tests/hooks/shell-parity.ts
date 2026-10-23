@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from "node:util";
 import { join } from "node:path";
 import * as shell from "../../hooks/lib/hookkit/shell.ts";
 import { sortedByCodePoint } from "../../hooks/lib/hookkit/pycompat.ts";
+import { recordedAnswers } from "../recorded.ts";
 import { ADVERSARIAL_SPELLINGS } from "./shell-parity-corpus.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..");
@@ -15,6 +16,7 @@ const ENVIRONMENTS: Array<Array<[string, string]>> = [[], [["A", "/a"], ["APP", 
 const FIXTURE_PLACEHOLDERS: Array<[string, string]> = [["{repo}", "/work/repo"], ["{tmp}", "/tmp/outside"], ["{head}", "0123456789abcdef"]];
 const MAX_MISMATCHES_SHOWN = 10;
 const PROBED_VARIABLES = ["A", "HOME", "NOT_REMOVED"];
+const FIXED_ENVIRONMENT: Record<string, string> = { HOME: "/home/tester", PATH: "/usr/local/bin:/usr/bin:/bin", TMPDIR: "/tmp", USER: "tester" };
 
 interface Call {
   fn: string;
@@ -134,7 +136,23 @@ const TYPESCRIPT_TABLE: Record<string, (...args: never[]) => Json> = {
     shell.resolveDirectory(directory, target, variables(pairs)),
 };
 
+function inFixedEnvironment<T>(body: () => T): T {
+  const saved = { ...process.env };
+  for (const name of Object.keys(process.env)) delete process.env[name];
+  Object.assign(process.env, FIXED_ENVIRONMENT);
+  try {
+    return body();
+  } finally {
+    for (const name of Object.keys(process.env)) delete process.env[name];
+    Object.assign(process.env, saved);
+  }
+}
+
 function runTypeScript(calls: Call[]): Json[] {
+  return inFixedEnvironment(() => runTypeScriptWithCurrentEnvironment(calls));
+}
+
+function runTypeScriptWithCurrentEnvironment(calls: Call[]): Json[] {
   return calls.map((call) => {
     try {
       const handler = TYPESCRIPT_TABLE[call.fn];
@@ -147,8 +165,9 @@ function runTypeScript(calls: Call[]): Json[] {
 }
 
 function runCompanion(mode: string, input: string, files: string[] = []): unknown {
-  const result = spawnSync("python3", ["-I", COMPANION, join(ROOT, "hooks", "lib"), mode, ...files], {
-    input, encoding: "utf8", maxBuffer: 1 << 30,
+  const python = spawnSync("sh", ["-c", "command -v python3"], { encoding: "utf8" }).stdout.trim();
+  const result = spawnSync(python, ["-I", COMPANION, join(ROOT, "hooks", "lib"), mode, ...files], {
+    input, encoding: "utf8", maxBuffer: 1 << 30, env: FIXED_ENVIRONMENT,
   });
   if (result.status !== 0) throw new Error(`companion failed: ${result.stderr || result.error?.message}`);
   return JSON.parse(result.stdout) as Json;
@@ -170,7 +189,9 @@ function fixtureCommands(): string[] {
 }
 
 export function buildCorpus(): string[] {
-  const literals = runCompanion("corpus", "", [...pythonFiles("tests/hooks"), ...pythonFiles("tests/ship-gate")]) as string[];
+  const [literals] = recordedAnswers("shell-parity-literals", ["python tests"], () => [
+    runCompanion("corpus", "", [...pythonFiles("tests/hooks"), ...pythonFiles("tests/ship-gate")]) as string[],
+  ]) as [string[]];
   return sortedByCodePoint(new Set([...literals, ...fixtureCommands(), ...ADVERSARIAL_SPELLINGS]));
 }
 
@@ -218,7 +239,12 @@ function argvCalls(corpus: string[]): Call[] {
 export function runParity(): ParityReport {
   const corpus = buildCorpus();
   const calls = [...textCalls(corpus), ...argvCalls(corpus)];
-  const { results: expected, coverage } = runCompanion("run", JSON.stringify(calls)) as CompanionRun;
+  let recordedRun: CompanionRun | undefined;
+  const expected = recordedAnswers("shell-parity", calls, (questions) => {
+    recordedRun = runCompanion("run", JSON.stringify(questions)) as CompanionRun;
+    return recordedRun.results;
+  });
+  const coverage = recordedAnswers("shell-parity-coverage", ["shell.py"], () => [(recordedRun as CompanionRun).coverage])[0] as CompanionCoverage;
   const actual = runTypeScript(calls);
   const details: string[] = [];
   let mismatches = 0;

@@ -16,6 +16,8 @@ import { codePointLength, pyInt, pyLstrip, pySplitlines, pySplitWhitespace, pySt
 import { PyFloat, pyFloatRepr, pyRepr, roundToFourDecimals } from "../../measure/lib/measurekit/pyvalue.ts"
 import { runProcess, TimeoutExpired } from "../../measure/lib/measurekit/subprocess.ts"
 import type { PyValue } from "../../measure/lib/measurekit/pyvalue.ts"
+import { recordedAnswers } from "../recorded.ts"
+import type { Tokens } from "../recorded.ts"
 
 const PYTHON_ORACLE = String.raw`
 import json, os, re, shlex, struct, sys, tempfile
@@ -126,8 +128,8 @@ function oracle(cases: Case[], env: NodeJS.ProcessEnv = process.env): unknown[] 
 let mismatches = 0
 let compared = 0
 
-function compare(cases: Case[], actual: unknown[], env?: NodeJS.ProcessEnv): void {
-  const expected = oracle(cases, env)
+function compare(cases: Case[], actual: unknown[], env?: NodeJS.ProcessEnv, tokens: Tokens = {}): void {
+  const expected = recordedAnswers("measure-pycompat", cases, (questions) => oracle(questions, env), tokens)
   assert.equal(expected.length, actual.length)
   const bad: string[] = []
   expected.forEach((value, index) => {
@@ -476,7 +478,7 @@ describe("python compatibility helpers match python3", () => {
 
     it("realpath_agrees_throughLinksLoopsDanglingLinksAndMissingTails", () => {
       const inputs = ["link", "link/sub", "link/../real", "link/sub/missing/tail", "loop-a", "loop-a/x", "dangling", "dangling/x", "real/../link", "nothing/at/all", "./link/./sub/.."].map((name) => path.join(root, name))
-      compare(inputs.map((input): Case => ["path", ["realpath", input, ""]]), inputs.map((input) => realpath(input)))
+      compare(inputs.map((input): Case => ["path", ["realpath", input, ""]]), inputs.map((input) => realpath(input)), undefined, { "{{ROOT}}": root })
     })
 
     it("expanduser_agrees_onTildeForms", () => {

@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { userInfo } from 'node:os';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { describe, test } from 'node:test';
@@ -14,7 +13,10 @@ import type { JsonValue } from '../../lib/evidence/pycompat.ts';
 import { normalizeRepoKey } from '../../lib/evidence/registry.ts';
 import { isTestPath } from '../../lib/evidence/risk.ts';
 import { recognize } from '../../lib/evidence/testrun.ts';
+import { recordedAnswers, recordedPlatformMatches } from '../recorded.ts';
 import { KEEL_HOME } from './helpers.ts';
+
+const RECORDED_HOME = '/home/tester';
 
 const PYTHON_SIDE = `
 import sys, json, fnmatch, os
@@ -163,7 +165,7 @@ function buildCorpus() {
   const identityGroups = [['b'], ['a', 'b'], ['b', 'a'], ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'], ['é', '😀', 'z', '\u{10000}', '\uffff']];
   const byteAlphabet = ['41', '7f', '80', 'bf', 'c0', 'c2', 'df', 'e0', 'a0', 'e2', '82', 'ac', 'ed', '9f', 'f0', '9f', '98', '80', 'f4', '8f', 'f5', 'ff', 'c3', 'a9'];
   const byteStrings = Array.from({ length: 1500 }, () => Array.from({ length: between(0, 8) }, () => pick(byteAlphabet)).join(''));
-  const expandUsers = ['~', '~/x', '~/', '/abs', 'rel', '~root', '~root/', '~root/x/y', '~nosuchuser/x', '~x/y', '', `~${userInfo().username}`, `~${userInfo().username}/.claude`, '~daemon/x', '~/~root'];
+  const expandUsers = ['~', '~/x', '~/', '/abs', 'rel', '~root', '~root/', '~root/x/y', '~nosuchuser/x', '~x/y', '', '~daemon/x', '~/~root'];
   return { repoKey: origins, fnmatch: fnmatchCases, testPath: testPaths, recognize: outputs, dumps, loads, text, comments, expanduser: expandUsers, ids, identity_groups: identityGroups, bytes: byteStrings };
 }
 
@@ -186,11 +188,14 @@ function tsLoads(text: string): JsonValue {
 
 describe('python parity', () => {
   const corpus = buildCorpus();
-  const completed = spawnSync('python3', ['-I', '-X', 'utf8', '-c', PYTHON_SIDE, join(KEEL_HOME, 'lib')], {
-    input: JSON.stringify(corpus), encoding: 'utf8', maxBuffer: 1 << 30,
-  });
-  assert.equal(completed.status, 0, completed.stderr);
-  const python = JSON.parse(completed.stdout);
+  const askPython = ([question]: Array<typeof corpus>) => {
+    const completed = spawnSync('python3', ['-I', '-X', 'utf8', '-c', PYTHON_SIDE, join(KEEL_HOME, 'lib')], {
+      input: JSON.stringify(question), encoding: 'utf8', maxBuffer: 1 << 30, env: { ...process.env, HOME: RECORDED_HOME },
+    });
+    assert.equal(completed.status, 0, completed.stderr);
+    return [JSON.parse(completed.stdout)];
+  };
+  const python = recordedAnswers('ship-gate-parity', [corpus], askPython)[0];
   let cases = 0;
   const mismatches: string[] = [];
 
@@ -226,8 +231,15 @@ describe('python parity', () => {
   test('repr(str)', () => compare('repr', corpus.text, corpus.text.map(pyRepr), python.repr));
   test('only_comment_deletions', () => compare('comments', corpus.comments,
     corpus.comments.map(([path, before, after]) => onlyCommentDeletions(path, Buffer.from(before), Buffer.from(after))), python.comments));
-  test('os.path.expanduser', () => {
-    compare('expanduser', corpus.expanduser, corpus.expanduser.map(expandUser), python.expanduser);
+  test('os.path.expanduser', { skip: recordedPlatformMatches() ? false : 'account home directories were recorded on darwin' }, () => {
+    const saved = process.env['HOME'];
+    process.env['HOME'] = RECORDED_HOME;
+    try {
+      compare('expanduser', corpus.expanduser, corpus.expanduser.map(expandUser), python.expanduser);
+    } finally {
+      if (saved === undefined) delete process.env['HOME'];
+      else process.env['HOME'] = saved;
+    }
   });
   test('codex review run id', () => compare('reviewRunId', corpus.identity_groups,
     corpus.identity_groups.map((group) => reviewRunId(group.map((identity) => ({ identity, path: '', sha256: '', meta: {}, report: {} })))), python.reviewRunId));

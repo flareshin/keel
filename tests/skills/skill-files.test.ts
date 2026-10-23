@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { describe, it } from "node:test";
+import { gatedRepos } from "../../lib/evidence/registry.ts";
 import { splitlines } from "../../hooks/lib/hookkit/pycompat.ts";
 import { bulletTags, GENERATED_HEADER, K5_SUB_IDS, KEEL_HOME, PRINCIPLES, read, rulesSection, SKILLS_DIR, skillPaths, VALID_IDS } from "./helpers.ts";
 
@@ -187,16 +187,15 @@ describe("example data", () => {
     const overlay = realpathSync(mkdtempSync(join(realpathSync(tmpdir()), "keel-design-overlay-")));
     try {
       writeFileSync(join(overlay, "gated-repos.tsv"), block as string);
-      const code = [
-        "import json, sys",
-        `sys.path.insert(0, ${JSON.stringify(join(KEEL_HOME, "lib"))})`,
-        "from evidence import registry",
-        "repos = registry.gated_repos()",
-        "print(json.dumps([repos['example/notes-data'].push_approval, repos['acmecorp/deploy-config'].push_approval]))",
-      ].join("\n");
-      const completed = spawnSync("python3", ["-I", "-c", code], { encoding: "utf8", env: { ...process.env, KEEL_OVERLAY_DIR: overlay } });
-      assert.equal(completed.status, 0, completed.stderr);
-      assert.deepEqual(JSON.parse(completed.stdout), ["false", "true"]);
+      const savedOverlay = process.env["KEEL_OVERLAY_DIR"];
+      process.env["KEEL_OVERLAY_DIR"] = overlay;
+      try {
+        const repos = gatedRepos();
+        assert.deepEqual([repos.get("example/notes-data")?.pushApproval, repos.get("acmecorp/deploy-config")?.pushApproval], ["false", "true"]);
+      } finally {
+        if (savedOverlay === undefined) delete process.env["KEEL_OVERLAY_DIR"];
+        else process.env["KEEL_OVERLAY_DIR"] = savedOverlay;
+      }
     } finally {
       rmSync(overlay, { recursive: true, force: true });
     }

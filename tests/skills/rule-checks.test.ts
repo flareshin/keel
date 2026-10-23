@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
+import { isTestPath as riskIsTestPath, TEST_BASENAME_GLOBS as riskTestBasenameGlobs, TEST_SEGMENTS as riskTestSegments } from "../../lib/evidence/risk.ts";
 import { foldDottedAndDotlessI as hookkitFold } from "../../hooks/lib/hookkit/pycompat.ts";
 import { foldDottedAndDotlessI, isTestPath, TEST_BASENAME_GLOBS, TEST_SEGMENTS } from "../../skills/readable-code/scripts/rule-checks.ts";
 import { Isolated, KEEL_HOME, RULE_CHECKS } from "./helpers.ts";
@@ -238,38 +239,17 @@ describe("rule-checks CLI", () => {
 describe("test path equivalence with the risk classifier", () => {
   const PATHS = ["tests/test_x.py", "src/test/A.java", "web/a.test.ts", "pkg/a_test.go", "__tests__/a.js", "test_x.py", "web/b.spec.tsx", "src/app.py",
     "web/Screen.tsx", "lib/contest/a.py", "docs/testing.md", "latest.py"];
-  let fixture: Isolated;
-
-  function riskClassifier(): { segments: string[]; globs: string[]; verdicts: boolean[] } {
-    const code = [
-      "import json, sys",
-      `sys.path.insert(0, ${JSON.stringify(join(KEEL_HOME, "lib"))})`,
-      "from evidence import risk",
-      `paths = ${JSON.stringify(PATHS)}`,
-      "print(json.dumps({'segments': sorted(risk.TEST_SEGMENTS), 'globs': list(risk.TEST_BASENAME_GLOBS), 'verdicts': [risk.is_test_path(p) for p in paths]}))",
-    ].join("\n");
-    const completed = spawnSync("python3", ["-I", "-c", code], { encoding: "utf8", env: fixture.env });
-    assert.equal(completed.status, 0, completed.stderr);
-    return JSON.parse(completed.stdout) as { segments: string[]; globs: string[]; verdicts: boolean[] };
-  }
-
-  beforeEach(() => {
-    fixture = new Isolated();
-  });
-
-  afterEach(() => fixture.close());
 
   it("test_testPathConstants_equalTheRiskClassifiers", () => {
-    const risk = riskClassifier();
-    assert.deepEqual([...TEST_SEGMENTS].sort(), risk.segments);
-    assert.deepEqual(TEST_BASENAME_GLOBS, risk.globs);
+    assert.deepEqual([...TEST_SEGMENTS].sort(), [...riskTestSegments].sort());
+    assert.deepEqual(TEST_BASENAME_GLOBS, riskTestBasenameGlobs);
   });
 
   it("test_isTestPath_agreesWithRiskClassifier_forSharedPathTable", () => {
-    const risk = riskClassifier();
-    const disagreements = PATHS.filter((path, index) => isTestPath(path) !== risk.verdicts[index]);
+    const verdicts = PATHS.map(riskIsTestPath);
+    const disagreements = PATHS.filter((path, index) => isTestPath(path) !== verdicts[index]);
     assert.deepEqual(disagreements, []);
-    assert.deepEqual(new Set(risk.verdicts), new Set([true, false]));
+    assert.deepEqual(new Set(verdicts), new Set([true, false]));
   });
 });
 

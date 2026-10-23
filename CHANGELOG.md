@@ -29,6 +29,8 @@ release adds the TypeScript side and proves it equal to the Python, and a later 
 - `package.json`, `tsconfig.json` (strict, `erasableSyntaxOnly`, `noUncheckedIndexedAccess`) and `tests/run-all.sh`
   running the Python suites, the node suites and the workflow tests.
 - This changelog and the package version.
+- An Acknowledgements section in the README. It names the published skills that keel's `improve` and
+  `readable-code` skills draw on (Matt Pocock's skills, Addy Osmani's agent-skills and pstack in cursor/plugins).
 
 ### Intended differences from the Python
 In each case where the Python's result depends on its interpreter or machine, the TypeScript refuses instead.

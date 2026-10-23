@@ -223,6 +223,18 @@ node --test 'tests/workflows/*.test.mjs'
 
 To enable the boundary-scan git hooks in a checkout, run `git config core.hooksPath githooks`.
 
+## Acknowledgements
+
+These published skills shaped keel's own skills:
+
+| keel skill | Influenced by | What it took |
+|---|---|---|
+| `improve` | Matt Pocock's [`improve-codebase-architecture`](https://github.com/mattpocock/skills) and [`codebase-design`](https://github.com/mattpocock/skills/blob/main/skills/engineering/codebase-design/SKILL.md) (at 49dd158, MIT) | The module, interface and depth vocabulary and the deletion test |
+| `improve` | pstack in [cursor/plugins](https://github.com/cursor/plugins) (at 6b78e9f, MIT) | The subtract-before-you-add and migrate-callers ordering rules |
+| `readable-code` (implementation guide) | Matt Pocock's `codebase-design`, Addy Osmani's [`incremental-implementation`](https://github.com/addyosmani/agent-skills/blob/main/skills/incremental-implementation/SKILL.md) and [pstack `architect`](https://github.com/cursor/plugins/blob/main/pstack/skills/architect/SKILL.md) (read on 2026-10-19) | Caller-first design and small behavior slices |
+
+The skill files name their sources too: `skills/improve/SKILL.md` and `skills/readable-code/references/implementation.md`.
+
 ## What keel does not do
 
 keel does not bulk-copy rules from an earlier harness, depend on a harness-generating plugin, publish company data, wire live hooks to a development tree, or leave any path where an author writes its own evidence. It also has no plan-gate hook, because one showed no measured effect. The full list is in DESIGN.md §8, and removed or deferred checks are in §10.

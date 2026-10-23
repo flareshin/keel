@@ -33,16 +33,21 @@ release adds the TypeScript side and proves it equal to the Python, and a later 
   `readable-code` skills draw on (Matt Pocock's skills, Addy Osmani's agent-skills and pstack in cursor/plugins).
 
 ### Intended differences from the Python
-In each case where the Python's result depends on its interpreter or machine, the TypeScript refuses instead.
-Each case is listed in a parity test, which fails if the TypeScript does not give the required outcome.
+Where the Python's result depends on its interpreter or machine, the TypeScript follows a fixed rule instead. Each
+case is listed in a parity test, which fails if the TypeScript does not give the required outcome.
 - Codex hook stdin: only UTF-8, ASCII, latin-1 and verified single-byte codecs are decoded. Any other codec Python
   knows is denied with `stdin encoding <codec> is not supported; set PYTHONUTF8=1`. An unknown codec name fails at
   startup like Python.
-- JSON and `str` nesting is bounded at 10000 levels (`MAX_JSON_DEPTH`). Past it, git-guard and ship-gate deny and
-  report-gate refuses. model-assign and handoff log the error and let the call through.
+- JSON and `str` nesting is bounded at 10000 levels (`MAX_JSON_DEPTH`). Past it:
+  - git-guard and ship-gate deny.
+  - report-gate refuses a handback and blocks a stop when the payload, turn state or transcript nests too deep. It
+    logs the error and lets the call through for a too-deep evidence line, for a payload that is neither a handback
+    nor a stop, and for a stop that is already being retried.
+  - model-assign and handoff log the error and let the call through.
 - `link --unlink` refuses a non-string `pre_keel_settings_backup` in `link-state.json` with exit 70 and writes
   nothing. Python treats a number or a boolean there as a file descriptor.
 
 ### Requirements
 - Node 24 or later for the TypeScript (`engines` in `package.json`); this release was tested on Node 26.12.
-- Python 3.15 for the Python and the parity tests.
+- Python 3.9 or later for the Python, as the README states. The parity tests compare against Python 3.15 behavior
+  (for example argparse colour and locale rules), so run them with Python 3.15.

@@ -58,6 +58,17 @@ step. The tests compare the TypeScript with outputs recorded from the Python bef
 - Every Python file: the hooks, `lib/evidence`, `lib/link`, `measure/lib/measurekit`, `measure/evals/lib/evalkit`, the
   Codex adapter, `rule-checks.py`, the `unittest` suites and their helpers.
 
+### Upgrading
+1. Fast-forward the dedicated keel checkout (`~/git/keel`) to the 1.0.0 commit.
+2. At once, from a terminal outside Claude Code and Codex, run `bin/link --write` and then `codex/bin/link --write` in
+   that checkout. Both rewrite the hook registrations in the settings from `python3 .../<name>.py` to
+   `node .../<name>.ts`.
+3. Run `bin/link --check`. It must report no drift.
+
+Until step 2 is done, every keel hook blocks: the old settings still point at the `.py` files this release deletes, so
+`python3` fails on each hook call. Run the two `link --write` commands from a terminal outside Claude Code and Codex,
+whose blocked hooks would stop them.
+
 ### Intended differences from the Python
 Where the Python's result depended on its interpreter or machine, the TypeScript follows a fixed rule instead. Each
 case is listed in a parity test, which fails if the TypeScript does not give the required outcome.
@@ -75,9 +86,14 @@ case is listed in a parity test, which fails if the TypeScript does not give the
 - Comment-only deletion in a `.py` file: the Python first required the old file to pass `ast.parse`. The lexer only
   requires it to tokenize, so a file with a parse-level syntax error now keeps its evidence after a comment-only
   deletion. A `.py` file holding a form feed, vertical tab, FS, GS, RS or NEL character is refused. The recorded corpus
-  covers strings, triple quotes, f-string fields, line continuations, brackets and indentation.
+  covers strings, triple quotes, f-string fields, line continuations, brackets and indentation. The lexer refuses (no
+  comment-only deletion) a `t`, `tr` or `rt` string prefix in any letter case and a backslash directly before `{` in an
+  f-string body, raw or not.
 
 ### Known follow-ups
+- The hook commands call `node` from `PATH`. With no `node` on the hook `PATH`, report-gate fails open (exit 127), while
+  git-guard and ship-gate block through `"onFailure": "block"`. `link` renders the same commands as before, and the
+  fixtures pin them.
 - The Python-compatibility helpers still exist as separate copies, which this release does not merge:
   `hooks/lib/hookkit/{pycompat,pyfnmatch,pyjson,pypath,pyruntime}.ts`, `lib/evidence/pycompat.ts`,
   `measure/lib/measurekit/{pydate,pydict,pyerrno,pyerrors,pyio,pyjson,pypath,pyregex,pystr,pytextwrap,pyvalue}.ts`

@@ -182,6 +182,18 @@ Environment variables (DESIGN.md (i)):
 | `KEEL_OVERLAY_DIR` | `~/git/keel-overlay` | overlay checkout; missing means no overlay data |
 | `KEEL_DATA_DIR` | `~/.claude` | logs, state, evidence, link targets, settings |
 
+### Upgrading from a release with Python hooks
+
+1. Fast-forward the dedicated keel checkout (`~/git/keel`) to the 1.0.0 commit.
+2. At once, from a terminal outside Claude Code and Codex, run `bin/link --write` and then `codex/bin/link --write` in
+   that checkout. Both rewrite the hook registrations in the settings from `python3 .../<name>.py` to
+   `node .../<name>.ts`.
+3. Run `bin/link --check`. It must report no drift.
+
+Until step 2 is done, every keel hook blocks: the old settings still point at the `.py` files this release deletes, so
+`python3` fails on each hook call. Run the two `link --write` commands from a terminal outside Claude Code and Codex,
+whose blocked hooks would stop them.
+
 ### Codex
 
 [`codex/`](codex) is an adapter that installs the same charter, core skills, guard scripts and overlay into Codex (`codex/bin/link`). See [`codex/README.md`](codex/README.md).
@@ -219,6 +231,7 @@ Tests run in temporary directories (`KEEL_DATA_DIR`, `KEEL_OVERLAY_DIR`, `HOME`)
 ```bash
 node --test 'tests/ship-gate/*.test.ts'
 node --test 'tests/workflows/*.test.mjs'
+npm ci   # once, before the typecheck
 npx tsc -p tsconfig.json
 ```
 

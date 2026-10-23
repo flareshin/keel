@@ -14,12 +14,6 @@ const STDERR = 2;
 export type Payload = Record<string, unknown>;
 export type Bullet = readonly [ruleId: string, text: string];
 
-export function parsePayload(raw: string): Payload {
-  const payload: unknown = JSON.parse(raw);
-  if (!isRecord(payload)) throw new Error("hook payload is not a JSON object");
-  return payload;
-}
-
 export function toolName(payload: Payload): string {
   const name = getField(payload, "tool_name");
   return pythonStr(isTruthy(name) ? name : "").toLowerCase();

@@ -31,6 +31,7 @@ export class TimeoutExpired extends Error {
 }
 
 export interface RunOptions {
+  cwd?: string;
   input?: string;
 }
 
@@ -39,6 +40,7 @@ export function run(command: readonly string[], timeoutSeconds: number, options:
   if (program === undefined) throw new OSError("empty command", undefined);
   const result = spawnSync(program, args, {
     encoding: "utf8",
+    cwd: options.cwd,
     input: options.input,
     timeout: timeoutSeconds * 1000,
     maxBuffer: UNLIMITED_OUTPUT_BYTES,

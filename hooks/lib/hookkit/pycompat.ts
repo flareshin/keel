@@ -1,11 +1,15 @@
 import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import type { Dirent } from "node:fs";
 import { userInfo } from "node:os";
+import { RecursionError, ValueError } from "./pyruntime.ts";
 import { OSError, run, TimeoutExpired } from "./subprocess.ts";
 import type { CompletedProcess } from "./subprocess.ts";
 
 export const PY_SPACE = String.raw`\t-\r\x1c-\x20\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000`;
 export const PY_WORD = String.raw`\p{L}\p{N}_`;
+export const SPACE_CLASS = `[${PY_SPACE}]`;
+export const WORD_CLASS = `[${PY_WORD}]`;
+export const WORD_BOUNDARY = `(?:(?<=${WORD_CLASS})(?!${WORD_CLASS})|(?<!${WORD_CLASS})(?=${WORD_CLASS}))`;
 
 const LEADING_SPACE = new RegExp(`^[${PY_SPACE}]+`);
 const TRAILING_SPACE = new RegExp(`[${PY_SPACE}]+$`);
@@ -39,6 +43,10 @@ export function hasField(record: Record<string, unknown>, key: string): boolean 
 
 export function foldDottedAndDotlessI(text: string): string {
   return text.replace(DOTTED_OR_DOTLESS_I, "i");
+}
+
+export function testCaseFolded(pattern: RegExp, text: string): boolean {
+  return pattern.test(foldDottedAndDotlessI(text));
 }
 
 export function codePointLength(text: string): number {
@@ -378,30 +386,130 @@ export function expandVars(path: string): string {
   });
 }
 
-function pythonRepr(value: unknown): string {
-  if (typeof value === "string") {
-    const quote = value.includes("'") && !value.includes('"') ? '"' : "'";
-    const escaped = value.replaceAll("\\", "\\\\").replaceAll("\n", "\\n").replaceAll("\r", "\\r").replaceAll("\t", "\\t");
-    return quote + (quote === "'" ? escaped.replaceAll("'", "\\'") : escaped) + quote;
-  }
-  return pythonStr(value);
+export const MAX_JSON_DEPTH = 10000;
+
+function pythonReprText(value: string): string {
+  const quote = value.includes("'") && !value.includes('"') ? '"' : "'";
+  const escaped = value.replaceAll("\\", "\\\\").replaceAll("\n", "\\n").replaceAll("\r", "\\r").replaceAll("\t", "\\t");
+  return quote + (quote === "'" ? escaped.replaceAll("'", "\\'") : escaped) + quote;
 }
 
-export function pythonStr(value: unknown): string {
+function pythonScalarText(value: unknown): string {
   if (value === null || value === undefined) return "None";
   if (value === true) return "True";
   if (value === false) return "False";
-  if (typeof value === "string") return value;
-  if (Array.isArray(value)) return "[" + value.map(pythonRepr).join(", ") + "]";
-  if (isRecord(value)) return "{" + Object.entries(value).map(([key, item]) => `${pythonRepr(key)}: ${pythonRepr(item)}`).join(", ") + "}";
+  if (typeof value === "string") return pythonReprText(value);
+  if (typeof value === "number" && !Number.isFinite(value)) return pythonFloatSpelling(value);
   return String(value);
 }
 
+export function pythonStr(value: unknown): string {
+  if (typeof value === "string") return value;
+  return renderNested(value, STR_RENDERING);
+}
+
+function pythonFloatSpelling(value: number): string {
+  if (Number.isNaN(value)) return "nan";
+  return value > 0 ? "inf" : "-inf";
+}
+
+interface Container {
+  source: object;
+  opener: string;
+  closer: string;
+  items: unknown[];
+  keys: string[] | null;
+}
+
+interface OpenContainer extends Container {
+  index: number;
+}
+
+interface Rendering {
+  containerOf(value: unknown): Container | null;
+  scalarText(value: unknown): string;
+  keyText(key: string): string;
+  selfReferenceText(container: Container): string;
+  tooDeepMessage: string;
+}
+
+function arrayOrRecordContainer(value: unknown, entriesOf: (record: Record<string, unknown>) => Array<[string, unknown]>, itemOf: (item: unknown) => unknown): Container | null {
+  if (Array.isArray(value)) return { source: value, opener: "[", closer: "]", items: value.map(itemOf), keys: null };
+  if (!isRecord(value)) return null;
+  const members = entriesOf(value);
+  return { source: value, opener: "{", closer: "}", items: members.map(([, item]) => item), keys: members.map(([key]) => key) };
+}
+
+const STR_RENDERING: Rendering = {
+  containerOf: (value) => arrayOrRecordContainer(value, Object.entries, (item) => item),
+  scalarText: pythonScalarText,
+  keyText: pythonReprText,
+  selfReferenceText: (container) => (container.opener === "[" ? "[...]" : "{...}"),
+  tooDeepMessage: "maximum recursion depth exceeded while getting the repr of an object",
+};
+
+const JSON_DUMPS_RENDERING: Rendering = {
+  containerOf: (value) => arrayOrRecordContainer(value, (record) => Object.entries(record).filter(([, item]) => item !== undefined), (item) => (item === undefined ? null : item)),
+  scalarText: (value) => (typeof value === "number" && !Number.isFinite(value) ? nonFiniteNumberText(value) : JSON.stringify(value)),
+  keyText: (key) => JSON.stringify(key),
+  selfReferenceText: () => {
+    throw new ValueError("Circular reference detected");
+  },
+  tooDeepMessage: "maximum recursion depth exceeded while encoding a JSON object",
+};
+
 export function pythonJsonDumps(value: unknown): string {
-  if (Array.isArray(value)) return "[" + value.map((item) => pythonJsonDumps(item === undefined ? null : item)).join(", ") + "]";
-  if (isRecord(value)) {
-    const members = Object.entries(value).filter(([, item]) => item !== undefined);
-    return "{" + members.map(([key, item]) => `${JSON.stringify(key)}: ${pythonJsonDumps(item)}`).join(", ") + "}";
+  return renderNested(value, JSON_DUMPS_RENDERING);
+}
+
+function renderNested(value: unknown, rendering: Rendering): string {
+  const parts: string[] = [];
+  const open: OpenContainer[] = [];
+  const active = new Set<object>();
+  let next = value;
+  for (;;) {
+    const container = rendering.containerOf(next);
+    if (container === null) {
+      parts.push(rendering.scalarText(next));
+    } else if (open.length >= MAX_JSON_DEPTH) {
+      throw new RecursionError(rendering.tooDeepMessage);
+    } else if (active.has(container.source)) {
+      parts.push(rendering.selfReferenceText(container));
+    } else if (container.items.length === 0) {
+      parts.push(container.opener + container.closer);
+    } else {
+      active.add(container.source);
+      open.push({ ...container, index: 0 });
+      parts.push(container.opener + memberPrefix(container, 0, rendering));
+      next = container.items[0];
+      continue;
+    }
+    const following = closeFinishedContainers(open, active, parts, rendering);
+    if (following === null) return parts.join("");
+    next = following.value;
   }
-  return JSON.stringify(value);
+}
+
+function closeFinishedContainers(open: OpenContainer[], active: Set<object>, parts: string[], rendering: Rendering): { value: unknown } | null {
+  for (;;) {
+    const innermost = open.at(-1);
+    if (innermost === undefined) return null;
+    innermost.index += 1;
+    if (innermost.index < innermost.items.length) {
+      parts.push(", " + memberPrefix(innermost, innermost.index, rendering));
+      return { value: innermost.items[innermost.index] };
+    }
+    parts.push(innermost.closer);
+    active.delete(innermost.source);
+    open.pop();
+  }
+}
+
+function memberPrefix(container: Container, index: number, rendering: Rendering): string {
+  return container.keys === null ? "" : `${rendering.keyText(container.keys[index] ?? "")}: `;
+}
+
+function nonFiniteNumberText(value: number): string {
+  if (Number.isNaN(value)) return "NaN";
+  return value > 0 ? "Infinity" : "-Infinity";
 }

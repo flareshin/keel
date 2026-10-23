@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { divergenceForDepth } from "./json-depth-policy.ts";
 import type { StdinDivergence } from "./stdin-policy.ts";
 import type { HookCase, Paths } from "./hook-parity.ts";
 
@@ -8,7 +9,7 @@ const NORMAL_CONFIG = "[features]\nhooks = true\n";
 const DISABLED_HOOKS = "[features]\nhooks = false\n";
 const OWNER_MODEL = 'model = "owner-model"\n';
 
-const DEEP_NESTING = [3000, 20000];
+const DEEP_NESTING = [3000, 9998, 10001, 20000];
 
 function deepArray(depth: number): string {
   return "[".repeat(depth) + "]".repeat(depth);
@@ -313,15 +314,16 @@ export function hookCases(paths: Paths): HookCase[] {
   const protectedWrite = JSON.stringify({ file_path: `${profile}/hooks.json`, content: "x" });
   const benignWrite = JSON.stringify({ file_path: `${profile}/notes.txt`, content: "x" });
   for (const depth of DEEP_NESTING) {
+    const reachesGuard = { divergence: divergenceForDepth(depth) };
     add(`deep array beside protected write (${depth})`, rawPayload('"Write"', protectedWrite, `, "deep": ${deepArray(depth)}`));
     add(`deep object beside protected write (${depth})`, rawPayload('"Write"', protectedWrite, `, "deep": ${deepObject(depth)}`));
-    add(`deep array beside allowed write (${depth})`, rawPayload('"Write"', benignWrite, `, "deep": ${deepArray(depth)}`));
-    add(`deep object beside allowed write (${depth})`, rawPayload('"Write"', benignWrite, `, "deep": ${deepObject(depth)}`));
-    add(`deep array inside tool_input (${depth})`, rawPayload('"Write"', `{"file_path": ${JSON.stringify(`${profile}/notes.txt`)}, "content": ${deepArray(depth)}}`));
-    add(`deep array beside force push (${depth})`, rawPayload('"Bash"', '{"command": "git push --force origin main"}', `, "deep": ${deepArray(depth)}`));
+    add(`deep array beside allowed write (${depth})`, rawPayload('"Write"', benignWrite, `, "deep": ${deepArray(depth)}`), reachesGuard);
+    add(`deep object beside allowed write (${depth})`, rawPayload('"Write"', benignWrite, `, "deep": ${deepObject(depth)}`), reachesGuard);
+    add(`deep array inside tool_input (${depth})`, rawPayload('"Write"', `{"file_path": ${JSON.stringify(`${profile}/notes.txt`)}, "content": ${deepArray(depth)}}`), reachesGuard);
+    add(`deep array beside force push (${depth})`, rawPayload('"Bash"', '{"command": "git push --force origin main"}', `, "deep": ${deepArray(depth)}`), reachesGuard);
     add(`deep array as tool_name (${depth})`, rawPayload(deepArray(depth), "{}"));
     add(`deep object as tool_name (${depth})`, rawPayload(deepObject(depth), "{}"));
-    add(`deep array as cwd (${depth})`, `{"tool_name": "Bash", "tool_input": {"command": "git status"}, "cwd": ${deepArray(depth)}}`);
+    add(`deep array as cwd (${depth})`, `{"tool_name": "Bash", "tool_input": {"command": "git status"}, "cwd": ${deepArray(depth)}}`, reachesGuard);
     add(`deep array then malformed tail (${depth})`, rawPayload('"Write"', protectedWrite, `, "deep": ${deepArray(depth)} x`));
   }
 

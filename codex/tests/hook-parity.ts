@@ -2,6 +2,8 @@ import { spawnSync } from "node:child_process";
 import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
+import { EXPECTED_DEPTH_DENY_REASON } from "./json-depth-policy.ts";
+import type { JsonDepthDivergence } from "./json-depth-policy.ts";
 import { withoutLocale } from "./locale-env.ts";
 import { expectedStdinDeny, UNSUPPORTED_STDIN_CODECS } from "./stdin-policy.ts";
 import type { StdinDivergence } from "./stdin-policy.ts";
@@ -11,6 +13,9 @@ const PYTHON_HOOK = join(ADAPTER, "hooks", "pre-tool-use.py");
 const TYPESCRIPT_HOOK = join(ADAPTER, "hooks", "pre-tool-use.ts");
 const NORMAL_CONFIG = "[features]\nhooks = true\n";
 const MAX_MISMATCHES_SHOWN = 6;
+const DEPTH_FIRE_DIRECTORY = "data/logs";
+const DEPTH_FIRE_LOG = "data/logs/keel-fires.jsonl";
+const FILE_SNAPSHOT_PREFIX = /^file:\d+:/;
 const FLOAT_DIRECTORIES = ["1", "1.0", "100.0", "-0.0", "1e+16", "1e+22", "0.5", "2.5"];
 const TIMESTAMP = /\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)?/g;
 
@@ -20,7 +25,7 @@ export interface HookCase {
   config?: string | Buffer | null;
   crash?: boolean;
   startupFailure?: boolean;
-  divergence?: StdinDivergence;
+  divergence?: StdinDivergence | JsonDepthDivergence;
   env?: Record<string, string>;
 }
 
@@ -132,20 +137,48 @@ function observe(command: string[], testCase: HookCase, paths: Paths): Observati
   return { status: result.status, stdout: result.stdout.toString("utf8"), stderr: result.stderr.toString("utf8"), files: snapshot(paths.root), before };
 }
 
+function stdinDivergenceDifferences(divergence: StdinDivergence, typescript: Observation): string[] {
+  const found: string[] = [];
+  const { codec, encoding } = divergence;
+  const expected = { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: `keel Codex guard: ${expectedStdinDeny(encoding)}` } };
+  if (!UNSUPPORTED_STDIN_CODECS.includes(codec)) found.push(`unlisted divergence: ${codec}`);
+  if (typescript.status !== 0 || typescript.stderr !== "") found.push(`unsupported codec crashed: ${typescript.stderr}`);
+  try {
+    if (JSON.stringify(JSON.parse(typescript.stdout)) !== JSON.stringify(expected)) found.push(`unsupported codec decision: ${typescript.stdout}`);
+  } catch {
+    found.push(`unsupported codec emitted invalid JSON: ${typescript.stdout}`);
+  }
+  if (JSON.stringify(typescript.before) !== JSON.stringify(typescript.files)) found.push("unsupported codec changed files");
+  return found;
+}
+
+function jsonDepthDivergenceDifferences(python: Observation, typescript: Observation): string[] {
+  const found: string[] = [];
+  const expected = { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: EXPECTED_DEPTH_DENY_REASON } };
+  if (python.status !== 0 || python.stderr !== "") found.push(`python crashed: ${python.status} ${python.stderr}`);
+  if (python.stdout !== "" && !python.stdout.includes('"permissionDecision": "deny"')) found.push(`python neither passed nor denied: ${python.stdout}`);
+  if (typescript.status !== 0 || typescript.stderr !== "") found.push(`over-deep payload crashed: ${typescript.status} ${typescript.stderr}`);
+  try {
+    if (JSON.stringify(JSON.parse(typescript.stdout)) !== JSON.stringify(expected)) found.push(`over-deep payload decision: ${typescript.stdout}`);
+  } catch {
+    found.push(`over-deep payload emitted invalid JSON: ${typescript.stdout}`);
+  }
+  const changed = Object.keys(typescript.files).filter((key) => typescript.before[key] !== typescript.files[key]).sort();
+  if (JSON.stringify(changed) !== JSON.stringify([DEPTH_FIRE_DIRECTORY, DEPTH_FIRE_LOG])) found.push(`over-deep payload changed files: ${changed.join(", ")}`);
+  const fires = (typescript.files[DEPTH_FIRE_LOG] ?? "").replace(FILE_SNAPSHOT_PREFIX, "").split("\n").filter((line) => line !== "");
+  const fire = fires.length === 1 ? (JSON.parse(fires[0] as string) as Record<string, string>) : undefined;
+  if (fire?.["rule_id"] !== "F-attribution" || fire["hook"] !== "git-guard" || fire["outcome"] !== "error" || !fire["detail"]?.startsWith("RecursionError:")) {
+    found.push(`over-deep payload fire log: ${fires.join(" | ")}`);
+  }
+  return found;
+}
+
 function differences(testCase: HookCase, python: Observation, typescript: Observation): string[] {
   const found: string[] = [];
   if (testCase.divergence !== undefined) {
-    const { codec, encoding } = testCase.divergence;
-    const expected = { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: `keel Codex guard: ${expectedStdinDeny(encoding)}` } };
-    if (!UNSUPPORTED_STDIN_CODECS.includes(codec)) found.push(`unlisted divergence: ${codec}`);
-    if (typescript.status !== 0 || typescript.stderr !== "") found.push(`unsupported codec crashed: ${typescript.stderr}`);
-    try {
-      if (JSON.stringify(JSON.parse(typescript.stdout)) !== JSON.stringify(expected)) found.push(`unsupported codec decision: ${typescript.stdout}`);
-    } catch {
-      found.push(`unsupported codec emitted invalid JSON: ${typescript.stdout}`);
-    }
-    if (JSON.stringify(typescript.before) !== JSON.stringify(typescript.files)) found.push("unsupported codec changed files");
-    return found;
+    return "codec" in testCase.divergence
+      ? stdinDivergenceDifferences(testCase.divergence, typescript)
+      : jsonDepthDivergenceDifferences(python, typescript);
   }
   if (python.status !== typescript.status) found.push(`exit ${python.status} vs ${typescript.status}`);
   if (python.stdout !== typescript.stdout) found.push(`stdout\n    py: ${JSON.stringify(python.stdout)}\n    ts: ${JSON.stringify(typescript.stdout)}`);

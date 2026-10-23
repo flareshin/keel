@@ -188,7 +188,9 @@ Environment variables (DESIGN.md (i)):
 2. At once, from a terminal outside Claude Code and Codex, run `bin/link --write` and then `codex/bin/link --write` in
    that checkout. Both rewrite the hook registrations in the settings from `python3 .../<name>.py` to
    `node .../<name>.ts`.
-3. Run `bin/link --check`. It must report no drift.
+3. Start a new Codex session, open `/hooks` and trust the regenerated `pre-tool-use.ts` command (see
+   [`codex/README.md`](codex/README.md)).
+4. Run `bin/link --check` and `codex/bin/link --check`. Both must report no drift.
 
 Until step 2 is done, every keel hook blocks: the old settings still point at the `.py` files this release deletes, so
 `python3` fails on each hook call. Run the two `link --write` commands from a terminal outside Claude Code and Codex,

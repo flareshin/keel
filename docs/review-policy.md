@@ -177,8 +177,8 @@ it does not rewrite evidence, change its timestamp or approve a new chain.
 Existing provenance, approval, expiry, base and mode checks remain in force.
 Verified comment deletion alone adds no changed-logic test-path obligation.
 
-The conservative built-in recognizer supports Python tokenization (the file must
-tokenize; it is not parsed), and a bounded JavaScript, TypeScript and Java lexical subset. Code and string
+The conservative built-in recognizer supports a bounded JavaScript, TypeScript and Java
+lexical subset; a Python file is never comment-only, so any `.py` change needs fresh evidence. Code and string
 bytes stay identical. It accepts whole ordinary prose comments only. It refuses
 files with detected notices/directives or non-prose comment markers, inline edits,
 docstring deletion, unsupported extensions, JSX, JS/TS slash expressions or angle

@@ -19,8 +19,6 @@ step. The tests compare the TypeScript with outputs recorded from the Python bef
   and `measure/evals/{eval,review-eval}`. `githooks/pre-commit` and `githooks/pre-push` call the `measure/boundary` shim.
 - The Codex adapter registers and spawns the TypeScript hooks with node only, with no `python3` fallback.
 - The `lens-review` workflow and the Codex review path run `skills/readable-code/scripts/rule-checks.ts` with node.
-- Comment-only deletion in a `.py` file finds comments with a TypeScript lexer (`lib/evidence/python_comments.ts`)
-  instead of running `python3`.
 - `tests/run-all.sh` runs the node suites and the workflow tests; the Python suites are gone.
 - `README.md`: the repository is public, the requirements are Node, bash, git and jq, and there is a Contributing
   section. Contributions come only as pull requests against `main`; only the owner (flareshin) reviews and merges them,
@@ -63,7 +61,9 @@ step. The tests compare the TypeScript with outputs recorded from the Python bef
 2. At once, from a terminal outside Claude Code and Codex, run `bin/link --write` and then `codex/bin/link --write` in
    that checkout. Both rewrite the hook registrations in the settings from `python3 .../<name>.py` to
    `node .../<name>.ts`.
-3. Run `bin/link --check`. It must report no drift.
+3. Start a new Codex session, open `/hooks` and trust the regenerated `pre-tool-use.ts` command (see
+   `codex/README.md`).
+4. Run `bin/link --check` and `codex/bin/link --check`. Both must report no drift.
 
 Until step 2 is done, every keel hook blocks: the old settings still point at the `.py` files this release deletes, so
 `python3` fails on each hook call. Run the two `link --write` commands from a terminal outside Claude Code and Codex,
@@ -83,12 +83,8 @@ case is listed in a parity test, which fails if the TypeScript does not give the
   - model-assign and handoff log the error and let the call through.
 - `link --unlink` refuses a non-string `pre_keel_settings_backup` in `link-state.json` with exit 70 and writes
   nothing. Python treated a number or a boolean there as a file descriptor.
-- Comment-only deletion in a `.py` file: the Python first required the old file to pass `ast.parse`. The lexer only
-  requires it to tokenize, so a file with a parse-level syntax error now keeps its evidence after a comment-only
-  deletion. A `.py` file holding a form feed, vertical tab, FS, GS, RS or NEL character is refused. The recorded corpus
-  covers strings, triple quotes, f-string fields, line continuations, brackets and indentation. The lexer refuses (no
-  comment-only deletion) a `t`, `tr` or `rt` string prefix in any letter case and a backslash directly before `{` in an
-  f-string body, raw or not.
+- A comment-only deletion in a `.py` file no longer keeps review and test evidence, because Python is no longer run to
+  prove it; any `.py` change needs fresh evidence. `.js`, `.ts` and `.java` files keep the exemption.
 
 ### Known follow-ups
 - The hook commands call `node` from `PATH`. With no `node` on the hook `PATH`, report-gate fails open (exit 127), while

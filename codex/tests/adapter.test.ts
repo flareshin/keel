@@ -587,6 +587,15 @@ describe("hookkit run", () => {
   it("ignores a child that exits without reading its input", () => {
     assert.equal(run(["true"], 5, { input: "x".repeat(1 << 20) }).returncode, 0);
   });
+
+  it("runs the child in the requested directory", () => {
+    const directory = temporaryDirectory();
+    try {
+      assert.equal(run(["pwd", "-P"], 5, { cwd: directory }).stdout, `${realpathSync(directory)}\n`);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("config", () => {

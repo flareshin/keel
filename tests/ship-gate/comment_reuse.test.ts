@@ -62,6 +62,18 @@ describe('CommentDeletionTest', () => {
     }
   });
 
+  test('comments_preserveNotebookTypeAndCellMarkers_inSlashCommentSources', () => {
+    for (const marker of ['Databricks notebook source', 'COMMAND ----------']) {
+      const before = `// ${marker}\n// ordinary explanation\nconst x = 1;\n`;
+      for (const path of ['notebook.ts', 'notebook.js']) {
+        assert.equal(check(path, before, 'const x = 1;\n'), false, `${path} ${marker}`);
+        assert.equal(check(path, before, `// ${marker}\nconst x = 1;\n`), false, `${path} ${marker}`);
+      }
+      const block = `/* ${marker} */\n/* ordinary explanation */\nconst x = 1;\n`;
+      assert.equal(check('notebook.js', block, 'const x = 1;\n'), false, `block ${marker}`);
+    }
+  });
+
   test('comments_preserveNotebookTypeAndCellMarkers_inPythonSources', () => {
     for (const marker of ['Databricks notebook source', 'COMMAND ----------']) {
       const before = `# ${marker}\n# ordinary explanation\nx = 1\n`;
@@ -75,19 +87,55 @@ const PUSH_FEATURE = 'git push origin feature';
 const DENIED_WHERE_PYTHON_PASSED = 2;
 const CHANGED_AFTER_REVIEW = 'content or mode changed after review';
 
+interface SourceFlavor {
+  source: string;
+  test: string;
+  sourceBefore: string;
+  sourceAfter: string;
+  testBefore: string;
+  testAfter: string;
+  sourceBehaviorChange: string;
+  testBehaviorChange: string;
+}
+
+const PYTHON: SourceFlavor = {
+  source: 'src/a.py', test: 'tests/test_a.py',
+  sourceBefore: '# Ordinary explanation.\nprint(1)\n', sourceAfter: 'print(1)\n',
+  testBefore: 'def test_a():\n    # Ordinary explanation.\n    assert True\n', testAfter: 'def test_a():\n    assert True\n',
+  sourceBehaviorChange: 'print(2)\n', testBehaviorChange: 'def test_a():\n    assert False\n',
+};
+
+const TYPESCRIPT: SourceFlavor = {
+  source: 'src/a.ts', test: 'tests/a.test.ts',
+  sourceBefore: '// Ordinary explanation.\nconsole.log(1);\n', sourceAfter: 'console.log(1);\n',
+  testBefore: 'test("a", () => {\n  // Ordinary explanation.\n  assert(true);\n});\n', testAfter: 'test("a", () => {\n  assert(true);\n});\n',
+  sourceBehaviorChange: 'console.log(2);\n', testBehaviorChange: 'test("a", () => {\n  assert(false);\n});\n',
+};
+
+const JAVASCRIPT_BLOCK_COMMENTS: SourceFlavor = {
+  source: 'src/a.js', test: 'tests/a.test.js',
+  sourceBefore: '/* Ordinary explanation. */\nconsole.log(1);\n', sourceAfter: 'console.log(1);\n',
+  testBefore: 'test("a", () => {\n  /* Ordinary explanation. */\n  assert(true);\n});\n', testAfter: 'test("a", () => {\n  assert(true);\n});\n',
+  sourceBehaviorChange: 'console.log(2);\n', testBehaviorChange: 'test("a", () => {\n  assert(false);\n});\n',
+};
+
+const JAVA: SourceFlavor = {
+  source: 'src/A.java', test: 'tests/ATest.java',
+  sourceBefore: 'class A {\n  // Ordinary explanation.\n  int x = 1;\n}\n', sourceAfter: 'class A {\n  int x = 1;\n}\n',
+  testBefore: 'class ATest {\n  // Ordinary explanation.\n  void a() {}\n}\n', testAfter: 'class ATest {\n  void a() {}\n}\n',
+  sourceBehaviorChange: 'class A {\n  int x = 2;\n}\n', testBehaviorChange: 'class ATest {\n  void a() { fail(); }\n}\n',
+};
+
 class CommentReuseFixture {
   box: Sandbox;
   repo: Repo;
   before: string;
 
-  constructor(t: TestContext) {
+  constructor(t: TestContext, files: SourceFlavor = PYTHON) {
     this.box = new Sandbox(t, PUSH_APPROVAL_REGISTRY);
     this.repo = this.box.clone('acme', 'app');
     this.repo.branch('feature');
-    this.repo.commit({
-      'src/a.py': '# Ordinary explanation.\nprint(1)\n',
-      'tests/test_a.py': 'def test_a():\n    # Ordinary explanation.\n    assert True\n',
-    });
+    this.repo.commit({ [files.source]: files.sourceBefore, [files.test]: files.testBefore });
     this.box.fullBundle(this.repo);
     this.before = this.repo.head();
   }
@@ -186,5 +234,103 @@ describe('CommentReuseGateTest', () => {
 
     assert.equal(result.rc, 2);
     assert.ok(result.stderr.includes('no tests evidence'), result.stderr);
+  });
+});
+
+describe('CommentReuseGateTest for the supported suffixes', () => {
+  for (const [name, files] of [['ts', TYPESCRIPT], ['js', JAVASCRIPT_BLOCK_COMMENTS], ['java', JAVA]] as const) {
+    test(`push_reusesApprovedReviewAndTests_afterPureCommentDeletion_in_${name}`, (t) => {
+      const f = new CommentReuseFixture(t, files);
+      f.repo.commit({ [files.source]: files.sourceAfter });
+
+      const result = f.box.push(f.repo, PUSH_FEATURE);
+
+      assert.equal(result.rc, 0, result.stderr);
+      assert.equal(f.box.evidenceFiles('review').length, 1);
+      assert.equal(f.box.evidenceFiles('tests').length, 1);
+    });
+  }
+
+  test('merge_reusesApprovedReviewAndTests_afterPureCommentDeletion_in_ts', (t) => {
+    const f = new CommentReuseFixture(t, TYPESCRIPT);
+    f.repo.commit({ [TYPESCRIPT.source]: TYPESCRIPT.sourceAfter });
+    f.repo.git('push', '-q', 'origin', 'feature');
+    writeFileSync(f.box.ghResponse, JSON.stringify({
+      state: 'OPEN', isDraft: false, mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', statusCheckRollup: [],
+      baseRefName: 'main', headRefOid: f.repo.head(),
+    }));
+
+    const result = f.box.push(f.repo, 'gh pr merge 7 --squash --match-head-commit ' + f.repo.head());
+
+    assert.equal(result.rc, 0, result.stderr);
+  });
+
+  test('push_reusesEvidence_whenOnlyTestCommentsAreDeleted_in_ts', (t) => {
+    const f = new CommentReuseFixture(t, TYPESCRIPT);
+    f.repo.commit({ [TYPESCRIPT.test]: TYPESCRIPT.testAfter });
+
+    const result = f.box.push(f.repo, PUSH_FEATURE);
+
+    assert.equal(result.rc, 0, result.stderr);
+  });
+
+  test('push_stillRequiresApproval_afterPureCommentDeletion_in_ts', (t) => {
+    const f = new CommentReuseFixture(t, TYPESCRIPT);
+    for (const path of f.box.evidenceFiles('approval')) unlinkSync(path);
+    f.repo.commit({ [TYPESCRIPT.source]: TYPESCRIPT.sourceAfter });
+
+    const result = f.box.push(f.repo, PUSH_FEATURE);
+
+    assert.equal(result.rc, 2);
+    assert.ok(result.stderr.includes('no approval bound'), result.stderr);
+    assert.ok(!result.stderr.includes(CHANGED_AFTER_REVIEW), result.stderr);
+  });
+
+  test('push_rejectsBehaviorOrTestChanges_afterReviewedCandidate_in_ts', (t) => {
+    const f = new CommentReuseFixture(t, TYPESCRIPT);
+    for (const [path, content] of [[TYPESCRIPT.source, TYPESCRIPT.sourceBehaviorChange], [TYPESCRIPT.test, TYPESCRIPT.testBehaviorChange]] as const) {
+      f.repo.git('checkout', '--detach', f.before);
+      f.repo.commit({ [path]: content });
+      const result = f.box.push(f.repo, 'git push origin HEAD:feature');
+      assert.equal(result.rc, 2, path);
+      assert.ok(result.stderr.includes(CHANGED_AFTER_REVIEW), result.stderr);
+    }
+  });
+
+  test('push_reusesEvidence_withoutNewTestInCommentOnlyRange_in_ts', (t) => {
+    const f = new CommentReuseFixture(t, TYPESCRIPT);
+    f.repo.git('push', '-q', 'origin', 'HEAD:main');
+    f.repo.git('fetch', '-q', 'origin');
+    f.repo.commit({ [TYPESCRIPT.source]: TYPESCRIPT.sourceAfter });
+
+    const result = f.box.push(f.repo, PUSH_FEATURE);
+
+    assert.equal(result.rc, 0, result.stderr);
+  });
+
+  test('push_refusesModeChanges_evenAfterPureCommentDeletion_in_ts', (t) => {
+    const f = new CommentReuseFixture(t, TYPESCRIPT);
+    f.repo.write(TYPESCRIPT.source, TYPESCRIPT.sourceAfter, true);
+    f.repo.commit({});
+
+    const result = f.box.push(f.repo, PUSH_FEATURE);
+
+    assert.equal(result.rc, 2);
+    assert.ok(result.stderr.includes(CHANGED_AFTER_REVIEW), result.stderr);
+  });
+
+  test('push_refusesExpiredTests_evenAfterPureCommentDeletion_in_ts', (t) => {
+    const f = new CommentReuseFixture(t, TYPESCRIPT);
+    const path = f.box.evidenceFiles('tests')[0]!;
+    const evidence = JSON.parse(readFileSync(path, 'utf8'));
+    evidence.expires_at = '2000-01-01T00:00:00Z';
+    writeFileSync(path, JSON.stringify(evidence));
+    f.repo.commit({ [TYPESCRIPT.source]: TYPESCRIPT.sourceAfter });
+
+    const result = f.box.push(f.repo, PUSH_FEATURE);
+
+    assert.equal(result.rc, 2);
+    assert.ok(result.stderr.includes('no tests evidence'), result.stderr);
+    assert.ok(!result.stderr.includes(CHANGED_AFTER_REVIEW), result.stderr);
   });
 });

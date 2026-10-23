@@ -46,6 +46,15 @@ describe('ApprovedSeriesTest', () => {
     assert.ok(result.stderr.includes('src/second.py'), result.stderr);
   });
 
+  test('commentDeletion_reusesApprovedSeries_afterLastReview_in_ts', (t) => {
+    const [sandbox, repo] = stages(t);
+    addThirdReview(sandbox, repo, { 'src/second.ts': '// Ordinary explanation.\nconst second = 3;\n', 'tests/second.test.ts': 'assert(3 === 3);\n' });
+    sandbox.testsEvidence(repo);
+    repo.commit({ 'src/second.ts': 'const second = 3;\n' });
+    const result = sandbox.push(repo, PUSH_FEATURE);
+    assert.equal(result.rc, 0, result.stderr);
+  });
+
   test('adjacent_approved_changes_reuse_both_reviews', (t) => {
     const [sandbox, repo] = stages(t);
     const result = sandbox.push(repo, PUSH_FEATURE);

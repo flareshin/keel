@@ -29,6 +29,14 @@ describe("measure run", () => {
     assert.deepEqual([result.id, result.metric, result.count, result.status], ["C-demo", "fires:C-demo", 2, "PASS"])
   })
 
+  it("run_countsNoFire_whoseTimestampIsNotAString", () => {
+    givenKeelRows(ledgerRow("C-demo", { grace_until: PAST }))
+    box.appendLog("keel-fires.jsonl", { ts: null, rule_id: "C-demo", hook: "ship-gate", outcome: "deny", session: "-" })
+    box.appendLog("keel-fires.jsonl", { ts: 20991231, rule_id: "C-demo", hook: "ship-gate", outcome: "deny", session: "-" })
+    const [completed, result] = box.runJson("run", ["C-demo"])
+    assert.deepEqual([completed.status, result.count, result.status], [1, 0, "FAIL"])
+  })
+
   it("run_skipsContractMissLines_becauseTheyRecordAPayloadChangeNotADecision", () => {
     givenKeelRows(ledgerRow("C-demo"))
     box.fire("C-demo")

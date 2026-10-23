@@ -40,12 +40,13 @@ export function run(command: readonly string[], timeoutSeconds: number, options:
   if (program === undefined) throw new OSError("empty command", undefined);
   const result = spawnSync(program, args, {
     encoding: "utf8",
+    cwd: options.cwd,
+    input: options.input,
     timeout: timeoutSeconds * 1000,
     maxBuffer: UNLIMITED_OUTPUT_BYTES,
-    ...options,
   });
-  if (result.error) {
-    const code = (result.error as NodeJS.ErrnoException).code;
+  const code = (result.error as NodeJS.ErrnoException | undefined)?.code;
+  if (result.error && code !== "EPIPE") {
     if (code === "ETIMEDOUT") throw new TimeoutExpired(command, timeoutSeconds);
     throw new OSError(result.error.message, code);
   }

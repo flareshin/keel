@@ -71,6 +71,7 @@ export const KEEL_EVIDENCE_LINE =
   '","since":null,"run_id":"rv-20261011T085500Z-7f3e21","root_run_id":"rv-20261011T085500Z-7f3e21","review_kind":"lens-review"}';
 
 const HOOK_TIMEOUT_MS = 60_000;
+const FIXED_COMMIT_DATES = { GIT_AUTHOR_DATE: "2026-01-01T00:00:00Z", GIT_COMMITTER_DATE: "2026-01-01T00:00:00Z" };
 const GIT_CONFIG = "[user]\n\tname = Test User\n\temail = test@example.invalid\n[init]\n\tdefaultBranch = main\n[commit]\n\tgpgsign = false\n";
 const STUB_SOURCE = (record: string, stdout: string, exitCode: number) =>
   `#!${process.execPath}\nconst { appendFileSync, readFileSync } = require("node:fs");\n` +
@@ -170,7 +171,7 @@ export class HookSandbox extends Sandbox {
   }
 
   git(cwd: string, ...args: string[]): string {
-    const completed = spawnSync("git", args, { cwd, encoding: "utf8", env: this.env });
+    const completed = spawnSync("git", args, { cwd, encoding: "utf8", env: { ...this.env, ...FIXED_COMMIT_DATES } });
     if (completed.status !== 0) throw new Error(`git ${args.join(" ")} failed in ${cwd}: ${completed.stderr}`);
     return completed.stdout.trim();
   }

@@ -1,32 +1,42 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { compare, EXPECTED_DIVERGENCES, isDenyToPass, judgeCase, runShipGateParity, summary } from "./ship-gate-parity.ts";
-import type { Observation } from "./ship-gate-parity.ts";
+import { differencesFromRecorded } from "../recorded-cases.ts";
+import type { ObservedDelta, Observation, Run } from "../recorded-cases.ts";
+import { EXPECTED_DIVERGENCES, isDenyToPass, judgeCase, runShipGateParity, summary } from "./ship-gate-parity.ts";
 
 const MIN_CASES = 600;
 const PARITY_TIMEOUT_MS = 120 * 60_000;
 const DENY = 2;
+const ROOT = "/root";
 
-function observation(code: number, stderr: string, files: Array<[string, string]> = []): Observation {
+function recorded(code: number, stderr: string, set: Record<string, string> = {}): ObservedDelta {
+  return { code, stdout: "", stderr, set, removed: [] };
+}
+
+function observation(code: number | null, stderr: string, files: Array<[string, string]> = []): Observation {
   return { code, stdout: "", stderr, files: new Map(files) };
+}
+
+function run(code: number | null, stderr: string, files: Array<[string, string]> = []): Run {
+  return { observation: observation(code, stderr, files), initial: new Map() };
 }
 
 describe("ship-gate parity comparison", () => {
   it("reports a difference in exit code, stderr or a written file", () => {
-    const denied = observation(DENY, "[K1] ship-gate: denied");
-    assert.deepEqual(compare(denied, observation(DENY, "[K1] ship-gate: denied")), []);
-    assert.equal(compare(denied, observation(0, "[K1] ship-gate: denied")).length, 1);
-    assert.equal(compare(denied, observation(DENY, "[K1] ship-gate: denied.")).length, 1);
-    assert.equal(compare(observation(0, "", [["data/a", "x"]]), observation(0, "", [["data/a", "y"]])).length, 1);
-    assert.equal(compare(observation(0, ""), observation(0, "", [["data/a", "x"]])).length, 1);
+    const denied = recorded(DENY, "[K1] ship-gate: denied");
+    assert.deepEqual(differencesFromRecorded(denied, run(DENY, "[K1] ship-gate: denied"), ROOT), []);
+    assert.equal(differencesFromRecorded(denied, run(0, "[K1] ship-gate: denied"), ROOT).length, 1);
+    assert.equal(differencesFromRecorded(denied, run(DENY, "[K1] ship-gate: denied."), ROOT).length, 1);
+    assert.equal(differencesFromRecorded(recorded(0, "", { "data/a": "x" }), run(0, "", [["data/a", "y"]]), ROOT).length, 1);
+    assert.equal(differencesFromRecorded(recorded(0, ""), run(0, "", [["data/a", "x"]]), ROOT).length, 1);
   });
 
-  it("counts a python deny that node lets through, by exit 0, exit 1 or a timeout, as deny-to-pass", () => {
-    assert.equal(isDenyToPass(observation(DENY, "x"), observation(0, "")), true);
-    assert.equal(isDenyToPass(observation(DENY, "x"), observation(1, "")), true);
-    assert.equal(isDenyToPass(observation(DENY, "x"), { ...observation(0, ""), code: null }), true);
-    assert.equal(isDenyToPass(observation(0, ""), observation(DENY, "x")), false);
-    assert.equal(isDenyToPass(observation(DENY, "x"), observation(DENY, "x")), false);
+  it("counts a recorded python deny that node lets through, by exit 0, exit 1 or a timeout, as deny-to-pass", () => {
+    assert.equal(isDenyToPass(recorded(DENY, "x"), observation(0, "")), true);
+    assert.equal(isDenyToPass(recorded(DENY, "x"), observation(1, "")), true);
+    assert.equal(isDenyToPass(recorded(DENY, "x"), observation(null, "")), true);
+    assert.equal(isDenyToPass(recorded(0, ""), observation(DENY, "x")), false);
+    assert.equal(isDenyToPass(recorded(DENY, "x"), observation(DENY, "x")), false);
   });
 });
 
@@ -42,34 +52,31 @@ describe("ship-gate parity listed divergences", () => {
   });
 
   it("accepts a listed row only when node gives the required exit, whatever python did", () => {
-    assert.deepEqual(judgeCase(label, observation(DENY, "python text"), observation(DENY, "node text")), { listed: true, problems: [] });
-    assert.deepEqual(judgeCase(label, observation(0, ""), observation(DENY, "node text")), { listed: true, problems: [] });
-    const passed = judgeCase(label, observation(DENY, "python text"), observation(0, ""));
+    assert.deepEqual(judgeCase(label, recorded(DENY, "python text"), run(DENY, "node text"), ROOT), { listed: true, problems: [] });
+    assert.deepEqual(judgeCase(label, recorded(0, ""), run(DENY, "node text"), ROOT), { listed: true, problems: [] });
+    const passed = judgeCase(label, recorded(DENY, "python text"), run(0, ""), ROOT);
     assert.equal(passed.listed, false);
     assert.ok(passed.problems[0]?.includes("requires node exit 2, got 0"), passed.problems.join("\n"));
   });
 
   it("holds an unlisted row to the strict comparison", () => {
-    assert.deepEqual(judgeCase("", observation(DENY, "same"), observation(DENY, "same")), { listed: false, problems: [] });
-    assert.equal(judgeCase("", observation(DENY, "python text"), observation(DENY, "node text")).problems.length, 1);
-    assert.equal(judgeCase("other-nested-5", observation(DENY, "python text"), observation(DENY, "node text")).problems.length, 1);
+    assert.deepEqual(judgeCase("", recorded(DENY, "same"), run(DENY, "same"), ROOT), { listed: false, problems: [] });
+    assert.equal(judgeCase("", recorded(DENY, "python text"), run(DENY, "node text"), ROOT).problems.length, 1);
+    assert.equal(judgeCase("other-nested-5", recorded(DENY, "python text"), run(DENY, "node text"), ROOT).problems.length, 1);
   });
 });
 
-describe("ship-gate parity with the Python hook", () => {
-  it("replays every payload the Python ship-gate tests send, and extra ones, through python and node with identical results", { timeout: PARITY_TIMEOUT_MS }, () => {
+describe("ship-gate parity with the recorded Python hook", () => {
+  it("replays every payload the former Python ship-gate tests sent, and the extra ones, through node and compares the result with the recorded Python outcome", { timeout: PARITY_TIMEOUT_MS }, () => {
     const report = runShipGateParity();
     for (const line of summary(report)) console.log(line);
     for (const detail of report.details.slice(0, 10)) console.log(detail);
-    for (const recorder of report.recorders) {
-      assert.equal(recorder.failures + recorder.errors, 0, `the Python tests failed while recording ${recorder.label}`);
-    }
     assert.ok(report.cases >= MIN_CASES, `only ${report.cases} cases recorded`);
     for (const suite of ["python-keel", "ts-keel", "message-contract", "extra"]) {
       assert.ok((report.perSuite.get(suite) ?? 0) > 0, `no case recorded for ${suite}`);
     }
     assert.equal(report.listedDivergences, EXPECTED_DIVERGENCES.size, "a listed divergence row was not checked");
-    assert.equal(report.denyToPass, 0, "a push or merge python denies passed in node");
+    assert.equal(report.denyToPass, 0, "a push or merge the recorded Python run denied passed in node");
     assert.equal(report.mismatches, 0, report.details.slice(0, 10).join("\n"));
   });
 });

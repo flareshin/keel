@@ -58,11 +58,11 @@ function spellings(payload: unknown): string[] {
 }
 
 function casesFor(name: string, script: string, cwd: string, payload: unknown, args: string[] = []): AdversarialCase[] {
-  return spellings(payload).map((stdin, index) => ({ name: `${name}#${index}`, script: script.replace(/\.ts$/, ".py"), stdin, args, cwd }));
+  return spellings(payload).map((stdin, index) => ({ name: `${name}#${index}`, script, stdin, args, cwd }));
 }
 
 function rawCase(name: string, script: string, cwd: string, stdin: string): AdversarialCase {
-  return { name, script: script.replace(/\.ts$/, ".py"), stdin, args: [], cwd };
+  return { name, script, stdin, args: [], cwd };
 }
 
 function gitGuardCases(repo: string): AdversarialCase[] {

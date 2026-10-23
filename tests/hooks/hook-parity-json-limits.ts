@@ -64,7 +64,7 @@ function divergenceFor(depth: number, stages: readonly Stage[]): TsOutcome | und
 }
 
 function jsonCase(name: string, script: string, cwd: string, stdin: string, args: string[], divergence?: TsOutcome): AdversarialCase {
-  const adversarialCase: AdversarialCase = { name, script: script.replace(/\.ts$/, ".py"), stdin, args, cwd };
+  const adversarialCase: AdversarialCase = { name, script, stdin, args, cwd };
   return divergence ? { ...adversarialCase, divergence } : adversarialCase;
 }
 

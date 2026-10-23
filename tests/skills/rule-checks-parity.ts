@@ -1,15 +1,18 @@
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { mutate, seededRandom } from "../../codex/tests/pyref.ts";
+import { digestOf, paddedRoot, restored, tokenized } from "../recorded-cases.ts";
 
 const SKILL_SCRIPTS = join(import.meta.dirname, "..", "..", "skills", "readable-code", "scripts");
-const PYTHON_SCRIPT = join(SKILL_SCRIPTS, "rule-checks.py");
-const TYPESCRIPT_SCRIPT = join(SKILL_SCRIPTS, "rule-checks.ts");
+export const TYPESCRIPT_SCRIPT = join(SKILL_SCRIPTS, "rule-checks.ts");
+export const FIXTURE_PATH = join(import.meta.dirname, "fixtures", "rule-checks-parity.json");
+const FIXED_COMMIT_DATES = { GIT_AUTHOR_DATE: "2026-01-01T00:00:00Z", GIT_COMMITTER_DATE: "2026-01-01T00:00:00Z" };
 const MAX_CONCURRENT_RUNS = 8;
 const MISMATCHES_SHOWN = 5;
 const FUZZ_LINES_PER_FILE = 120;
+const OBJECT_NAME = /\b[0-9a-f]{40}\b/g;
 
 export interface Run {
   name: string;
@@ -24,10 +27,19 @@ export interface ParityReport {
   exitCodes: Record<string, number>;
 }
 
-interface Observation {
+export interface Observation {
   status: number | null;
   stdout: string;
   stderr: string;
+}
+
+export interface RecordedRun extends Observation {
+  input: string;
+}
+
+export interface RecordedRuns {
+  rootLength: number;
+  runs: Record<string, RecordedRun>;
 }
 
 const EXTRA_LINES = [
@@ -80,7 +92,7 @@ function git(root: string, repo: string, args: string[], extraEnv: Record<string
 }
 
 function gitEnvironment(root: string, extraEnv: Record<string, string> = {}): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env, GIT_CONFIG_GLOBAL: join(root, "gitconfig"), GIT_CONFIG_NOSYSTEM: "1", ...extraEnv };
+  const env: NodeJS.ProcessEnv = { ...process.env, GIT_CONFIG_GLOBAL: join(root, "gitconfig"), GIT_CONFIG_NOSYSTEM: "1", ...FIXED_COMMIT_DATES, ...extraEnv };
   for (const name of ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"]) if (!(name in extraEnv)) delete env[name];
   return env;
 }
@@ -138,8 +150,8 @@ function buildLinesRepo(root: string): { repo: string; tree: string } {
   put(join(repo, "m/Mod.ts"), "export const a = 1\nexport const b = 2\nconst c: any = 3\nconst data = 4\n");
   put(join(repo, "u/utf8-invalid.java"), Buffer.from("String s = \"\xff\xfe\"; // corrected\nint info = 1;\n", "latin1"));
   put(join(repo, "u/Binary.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, ...Buffer.from("const v: any = 1\n")]));
-  symlinkSync(join(repo, "README"), join(repo, "u/link.ts"));
-  symlinkSync(join(root, "no-such-file"), join(repo, "u/dangling.ts"));
+  symlinkSync("../README", join(repo, "u/link.ts"));
+  symlinkSync("../../no-such-file", join(repo, "u/dangling.ts"));
   const tree = snapshotTree(root, repo);
   const nested = join(repo, "u/nested");
   mkdirSync(nested);
@@ -242,6 +254,7 @@ function buildSubmoduleRepos(root: string): { parent: string; plain: string; dir
 }
 
 export function buildRuns(root: string): Run[] {
+  mkdirSync(root, { recursive: true });
   put(join(root, "gitconfig"), "[user]\n\tname = keel-test\n\temail = keel-test@localhost\n[init]\n\tdefaultBranch = main\n[protocol \"file\"]\n\tallow = always\n");
   const lines = buildLinesRepo(root);
   const names = buildNamesRepo(root);
@@ -291,7 +304,7 @@ export function buildRuns(root: string): Run[] {
   return runs;
 }
 
-function execute(command: string[], args: string[], prog: string): Promise<Observation> {
+export function execute(command: string[], args: string[], prog: string): Promise<Observation> {
   return new Promise((resolve) => {
     const child = spawn(command[0] as string, [...command.slice(1), ...args], { env: process.env });
     const out: Buffer[] = [];
@@ -302,6 +315,14 @@ function execute(command: string[], args: string[], prog: string): Promise<Obser
       status, stdout: Buffer.concat(out).toString("utf8").replaceAll(prog, "rule-checks"), stderr: Buffer.concat(err).toString("utf8").replaceAll(prog, "rule-checks"),
     }));
   });
+}
+
+export function recordedName(run: Run, root: string): string {
+  return tokenized(run.name, root);
+}
+
+export function inputDigest(run: Run, root: string): string {
+  return digestOf(tokenized(JSON.stringify(run.args), root).replace(OBJECT_NAME, "<object>"));
 }
 
 function differences(python: Observation, typescript: Observation): string[] {
@@ -318,8 +339,13 @@ function differences(python: Observation, typescript: Observation): string[] {
   return found;
 }
 
+function restoredObservation(recorded: Observation, root: string): Observation {
+  return { status: recorded.status, stdout: restored(recorded.stdout, root), stderr: restored(recorded.stderr, root) };
+}
+
 export async function runRuleChecksParity(): Promise<ParityReport> {
-  const root = realpathSync(mkdtempSync(join(realpathSync(tmpdir()), "keel-rule-parity-")));
+  const recorded = JSON.parse(readFileSync(FIXTURE_PATH, "utf8")) as RecordedRuns;
+  const root = paddedRoot(realpathSync(tmpdir()), recorded.rootLength);
   const report: ParityReport = { runs: 0, mismatches: 0, details: [], signalLines: 0, exitCodes: {} };
   try {
     const runs = buildRuns(root);
@@ -330,17 +356,16 @@ export async function runRuleChecksParity(): Promise<ParityReport> {
         const run = runs[next];
         next += 1;
         if (run === undefined) return;
-        const [python, typescript] = await Promise.all([
-          execute(["python3", PYTHON_SCRIPT], run.args, "rule-checks.py"),
-          execute([process.execPath, TYPESCRIPT_SCRIPT], run.args, "rule-checks.ts"),
-        ]);
-        const found = differences(python, typescript);
+        const entry = recorded.runs[recordedName(run, root)];
+        const typescript = await execute([process.execPath, TYPESCRIPT_SCRIPT], run.args, "rule-checks.ts");
+        const found = entry === undefined ? ["no recorded Python outcome for this run"] : differences(restoredObservation(entry, root), typescript);
+        if (entry !== undefined && entry.input !== inputDigest(run, root)) found.push("the run's arguments differ from the recorded ones");
         if (found.length > 0) {
           report.mismatches += 1;
           if (report.details.length < MISMATCHES_SHOWN) report.details.push(`${run.name}: ${found.join("; ")}`);
         }
-        report.signalLines += python.stdout.split("\n").filter((line) => line.startsWith("signal ")).length;
-        const key = String(python.status);
+        report.signalLines += (entry?.stdout ?? "").split("\n").filter((line) => line.startsWith("signal ")).length;
+        const key = String(entry?.status);
         report.exitCodes[key] = (report.exitCodes[key] ?? 0) + 1;
       }
     };

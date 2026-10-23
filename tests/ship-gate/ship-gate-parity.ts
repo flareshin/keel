@@ -1,16 +1,14 @@
-import { spawnSync } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-import { copyTree } from "../hooks/hook-parity.ts";
+import { differencesFromRecorded, envFromTemplate, excerpt, materialize, paddedRoot, readFixtureFile, restored, runInSandbox } from "../recorded-cases.ts";
+import type { Observation, ObservedDelta, Run, SnapshotStore } from "../recorded-cases.ts";
 import { KEEL_HOME } from "./helpers.ts";
 
-const RECORDER = join(import.meta.dirname, "ship_gate_parity_record.py");
-const SUITES = ["python-keel", "ts-keel", "message-contract", "extra"] as const;
+export const FIXTURE_DIRECTORY = join(import.meta.dirname, "fixtures", "ship-gate-parity");
+export const SUITES = ["python-keel", "ts-keel", "message-contract", "extra"] as const;
 const RUN_TIMEOUT_MS = 120_000;
-const RECORD_TIMEOUT_MS = 60 * 60_000;
 const MAX_MISMATCHES_SHOWN = 60;
-const EXCERPT_CHARACTERS = 300;
 const DENY_EXIT_CODE = 2;
 const FIRES_LOG_NAME = "keel-fires.jsonl";
 const FIRES_TIMESTAMP = /"ts": "[^"]*"/g;
@@ -25,10 +23,9 @@ export const EXPECTED_DIVERGENCES: ReadonlyMap<string, number> = new Map([
   ...COMMAND_DIVERGENT_NESTINGS.map((depth): [string, number] => [`command-list-nested-${depth}`, DENY_EXIT_CODE]),
 ]);
 
-type Suite = (typeof SUITES)[number];
-type Runtime = "python" | "node";
+export type Suite = (typeof SUITES)[number];
 
-interface Case {
+export interface RecordedCase {
   id: string;
   suite: Suite;
   test: string;
@@ -37,26 +34,14 @@ interface Case {
   args: string[];
   cwd: string;
   stdin: string;
-  env: Record<string, string>;
-  python: string;
+  env: number;
   snapshot: string;
+  expected: ObservedDelta;
 }
 
-export interface Observation {
-  code: number | null;
-  stdout: string;
-  stderr: string;
-  files: Map<string, string>;
-}
-
-interface RecorderSummary {
-  label: string;
-  recorded: number;
-  testsRun: number;
-  failures: number;
-  errors: number;
-  skipped: number;
-  seconds: number;
+export interface RecordedStore extends SnapshotStore {
+  rootLength: number;
+  envs: Array<Record<string, string>>;
 }
 
 export interface ShipGateParityReport {
@@ -66,50 +51,38 @@ export interface ShipGateParityReport {
   denyToPass: number;
   perSuite: Map<string, number>;
   details: string[];
-  recorders: RecorderSummary[];
 }
 
 export function runShipGateParity(suites: readonly Suite[] = selectedSuites()): ShipGateParityReport {
-  const kept = process.env["SHIP_GATE_PARITY_DIR"];
-  if (kept) mkdirSync(kept, { recursive: true });
-  const base = kept ? realpathSync(kept) : realpathSync(mkdtempSync(join(tmpdir(), "keel-ship-gate-parity-")));
+  const store = JSON.parse(readFixtureFile(FIXTURE_DIRECTORY, "snapshots.json")) as RecordedStore;
+  const root = paddedRoot(realpathSync(tmpdir()), store.rootLength);
+  const report: ShipGateParityReport = { cases: 0, mismatches: 0, listedDivergences: 0, denyToPass: 0, perSuite: new Map(), details: [] };
+  const seenLabels = new Set<string>();
   try {
-    const casesDir = join(base, "cases");
-    const sandboxRoot = join(base, "sandbox");
-    const report: ShipGateParityReport = { cases: 0, mismatches: 0, listedDivergences: 0, denyToPass: 0, perSuite: new Map(), details: [], recorders: [] };
-    for (const suite of suites) {
-      if (!hasRecorded(casesDir, suite)) report.recorders.push(record(suite, casesDir, sandboxRoot));
-    }
-    const seenLabels = new Set<string>();
-    for (const testCase of loadCases(casesDir)) {
-      const expected = observe(testCase, sandboxRoot, "python");
-      const actual = observe(testCase, sandboxRoot, "node");
-      const verdict = judgeCase(testCase.label, expected, actual);
+    for (const testCase of loadCases(suites)) {
+      const run = replay(testCase, store, root);
+      const verdict = judgeCase(testCase.label, testCase.expected, run, root);
       report.cases += 1;
       report.perSuite.set(testCase.suite, (report.perSuite.get(testCase.suite) ?? 0) + 1);
       if (testCase.label) seenLabels.add(testCase.label);
-      if (isDenyToPass(expected, actual)) report.denyToPass += 1;
+      if (isDenyToPass(testCase.expected, run.observation)) report.denyToPass += 1;
       if (verdict.listed) report.listedDivergences += 1;
       if (verdict.problems.length > 0) {
         report.mismatches += 1;
-        report.details.push(`case ${testCase.id} (${testCase.test}) stdin ${excerpt(testCase.stdin)}:\n  ${verdict.problems.join("\n  ")}`);
+        report.details.push(`case ${testCase.id} (${testCase.test}) stdin ${excerpt(restored(testCase.stdin, root))}:\n  ${verdict.problems.join("\n  ")}`);
       }
     }
-    if (suites.includes("extra") && !process.env["SHIP_GATE_PARITY_CASES"]) {
-      for (const label of EXPECTED_DIVERGENCES.keys()) {
-        if (seenLabels.has(label)) continue;
-        report.mismatches += 1;
-        report.details.push(`expected divergence ${label} was not recorded`);
-      }
-    }
-    return report;
   } finally {
-    if (!kept) rmSync(base, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
   }
-}
-
-function hasRecorded(casesDir: string, suite: Suite): boolean {
-  return existsSync(casesDir) && readdirSync(casesDir).some((id) => id.startsWith(suite + "-"));
+  if (suites.includes("extra") && !process.env["SHIP_GATE_PARITY_CASES"]) {
+    for (const label of EXPECTED_DIVERGENCES.keys()) {
+      if (seenLabels.has(label)) continue;
+      report.mismatches += 1;
+      report.details.push(`expected divergence ${label} was not recorded`);
+    }
+  }
+  return report;
 }
 
 function selectedSuites(): readonly Suite[] {
@@ -121,34 +94,18 @@ function selectedSuites(): readonly Suite[] {
   });
 }
 
-function record(suite: Suite, casesDir: string, sandboxRoot: string): RecorderSummary {
-  const result = spawnSync("python3", [RECORDER, casesDir, sandboxRoot, suite], {
-    encoding: "utf8", timeout: RECORD_TIMEOUT_MS, maxBuffer: 1 << 28,
-  });
-  if (result.status !== 0) throw new Error(`recording the ${suite} payloads failed: ${result.stderr}`);
-  return JSON.parse(result.stdout.trim().split("\n").pop() ?? "{}");
-}
-
-function loadCases(casesDir: string): Case[] {
+function loadCases(suites: readonly Suite[]): RecordedCase[] {
   const only = process.env["SHIP_GATE_PARITY_CASES"];
-  return readdirSync(casesDir).sort().filter((id) => !only || new RegExp(only).test(id)).map((id) => {
-    const directory = join(casesDir, id);
-    const recorded = JSON.parse(readFileSync(join(directory, "case.json"), "utf8"));
-    return { id, suite: id.slice(0, id.lastIndexOf("-")), ...recorded, snapshot: join(directory, "root") } as Case;
-  });
+  const lines = readFixtureFile(FIXTURE_DIRECTORY, "cases.jsonl").split("\n").filter((line) => line !== "");
+  return lines.map((line) => JSON.parse(line) as RecordedCase).filter((testCase) => suites.includes(testCase.suite) && (!only || new RegExp(only).test(testCase.id)));
 }
 
-function observe(testCase: Case, sandboxRoot: string, runtime: Runtime): Observation {
-  rmSync(sandboxRoot, { recursive: true, force: true });
-  copyTree(testCase.snapshot, sandboxRoot);
-  const entry = join(KEEL_HOME, runtime === "python" ? testCase.script : testCase.script.replace(/\.py$/, ".ts"));
-  const command = runtime === "python" ? testCase.python : process.execPath;
-  const completed = spawnSync(command, [entry, ...testCase.args], {
-    input: testCase.stdin, encoding: "utf8", env: testCase.env, cwd: testCase.cwd, timeout: RUN_TIMEOUT_MS,
-  });
-  const observation = { code: completed.status, stdout: completed.stdout, stderr: completed.stderr, files: readTree(sandboxRoot) };
-  rmSync(sandboxRoot, { recursive: true, force: true });
-  return observation;
+function replay(testCase: RecordedCase, store: RecordedStore, root: string): Run {
+  const execution = {
+    command: [process.execPath, join(KEEL_HOME, testCase.script), ...testCase.args], stdin: restored(testCase.stdin, root),
+    env: envFromTemplate(store.envs[testCase.env] as Record<string, string>, root), cwd: restored(testCase.cwd, root), timeoutMs: RUN_TIMEOUT_MS,
+  };
+  return runInSandbox(root, (target) => materialize(store, testCase.snapshot, target), execution, readTree);
 }
 
 export function readTree(root: string): Map<string, string> {
@@ -182,40 +139,22 @@ function normalized(key: string, content: string): string {
   return key.endsWith(FIRES_LOG_NAME) ? content.replace(FIRES_TIMESTAMP, '"ts": "<ts>"') : content;
 }
 
-export function compare(expected: Observation, actual: Observation): string[] {
-  const differences: string[] = [];
-  for (const field of ["code", "stdout", "stderr"] as const) {
-    if (expected[field] !== actual[field]) differences.push(`${field}: python ${excerpt(expected[field])} / node ${excerpt(actual[field])}`);
-  }
-  for (const key of new Set([...expected.files.keys(), ...actual.files.keys()])) {
-    const python = expected.files.get(key);
-    const node = actual.files.get(key);
-    if (python !== node) differences.push(`file ${key}: python ${excerpt(python)} / node ${excerpt(node)}`);
-  }
-  return differences;
-}
-
 export interface Verdict {
   listed: boolean;
   problems: string[];
 }
 
-export function judgeCase(label: string, expected: Observation, actual: Observation): Verdict {
-  const differences = compare(expected, actual);
+export function judgeCase(label: string, expected: ObservedDelta, run: Run, root: string): Verdict {
+  const differences = differencesFromRecorded(expected, run, root);
   const required = EXPECTED_DIVERGENCES.get(label);
+  const code = run.observation.code;
   if (required === undefined) return { listed: false, problems: differences };
-  if (actual.code === required) return { listed: true, problems: [] };
-  return { listed: false, problems: [`listed divergence ${label} requires node exit ${required}, got ${actual.code}`, ...differences] };
+  if (code === required) return { listed: true, problems: [] };
+  return { listed: false, problems: [`listed divergence ${label} requires node exit ${required}, got ${code}`, ...differences] };
 }
 
-export function isDenyToPass(expected: Observation, actual: Observation): boolean {
+export function isDenyToPass(expected: ObservedDelta, actual: Observation): boolean {
   return expected.code === DENY_EXIT_CODE && actual.code !== DENY_EXIT_CODE;
-}
-
-function excerpt(value: unknown): string {
-  if (value === undefined) return "<absent>";
-  const text = JSON.stringify(value) ?? String(value);
-  return text.length > EXCERPT_CHARACTERS ? text.slice(0, EXCERPT_CHARACTERS) + "…" : text;
 }
 
 export function summary(report: ShipGateParityReport): string[] {
@@ -225,7 +164,7 @@ export function summary(report: ShipGateParityReport): string[] {
 if (import.meta.main) {
   const report = runShipGateParity();
   for (const detail of report.details.slice(0, MAX_MISMATCHES_SHOWN)) console.log(detail);
-  console.log(JSON.stringify({ perSuite: Object.fromEntries(report.perSuite), recorders: report.recorders }));
+  console.log(JSON.stringify({ perSuite: Object.fromEntries(report.perSuite) }));
   for (const line of summary(report)) console.log(line);
   process.exitCode = report.mismatches === 0 && report.denyToPass === 0 ? 0 : 1;
 }

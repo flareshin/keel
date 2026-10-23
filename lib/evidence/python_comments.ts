@@ -2,6 +2,7 @@ export type CommentSpan = [start: number, end: number, body: string];
 
 const TAB_WIDTH = 8;
 const STRING_PREFIXES = new Set(['r', 'u', 'b', 'f', 'br', 'rb', 'fr', 'rf']);
+const TEMPLATE_PREFIXES = new Set(['t', 'tr', 'rt']);
 const WORD_CHARACTER = /[\p{L}\p{N}_\p{M}]|[^\x00-\x7f]/u;
 const OPENERS: Record<string, string> = { '(': ')', '[': ']', '{': '}' };
 const CLOSERS = new Set([')', ']', '}']);
@@ -137,6 +138,7 @@ class Lexer {
     while (end < this.source.length && WORD_CHARACTER.test(this.source[end]!)) end++;
     const word = this.source.slice(start, end);
     const quote = this.source[end];
+    if ((quote === '"' || quote === "'") && TEMPLATE_PREFIXES.has(word.toLowerCase())) throw new LexicalError('template string');
     if ((quote === '"' || quote === "'") && STRING_PREFIXES.has(word.toLowerCase())) {
       const lowered = word.toLowerCase();
       this.position = this.endOfString(end, lowered.includes('f'), lowered.includes('r'));
@@ -189,6 +191,8 @@ class Lexer {
   }
 
   private afterEscape(index: number, raw: boolean): number {
+    if (this.source[index + 1] === '{' || (this.source[index + 1] === '\\' && this.source[index + 2] === '{')) throw new LexicalError('backslash before a brace');
+    if (this.source[index + 1] === '}') return index + 1;
     if (!raw && this.source.startsWith('\\N{', index)) {
       const close = this.source.indexOf('}', index);
       if (close < 0) throw new LexicalError('unterminated name escape');

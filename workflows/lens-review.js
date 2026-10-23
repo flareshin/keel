@@ -40,7 +40,7 @@ const DERIVED_RUN_ID = /^rv-\d{8}T\d{6}Z-[0-9a-f]{6}$/
 const SAFE_REF = /^[A-Za-z0-9._\/~^@{}-]+$/
 const CONTROL_CHARS = /[\x00-\x1f\x7f\x85\u2028\u2029]/
 const DATA_DIR = '"${KEEL_DATA_DIR:-$HOME/.claude}"'
-const RULE_CHECKS = `${DATA_DIR}/skills/readable-code/scripts/rule-checks.py`
+const RULE_CHECKS = `${DATA_DIR}/skills/readable-code/scripts/rule-checks.ts`
 const DEFAULT_LENSES_FILE = `${DATA_DIR}/workflows/review-lenses.json`
 const DERIVE_RUN_ID_COMMAND = `printf 'rv-%s-%s\\n' "$(date -u +%Y%m%dT%H%M%SZ)" "$(od -An -N3 -tx1 /dev/urandom | tr -d ' \\n')"`
 const LOAD_LENSES_COMMAND = `jq -c '{lenses, guardrails}' ${DEFAULT_LENSES_FILE}`
@@ -303,7 +303,7 @@ function buildReadingGuideBlock() {
 }
 
 function buildRuleChecksLens(reviewed) {
-  const commands = reviewed.map((target) => `python3 ${RULE_CHECKS} --repo '${target.repo_root}' --base ${target.review_base} --head ${target.head || target.snapshot_tree}`)
+  const commands = reviewed.map((target) => `node ${RULE_CHECKS} --repo '${target.repo_root}' --base ${target.review_base} --head ${target.head || target.snapshot_tree}`)
   const deltaNote = reviewed.some((target) => target.since) ? ' In a delta review, only a line the delta changes is a candidate.' : ''
   return {
     key: RULE_CHECKS_KEY,

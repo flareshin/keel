@@ -215,7 +215,7 @@ function runOrReportError(box, command) {
 }
 
 function runRuleChecksCommands(box, prompt) {
-  const commands = prompt.split('\n').filter((line) => line.startsWith('python3 '))
+  const commands = prompt.split('\n').filter((line) => line.startsWith('node '))
   return commands.map((command) => box.bash(command).split('\n').at(-1)).join('\n')
 }
 

@@ -1,52 +1,8 @@
-#!/usr/bin/env python3
-"""measure/boundary: scans added lines (and, for --range, commit messages) against the public-boundary rules.
-
-Prints {"scanned","hits":[{"file","line","rule"}]}; exit 1 on hits, 2 on usage or missing overlay lexicon (without --generic-only).
-"""
-from __future__ import annotations
-
-import argparse
-import os
-import sys
-
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "lib"))
-
-from measurekit import env  # noqa: E402
-from measurekit.boundary import BoundaryUsageError, file_lines, load_rules, range_lines, scan, staged_lines  # noqa: E402
-from measurekit.cli import EXIT_NEGATIVE, EXIT_OK, EXIT_USAGE, print_json, run_main  # noqa: E402
-
-
-def main(argv: list[str]) -> int:
-    args = parse_args(argv)
-    try:
-        rules = load_rules(env.overlay_dir(), args.generic_only)
-        result = scan(select_lines(args), rules)
-    except BoundaryUsageError as error:
-        print("boundary: %s" % error, file=sys.stderr)
-        return EXIT_USAGE
-    print_json(result)
-    for hit in result["hits"]:
-        print("boundary: %s:%d matches %s" % (hit["file"], hit["line"], hit["rule"]), file=sys.stderr)
-    return EXIT_NEGATIVE if result["hits"] else EXIT_OK
-
-
-def parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(prog="measure/boundary", description="Public-boundary scan.")
-    source = parser.add_mutually_exclusive_group(required=True)
-    source.add_argument("--staged", action="store_true", help="lines added in the index of the current repo")
-    source.add_argument("--range", metavar="A..B", help="commits A..B (A all zeros: commits of B not on any remote)")
-    source.add_argument("--paths", nargs="+", metavar="PATH", help="whole files, or directories (their tracked files inside a work tree)")
-    parser.add_argument("--generic-only", action="store_true", help="only keel's generic secret / private-IP rules")
-    return parser.parse_args(argv)
-
-
-def select_lines(args: argparse.Namespace):
-    if args.staged:
-        return staged_lines(os.getcwd())
-    if args.range:
-        return range_lines(os.getcwd(), args.range)
-    return file_lines(os.getcwd(), args.paths)
-
-
-if __name__ == "__main__":
-    run_main(main)
+#!/bin/bash
+self=$0
+case $self in */*) ;; *) self=./$self ;; esac
+while [ -L "$self" ]; do
+  target=$(readlink "$self")
+  case $target in /*) self=$target ;; *) self=${self%/*}/$target ;; esac
+done
+exec node "$(cd -P "${self%/*}" && pwd)/boundary.ts" "$@"

@@ -3,17 +3,17 @@ import { afterEach, beforeEach, describe, it } from "node:test"
 import fs from "node:fs"
 import path from "node:path"
 
-import { CHECKOUT, DEMO_HOOK, charterRow, ledgerRow, readText } from "./helpers.ts"
+import { CHECKOUT, DEMO_HOOK, HOOK_PRELUDE, charterRow, ledgerRow, readText } from "./helpers.ts"
 import { SmokeHarness } from "./smoke_helpers.ts"
 import type { SmokeItem } from "./smoke_helpers.ts"
 
 const SHIPPED_FRAGMENTS = ["settings/core.json", "stacks/spring-maven/settings.json"]
 const DEMO_HOOK_LINES = [
-  "command = payload['tool_input']['command']",
-  "logs = os.path.join(os.environ['KEEL_DATA_DIR'], 'logs')",
-  "os.makedirs(logs, exist_ok=True)",
-  "open(os.path.join(logs, 'keel-fires.jsonl'), 'a').write(json.dumps({'rule_id': command.split()[1], 'outcome': 'deny'}) + '\\n')",
-  "sys.exit(2)",
+  "const command = payload.tool_input.command",
+  "const logs = path.join(process.env.KEEL_DATA_DIR, 'logs')",
+  "fs.mkdirSync(logs, { recursive: true })",
+  "fs.appendFileSync(path.join(logs, 'keel-fires.jsonl'), JSON.stringify({ rule_id: command.split(' ')[1], outcome: 'deny' }) + '\\n')",
+  "process.exit(2)",
 ]
 
 function shippedHooks(): Record<string, unknown[]> {
@@ -43,9 +43,9 @@ describe("wired-fires", () => {
   }
 
   const registerBash = (script: string) =>
-    harness.box.registerHooks({ PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "python3 " + script }] }] })
+    harness.box.registerHooks({ PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "node " + script }] }] })
 
-  const hookSource = (guard: string[]): string => guard.concat(DEMO_HOOK_LINES).join("\n")
+  const hookSource = (guard: string[]): string => [...HOOK_PRELUDE, ...guard, ...DEMO_HOOK_LINES].join("\n")
 
   it("wiredFires_passes_whenEveryHookRowFiresOnItsBadFixtureAndStaysQuietOnTheGoodOne", () => {
     const item = wiredFires()
@@ -80,13 +80,13 @@ describe("wired-fires", () => {
   })
 
   it("wiredFires_fails_whenTheMatcherDoesNotCoverTheFixtureTool", () => {
-    const script = path.join(harness.box.keel, "hooks", "demo", "demo.py")
-    harness.box.registerHooks({ PreToolUse: [{ matcher: "Edit", hooks: [{ type: "command", command: "python3 " + script }] }] })
+    const script = path.join(harness.box.keel, "hooks", "demo", "demo.js")
+    harness.box.registerHooks({ PreToolUse: [{ matcher: "Edit", hooks: [{ type: "command", command: "node " + script }] }] })
     assert.ok(wiredFires().detail.includes("no PreToolUse[Bash] registration"))
   })
 
   it("wiredFires_fails_whenTheRegisteredScriptDoesNotExist", () => {
-    fs.rmSync(path.join(harness.box.keel, "hooks", "demo", "demo.py"))
+    fs.rmSync(path.join(harness.box.keel, "hooks", "demo", "demo.js"))
     assert.ok(wiredFires().detail.includes("script missing"))
   })
 
@@ -104,11 +104,12 @@ describe("wired-fires", () => {
 
   it("wiredFires_fails_whenTheHookWritesTheRealFiresLog", () => {
     const realLog = path.join(harness.box.data, "logs", "keel-fires.jsonl")
-    const script = harness.box.write("keel/hooks/demo/demo.py", [
-      "import json, sys",
-      "command = json.load(sys.stdin)['tool_input']['command']",
-      "if command.startswith('bad '):",
-      `    open(${JSON.stringify(realLog)}, 'a').write(json.dumps({'rule_id': command.split()[1], 'outcome': 'deny'}) + '\\n')`,
+    const script = harness.box.write("keel/hooks/demo/demo.js", [
+      ...HOOK_PRELUDE,
+      "const command = payload.tool_input.command",
+      "if (command.startsWith('bad ')) {",
+      `  fs.appendFileSync(${JSON.stringify(realLog)}, JSON.stringify({ rule_id: command.split(' ')[1], outcome: 'deny' }) + '\\n')`,
+      "}",
       "",
     ].join("\n"))
     registerBash(script)
@@ -121,11 +122,8 @@ describe("wired-fires", () => {
       fixture.setup = ["mkdir repo"]
       harness.box.write(`keel/tests/hooks/fixtures/${ruleId}.bad.json`, JSON.stringify(fixture))
     }
-    registerBash(harness.box.write("keel/hooks/demo/demo.py", hookSource([
-      "import json, os, sys",
-      "payload = json.load(sys.stdin)",
-      "if not os.path.isdir(os.path.join(payload['cwd'], 'repo')):",
-      "    sys.exit(0)",
+    registerBash(harness.box.write("keel/hooks/demo/demo.js", hookSource([
+      "if (!fs.existsSync(path.join(payload.cwd, 'repo'))) process.exit(0)",
     ])))
     assert.equal(wiredFires().status, "PASS")
   })
@@ -136,11 +134,8 @@ describe("wired-fires", () => {
       fixture.setup = ["mkdir -p overlay && touch overlay/fire-on-me"]
       harness.box.write(`keel/tests/hooks/fixtures/${ruleId}.bad.json`, JSON.stringify(fixture))
     }
-    registerBash(harness.box.write("keel/hooks/demo/demo.py", hookSource([
-      "import json, os, sys",
-      "payload = json.load(sys.stdin)",
-      "if not os.path.isfile(os.path.join(os.environ['KEEL_OVERLAY_DIR'], 'fire-on-me')):",
-      "    sys.exit(0)",
+    registerBash(harness.box.write("keel/hooks/demo/demo.js", hookSource([
+      "if (!fs.existsSync(path.join(process.env.KEEL_OVERLAY_DIR, 'fire-on-me'))) process.exit(0)",
     ])))
     const item = wiredFires()
     assert.equal(item.status, "PASS", JSON.stringify(item))
@@ -148,13 +143,9 @@ describe("wired-fires", () => {
 
   it("wiredFires_neverShowsHooksTheLiveOverlay_whenTheSetupBuildsNone", () => {
     harness.box.write("overlay/fire-on-me", "")
-    registerBash(harness.box.write("keel/hooks/demo/demo.py", hookSource([
-      "import json, os, sys",
-      "payload = json.load(sys.stdin)",
-      "if os.path.isfile(os.path.join(os.environ['KEEL_OVERLAY_DIR'], 'fire-on-me')):",
-      "    payload['tool_input']['command'] = 'bad K1'",
-      "if not payload['tool_input']['command'].startswith('bad '):",
-      "    sys.exit(0)",
+    registerBash(harness.box.write("keel/hooks/demo/demo.js", hookSource([
+      "if (fs.existsSync(path.join(process.env.KEEL_OVERLAY_DIR, 'fire-on-me'))) payload.tool_input.command = 'bad K1'",
+      "if (!payload.tool_input.command.startsWith('bad ')) process.exit(0)",
     ])))
     const item = wiredFires()
     assert.equal(item.status, "PASS", JSON.stringify(item))
@@ -179,13 +170,13 @@ describe("wired-fires", () => {
   })
 
   function seedOverlayHook(): void {
-    const script = harness.box.write("overlay/hooks/odemo/odemo.py", DEMO_HOOK)
+    const script = harness.box.write("overlay/hooks/odemo/odemo.js", DEMO_HOOK)
     harness.box.registerHooks({
       PreToolUse: [{
         matcher: "Bash",
         hooks: [
-          { type: "command", command: "python3 " + path.join(harness.box.keel, "hooks", "demo", "demo.py") },
-          { type: "command", command: "python3 " + script },
+          { type: "command", command: "node " + path.join(harness.box.keel, "hooks", "demo", "demo.js") },
+          { type: "command", command: "node " + script },
         ],
       }],
     })

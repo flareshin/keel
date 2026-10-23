@@ -211,7 +211,7 @@ describe("shipped settings", () => {
         entry.hooks.filter((hook) => hook.onFailure === "block").map((hook) => [entry.matcher, hook.command.slice(hook.command.lastIndexOf("/") + 1)]),
       )
       .sort()
-    assert.deepEqual(blocking, [["Bash", "ship-gate.py"], ["Bash|Edit|Write|NotebookEdit", "git-guard.py"]])
+    assert.deepEqual(blocking, [["Bash", "ship-gate.ts"], ["Bash|Edit|Write|NotebookEdit", "git-guard.ts"]])
   })
 
   it("shippedCore_registersShipGateOnlyOnPreToolUseBash", () => {

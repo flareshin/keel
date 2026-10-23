@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 {{KEEL}}/hooks/ship-gate/ship-gate.py",
+            "command": "node {{KEEL}}/hooks/ship-gate/ship-gate.ts",
             "timeout": 60,
             "onFailure": "block"
           }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 {{KEEL}}/hooks/git-guard/git-guard.py",
+            "command": "node {{KEEL}}/hooks/git-guard/git-guard.ts",
             "timeout": 10,
             "onFailure": "block"
           }
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 {{KEEL}}/hooks/report-gate/report-gate.py",
+            "command": "node {{KEEL}}/hooks/report-gate/report-gate.ts",
             "timeout": 30
           }
         ]
@@ -38,7 +38,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 {{KEEL}}/hooks/model-assign/model-assign.py",
+            "command": "node {{KEEL}}/hooks/model-assign/model-assign.ts",
             "timeout": 10
           }
         ]
@@ -49,7 +49,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 {{KEEL}}/hooks/report-gate/report-gate.py",
+            "command": "node {{KEEL}}/hooks/report-gate/report-gate.ts",
             "timeout": 30
           }
         ]
@@ -60,7 +60,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 {{KEEL}}/hooks/handoff/handoff.py --auto",
+            "command": "node {{KEEL}}/hooks/handoff/handoff.ts --auto",
             "timeout": 30
           }
         ]

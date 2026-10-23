@@ -185,7 +185,7 @@ test('lensReview_diffsLensesAgainstSnapshotTree_whenWorkingTreeIsReviewed', asyn
   assert.match(childArgs.target, new RegExp(`git -C '/work/app' diff ${SHA_A} ${SHA_B}`))
   const ruleChecks = childArgs.lenses.find((lens) => lens.key === 'rule-checks')
   assert.match(ruleChecks.prompt, new RegExp(`--repo '/work/app' --base ${SHA_A} --head ${SHA_B}`))
-  assert.match(ruleChecks.prompt, /"\$\{KEEL_DATA_DIR:-\$HOME\/\.claude\}"\/skills\/readable-code\/scripts\/rule-checks\.py/)
+  assert.match(ruleChecks.prompt, /"\$\{KEEL_DATA_DIR:-\$HOME\/\.claude\}"\/skills\/readable-code\/scripts\/rule-checks\.ts/)
   assert.match(childArgs.lenses.find((lens) => lens.key === 'readable-code').prompt, /Entry point : a\.py/)
   const prepareCommands = preparePromptCommands(rt.record.agents[0].prompt)
   assert.match(prepareCommands.diffs[0], /tree=\$\(cd "\$\{KEEL_DATA_DIR:-\$HOME\/\.claude\}" && bin\/keel snapshot "\$root" \|/)

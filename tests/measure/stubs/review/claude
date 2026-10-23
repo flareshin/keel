@@ -1,56 +1,8 @@
-#!/usr/bin/env python3
-import json
-import os
-import re
-import sys
-import time
-
-SCENARIO_DIR = os.environ["KEEL_TEST_SCENARIOS"]
-CALLS_LOG = os.path.join(SCENARIO_DIR, "calls.jsonl")
-
-
-def main() -> int:
-    prompt = sys.stdin.read()
-    call_index = _previous_calls()
-    with open(CALLS_LOG, "a", encoding="utf-8") as log:
-        log.write(json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd(), "prompt": prompt}) + "\n")
-    with open(os.path.join(SCENARIO_DIR, "review.json"), encoding="utf-8") as handle:
-        rounds = json.load(handle)["rounds"]
-    scenario = rounds[call_index % len(rounds)]
-    session_id = "session-%d" % call_index
-    print(json.dumps({"type": "system", "subtype": "init", "session_id": session_id, "model": "stub-model"}))
-    sys.stdout.flush()
-    for index, record in enumerate(_records_of(scenario)):
-        _write_record(session_id, index, record)
-    time.sleep(scenario.get("sleep", 0))
-    print(json.dumps({"type": "result", "subtype": "success", "result": "VERDICT: done"}))
-    return scenario.get("exit", 0)
-
-
-def _records_of(scenario: dict) -> list:
-    if "records" in scenario:
-        return scenario["records"]
-    if not scenario.get("record", True):
-        return []
-    return [{"status": scenario.get("status", "completed"), "result": scenario.get("result")}]
-
-
-def _write_record(session_id: str, index: int, record: dict) -> None:
-    repo = os.path.realpath(os.getcwd())
-    directory = os.path.join(os.environ["CLAUDE_CONFIG_DIR"], "projects", re.sub(r"[^A-Za-z0-9]", "-", repo), session_id, "workflows")
-    os.makedirs(directory, exist_ok=True)
-    body = {"workflowName": record.get("workflowName", "lens-review"), "status": record.get("status", "completed"),
-            "startTime": record.get("startTime", 1), "result": json.loads(json.dumps(record.get("result")).replace("{{REPO}}", repo))}
-    with open(os.path.join(directory, "wf_stub_%d.json" % index), "w", encoding="utf-8") as handle:
-        json.dump(body, handle)
-
-
-def _previous_calls() -> int:
-    if not os.path.exists(CALLS_LOG):
-        return 0
-    with open(CALLS_LOG, encoding="utf-8") as log:
-        return sum(1 for line in log if line.strip())
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+#!/bin/bash
+self=$0
+case $self in */*) ;; *) self=./$self ;; esac
+while [ -L "$self" ]; do
+  target=$(readlink "$self")
+  case $target in /*) self=$target ;; *) self=${self%/*}/$target ;; esac
+done
+exec node "$(cd -P "${self%/*}" && pwd)/claude.ts" "$@"

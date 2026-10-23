@@ -19,16 +19,19 @@ export const PAST = addDays(TODAY, -30)
 export const NOW_TS = TODAY + "T09:00:00Z"
 const LINK_STUB_CLEAN = '#!/bin/bash\necho \'{"actions":[],"problems":[]}\'\n'
 const CLAUDE_STUB = '#!/bin/bash\necho "$*" >> "$(dirname "$0")/claude.calls"\ncat "$(dirname "$0")/plugins.json"\n'
+export const HOOK_PRELUDE = [
+  "const fs = require('node:fs')",
+  "const path = require('node:path')",
+  "const payload = JSON.parse(fs.readFileSync(0, 'utf8'))",
+]
 export const DEMO_HOOK = [
-  "import json, os, sys",
-  "command = json.load(sys.stdin)['tool_input']['command']",
-  "if not command.startswith('bad '):",
-  "    sys.exit(0)",
-  "logs = os.path.join(os.environ['KEEL_DATA_DIR'], 'logs')",
-  "os.makedirs(logs, exist_ok=True)",
-  "with open(os.path.join(logs, 'keel-fires.jsonl'), 'a') as handle:",
-  "    handle.write(json.dumps({'rule_id': command.split()[1], 'outcome': 'deny', 'hook': 'demo'}) + '\\n')",
-  "sys.exit(2)",
+  ...HOOK_PRELUDE,
+  "const command = payload.tool_input.command",
+  "if (!command.startsWith('bad ')) process.exit(0)",
+  "const logs = path.join(process.env.KEEL_DATA_DIR, 'logs')",
+  "fs.mkdirSync(logs, { recursive: true })",
+  "fs.appendFileSync(path.join(logs, 'keel-fires.jsonl'), JSON.stringify({ rule_id: command.split(' ')[1], outcome: 'deny', hook: 'demo' }) + '\\n')",
+  "process.exit(2)",
   "",
 ].join("\n")
 
@@ -164,8 +167,8 @@ export class MeasureSandbox {
   }
 
   seedDemoHook(): void {
-    const script = this.write("keel/hooks/demo/demo.py", DEMO_HOOK)
-    this.registerHooks({ PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "python3 " + script }] }] })
+    const script = this.write("keel/hooks/demo/demo.js", DEMO_HOOK)
+    this.registerHooks({ PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "node " + script }] }] })
     for (const ruleId of ["K1", "C-demo"]) this.write(`keel/tests/hooks/fixtures/${ruleId}.bad.json`, this.bashFixture("bad " + ruleId, "deny"))
     this.write("keel/tests/hooks/fixtures/demo.good.json", this.bashFixture("ls"))
   }

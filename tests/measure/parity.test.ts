@@ -21,6 +21,7 @@ const MASKS: [RegExp, string][] = [
   [/\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z/g, "<ts>"],
   [/line \d+, in /g, "line N, in "],
   [/\/tmp[A-Za-z0-9_]{6,8}\//g, "/<tmp>/"],
+  [/"grader": "[0-9a-f]{40}(?:-dirty)?"/g, '"grader": "<grader>"'],
 ]
 
 const mask = (text: string): string => MASKS.reduce((masked, [pattern, replacement]) => masked.replace(pattern, replacement), text)

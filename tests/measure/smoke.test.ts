@@ -192,7 +192,7 @@ describe("file checks", () => {
   const assertStatus = (check: string, scope: string, status: string, detail: string = "") => harness.assertStatus(check, scope, status, detail)
 
   function writeSettings(scripts: string[]): void {
-    const groups = scripts.map((name) => ({ matcher: "Bash", hooks: [{ type: "command", command: `python3 /k/hooks/${name}.py --flag` }] }))
+    const groups = scripts.map((name) => ({ matcher: "Bash", hooks: [{ type: "command", command: `node /k/hooks/${name}.js --flag` }] }))
     harness.box.write("data/settings.json", JSON.stringify({ model: "x", hooks: { PreToolUse: groups } }))
   }
 
@@ -203,7 +203,7 @@ describe("file checks", () => {
 
   it("hookScriptCap_countsAScriptOnce_whenRegisteredForSeveralEvents", () => {
     writeSettings(Array(9).fill("same"))
-    assertStatus("caps", "hook-scripts", "PASS", "1/8: /k/hooks/same.py")
+    assertStatus("caps", "hook-scripts", "PASS", "1/8: /k/hooks/same.js")
   })
 
   it("hookScriptCap_fails_whenSettingsJsonIsNotJson", () => {

@@ -157,9 +157,7 @@ function shellTargetPrefix(path: string): string {
 }
 
 function guardCommand(name: string): string[] {
-  const typescript = childPath(KEEL, `hooks/${name}/${name}.ts`);
-  if (pathExists(typescript)) return [process.execPath, typescript];
-  return ["python3", childPath(KEEL, `hooks/${name}/${name}.py`)];
+  return [process.execPath, childPath(KEEL, `hooks/${name}/${name}.ts`)];
 }
 
 function spawnGuard(command: readonly string[], input: string): CompletedProcess {

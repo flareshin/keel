@@ -1,3 +1,5 @@
+import { decolor } from "./argcolor.ts"
+import type { ArgparseTheme } from "./argcolor.ts"
 import type { ArgumentSpec, ParserSpec } from "./argparse.ts"
 import { codePointLength, pyIntOrNull, pyStrip } from "./pystr.ts"
 import { fillText, wrapText } from "./pytextwrap.ts"
@@ -34,22 +36,22 @@ function terminalColumns(): number {
   return fromTerminal > 0 ? fromTerminal : FALLBACK_COLUMNS
 }
 
-export function formatUsage(spec: ParserSpec, width: number): string {
-  return formatUsageBody(spec, actionsOf(spec), width)
+export function formatUsage(spec: ParserSpec, width: number, theme: ArgparseTheme): string {
+  return formatUsageBody(spec, actionsOf(spec), width, theme)
 }
 
-export function formatHelp(spec: ParserSpec, width: number): string {
+export function formatHelp(spec: ParserSpec, width: number, theme: ArgparseTheme): string {
   const actions = actionsOf(spec)
   const positionals = actions.filter((action) => action.optionStrings.length === 0)
   const optionals = actions.filter((action) => action.optionStrings.length > 0)
-  const longestInvocation = Math.max(...actions.map((action) => codePointLength(invocationOf(action)) + INDENT_INCREMENT))
+  const longestInvocation = Math.max(...actions.map((action) => plainLength(invocationOf(action, theme), theme) + INDENT_INCREMENT))
   const maxHelpPosition = Math.min(MAX_HELP_POSITION, Math.max(width - 20, INDENT_INCREMENT * 2))
   const helpPosition = Math.min(longestInvocation + 2, maxHelpPosition)
   const sections = [
-    `${formatUsageBody(spec, actions, width)}\n\n`,
+    `${formatUsageBody(spec, actions, width, theme)}\n\n`,
     `${fillText(normalizeSpaces(spec.description), Math.max(width, MIN_TEXT_WIDTH), "")}\n\n`,
-    formatSection("positional arguments", positionals, helpPosition, width),
-    formatSection("options", optionals, helpPosition, width),
+    formatSection("positional arguments", positionals, helpPosition, width, theme),
+    formatSection("options", optionals, helpPosition, width, theme),
   ]
   return sections.join("").replace(THREE_OR_MORE_NEWLINES, "\n\n").replace(/^\n+|\n+$/g, "") + "\n"
 }
@@ -67,41 +69,47 @@ function actionsOf(spec: ParserSpec): HelpAction[] {
   return [helpAction, ...declared]
 }
 
-function formatUsageBody(spec: ParserSpec, actions: HelpAction[], width: number): string {
-  const { parts, positionalStart } = usageParts(spec, actions)
+function formatUsageBody(spec: ParserSpec, actions: HelpAction[], width: number, theme: ArgparseTheme): string {
+  const { parts, positionalStart } = usageParts(spec, actions, theme)
   const usage = [spec.prog, ...parts].join(" ")
-  if (USAGE_PREFIX.length + codePointLength(usage) <= width) return USAGE_PREFIX + usage
-  return USAGE_PREFIX + wrapUsage(spec.prog, parts.slice(0, positionalStart), parts.slice(positionalStart), width)
+  const fitted = USAGE_PREFIX.length + plainLength(usage, theme) <= width
+    ? usage
+    : wrapUsage(spec.prog, parts.slice(0, positionalStart), parts.slice(positionalStart), width, theme)
+  return `${theme.usage}${USAGE_PREFIX}${theme.reset}${theme.prog}${spec.prog}${theme.reset}${fitted.slice(spec.prog.length)}`
 }
 
-function wrapUsage(prog: string, optionalParts: string[], positionalParts: string[], textWidth: number): string {
+function plainLength(text: string, theme: ArgparseTheme): number {
+  return codePointLength(decolor(text, theme))
+}
+
+function wrapUsage(prog: string, optionalParts: string[], positionalParts: string[], textWidth: number, theme: ArgparseTheme): string {
   const progLength = codePointLength(prog)
   let lines: string[]
   if (USAGE_PREFIX.length + progLength <= SHORT_PROG_SHARE * textWidth) {
     const indent = " ".repeat(USAGE_PREFIX.length + progLength + 1)
     if (optionalParts.length > 0) {
-      lines = [...usageLines([prog, ...optionalParts], indent, textWidth, USAGE_PREFIX), ...usageLines(positionalParts, indent, textWidth)]
+      lines = [...usageLines([prog, ...optionalParts], indent, textWidth, theme, USAGE_PREFIX), ...usageLines(positionalParts, indent, textWidth, theme)]
     } else if (positionalParts.length > 0) {
-      lines = usageLines([prog, ...positionalParts], indent, textWidth, USAGE_PREFIX)
+      lines = usageLines([prog, ...positionalParts], indent, textWidth, theme, USAGE_PREFIX)
     } else {
       lines = [prog]
     }
   } else {
     const indent = " ".repeat(USAGE_PREFIX.length)
-    lines = usageLines([...optionalParts, ...positionalParts], indent, textWidth)
-    if (lines.length > 1) lines = [...usageLines(optionalParts, indent, textWidth), ...usageLines(positionalParts, indent, textWidth)]
+    lines = usageLines([...optionalParts, ...positionalParts], indent, textWidth, theme)
+    if (lines.length > 1) lines = [...usageLines(optionalParts, indent, textWidth, theme), ...usageLines(positionalParts, indent, textWidth, theme)]
     lines = [prog, ...lines]
   }
   return lines.join("\n")
 }
 
-function usageLines(parts: string[], indent: string, textWidth: number, prefix?: string): string[] {
+function usageLines(parts: string[], indent: string, textWidth: number, theme: ArgparseTheme, prefix?: string): string[] {
   const lines: string[] = []
   let line: string[] = []
   const indentLength = indent.length
   let lineLength = (prefix === undefined ? indentLength : prefix.length) - 1
   for (const part of parts) {
-    const partLength = codePointLength(part)
+    const partLength = plainLength(part, theme)
     if (lineLength + 1 + partLength > textWidth && line.length > 0) {
       lines.push(indent + line.join(" "))
       line = []
@@ -115,7 +123,7 @@ function usageLines(parts: string[], indent: string, textWidth: number, prefix?:
   return lines
 }
 
-function usageParts(spec: ParserSpec, actions: HelpAction[]): { parts: string[]; positionalStart: number } {
+function usageParts(spec: ParserSpec, actions: HelpAction[], theme: ArgparseTheme): { parts: string[]; positionalStart: number } {
   const { groups, optionalCount } = usageGroups(spec, actions)
   const parts: string[] = []
   let positionalStart = -1
@@ -123,7 +131,7 @@ function usageParts(spec: ParserSpec, actions: HelpAction[]): { parts: string[];
     if (index === optionalCount) positionalStart = parts.length
     const start = parts.length
     const inGroup = members.length > 1
-    for (const action of members) parts.push(usagePartOf(action, required || inGroup))
+    for (const action of members) parts.push(usagePartOf(action, required || inGroup, theme))
     if (inGroup) {
       parts[start] = (required ? "(" : "[") + parts[start]
       for (let position = start; position < parts.length - 1; position++) parts[position] += " |"
@@ -157,11 +165,18 @@ function usageGroups(spec: ParserSpec, actions: HelpAction[]): { groups: UsageGr
   return { groups: [...optionals, ...positionals], optionalCount: optionals.length }
 }
 
-function usagePartOf(action: HelpAction, bare: boolean): string {
-  if (action.optionStrings.length === 0) return argumentsOf(action)
+function usagePartOf(action: HelpAction, bare: boolean, theme: ArgparseTheme): string {
+  if (action.optionStrings.length === 0) return `${theme.summaryAction}${argumentsOf(action)}${theme.reset}`
   const first = action.optionStrings[0] as string
-  const part = action.kind === "flag" ? first : `${first} ${argumentsOf(action)}`
+  const optionColor = isLongOption(first) ? theme.summaryLongOption : theme.summaryShortOption
+  const part = action.kind === "flag"
+    ? `${optionColor}${first}${theme.reset}`
+    : `${optionColor}${first} ${theme.summaryLabel}${argumentsOf(action)}${theme.reset}`
   return bare ? part : `[${part}]`
+}
+
+function isLongOption(optionString: string): boolean {
+  return optionString.length > 2
 }
 
 function metavarOf(action: HelpAction): string {
@@ -175,26 +190,29 @@ function argumentsOf(action: HelpAction): string {
   return action.kind === "values" ? `${metavar} [${metavar} ...]` : metavar
 }
 
-function invocationOf(action: HelpAction): string {
-  if (action.optionStrings.length === 0) return metavarOf(action)
-  const names = action.optionStrings.join(", ")
-  return action.kind === "flag" ? names : `${names} ${argumentsOf(action)}`
+function invocationOf(action: HelpAction, theme: ArgparseTheme): string {
+  if (action.optionStrings.length === 0) return `${theme.action}${metavarOf(action)}${theme.reset}`
+  const names = action.optionStrings
+    .map((name) => (isLongOption(name) ? `${theme.longOption}${name}${theme.reset}` : `${theme.shortOption}${name}${theme.reset}`))
+    .join(", ")
+  return action.kind === "flag" ? names : `${names} ${theme.label}${argumentsOf(action)}${theme.reset}`
 }
 
-function formatSection(heading: string, actions: HelpAction[], helpPosition: number, width: number): string {
+function formatSection(heading: string, actions: HelpAction[], helpPosition: number, width: number, theme: ArgparseTheme): string {
   if (actions.length === 0) return ""
-  const items = actions.map((action) => formatAction(action, helpPosition, width)).join("")
-  return `\n${heading}:\n${items}\n`
+  const items = actions.map((action) => formatAction(action, helpPosition, width, theme)).join("")
+  return `\n${theme.heading}${heading}:${theme.reset}\n${items}\n`
 }
 
-function formatAction(action: HelpAction, helpPosition: number, width: number): string {
+function formatAction(action: HelpAction, helpPosition: number, width: number, theme: ArgparseTheme): string {
   const helpWidth = Math.max(width - helpPosition, MIN_TEXT_WIDTH)
   const actionWidth = helpPosition - INDENT_INCREMENT - 2
-  const header = invocationOf(action)
+  const header = invocationOf(action, theme)
+  const headerLength = plainLength(header, theme)
   const indent = " ".repeat(INDENT_INCREMENT)
   if (action.help === "") return `${indent}${header}\n`
-  const fitsBesideHelp = codePointLength(header) <= actionWidth
-  const lead = fitsBesideHelp ? `${indent}${header.padEnd(actionWidth)}  ` : `${indent}${header}\n`
+  const fitsBesideHelp = headerLength <= actionWidth
+  const lead = fitsBesideHelp ? `${indent}${header}${" ".repeat(actionWidth - headerLength)}  ` : `${indent}${header}\n`
   const helpLines = wrapText(normalizeSpaces(action.help), helpWidth)
   const margin = " ".repeat(helpPosition)
   const [first = "", ...rest] = helpLines

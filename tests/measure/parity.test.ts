@@ -40,6 +40,7 @@ interface ParityCase {
   stub?: "eval" | "review"
   engineDependentStderr?: boolean
   columns?: string
+  environment?: Record<string, string>
 }
 
 let compared = 0
@@ -267,6 +268,39 @@ const CASES_UNDER_PARITY: ParityCase[] = [
   { name: "run usage error at twenty columns", tool: "run", args: [], columns: "20" },
 ]
 
+const COLOR_ENVIRONMENTS: [string, Record<string, string>][] = [
+  ["force color", { FORCE_COLOR: "1" }],
+  ["python colors on", { PYTHON_COLORS: "1" }],
+  ["no color", { NO_COLOR: "1" }],
+  ["python colors off and force color", { PYTHON_COLORS: "0", FORCE_COLOR: "1" }],
+  ["no color and force color", { NO_COLOR: "1", FORCE_COLOR: "1" }],
+  ["force color and a dumb terminal", { FORCE_COLOR: "1", TERM: "dumb" }],
+  ["python colors on and a dumb terminal", { PYTHON_COLORS: "1", TERM: "dumb" }],
+]
+
+const COLOR_INVOCATIONS: [string, string, string[]][] = [
+  ["boundary", "help", ["-h"]],
+  ["boundary", "unknown option", ["--bogus", "--staged"]],
+  ["boundary", "exclusive sources", ["--staged", "--paths", "x"]],
+  ["evals/eval", "help", ["-h"]],
+  ["evals/eval", "invalid choice", ["K4", "--split", "bogus"]],
+  ["evals/eval", "unknown option", ["K4", "--bogus"]],
+  ["evals/review-eval", "help", ["-h"]],
+  ["run", "usage error", []],
+]
+
+const COLOR_CASES: ParityCase[] = COLOR_ENVIRONMENTS.flatMap(([environmentLabel, environment]) =>
+  COLOR_INVOCATIONS.map(([tool, label, args]): ParityCase => ({ name: `${tool} ${label} with ${environmentLabel}`, tool, args, columns: "80", environment })),
+)
+
+const NARROW_COLOR_CASES: ParityCase[] = [
+  { name: "boundary help at forty columns with force color", tool: "boundary", args: ["-h"], columns: "40", environment: { FORCE_COLOR: "1" } },
+  { name: "eval help at fifty columns with python colors on", tool: "evals/eval", args: ["-h"], columns: "50", environment: { PYTHON_COLORS: "1" } },
+  { name: "review-eval usage error at seventy columns with force color", tool: "evals/review-eval", args: ["--split", "dev"], columns: "70", environment: { FORCE_COLOR: "1" } },
+  { name: "smoke usage error at forty columns with force color", tool: "smoke", args: ["--bogus"], columns: "40", environment: { FORCE_COLOR: "1" } },
+  { name: "run usage error at twenty columns with python colors on", tool: "run", args: [], columns: "20", environment: { PYTHON_COLORS: "1" } },
+]
+
 const REVIEW_BASE = "export function total(items: number[]): number {\n  return items.reduce((sum, item) => sum + item, 0)\n}\n"
 const REVIEW_CHANGE = "diff --git a/calc.ts b/calc.ts\n--- a/calc.ts\n+++ b/calc.ts\n@@ -1,3 +1,7 @@\n export function total(items: number[]): number {\n   return items.reduce((sum, item) => sum + item, 0)\n }\n+\n+export function mean(items: number[]): number {\n+  return total(items) / items.length\n+}\n"
 
@@ -293,10 +327,11 @@ describe("python and typescript entries agree", () => {
   })
   afterEach(() => box.cleanup())
 
-  for (const parityCase of CASES_UNDER_PARITY) {
+  for (const parityCase of [...CASES_UNDER_PARITY, ...COLOR_CASES, ...NARROW_COLOR_CASES]) {
     it(parityCase.name, () => {
       parityCase.setup?.(box)
       if (parityCase.columns !== undefined) box.env["COLUMNS"] = parityCase.columns
+      Object.assign(box.env, parityCase.environment)
       if (parityCase.stub === "review") box.env["PATH"] = REVIEW_STUB_DIR + path.delimiter + (box.env["PATH"] ?? "").replace(STUBS_DIR + path.delimiter, "")
       if (parityCase.args.includes("@RAW")) parityCase.args = parityCase.args.map((arg) => (arg === "@RAW" ? path.join(box.data, "logs", "keel-eval-K4-old") : arg))
       const { python, ts } = runBoth(box, parityCase)

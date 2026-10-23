@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto"
 import fs from "node:fs"
+import { fileURLToPath } from "node:url"
 
 import { isCommandHook, iterHookEntries } from "../../measure/lib/measurekit/hook_settings.ts"
 import type { Registration } from "../../measure/lib/measurekit/hook_settings.ts"
 import { setMember } from "../../measure/lib/measurekit/pydict.ts"
-import { encodeStrict, readText as readTranslatedText } from "../../measure/lib/measurekit/pyio.ts"
+import { decodeStrict, encodeStrict, readText as readTranslatedText } from "../../measure/lib/measurekit/pyio.ts"
+import { toOsError } from "../../measure/lib/measurekit/pyerrno.ts"
 import { JsonDecodeError, pythonJsonDumps, pythonJsonLoads, pythonJsonRawDecode, skipJsonWhitespace } from "../../measure/lib/measurekit/pyjson.ts"
 import { isFile, pyDirname, pyJoin } from "../../measure/lib/measurekit/pypath.ts"
 import { pyStrip, sortedByCodePoint } from "../../measure/lib/measurekit/pystr.ts"
@@ -26,10 +28,18 @@ const PRIVATE_FILE_MODE = 0o600
 const PRIVATE_DIR_MODE = 0o700
 const NO_PRE_KEEL_FILE = "none"
 const LINK_STATE_SCHEMA = 1
+const MAX_DESCRIPTOR = 2n ** 31n - 1n
+const MIN_DESCRIPTOR = -(2n ** 31n)
+const BOOL_DESCRIPTOR_WARNING = "RuntimeWarning: bool is used as a file descriptor\n"
+const STAT_WARNING_SITE = "<frozen genericpath>:40"
+const OPEN_WARNING_SITE = `${fileURLToPath(new URL("./config.py", import.meta.url))}:55`
+const OPEN_WARNING_SOURCE = '  with open(path, encoding="utf-8", newline="") as f:\n'
 
 export class AttributeError extends Error {}
 
 export class RuntimeError extends Error {}
+
+export class OverflowError extends Error {}
 
 export interface LiveSettings {
   readonly path: string
@@ -106,7 +116,7 @@ export function restorePreKeelSettings(paths: KeelPaths): JsonObject | null {
   const preKeelOwned = resolvePreKeelOwnedKeys(recorded)
   if (preKeelOwned === null || !fs.existsSync(path)) return null
   const liveText = readText(path)
-  const restored = resolveRestoredSettingsText(liveText, preKeelOwned, recorded as string)
+  const restored = resolveRestoredSettingsText(liveText, preKeelOwned, recorded as PyValue)
   if (restored === null) return null
   const liveSavedTo = pyJoin(newBackupDir(paths), "settings.before-unlink.json")
   writePrivate(liveSavedTo, liveText)
@@ -172,7 +182,7 @@ function preKeelRecord(backupPath: string | null): string | null {
 function resolvePreKeelOwnedKeys(recorded: PyValue | undefined): JsonObject | null {
   if (recorded === NO_PRE_KEEL_FILE) return {}
   if (!pyTruthy(recorded) || !isExistingFile(recorded as PyValue)) return null
-  const preKeel = pythonJsonLoads(readText(recorded as string))
+  const preKeel = pythonJsonLoads(readRecordedText(recorded as PyValue))
   const owned: JsonObject = {}
   for (const key of OWNED_KEYS) if (pyContains(preKeel, key)) setMember(owned, key, pyItem(preKeel, key))
   return owned
@@ -183,7 +193,52 @@ function isExistingFile(path: PyValue): boolean {
   if (Array.isArray(path) || isJsonObject(path) || path instanceof PyFloat) {
     throw new TypeError(`stat: path should be string, bytes, os.PathLike or integer, not ${pyTypeName(path)}`)
   }
-  return false
+  return isRegularDescriptor(path as number | bigint | boolean)
+}
+
+function isRegularDescriptor(descriptor: number | bigint | boolean): boolean {
+  if (typeof descriptor === "boolean") warnBoolDescriptor(STAT_WARNING_SITE, "")
+  try {
+    return fs.fstatSync(checkedDescriptor(descriptor)).isFile()
+  } catch (error) {
+    if (error instanceof OverflowError) throw error
+    return false
+  }
+}
+
+function checkedDescriptor(descriptor: number | bigint | boolean): number {
+  const exact = BigInt(descriptor)
+  if (exact > MAX_DESCRIPTOR) throw new OverflowError("fd is greater than maximum")
+  if (exact < MIN_DESCRIPTOR) throw new OverflowError("fd is less than minimum")
+  return Number(exact)
+}
+
+function warnBoolDescriptor(site: string, sourceLine: string): void {
+  process.stderr.write(`${site}: ${BOOL_DESCRIPTOR_WARNING}${sourceLine}`)
+}
+
+function readRecordedText(recorded: PyValue): string {
+  if (typeof recorded === "string") return readText(recorded)
+  if (typeof recorded === "boolean") warnBoolDescriptor(OPEN_WARNING_SITE, OPEN_WARNING_SOURCE)
+  return decodeStrict(readDescriptorBytes(Number(recorded)))
+}
+
+function readDescriptorBytes(descriptor: number): Buffer {
+  try {
+    return fs.readFileSync(descriptor)
+  } catch (error) {
+    throw toOsError(error) ?? error
+  } finally {
+    closeDescriptor(descriptor)
+  }
+}
+
+function closeDescriptor(descriptor: number): void {
+  try {
+    fs.closeSync(descriptor)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EBADF") throw error
+  }
 }
 
 function pyContains(container: PyValue, key: string): boolean {
@@ -198,7 +253,7 @@ function pyItem(container: PyValue, key: string): PyValue {
   throw new TypeError(Array.isArray(container) ? "list indices must be integers or slices, not str" : "string indices must be integers, not 'str'")
 }
 
-function resolveRestoredSettingsText(liveText: string, preKeelOwned: JsonObject, recorded: string): string | null {
+function resolveRestoredSettingsText(liveText: string, preKeelOwned: JsonObject, recorded: PyValue): string | null {
   let live: PyValue | null
   try {
     live = pythonJsonLoads(liveText)
@@ -208,7 +263,7 @@ function resolveRestoredSettingsText(liveText: string, preKeelOwned: JsonObject,
   }
   if (isJsonObject(live)) return spliceOwnedKeys(liveText, preKeelOwned)
   if (recorded === NO_PRE_KEEL_FILE) return null
-  return readText(recorded)
+  return readRecordedText(recorded)
 }
 
 function writePrivate(path: string, text: string): void {

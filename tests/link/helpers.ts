@@ -20,6 +20,8 @@ const CORE_SETTINGS = {
   permissions: { deny: ["Bash(git push --force:*)"] },
 }
 
+export type RedirectedStream = "stdout" | "stderr"
+
 export type LinkResult = {
   status: number | null
   stdout: string
@@ -125,6 +127,16 @@ export class LinkSandbox {
     const [program = "", ...leading] = command
     const completed = spawnSync(program, [...leading, ...args], { env: this.env(), encoding: "utf8" })
     return { status: completed.status, stdout: completed.stdout, stderr: completed.stderr }
+  }
+
+  runLinkRedirected(command: string[], redirected: RedirectedStream[], ...args: string[]): Omit<LinkResult, "json"> {
+    const [program = "", ...leading] = command
+    const files = Object.fromEntries(redirected.map((stream) => [stream, path.join(this.root, `${stream}.redirected`)]))
+    const descriptors = Object.fromEntries(Object.entries(files).map(([stream, file]) => [stream, fs.openSync(file, "w")]))
+    const completed = spawnSync(program, [...leading, ...args], { env: this.env(), encoding: "utf8", stdio: ["pipe", descriptors["stdout"] ?? "pipe", descriptors["stderr"] ?? "pipe"] })
+    Object.values(descriptors).forEach((descriptor) => fs.closeSync(descriptor))
+    const read = (stream: RedirectedStream, piped: string | null) => (files[stream] === undefined ? (piped ?? "") : fs.readFileSync(files[stream], "utf8"))
+    return { status: completed.status, stdout: read("stdout", completed.stdout), stderr: read("stderr", completed.stderr) }
   }
 
   git(cwd: string, ...args: string[]): string {

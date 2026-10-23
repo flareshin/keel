@@ -1,3 +1,4 @@
+import { STDERR_DESCRIPTOR, STDOUT_DESCRIPTOR, themeFor } from "./argcolor.ts"
 import { formatHelp, formatUsage, terminalWidth } from "./arghelp.ts"
 import { pyIntOrNull } from "./pystr.ts"
 import { pyRepr } from "./pyvalue.ts"
@@ -82,7 +83,9 @@ export class ArgumentParser {
   }
 
   error(message: string): never {
-    process.stderr.write(`${this.usage()}\n${this.spec.prog}: error: ${message}\n`)
+    const theme = themeFor(STDERR_DESCRIPTOR)
+    const usage = formatUsage(this.spec, terminalWidth(), theme)
+    process.stderr.write(`${usage}\n${this.spec.prog}: ${theme.error}error:${theme.reset} ${theme.message}${message}${theme.reset}\n`)
     throw new UsageExit(2)
   }
 
@@ -193,12 +196,8 @@ export class ArgumentParser {
     }
   }
 
-  private usage(): string {
-    return formatUsage(this.spec, terminalWidth())
-  }
-
   private printHelp(): never {
-    process.stdout.write(formatHelp(this.spec, terminalWidth()))
+    process.stdout.write(formatHelp(this.spec, terminalWidth(), themeFor(STDOUT_DESCRIPTOR)))
     throw new UsageExit(0)
   }
 }

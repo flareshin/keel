@@ -128,6 +128,27 @@ describe('pythonJsonLoads', () => {
 });
 
 describe('python value semantics', () => {
+  test('pyEquals treats the one NaN json.loads returns as identical inside containers but not at the top level', () => {
+    const loaded = (text: string) => pythonJsonLoads(text);
+    assert.equal(pyEquals(loaded('[NaN]'), loaded('[NaN]')), true);
+    assert.equal(pyEquals(loaded('{"a": NaN}'), loaded('{"a": NaN}')), true);
+    assert.equal(pyEquals((loaded('{"t": [NaN]}') as Record<string, unknown>)['t'], loaded('[NaN]')), true);
+    assert.equal(pyEquals(loaded('{"a": NaN, "b": 1}'), loaded('{"b": 1, "a": NaN}')), true);
+    assert.equal(pyEquals(loaded('NaN'), loaded('NaN')), false);
+    assert.equal(pyEquals(loaded('[NaN]'), loaded('[NaN, NaN]')), false);
+    assert.equal(pyEquals(loaded('[NaN]'), loaded('[1]')), false);
+    assert.equal(pyEquals(loaded('[NaN]'), [new PyFloat(NaN)]), false);
+    assert.equal(pyEquals(loaded('Infinity'), loaded('Infinity')), true);
+    assert.equal(pyEquals(loaded('[Infinity, -Infinity]'), loaded('[Infinity, -Infinity]')), true);
+    assert.equal(pyEquals(loaded('[Infinity]'), loaded('[-Infinity]')), false);
+    assert.equal(pyEquals(loaded('[1e999]'), loaded('[Infinity]')), true);
+    for (const depth of [3000, 9999]) {
+      assert.equal(pyEquals(loaded('['.repeat(depth) + 'NaN' + ']'.repeat(depth)), loaded('['.repeat(depth) + 'NaN' + ']'.repeat(depth))), true);
+      assert.equal(pyEquals(loaded('{"a": '.repeat(depth) + '[NaN]' + '}'.repeat(depth)), loaded('{"a": '.repeat(depth) + '[NaN]' + '}'.repeat(depth))), true);
+      assert.equal(pyEquals(loaded('['.repeat(depth) + 'NaN' + ']'.repeat(depth)), loaded('['.repeat(depth) + '1' + ']'.repeat(depth))), false);
+    }
+  });
+
   test('pyEquals compares values nested far deeper than the call stack', () => {
     const nest = (bottom: unknown, depth: number) => {
       let value: unknown = bottom;

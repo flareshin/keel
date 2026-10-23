@@ -626,17 +626,22 @@ function sameAtThisLevel(left: unknown, right: unknown, pending: Array<[unknown,
   }
   if (Array.isArray(left)) {
     if (!Array.isArray(right) || left.length !== right.length) return false;
-    left.forEach((item, index) => pending.push([item, right[index]]));
+    left.forEach((item, index) => pushMember(pending, item, right[index]));
     return true;
   }
   if (isJsonObject(left)) {
     if (!isJsonObject(right)) return false;
     const keys = Object.keys(left);
     if (keys.length !== Object.keys(right).length || !keys.every((key) => Object.hasOwn(right, key))) return false;
-    keys.forEach((key) => pending.push([left[key], right[key]]));
+    keys.forEach((key) => pushMember(pending, left[key], right[key]));
     return true;
   }
   return left === right;
+}
+
+function pushMember(pending: Array<[unknown, unknown]>, left: unknown, right: unknown): void {
+  const sameObject = left === right && typeof left === 'object' && left !== null;
+  if (!sameObject) pending.push([left, right]);
 }
 
 const FNMATCH_SPECIALS = new Set('\\^$.*+?()[]{}|/'.split(''));

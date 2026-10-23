@@ -143,6 +143,15 @@ export function isLink(path: string): boolean {
   return isSymlink(path)
 }
 
+export function lexists(path: string): boolean {
+  try {
+    fs.lstatSync(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
 export function isExecutable(path: string): boolean {
   try {
     fs.accessSync(path, fs.constants.X_OK)

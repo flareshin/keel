@@ -1,3 +1,4 @@
+import { memberEntries } from "./pydict.ts"
 import { shlexSplit, ShlexError } from "./shlex.ts"
 import { pyBasename, pySplitext } from "./pypath.ts"
 import { isJsonObject } from "./pyvalue.ts"
@@ -48,7 +49,7 @@ export function iterRegistrations(hooks: PyValue | undefined): Registration[] {
 export function iterHookEntries(hooks: PyValue | undefined): Registration[] {
   const entries: Registration[] = []
   if (!isJsonObject(hooks)) return entries
-  for (const [event, groups] of Object.entries(hooks)) {
+  for (const [event, groups] of memberEntries(hooks)) {
     for (const group of Array.isArray(groups) ? groups : []) {
       if (!isJsonObject(group)) continue
       const matcher = group["matcher"]

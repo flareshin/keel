@@ -1,3 +1,4 @@
+import { memberKeys, setMember } from "./pydict.ts"
 import { compareCodePoints } from "./pystr.ts"
 import { ValueError } from "./pyerrors.ts"
 import { PyFloat, pyFloatRepr } from "./pyvalue.ts"
@@ -8,6 +9,7 @@ export class JsonDecodeError extends ValueError {}
 export interface DumpOptions {
   sortKeys?: boolean
   indent?: number
+  ensureAscii?: boolean
 }
 
 const JSON_WHITESPACE = new Set([" ", "\t", "\n", "\r"])
@@ -26,6 +28,19 @@ export function pythonJsonLoads(text: string): PyValue {
   reader.skipWhitespace()
   if (!reader.atEnd()) throw reader.fail("Extra data", reader.position)
   return value
+}
+
+export function pythonJsonRawDecode(text: string, index: number): [PyValue, number] {
+  const reader = new Reader(text)
+  reader.position = index
+  const value = reader.readValue()
+  return [value, reader.position]
+}
+
+export function skipJsonWhitespace(text: string, index: number): number {
+  let end = index
+  while (JSON_WHITESPACE.has(text.charAt(end))) end++
+  return end
 }
 
 export function pythonJsonDumps(value: object | PyValue, options: DumpOptions = {}): string {
@@ -52,7 +67,7 @@ class Reader {
   }
 
   skipWhitespace(): void {
-    while (!this.atEnd() && JSON_WHITESPACE.has(this.text.charAt(this.position))) this.position++
+    this.position = skipJsonWhitespace(this.text, this.position)
   }
 
   readValue(): PyValue {
@@ -143,7 +158,7 @@ class Reader {
       this.skipWhitespace()
       if (this.text.charAt(this.position++) !== ":") throw this.fail("Expecting ':' delimiter", this.position - 1)
       this.skipWhitespace()
-      Object.defineProperty(members, key, { value: this.readValue(), enumerable: true, writable: true, configurable: true })
+      setMember(members, key, this.readValue())
       this.skipWhitespace()
       const separator = this.text.charAt(this.position++)
       if (separator === "}") return members
@@ -159,12 +174,12 @@ function dump(value: PyValue, options: DumpOptions, depth: number): string {
   if (typeof value === "bigint") return value.toString()
   if (typeof value === "number") return Number.isInteger(value) ? String(value) : dumpFloat(value)
   if (value instanceof PyFloat) return dumpFloat(value.value)
-  if (typeof value === "string") return dumpString(value)
+  if (typeof value === "string") return dumpString(value, options)
   if (Array.isArray(value)) return dumpContainer(value.map((item) => dump(item, options, depth + 1)), "[", "]", options, depth)
-  const keys = Object.keys(value)
+  const keys = memberKeys(value)
   if (options.sortKeys) keys.sort(compareCodePoints)
   const separator = ": "
-  const members = keys.map((key) => dumpString(key) + separator + dump(value[key] as PyValue, options, depth + 1))
+  const members = keys.map((key) => dumpString(key, options) + separator + dump(value[key] as PyValue, options, depth + 1))
   return dumpContainer(members, "{", "}", options, depth)
 }
 
@@ -184,14 +199,15 @@ function dumpFloat(value: number): string {
 
 const NAMED_ESCAPES: Record<string, string> = { '"': '\\"', "\\": "\\\\", "\n": "\\n", "\r": "\\r", "\t": "\\t", "\b": "\\b", "\f": "\\f" }
 
-function dumpString(text: string): string {
+function dumpString(text: string, options: DumpOptions): string {
+  const escapeNonAscii = options.ensureAscii ?? true
   let escaped = ""
   for (let index = 0; index < text.length; index++) {
     const char = text.charAt(index)
     const codeUnit = text.charCodeAt(index)
     const named = NAMED_ESCAPES[char]
     if (named !== undefined) escaped += named
-    else if (codeUnit < 0x20 || codeUnit > 0x7e) escaped += `\\u${codeUnit.toString(16).padStart(4, "0")}`
+    else if (codeUnit < 0x20 || (escapeNonAscii && codeUnit > 0x7e)) escaped += `\\u${codeUnit.toString(16).padStart(4, "0")}`
     else escaped += char
   }
   return `"${escaped}"`

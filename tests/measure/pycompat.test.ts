@@ -6,10 +6,11 @@ import os from "node:os"
 import path from "node:path"
 
 import { parseIsoDate } from "../../measure/lib/measurekit/pydate.ts"
-import { newlineSeparatedLines, readText } from "../../measure/lib/measurekit/pyio.ts"
+import { decodeStrict, firstLineOf, newlineSeparatedLines, readText, readTextByLines, UnicodeDecodeError } from "../../measure/lib/measurekit/pyio.ts"
 import { JsonDecodeError, pythonJsonDumps, pythonJsonLoads } from "../../measure/lib/measurekit/pyjson.ts"
 import { expanduser, pyBasename, pyDirname, pyJoin, pyNormpath, pyRelpath, pySplitext, realpath } from "../../measure/lib/measurekit/pypath.ts"
 import { compilePythonRegex, PyRegexError } from "../../measure/lib/measurekit/pyregex.ts"
+import { wrapText } from "../../measure/lib/measurekit/pytextwrap.ts"
 import { ShlexError, shlexSplit } from "../../measure/lib/measurekit/shlex.ts"
 import { codePointLength, pyInt, pyLstrip, pySplitlines, pySplitWhitespace, pyStrip, sortedByCodePoint } from "../../measure/lib/measurekit/pystr.ts"
 import { PyFloat, pyFloatRepr, pyRepr, roundToFourDecimals } from "../../measure/lib/measurekit/pyvalue.ts"
@@ -45,6 +46,35 @@ def run(op, args):
                 handle.write(args[0])
             with open(name, encoding="utf-8") as handle:
                 return [line.rstrip("\n") for line in handle]
+    if op == "decode":
+        try:
+            return bytes.fromhex(args[0]).decode("utf-8")
+        except UnicodeDecodeError as error:
+            return "ERR " + str(error)
+    if op == "firstline":
+        with tempfile.TemporaryDirectory() as directory:
+            name = os.path.join(directory, "text")
+            with open(name, "wb") as handle:
+                handle.write(bytes.fromhex(args[0]))
+            try:
+                with open(name, encoding="utf-8", newline="") as handle:
+                    return handle.readline()
+            except UnicodeDecodeError as error:
+                return "ERR " + str(error)
+    if op == "wrap":
+        import textwrap
+        text, width, first, rest = args
+        return textwrap.wrap(text, width, initial_indent=first, subsequent_indent=rest)
+    if op == "iterate":
+        with tempfile.TemporaryDirectory() as directory:
+            name = os.path.join(directory, "text")
+            with open(name, "wb") as handle:
+                handle.write(bytes.fromhex(args[0]))
+            try:
+                with open(name, encoding="utf-8") as handle:
+                    return [line.rstrip("\n") for line in handle]
+            except UnicodeDecodeError as error:
+                return "ERR " + str(error)
     if op == "strip":
         return [args[0].strip(), args[0].lstrip()]
     if op == "split":
@@ -157,6 +187,7 @@ describe("python compatibility helpers match python3", () => {
       '{"b": 1, "a": [1.0, 2.5, -0.0, 1e5, 1E+22, 1e-7, 123456789012345678901234567890, 0.1, 1e16, 12345678901234567.0, 1e15, 0.0001, 0.00001], "c": {"z": null, "y": true, "x": false}}',
       '{"é": "é\u{1F600}\\ud83d\\ude00", "\\u2028": "\\u007f\\u0000\\n\\t\\"\\\\/", "😀": []}',
       '{"b": 1, "a": 2, "a": 3}',
+      '{"Z": 1, "10": [{"b": 1, "3": 2, "1": 3}], "2": {}, "01": 4, "4294967295": 5, "4294967294": 6}', '{"10": 1, "2": 2, "10": 3, "Z": 4, "2": 5}',
       '[NaN, Infinity, -Infinity, 1e400, -1e400]', '"\\ud800"', '  [1, 2]  ', '{"a": {"b": {"c": [1, [2, [3]]]}}}',
       "", "{", '{"a" 1}', '[1,]', '{"a": 1,}', '"abc', '"a\nb"', '01', '1.', '.5', '-', 'nul', '[1 2]', '{"a": 1} x', '"\\x"', '"\\u12"', "﻿[1]", "tru", "[1]\n\n",
     ]
@@ -225,6 +256,108 @@ describe("python compatibility helpers match python3", () => {
     }
     assert.deepEqual(newlineSeparatedLines("a\u2028b\n"), ["a\u2028b"])
     assert.deepEqual(pySplitlines("a\u2028b\n"), ["a", "b"])
+  })
+
+  it("decodeStrict_agrees_withPythonsUnicodeDecodeErrorMessageForEveryShortByteSequence", () => {
+    const sequences: number[][] = [[]]
+    const shortAlphabet = [0x41, 0x7f, 0x80, 0xbf, 0xc0, 0xc1, 0xc2, 0xdf, 0xe0, 0xe1, 0xed, 0xef, 0xf0, 0xf1, 0xf4, 0xf5, 0xff, 0x8f, 0x90, 0x9f, 0xa0]
+    const longAlphabet = [0x41, 0xe0, 0xed, 0xf0, 0xf4, 0x80, 0x8f, 0x90, 0x9f, 0xa0, 0xbf]
+    const extend = (alphabet: number[], length: number): void => {
+      let layer: number[][] = [[]]
+      for (let size = 1; size <= length; size++) {
+        layer = layer.flatMap((prefix) => alphabet.map((byte) => [...prefix, byte]))
+        sequences.push(...layer)
+      }
+    }
+    extend(shortAlphabet, 3)
+    extend(longAlphabet, 4)
+    for (let index = 0; index < 400; index++) {
+      const tail = Array.from({ length: 1 + Math.floor(random() * 4) }, () => shortAlphabet[Math.floor(random() * shortAlphabet.length)] as number)
+      sequences.push([0x61, 0xc3, 0xa9, 0xe2, 0x82, 0xac, 0xf0, 0x9f, 0x98, 0x80, ...tail])
+    }
+    const cases: Case[] = sequences.map((bytes) => ["decode", [Buffer.from(bytes).toString("hex")]])
+    compare(cases, sequences.map((bytes) => {
+      try {
+        return decodeStrict(Buffer.from(bytes))
+      } catch (error) {
+        if (error instanceof UnicodeDecodeError) return "ERR " + error.message
+        throw error
+      }
+    }))
+  })
+
+  it("firstLineOf_agrees_withReadlineDecodingInChunksAcrossTheFirstChunkEdge", () => {
+    const symbols = [0x61, 0x0a, 0x0d, 0xe2, 0x82, 0xac, 0xff, 0xc3, 0xa9, 0xf0, 0x9f, 0x98, 0x80, 0xed, 0xa0, 0x41]
+    const chunk = 8192
+    const bodies: number[][] = [[], [0x61], [0x0a], [0x0d], [0x0d, 0x0a], [0x61, 0x0a, 0xe2], [0x61, 0x0a, 0xff], [0x61, 0xe2], [0x61, 0xe2, 0x82], [0x23, 0x0a, 0x0a, 0xc7, 0xd1, 0xb1, 0xdb, 0x0a]]
+    for (let index = 0; index < 500; index++) {
+      bodies.push(Array.from({ length: 1 + Math.floor(random() * 10) }, () => symbols[Math.floor(random() * symbols.length)] as number))
+    }
+    const pads = [0, 1, chunk - 7, chunk - 4, chunk - 3, chunk - 2, chunk - 1, chunk, chunk + 1, chunk * 2 - 1, chunk * 2]
+    const inputs: Buffer[] = []
+    for (const body of bodies.slice(0, 40)) for (const pad of pads) inputs.push(Buffer.from([...Array<number>(pad).fill(0x61), ...body]))
+    for (const body of bodies.slice(40)) for (const pad of [0, chunk - 3, chunk - 1, chunk]) inputs.push(Buffer.from([...Array<number>(pad).fill(0x61), ...body]))
+    const cases: Case[] = inputs.map((bytes) => ["firstline", [bytes.toString("hex")]])
+    compare(cases, inputs.map((bytes) => {
+      try {
+        return firstLineOf(bytes)
+      } catch (error) {
+        if (error instanceof UnicodeDecodeError) return "ERR " + error.message
+        throw error
+      }
+    }))
+  })
+
+  it("readTextByLines_agrees_withFileIterationIncludingChunkRelativeDecodeErrorPositions", () => {
+    const symbols = [0x61, 0x0a, 0x0d, 0xe2, 0x82, 0xac, 0xff, 0xc3, 0xa9, 0xed, 0xa0, 0x41, 0x0a, 0x0d]
+    const chunk = 8192
+    const bodies: number[][] = [[], [0x0d], [0x0a, 0xff, 0x0a], [0x0d, 0x0a, 0xe2], [0x61, 0xe2, 0x82], [0xed, 0xa0], [0xed, 0xa0, 0x80]]
+    for (let index = 0; index < 300; index++) bodies.push(Array.from({ length: 1 + Math.floor(random() * 9) }, () => symbols[Math.floor(random() * symbols.length)] as number))
+    const inputs: Buffer[] = []
+    for (const pad of [0, chunk - 2, chunk - 1, chunk, chunk + 1, chunk * 2 - 1, chunk * 2 + 5, 9000]) {
+      for (const body of bodies) inputs.push(Buffer.from([0x61, 0x0a, ...Array<number>(pad).fill(0x62), ...body]))
+    }
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "keel-iterate-"))
+    try {
+      const cases: Case[] = inputs.map((bytes) => ["iterate", [bytes.toString("hex")]])
+      compare(cases, inputs.map((bytes) => {
+        const file = path.join(directory, "text")
+        fs.writeFileSync(file, bytes)
+        try {
+          return newlineSeparatedLines(readTextByLines(file))
+        } catch (error) {
+          if (error instanceof UnicodeDecodeError) return "ERR " + error.message
+          throw error
+        }
+      }))
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it("wrapText_agrees_withTextwrapOnHyphensLongWordsAndIndents", () => {
+    const helpStrings = [
+      "with --write: move what is in the way aside, overwrite hand-edited owned keys", "with --write: allow KEEL_HOME to be a linked worktree",
+      "with --write: take over owned keys keel has never written; lists every drop", "with --adopt: file listing each dropped item the user accepted",
+      "model of the session that starts the workflow (default sonnet); the reviewer agents use lens-review's own", "run one split only (writes <id>-partial, never <id>)",
+      "commits A..B (A all zeros: commits of B not on any remote)", "check the link plan of KEEL_HOME and KEEL_OVERLAY_DIR against an empty data dir instead of the live one",
+      "whole files, or directories (their tracked files inside a work tree)", "Link keel into KEEL_DATA_DIR. No flag = dry run.",
+      "well-known co-op x--y a - b -- c ---d e--- f-g-h-i-j 1-2-3 caf\u00e9-au-lait \u65e5\u672c\u8a9e-\u30c6\u30ad\u30b9\u30c8 supercalifragilisticexpialidocious-and-more",
+      "  leading and trailing  ", "tab\there\nnewline  double", "", "x", "-", "--", "a-", "-a", "a--b", "abc-defghijklmnopqrstuvwxyz-abcdefghijklmnopqrstuvwxyz", "\u00a0nbsp\u00a0 inside\u00a0words",
+    ]
+    const indents = ["", "  ", "    ", "\u00a0"]
+    const cases: Case[] = []
+    const addWrap = (text: string, width: number, first: string, rest: string): void => {
+      if (width > Math.max(first.length, rest.length)) cases.push(["wrap", [text, width, first, rest]])
+    }
+    for (const text of helpStrings) for (let width = 1; width <= 90; width += width < 30 ? 1 : 7) addWrap(text, width, indents[width % 3] as string, indents[(width + 1) % 4] as string)
+    const pieces = ["ab", "a-b", "x--y", "--", "-", "12", "caf\u00e9", "foo.bar", "it's", "z", "long-hyphenated-word-here", "q-r-s", "\u00e9-\u00e8-\u00ea", "ABCDEFGHIJKLMNOPQRSTUVWXYZ"]
+    for (let index = 0; index < 600; index++) {
+      const words = Array.from({ length: 1 + Math.floor(random() * 14) }, () => pieces[Math.floor(random() * pieces.length)] as string)
+      const text = words.join(random() < 0.2 ? "  " : " ")
+      addWrap(text, 1 + Math.floor(random() * 40), indents[Math.floor(random() * 4)] as string, indents[Math.floor(random() * 4)] as string)
+    }
+    compare(cases, cases.map(([, [text, width, first, rest]]) => wrapText(text as string, width as number, first as string, rest as string)))
   })
 
   it("stringHelpers_agree_onSplitlinesStripSplitAndLower", () => {

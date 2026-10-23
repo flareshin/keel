@@ -48,3 +48,11 @@ export function shlexSplit(text: string): string[] {
   if (token !== "" || quoted) tokens.push(token)
   return tokens
 }
+
+const UNSAFE_CHARACTER = /[^A-Za-z0-9_@%+=:,./-]/
+
+export function shlexQuote(text: string): string {
+  if (text === "") return "''"
+  if (!UNSAFE_CHARACTER.test(text)) return text
+  return "'" + text.replaceAll("'", "'\"'\"'") + "'"
+}

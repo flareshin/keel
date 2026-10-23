@@ -40,12 +40,11 @@ function put(path: string, content: string | Buffer): void {
   writeFileSync(path, content);
 }
 
-function normalizeHookCommand(text: string, implementation: "python" | "typescript"): string {
-  const counterpart = implementation === "python" ? text.replaceAll("codex/hooks/pre-tool-use.py", "codex/hooks/pre-tool-use.ts") : text;
-  return counterpart.replace(RUNTIME_TOKEN, " <runtime> ").replace(SHA256_HEX, "<sha256>");
+function normalizeHookCommand(text: string): string {
+  return text.replace(RUNTIME_TOKEN, " <runtime> ").replace(SHA256_HEX, "<sha256>");
 }
 
-function snapshot(root: string, implementation: "python" | "typescript"): Record<string, string> {
+function snapshot(root: string): Record<string, string> {
   const files: Record<string, string> = {};
   const walk = (directory: string): void => {
     for (const name of readdirSync(directory).sort()) {
@@ -58,7 +57,7 @@ function snapshot(root: string, implementation: "python" | "typescript"): Record
         files[relative] = "dir";
         walk(path);
       } else {
-        const text = normalizeHookCommand(readFileSync(path).toString("latin1"), implementation).replace(HOOKS_JSON_DIGEST, "$1<hooks-sha256>$2");
+        const text = normalizeHookCommand(readFileSync(path).toString("latin1")).replace(HOOKS_JSON_DIGEST, "$1<hooks-sha256>$2");
         files[relative] = `file:${(stat.mode & 0o777).toString(8)}:${text}`;
       }
     }
@@ -67,28 +66,26 @@ function snapshot(root: string, implementation: "python" | "typescript"): Record
   return files;
 }
 
-function runStep(implementation: "python" | "typescript", step: Step, root: string): Observation {
+function runStep(step: Step, root: string): Observation {
   const env: NodeJS.ProcessEnv = { ...withoutLocale(process.env), HOME: root, KEEL_OVERLAY_DIR: join(root, "overlay"), KEEL_DATA_DIR: join(root, "data"), ...step.env };
   delete env["CODEX_HOME"];
   Object.assign(env, step.env);
-  const command = implementation === "python"
-    ? ["python3", join(ADAPTER, "bin", step.command)]
-    : [process.execPath, join(ADAPTER, "bin", `${step.command}.ts`)];
+  const command = [process.execPath, join(ADAPTER, "bin", `${step.command}.ts`)];
   const result = spawnSync(command[0] as string, [...command.slice(1), ...step.args], { env, encoding: "utf8", cwd: root });
   return {
     status: result.status,
-    stdout: normalizeHookCommand(result.stdout, implementation),
+    stdout: normalizeHookCommand(result.stdout),
     stderr: result.stderr.replace(TEMPORARY_NAME, "$1.<temporary>'").replace(SHA256_HEX, "<sha256>"),
-    files: snapshot(root, implementation),
+    files: snapshot(root),
   };
 }
 
-function runScenario(implementation: "python" | "typescript", scenario: Scenario, root: string): Observation[] {
+function runScenario(scenario: Scenario, root: string): Observation[] {
   rmSync(root, { recursive: true, force: true });
   mkdirSync(root);
   return scenario.steps.map((step) => {
     step.before?.(root);
-    return runStep(implementation, step, root);
+    return runStep(step, root);
   });
 }
 
@@ -250,8 +247,8 @@ describe("link and config parity with the recorded Python entries", () => {
     try {
       for (const raw of SCENARIOS) {
         const scenario = prepared(raw, root);
-        const python = recordedAnswers("codex-cli-parity", [{ scenario: raw.name }], () => [runScenario("python", scenario, root)], { "{{ROOT}}": root, "{{KEEL_HOME}}": dirname(ADAPTER) })[0] as Observation[];
-        const typescript = runScenario("typescript", scenario, root);
+        const python = recordedAnswers<unknown, Observation[]>("codex-cli-parity", [{ scenario: raw.name }], { "{{ROOT}}": root, "{{KEEL_HOME}}": dirname(ADAPTER) })[0] as Observation[];
+        const typescript = runScenario(scenario, root);
         invocations += scenario.steps.length;
         scenario.steps.forEach((_step, index) => mismatches.push(...compare(scenario.name, index, python[index] as Observation, typescript[index] as Observation)));
       }
@@ -270,11 +267,11 @@ describe("config crash parity on deeply nested TOML", () => {
     "inline tables": (depth) => `a = ${"{a=".repeat(depth)}1${"}".repeat(depth)}\n`,
   };
 
-  function exitStatus(implementation: "python" | "typescript", text: string): number | null {
+  function exitStatus(text: string): number | null {
     const root = realpathSync(mkdtempSync(join(realpathSync(tmpdir()), "keel-config-deep-")));
     try {
       put(join(root, "candidate.toml"), text);
-      const command = implementation === "python" ? ["python3", join(ADAPTER, "bin", "config")] : [process.execPath, join(ADAPTER, "bin", "config.ts")];
+      const command = [process.execPath, join(ADAPTER, "bin", "config.ts")];
       const args = ["--profile", join(root, "profile"), "--file", join(root, "candidate.toml")];
       return spawnSync(command[0] as string, [...command.slice(1), ...args], { env: { ...withoutLocale(process.env), HOME: root }, encoding: "utf8" }).status;
     } finally {
@@ -284,22 +281,10 @@ describe("config crash parity on deeply nested TOML", () => {
 
   for (const [name, shape] of Object.entries(SHAPES)) {
     it(`crashes on ${name} at the same depth as Python`, () => {
-      const askPython = (): number[] => {
-        let low = 1;
-        let high = 700;
-        while (low < high) {
-          const middle = Math.floor((low + high) / 2);
-          if (exitStatus("python", shape(middle)) === 0) low = middle + 1;
-          else high = middle;
-        }
-        assert.equal(exitStatus("python", shape(low - 1)), 0);
-        assert.equal(exitStatus("python", shape(low)), 1);
-        return [low];
-      };
-      const [low] = recordedAnswers("codex-cli-parity", [{ crashDepth: name }], () => [askPython()])[0] as [number];
+      const [low] = recordedAnswers<unknown, [number]>("codex-cli-parity", [{ crashDepth: name }])[0] as [number];
       console.log(`parity config deep ${name}: python first crashes at depth ${low}`);
-      assert.equal(exitStatus("typescript", shape(low - 1)), 0);
-      assert.equal(exitStatus("typescript", shape(low)), 1);
+      assert.equal(exitStatus(shape(low - 1)), 0);
+      assert.equal(exitStatus(shape(low)), 1);
     });
   }
 });

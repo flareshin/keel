@@ -10,11 +10,9 @@ import { expectedStdinDeny, UNSUPPORTED_STDIN_CODECS } from "./stdin-policy.ts";
 import type { StdinDivergence } from "./stdin-policy.ts";
 
 const ADAPTER = join(import.meta.dirname, "..");
-const PYTHON_HOOK = join(ADAPTER, "hooks", "pre-tool-use.py");
 const TYPESCRIPT_HOOK = join(ADAPTER, "hooks", "pre-tool-use.ts");
 const NORMAL_CONFIG = "[features]\nhooks = true\n";
 const MAX_MISMATCHES_SHOWN = 6;
-const PYTHON_TRACEBACK = "<python traceback>";
 const DEPTH_FIRE_DIRECTORY = "data/logs";
 const DEPTH_FIRE_LOG = "data/logs/keel-fires.jsonl";
 const FILE_SNAPSHOT_PREFIX = /^file:\d+:/;
@@ -146,11 +144,7 @@ function questionText(content: string | Buffer | null | undefined): unknown {
 
 function recordedPythonObservation(testCase: HookCase, paths: Paths): Observation {
   const question = { name: testCase.name, stdin: questionText(testCase.stdin), config: testCase.config === undefined ? "default" : questionText(testCase.config), env: testCase.env ?? {} };
-  const askPython = (): Observation[] => {
-    const observation = observe(["python3", PYTHON_HOOK], testCase, paths);
-    return [testCase.crash && observation.stderr !== "" ? { ...observation, stderr: PYTHON_TRACEBACK } : observation];
-  };
-  return recordedAnswers("codex-hook-parity", [question], askPython, { "{{ROOT}}": paths.root })[0] as Observation;
+  return recordedAnswers<unknown, Observation>("codex-hook-parity", [question], { "{{ROOT}}": paths.root })[0] as Observation;
 }
 
 function stdinDivergenceDifferences(divergence: StdinDivergence, typescript: Observation): string[] {

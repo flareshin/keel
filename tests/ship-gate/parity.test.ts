@@ -1,6 +1,4 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { describe, test } from 'node:test';
 import { reviewRunId } from '../../lib/evidence/codex_lenses.ts';
@@ -14,44 +12,8 @@ import { normalizeRepoKey } from '../../lib/evidence/registry.ts';
 import { isTestPath } from '../../lib/evidence/risk.ts';
 import { recognize } from '../../lib/evidence/testrun.ts';
 import { recordedAnswers, recordedPlatformMatches } from '../recorded.ts';
-import { KEEL_HOME } from './helpers.ts';
 
 const RECORDED_HOME = '/home/tester';
-
-const PYTHON_SIDE = `
-import sys, json, fnmatch, os
-sys.path.insert(0, sys.argv[1])
-from evidence import registry, risk, testrun, comment_cleanup, env, codex_lenses
-
-def loads(text):
-    try:
-        return ["ok", json.dumps(json.loads(text))]
-    except ValueError as error:
-        return ["err", str(error)]
-
-corpus = json.load(sys.stdin)
-out = {
-    "repoKey": [registry.normalize_repo_key(item) for item in corpus["repoKey"]],
-    "fnmatch": [fnmatch.fnmatchcase(name, pattern) for name, pattern in corpus["fnmatch"]],
-    "testPath": [risk.is_test_path(item) for item in corpus["testPath"]],
-    "recognize": [list(testrun.recognize(item)) for item in corpus["recognize"]],
-    "dumpsSorted": [json.dumps(item, sort_keys=True) for item in corpus["dumps"]],
-    "dumpsInsertion": [json.dumps(item) for item in corpus["dumps"]],
-    "loads": [loads(item) for item in corpus["loads"]],
-    "strip": [item.strip() for item in corpus["text"]],
-    "splitlines": [item.splitlines() for item in corpus["text"]],
-    "split": [item.split() for item in corpus["text"]],
-    "repr": [repr(item) for item in corpus["text"]],
-    "comments": [comment_cleanup.only_comment_deletions(path, before.encode(), after.encode()) for path, before, after in corpus["comments"]],
-    "expanduser": [os.path.expanduser(item) for item in corpus["expanduser"]],
-    "reviewRunId": [codex_lenses.review_run_id([codex_lenses.Review(i, "", "", {}, {}) for i in group]) for group in corpus["identity_groups"]],
-    "surrogateEscape": [bytes.fromhex(item).decode("utf-8", "surrogateescape") for item in corpus["bytes"]],
-    "runIdMatch": [bool(env.RUN_ID_RE.match(item)) for item in corpus["ids"]],
-    "shaMatch": [bool(env.SHA_RE.match(item)) for item in corpus["ids"]],
-    "shaFull": [bool(env.SHA_RE.fullmatch(item)) for item in corpus["ids"]],
-}
-print(json.dumps(out))
-`;
 
 function mulberry32(seed: number): () => number {
   let state = seed;
@@ -200,14 +162,7 @@ function tsLoads(text: string): JsonValue {
 
 describe('python parity', () => {
   const corpus = buildCorpus();
-  const askPython = ([question]: Array<typeof corpus>) => {
-    const completed = spawnSync('python3', ['-I', '-X', 'utf8', '-c', PYTHON_SIDE, join(KEEL_HOME, 'lib')], {
-      input: JSON.stringify(question), encoding: 'utf8', maxBuffer: 1 << 30, env: { ...process.env, HOME: RECORDED_HOME },
-    });
-    assert.equal(completed.status, 0, completed.stderr);
-    return [JSON.parse(completed.stdout)];
-  };
-  const python = recordedAnswers('ship-gate-parity', [corpus], askPython)[0];
+  const python = recordedAnswers<typeof corpus, Record<string, any>>('ship-gate-parity', [corpus])[0] as Record<string, any>;
   let cases = 0;
   const mismatches: string[] = [];
 

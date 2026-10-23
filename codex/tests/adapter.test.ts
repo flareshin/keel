@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { run } from "../../hooks/lib/hookkit/subprocess.ts";
-import { materialize, SnapshotPacker } from "../../tests/recorded-cases.ts";
+import { materialize } from "../../tests/recorded-cases.ts";
 import type { SnapshotStore } from "../../tests/recorded-cases.ts";
 import { recordedAnswers } from "../../tests/recorded.ts";
 import type { CompletedProcess } from "../../hooks/lib/hookkit/subprocess.ts";
@@ -501,13 +501,6 @@ describe("installation", () => {
   });
 
   describe("reading a profile the Python installer wrote", () => {
-    const PYTHON_LINK = join(ADAPTER, "bin", "link");
-
-    function runPythonLink(...args: string[]) {
-      const result = spawnSync("python3", [PYTHON_LINK, "--home", home, ...args], { encoding: "utf8", env });
-      return { status: result.status, stdout: result.stdout, stderr: result.stderr };
-    }
-
     interface PythonInstall {
       store: SnapshotStore;
       snapshot: string;
@@ -518,15 +511,7 @@ describe("installation", () => {
     }
 
     function recordedPythonInstall(): PythonInstall {
-      const askPython = (): PythonInstall[] => {
-        assert.equal(runPythonLink("--write").status, 0);
-        const packer = new SnapshotPacker();
-        const agents = join(home, ".codex/AGENTS.md");
-        const owned = readJsonFile(join(home, ".codex/keel-codex-state.json"))["owned"][agents];
-        const registry = read(join(home, ".agents/keel-codex-skills.json"));
-        return [{ store: packer.store, snapshot: packer.addTree(home, home), agents: read(agents), agentsBytes: readFileSync(agents).toString("base64"), ownedAgentsDigest: owned, registry }];
-      };
-      return recordedAnswers("codex-python-install", [{ install: "write" }], askPython, { "{{ROOT}}": home, "{{KEEL_HOME}}": dirname(ADAPTER) })[0] as PythonInstall;
+      return recordedAnswers<unknown, PythonInstall>("codex-python-install", [{ install: "write" }], { "{{ROOT}}": home, "{{KEEL_HOME}}": dirname(ADAPTER) })[0] as PythonInstall;
     }
 
     function restoredPythonInstall(): PythonInstall {

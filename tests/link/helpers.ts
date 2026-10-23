@@ -11,7 +11,6 @@ import { isCallerSpecificVariable } from "../measure/helpers.ts"
 
 export const KEEL_ROOT = path.dirname(path.dirname(path.dirname(fs.realpathSync(fileURLToPath(import.meta.url)))))
 export const LINK_ENTRY = path.join(KEEL_ROOT, "bin", "link.ts")
-export const PYTHON_LINK_ENTRY = path.join(KEEL_ROOT, "bin", "link")
 const SCRATCH_ROOT_LENGTH = 90
 export const EXAMPLES = path.join(KEEL_ROOT, "examples", "link")
 export const PRINCIPLES = "# Principles\n\n- [K1] Review before shipping.\n"

@@ -15,13 +15,14 @@ const LINK_TOOL = join(KEEL_HOME, 'bin', 'link');
 const LEDGER_HEADER = 'id\tscope\ttype\tstatement\tlayer\tenforced_at\twhy_not_stronger\tjustification\tincidents\tmetric\treview_by\tgrace_until\tstatus';
 const DAY_MS = 24 * 3600 * 1000;
 const DEMO_HOOK = [
-  'import json, os, sys',
-  "if json.load(sys.stdin)['tool_input']['command'].startswith('bad '):",
-  "    logs = os.path.join(os.environ['KEEL_DATA_DIR'], 'logs')",
-  '    os.makedirs(logs, exist_ok=True)',
-  "    with open(os.path.join(logs, 'keel-fires.jsonl'), 'a') as stream:",
-  "        stream.write(json.dumps({'rule_id': 'C-demo', 'outcome': 'deny', 'hook': 'demo'}) + '\\n')",
-  '    sys.exit(2)',
+  "const fs = require('node:fs')",
+  "const path = require('node:path')",
+  "if (JSON.parse(fs.readFileSync(0, 'utf8')).tool_input.command.startsWith('bad ')) {",
+  "  const logs = path.join(process.env.KEEL_DATA_DIR, 'logs')",
+  '  fs.mkdirSync(logs, { recursive: true })',
+  "  fs.appendFileSync(path.join(logs, 'keel-fires.jsonl'), JSON.stringify({ rule_id: 'C-demo', outcome: 'deny', hook: 'demo' }) + '\\n')",
+  '  process.exit(2)',
+  '}',
   '',
 ].join('\n');
 const SHA_A = 'a'.repeat(40);
@@ -323,14 +324,14 @@ function smokeReadyKeel(sandbox: Sandbox): Repo {
   mkdirSync(keel.path);
   keel.git('init', '-q');
   keel.git('remote', 'add', 'origin', 'https://example.invalid/example/keel.git');
-  const demoRegistration = { type: 'command', command: 'python3 {{KEEL}}/hooks/demo/demo.py' };
+  const demoRegistration = { type: 'command', command: 'node {{KEEL}}/hooks/demo/demo.js' };
   keel.commit({
     'ledger.tsv': LEDGER_HEADER + '\n' + demoRow() + '\n',
     'docs/incidents/one.md': 'First incident.\n',
     'docs/incidents/two.md': 'Second incident.\n',
     'PRINCIPLES.md': '# Principles\n\n- [C-demo] A demo rule.\n',
     'skills/demo/SKILL.md': '# Demo\n\n## Rules\n\n- [C-demo] Tagged.\n',
-    'hooks/demo/demo.py': DEMO_HOOK,
+    'hooks/demo/demo.js': DEMO_HOOK,
     'tests/hooks/fixtures/C-demo.bad.json': demoFixture('bad C-demo', 'deny'),
     'tests/hooks/fixtures/demo.good.json': demoFixture('ls'),
     'settings/core.json': JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [demoRegistration] }] } }),

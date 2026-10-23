@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { describe, test } from 'node:test';
 import type { TestContext } from 'node:test';
 import * as gitcmd from '../../lib/evidence/gitcmd.ts';
-import { KEEL, KEEL_PYTHON, Sandbox, readJson } from './helpers.ts';
+import { KEEL, Sandbox, readJson } from './helpers.ts';
 import type { Repo, Run } from './helpers.ts';
 
 function summaryOf(run: Run): any {

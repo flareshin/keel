@@ -1,5 +1,4 @@
 import assert from "node:assert/strict"
-import { spawnSync } from "node:child_process"
 import { afterEach, beforeEach, describe, it } from "node:test"
 import fs from "node:fs"
 import os from "node:os"
@@ -19,117 +18,13 @@ import type { PyValue } from "../../measure/lib/measurekit/pyvalue.ts"
 import { recordedAnswers } from "../recorded.ts"
 import type { Tokens } from "../recorded.ts"
 
-const PYTHON_ORACLE = String.raw`
-import json, os, re, shlex, struct, sys, tempfile
-from datetime import datetime
-
-def regex_flags(flags):
-    return (re.I if "i" in flags else 0) | (re.M if "m" in flags else 0) | (re.S if "s" in flags else 0)
-
-def run(op, args):
-    if op == "json":
-        text, sort_keys, indent = args
-        try:
-            return json.dumps(json.loads(text), sort_keys=sort_keys, indent=indent)
-        except ValueError as error:
-            return "ERR " + str(error)
-    if op == "repr":
-        return repr(args[0])
-    if op == "float":
-        return repr(struct.unpack("<d", bytes.fromhex(args[0]))[0])
-    if op == "round4":
-        return repr(round(args[0] / args[1], 4))
-    if op == "splitlines":
-        return args[0].splitlines()
-    if op == "fileiter":
-        with tempfile.TemporaryDirectory() as directory:
-            name = os.path.join(directory, "text")
-            with open(name, "w", encoding="utf-8", newline="") as handle:
-                handle.write(args[0])
-            with open(name, encoding="utf-8") as handle:
-                return [line.rstrip("\n") for line in handle]
-    if op == "decode":
-        try:
-            return bytes.fromhex(args[0]).decode("utf-8")
-        except UnicodeDecodeError as error:
-            return "ERR " + str(error)
-    if op == "firstline":
-        with tempfile.TemporaryDirectory() as directory:
-            name = os.path.join(directory, "text")
-            with open(name, "wb") as handle:
-                handle.write(bytes.fromhex(args[0]))
-            try:
-                with open(name, encoding="utf-8", newline="") as handle:
-                    return handle.readline()
-            except UnicodeDecodeError as error:
-                return "ERR " + str(error)
-    if op == "wrap":
-        import textwrap
-        text, width, first, rest = args
-        return textwrap.wrap(text, width, initial_indent=first, subsequent_indent=rest)
-    if op == "iterate":
-        with tempfile.TemporaryDirectory() as directory:
-            name = os.path.join(directory, "text")
-            with open(name, "wb") as handle:
-                handle.write(bytes.fromhex(args[0]))
-            try:
-                with open(name, encoding="utf-8") as handle:
-                    return [line.rstrip("\n") for line in handle]
-            except UnicodeDecodeError as error:
-                return "ERR " + str(error)
-    if op == "strip":
-        return [args[0].strip(), args[0].lstrip()]
-    if op == "split":
-        return args[0].split()
-    if op == "lower":
-        return args[0].lower()
-    if op == "shlex":
-        try:
-            return shlex.split(args[0])
-        except ValueError as error:
-            return "ERR " + str(error)
-    if op == "regex":
-        pattern, flags, text = args
-        try:
-            return re.search(pattern, text, regex_flags(flags)) is not None
-        except re.error:
-            return "ERR"
-    if op == "strptime":
-        try:
-            return datetime.strptime(args[0], "%Y-%m-%d").date().isoformat()
-        except ValueError:
-            return None
-    if op == "int":
-        return int(args[0])
-    if op == "path":
-        kind, first, second = args
-        if kind == "splitext": return list(os.path.splitext(first))
-        if kind == "basename": return os.path.basename(first)
-        if kind == "dirname": return os.path.dirname(first)
-        if kind == "normpath": return os.path.normpath(first)
-        if kind == "join": return os.path.join(first, second)
-        if kind == "relpath": return os.path.relpath(first, second)
-        if kind == "realpath": return os.path.realpath(first)
-        if kind == "expanduser": return os.path.expanduser(first)
-    raise SystemExit("unknown op " + op)
-
-cases = json.load(sys.stdin)
-json.dump([run(op, args) for op, args in cases], sys.stdout)
-`
-
 type Case = [string, unknown[]]
-
-function oracle(cases: Case[], env: NodeJS.ProcessEnv = process.env): unknown[] {
-  const completed = spawnSync("python3", ["-I", "-c", PYTHON_ORACLE], { input: JSON.stringify(cases), encoding: "utf8", maxBuffer: 1 << 28, env })
-  assert.equal(completed.status, 0, completed.stderr)
-  return JSON.parse(completed.stdout)
-}
 
 let mismatches = 0
 let compared = 0
 
-function compare(cases: Case[], actual: unknown[], env?: NodeJS.ProcessEnv, tokens: Tokens = {}): void {
-  const expected = recordedAnswers("measure-pycompat", cases, (questions) => oracle(questions, env), tokens)
+function compare(cases: Case[], actual: unknown[], tokens: Tokens = {}): void {
+  const expected = recordedAnswers("measure-pycompat", cases, tokens)
   assert.equal(expected.length, actual.length)
   const bad: string[] = []
   expected.forEach((value, index) => {
@@ -478,16 +373,15 @@ describe("python compatibility helpers match python3", () => {
 
     it("realpath_agrees_throughLinksLoopsDanglingLinksAndMissingTails", () => {
       const inputs = ["link", "link/sub", "link/../real", "link/sub/missing/tail", "loop-a", "loop-a/x", "dangling", "dangling/x", "real/../link", "nothing/at/all", "./link/./sub/.."].map((name) => path.join(root, name))
-      compare(inputs.map((input): Case => ["path", ["realpath", input, ""]]), inputs.map((input) => realpath(input)), undefined, { "{{ROOT}}": root })
+      compare(inputs.map((input): Case => ["path", ["realpath", input, ""]]), inputs.map((input) => realpath(input)), { "{{ROOT}}": root })
     })
 
     it("expanduser_agrees_onTildeForms", () => {
-      const env = { ...process.env, HOME: "/home/tester/" }
       const inputs = ["~", "~/x", "~x", "plain", "a~", "~/"]
       const saved = process.env["HOME"]
       process.env["HOME"] = "/home/tester/"
       try {
-        compare(inputs.map((input): Case => ["path", ["expanduser", input, ""]]), inputs.map((input) => expanduser(input)), env)
+        compare(inputs.map((input): Case => ["path", ["expanduser", input, ""]]), inputs.map((input) => expanduser(input)))
       } finally {
         process.env["HOME"] = saved
       }

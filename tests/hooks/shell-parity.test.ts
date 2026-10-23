@@ -6,7 +6,7 @@ import { ADVERSARIAL_SPELLINGS } from "./shell-parity-corpus.ts";
 
 const MIN_ADVERSARIAL_SPELLINGS = 50;
 
-describe("shell parser parity with hookkit/shell.py", () => {
+describe("shell parser parity with the recorded hookkit/shell.py results", () => {
   let report: ParityReport;
 
   before(() => {
@@ -20,7 +20,7 @@ describe("shell parser parity with hookkit/shell.py", () => {
     assert.equal(report.mismatches, 0, report.details.join("\n"));
   });
 
-  it("executes every line of shell.py except the justified unreachable ones", () => {
+  it("the recorded run executed every line of shell.py except the justified unreachable ones", () => {
     assert.deepEqual(report.coverageGaps, []);
     assert.equal(report.executedLines + report.allowlistedLines, report.executableLines);
   });

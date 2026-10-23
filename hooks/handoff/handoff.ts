@@ -115,7 +115,7 @@ function renderHandoff(place: RepoPlace, note: string): string {
   const lines = [
     `# HANDOFF — ${basename(place.main)}`,
     "",
-    `> Generated ${utcNow()} · overwritten by \`hooks/handoff/handoff.py\`. **Once you have resumed, delete it ` +
+    `> Generated ${utcNow()} · overwritten by \`hooks/handoff/handoff.ts\`. **Once you have resumed, delete it ` +
       "with `--clear`** (a stale handoff = false state).",
     "",
     RESUME_HEADING,

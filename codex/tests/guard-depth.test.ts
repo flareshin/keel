@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { run } from "../../hooks/lib/hookkit/subprocess.ts";
 import type { CompletedProcess } from "../../hooks/lib/hookkit/subprocess.ts";
@@ -11,11 +11,7 @@ import { recordedAnswers } from "../../tests/recorded.ts";
 import { main as runHook } from "../hooks/pre-tool-use.ts";
 import type { GuardRunner } from "../hooks/pre-tool-use.ts";
 import { EXPECTED_DEPTH_DENY_REASON, JSON_DEPTH_BOUND } from "./json-depth-policy.ts";
-import { withoutLocale } from "./locale-env.ts";
 
-const ADAPTER = realpathSync(join(import.meta.dirname, ".."));
-const PYTHON_ADAPTER = join(ADAPTER, "hooks", "pre-tool-use.py");
-const PYTHON_GIT_GUARD = join(dirname(ADAPTER), "hooks", "git-guard", "git-guard.py");
 const GUARD_TIMEOUT_SECONDS = 35;
 const PAST_THE_BOUND = 2 * JSON_DEPTH_BOUND;
 const FORCE_PUSH_REASON = "F-force-push";
@@ -39,9 +35,6 @@ describe("git-guard JSON depth bound", () => {
     HOME: temp, KEEL_CODEX_HOME: join(temp, "profile"), KEEL_AGENTS_HOME: join(temp, "agents"), KEEL_DATA_DIR: join(temp, "data"), KEEL_OVERLAY_DIR: join(temp, "overlay"),
   });
 
-  const pythonGuardInPlaceOfTypescript: GuardRunner = (command, input): CompletedProcess =>
-    run(command[1]?.endsWith("git-guard.ts") ? ["python3", PYTHON_GIT_GUARD] : command, GUARD_TIMEOUT_SECONDS, { input });
-
   const typescriptGuard: GuardRunner = (command, input): CompletedProcess => run(command, GUARD_TIMEOUT_SECONDS, { input });
 
   function payloads(): Array<[name: string, text: string, deniedForcePush: boolean]> {
@@ -59,11 +52,6 @@ describe("git-guard JSON depth bound", () => {
     ];
   }
 
-  function pythonAdapter(text: string): { status: number | null; stdout: string } {
-    const result = spawnSync("python3", [PYTHON_ADAPTER], { input: text, encoding: "utf8", env: { ...withoutLocale(process.env), ...sandboxEnv() } });
-    return { status: result.status, stdout: result.stdout };
-  }
-
   function typescriptAdapter(text: string, runner: GuardRunner): { code: number; stdout: string } {
     return withEnv(sandboxEnv(), () => runHook(() => Buffer.from(text), runner));
   }
@@ -74,17 +62,7 @@ describe("git-guard JSON depth bound", () => {
   }
 
   function recordedAdapterRun(name: string, text: string): RecordedAdapterRun {
-    const askPython = (): RecordedAdapterRun[] => {
-      const guards: RecordedAdapterRun["guards"] = [];
-      const python = pythonAdapter(text);
-      typescriptAdapter(text, (command, input) => {
-        const completed = pythonGuardInPlaceOfTypescript(command, input);
-        guards.push(completed);
-        return completed;
-      });
-      return [{ python, guards }];
-    };
-    return recordedAnswers("codex-guard-depth", [{ name, text }], askPython, { "{{ROOT}}": temp })[0] as RecordedAdapterRun;
+    return recordedAnswers<unknown, RecordedAdapterRun>("codex-guard-depth", [{ name, text }], { "{{ROOT}}": temp })[0] as RecordedAdapterRun;
   }
 
   it("test_overDeepPayload_matchesPythonAdapter_whenTheRecordedPythonGitGuardAnswerRunsInPlaceOfTheTypescriptOne", () => {

@@ -9,7 +9,7 @@ Use this checklist while writing and reviewing changed code. The complete rules
 and exceptions are in [rules.md](references/rules.md); read the sections relevant
 to the change or a candidate finding, rather than loading every reference.
 Documentation-only and configuration-only changes do not require code-style review.
-Use [rule-checks](scripts/rule-checks.py) for signals; a clean scan is not semantic review.
+Use [rule-checks](scripts/rule-checks.ts) for signals; a clean scan is not semantic review.
 
 ## Implementation
 

@@ -9,35 +9,14 @@ import * as registry from '../../lib/evidence/registry.ts';
 import * as store from '../../lib/evidence/store.ts';
 import { pythonJsonDumps } from '../../lib/evidence/pycompat.ts';
 import * as verify from '../../lib/evidence/verify.ts';
-import { materialize, SnapshotPacker } from '../recorded-cases.ts';
+import { materialize } from '../recorded-cases.ts';
 import type { SnapshotStore } from '../recorded-cases.ts';
-import { isRecording, recordedAnswers } from '../recorded.ts';
-import { KEEL_HOME, KEEL_PYTHON, LOGIC_WITH_TEST, Sandbox } from './helpers.ts';
+import { recordedAnswers } from '../recorded.ts';
+import { KEEL_HOME, LOGIC_WITH_TEST, Sandbox } from './helpers.ts';
 import type { Repo, Run } from './helpers.ts';
 
-type Impl = 'py' | 'ts';
-const RUNNERS: Record<Impl, string[]> = { py: ['python3', KEEL_PYTHON], ts: ['node', join(KEEL_HOME, 'bin', 'keel.ts')] };
-const BUILDER: Impl = isRecording() ? 'py' : 'ts';
 const FIXED_COMMIT_DATE = '2026-01-01T00:00:00Z';
 const NON_ASCII_PATHS = { 'src/é😀 "q".py': 'print("é")\n', 'src/plain.py': 'print(1)\n', 'tests/test_plain.py': 'def test_a():\n    assert True\n' };
-
-const JUDGE_PYTHON = `
-import json, sys
-sys.path.insert(0, sys.argv[1])
-from evidence import registry, verify
-repo, key, head, base = sys.argv[2:6]
-row = registry.gated_repos()[key]
-d = verify.judge(verify.Outgoing(repo, key, row, head, base, sys.argv[6] == "true"))
-print(json.dumps({"ok": d.ok, "reasons": [[r.rule_id, r.text] for r in d.reasons], "risk_class": d.risk_class,
-                  "root_run_id": d.root_run_id, "files": d.files, "lines": d.lines, "k3_waiver": d.k3_waiver,
-                  "root_run_ids": list(d.root_run_ids)}, sort_keys=True))
-`;
-const REROUNDTRIP_PYTHON = `
-import json, sys
-for path in sys.argv[1:]:
-    raw = open(path, "rb").read().decode("utf-8")
-    print("same" if json.dumps(json.loads(raw), sort_keys=True) + "\\n" == raw else "different")
-`;
 
 class Pipeline {
   sandbox: Sandbox;
@@ -52,59 +31,50 @@ class Pipeline {
     mkdirSync(dataDir, { recursive: true });
   }
 
-  use(impl: Impl): Sandbox {
+  use(): Sandbox {
     this.sandbox.env['KEEL_DATA_DIR'] = this.dataDir;
     this.sandbox.data = this.dataDir;
-    this.sandbox.runner = RUNNERS[impl];
     return this.sandbox;
   }
 
-  step(impl: Impl, label: string, action: (sandbox: Sandbox) => Run): any {
-    const run = action(this.use(impl));
-    assert.equal(run.rc, 0, `${label} via ${impl}: ${run.stderr}`);
+  step(label: string, action: (sandbox: Sandbox) => Run): any {
+    const run = action(this.use());
+    assert.equal(run.rc, 0, `${label}: ${run.stderr}`);
     this.outputs.push(`${label}\n${run.stdout}${run.rc}`);
     return run.stdout.trim().startsWith('{') ? run.json : null;
   }
 }
 
-function runPipeline(pipeline: Pipeline, implFor: (step: number) => Impl): void {
+function runPipeline(pipeline: Pipeline): void {
   const { repo } = pipeline;
-  let step = 0;
-  const next = () => implFor(step++);
-  const rootTree = pipeline.step(next(), 'snapshot', (box) => box.keel(['snapshot', repo.path])).tree;
-  pipeline.step(next(), 'write-review root', (box) => box.keel(['evidence', 'write-review'], { stdin: JSON.stringify(box.reviewRequest(repo)) }));
+  const rootTree = pipeline.step('snapshot', (box) => box.keel(['snapshot', repo.path])).tree;
+  pipeline.step('write-review root', (box) => box.keel(['evidence', 'write-review'], { stdin: JSON.stringify(box.reviewRequest(repo)) }));
   repo.commit({ 'src/extra.py': 'print(2)\n' }, 'second');
-  pipeline.step(next(), 'write-review delta', (box) => box.keel(['evidence', 'write-review'], {
+  pipeline.step('write-review delta', (box) => box.keel(['evidence', 'write-review'], {
     stdin: JSON.stringify(box.reviewRequest(repo, { runId: 'rv-delta-0002', rootRunId: 'rv-root-0001', since: rootTree })),
   }));
-  pipeline.step(next(), 'test', (box) => box.keel(['test', '--', 'bash', '-c', "echo 'Ran 3 tests'; echo OK"], { cwd: repo.path }));
-  pipeline.step(next(), 'write-smoke', (box) => {
+  pipeline.step('test', (box) => box.keel(['test', '--', 'bash', '-c', "echo 'Ran 3 tests'; echo OK"], { cwd: repo.path }));
+  pipeline.step('write-smoke', (box) => {
     box.smokeLine(repo);
     return box.keel(['evidence', 'write-smoke', '--repo', repo.path]);
   });
-  pipeline.step(next(), 'ack', (box) => box.keel(['approve', 'rv-root-0001', '--read']));
-  pipeline.step(next(), 'approve', (box) => box.keel(['approve', 'rv-root-0001']));
+  pipeline.step('ack', (box) => box.keel(['approve', 'rv-root-0001', '--read']));
+  pipeline.step('approve', (box) => box.keel(['approve', 'rv-root-0001']));
 }
 
-function judge(impl: Impl, dataDir: string, sandbox: Sandbox, repo: Repo, head: string, base: string, needsApproval: boolean): string {
+function judge(dataDir: string, sandbox: Sandbox, repo: Repo, head: string, base: string, needsApproval: boolean): string {
   const previous = process.env['KEEL_DATA_DIR'];
   const previousOverlay = process.env['KEEL_OVERLAY_DIR'];
   process.env['KEEL_DATA_DIR'] = dataDir;
   process.env['KEEL_OVERLAY_DIR'] = sandbox.overlay;
   try {
-    if (impl === 'ts') {
-      const row = registry.gatedRepos().get(repo.key)!;
-      const decision = verify.judge({ repoRoot: repo.path, repoKey: repo.key, row, head, mergeBase: base, needsApproval });
-      return pythonJsonDumps({
-        ok: decision.ok, reasons: decision.reasons.map((reason) => [reason.ruleId, reason.text]), risk_class: decision.riskClass,
-        root_run_id: decision.rootRunId, files: decision.files, lines: decision.lines, k3_waiver: decision.k3Waiver,
-        root_run_ids: decision.rootRunIds,
-      }, { sortKeys: true });
-    }
-    const completed = spawnSync('python3', ['-I', '-X', 'utf8', '-c', JUDGE_PYTHON, join(KEEL_HOME, 'lib'), repo.path, repo.key, head, base,
-      String(needsApproval)], { encoding: 'utf8', env: { ...sandbox.env, KEEL_DATA_DIR: dataDir } });
-    assert.equal(completed.status, 0, completed.stderr);
-    return completed.stdout.trim();
+    const row = registry.gatedRepos().get(repo.key)!;
+    const decision = verify.judge({ repoRoot: repo.path, repoKey: repo.key, row, head, mergeBase: base, needsApproval });
+    return pythonJsonDumps({
+      ok: decision.ok, reasons: decision.reasons.map((reason) => [reason.ruleId, reason.text]), risk_class: decision.riskClass,
+      root_run_id: decision.rootRunId, files: decision.files, lines: decision.lines, k3_waiver: decision.k3Waiver,
+      root_run_ids: decision.rootRunIds,
+    }, { sortKeys: true });
   } finally {
     if (previous === undefined) delete process.env['KEEL_DATA_DIR'];
     else process.env['KEEL_DATA_DIR'] = previous;
@@ -140,8 +110,8 @@ function withoutChainChoice(judgement: string): string {
 function judgedIdentically(sandbox: Sandbox, repo: Repo, label: string, needsApproval: boolean, expected: Expectation, chainOrderDependent = false): void {
   const base = repo.git('merge-base', 'origin/main', 'HEAD');
   const comparable = chainOrderDependent ? withoutChainChoice : withoutEvidenceIds;
-  const python = recordedPython(sandbox, { test: 'judge', label }, () => judge('py', sandbox.data, sandbox, repo, repo.head(), base, needsApproval));
-  const typescript = judge('ts', sandbox.data, sandbox, repo, repo.head(), base, needsApproval);
+  const python = recordedPython<string>(sandbox, { test: 'judge', label });
+  const typescript = judge(sandbox.data, sandbox, repo, repo.head(), base, needsApproval);
   assert.equal(comparable(typescript), comparable(python), label);
   assert.equal(JSON.parse(typescript).ok, expected.ok, `${label}: ${typescript}`);
   const decision = JSON.parse(chainOrderDependent ? python : typescript);
@@ -238,15 +208,14 @@ function prepare(t: TestContext) {
   return { sandbox, repo };
 }
 
-function recordedPython<T>(sandbox: Sandbox, key: Record<string, unknown>, askPython: () => T): T {
-  return recordedAnswers('ship-gate-cross-impl', [key], () => [askPython()], { '{{ROOT}}': sandbox.root })[0] as T;
+function recordedPython<T>(sandbox: Sandbox, key: Record<string, unknown>): T {
+  return recordedAnswers<unknown, T>('ship-gate-cross-impl', [key], { '{{ROOT}}': sandbox.root })[0] as T;
 }
 
 function scenarioSandbox(t: TestContext, registry?: string[]): Sandbox {
   const sandbox = new Sandbox(t, registry);
   sandbox.env['GIT_AUTHOR_DATE'] = FIXED_COMMIT_DATE;
   sandbox.env['GIT_COMMITTER_DATE'] = FIXED_COMMIT_DATE;
-  sandbox.runner = RUNNERS[BUILDER];
   return sandbox;
 }
 
@@ -263,9 +232,9 @@ interface WrittenEvidence {
   logs: Array<[string, string]>;
 }
 
-function writtenBy(impl: Impl, sandbox: Sandbox, repo: Repo): WrittenEvidence {
-  const pipeline = new Pipeline(sandbox, repo, join(sandbox.root, `data-${impl}`));
-  runPipeline(pipeline, () => impl);
+function writtenByTypescript(sandbox: Sandbox, repo: Repo): WrittenEvidence {
+  const pipeline = new Pipeline(sandbox, repo, join(sandbox.root, 'data-ts'));
+  runPipeline(pipeline);
   repo.git('reset', '-q', '--hard', 'HEAD~1');
   assertEvidenceModes(pipeline.dataDir);
   return {
@@ -278,32 +247,33 @@ function writtenBy(impl: Impl, sandbox: Sandbox, repo: Repo): WrittenEvidence {
 interface EvidenceFacts {
   judged: string[];
   cli: Array<[number, string]>;
-  reserialized: string[];
 }
 
-function inspectEvidence(impl: Impl, sandbox: Sandbox, repo: Repo, mixed: Pipeline): EvidenceFacts {
-  const files = filesUnder(join(mixed.dataDir, 'state', 'keel', 'evidence')).filter((path) => path.endsWith('.json'));
-  const reserialized = impl === 'py'
-    ? spawnSync('python3', ['-I', '-X', 'utf8', '-c', REROUNDTRIP_PYTHON, ...files], { encoding: 'utf8' }).stdout.trim().split('\n')
-    : [];
+interface PythonWrittenEvidence {
+  store: SnapshotStore;
+  snapshot: string;
+  facts: EvidenceFacts & { reserialized: string[] };
+}
+
+function inspectEvidence(sandbox: Sandbox, repo: Repo, mixed: Pipeline): EvidenceFacts {
   const head = repo.head();
   const base = repo.git('merge-base', 'origin/main', 'HEAD');
   repo.commit({ 'src/unreviewed.py': 'print(3)\n' }, 'unreviewed');
   const states: Array<[string, string, boolean]> = [[head, base, true], [head, base, false], [repo.head(), base, true], [base, base, true]];
-  const judged = states.map(([stateHead, stateBase, needsApproval]) => judge(impl, mixed.dataDir, sandbox, repo, stateHead, stateBase, needsApproval));
+  const judged = states.map(([stateHead, stateBase, needsApproval]) => judge(mixed.dataDir, sandbox, repo, stateHead, stateBase, needsApproval));
   const probes = [['evidence', 'show', '--repo', repo.path], ['evidence', 'compatibility'], ['evidence', 'gc'], ['snapshot', repo.path]];
   const cli = probes.map((args): [number, string] => {
-    const run = mixed.use(impl).keel(args);
+    const run = mixed.use().keel(args);
     return [run.rc, run.stdout];
   });
-  return { judged, cli, reserialized };
+  return { judged, cli };
 }
 
 describe('cross-implementation evidence compatibility', () => {
   test('typescript-written evidence matches the recorded python-written evidence modulo ids and times', (t) => {
     const { sandbox, repo } = prepare(t);
-    const python = recordedPython(sandbox, { test: 'evidence-bytes' }, () => writtenBy('py', sandbox, repo));
-    const typescript = writtenBy('ts', sandbox, repo);
+    const python = recordedPython<WrittenEvidence>(sandbox, { test: 'evidence-bytes' });
+    const typescript = writtenByTypescript(sandbox, repo);
 
     assert.deepEqual(typescript.outputs, python.outputs);
     for (const [subdirectory, minimum] of [['state', 6], ['logs', 2]] as const) {
@@ -315,15 +285,9 @@ describe('cross-implementation evidence compatibility', () => {
   test('evidence written by the recorded python run is read and judged identically by typescript', (t) => {
     const { sandbox, repo } = prepare(t);
     const mixed = new Pipeline(sandbox, repo, join(sandbox.root, 'data-mixed'));
-    const recorded = recordedPython(sandbox, { test: 'python-written-evidence' }, () => {
-      runPipeline(mixed, () => 'py');
-      const packer = new SnapshotPacker();
-      const snapshot = packer.addTree(sandbox.root, sandbox.root);
-      const facts = inspectEvidence('py', sandbox, repo, mixed);
-      return { store: packer.store, snapshot, facts };
-    });
+    const recorded = recordedPython<PythonWrittenEvidence>(sandbox, { test: 'python-written-evidence' });
     rmSync(sandbox.root, { recursive: true, force: true });
-    materialize(recorded.store as SnapshotStore, recorded.snapshot, sandbox.root);
+    materialize(recorded.store, recorded.snapshot, sandbox.root);
 
     const files = filesUnder(join(mixed.dataDir, 'state', 'keel', 'evidence')).filter((path) => path.endsWith('.json'));
     assert.ok(files.length >= 6);
@@ -333,12 +297,12 @@ describe('cross-implementation evidence compatibility', () => {
       assert.equal(pythonJsonDumps(store.readFile(path), { sortKeys: true }) + '\n', text, path);
     }
 
-    const facts = inspectEvidence('ts', sandbox, repo, mixed);
+    const facts = inspectEvidence(sandbox, repo, mixed);
     assert.deepEqual(facts.judged, recorded.facts.judged);
     assert.deepEqual(facts.cli, recorded.facts.cli);
     assert.equal(JSON.parse(facts.judged[0]!).ok, true, facts.judged[0]);
     assert.equal(JSON.parse(facts.judged[2]!).ok, false, facts.judged[2]);
-    const shown = mixed.use('ts').keel(['evidence', 'show', '--repo', repo.path]).json;
+    const shown = mixed.use().keel(['evidence', 'show', '--repo', repo.path]).json;
     assert.deepEqual(shown.chains.map((chain: any) => [chain.root_run_id, chain.verdict, chain.paths, chain.approved, chain.acked]),
       [['rv-root-0001', 'PASS', 4, true, true]]);
   });
@@ -427,8 +391,7 @@ describe('cross-implementation evidence compatibility', () => {
   test('write-review judges the claim version by numeric value like Python', (t) => {
     const { sandbox, repo } = prepare(t);
     const base = JSON.stringify(sandbox.reviewRequest(repo));
-    const writeReviews = (impl: Impl): Array<[number, string]> => {
-      sandbox.runner = RUNNERS[impl];
+    const writeReviews = (): Array<[number, string]> => {
       const outcomes: Array<[number, string]> = [];
       for (const token of ['1', '1.0', '1e0', '10e-1', 'true', '2.0', '0.5', '1.0000000000000001', '9007199254740993']) {
         const stdin = base.replace('"v":1,', `"v":${token},`);
@@ -439,8 +402,8 @@ describe('cross-implementation evidence compatibility', () => {
       }
       return outcomes;
     };
-    const python = recordedPython(sandbox, { test: 'claim-version' }, () => writeReviews('py'));
-    const typescript = writeReviews('ts');
+    const python = recordedPython<Array<[number, string]>>(sandbox, { test: 'claim-version' });
+    const typescript = writeReviews();
     assert.deepEqual(typescript, python);
     assert.deepEqual(python.map(([rc]) => rc), [0, 0, 0, 0, 0, 2, 2, 0, 2]);
   });
@@ -452,19 +415,18 @@ describe('cross-implementation evidence compatibility', () => {
       "(sleep 1; echo 'Ran 3 tests') & exit 3",
       "(sleep 1; echo 'Ran 3 tests' >&2) & echo foreground; exit 0",
     ];
-    const outcomeOf = (impl: Impl) => {
-      sandbox.data = join(sandbox.root, `data-background-${impl}`);
+    const outcomeOf = () => {
+      sandbox.data = join(sandbox.root, 'data-background-ts');
       sandbox.env['KEEL_DATA_DIR'] = sandbox.data;
       mkdirSync(sandbox.data);
-      sandbox.runner = RUNNERS[impl];
       const runs = scripts.map((script) => {
         const run = sandbox.keel(['test', '--', 'bash', '-c', script], { cwd: repo.path });
         return [run.rc, normalize(run.stdout, sandbox.data), normalize(run.stderr, sandbox.data)];
       });
       return { runs, state: treeOrEmpty(sandbox.data, 'state'), logs: treeOrEmpty(sandbox.data, 'logs') };
     };
-    const python = recordedPython(sandbox, { test: 'background-holders' }, () => outcomeOf('py'));
-    const typescript = outcomeOf('ts');
+    const python = recordedPython<ReturnType<typeof outcomeOf>>(sandbox, { test: 'background-holders' });
+    const typescript = outcomeOf();
     assert.deepEqual(typescript, python);
     assert.deepEqual(python.runs.map(([rc]) => rc), [0, 3, 0]);
     assert.match(String(python.runs[0]![1]), /^Ran 3 tests\n$/);
@@ -495,17 +457,16 @@ describe('cross-implementation evidence compatibility', () => {
       ...(executingBusyFileFails ? [{ label: 'script open for writing (ETXTBSY)', args: ['test', '--', './busy.sh'], cwd: repo.path, errno: 'Errno 26', setup: () => undefined }] : []),
     ];
     for (const [index, item] of cases.entries()) {
-      const resultOf = (impl: Impl) => {
-        sandbox.data = join(sandbox.root, `data-os-${impl}-${index}`);
+      const resultOf = () => {
+        sandbox.data = join(sandbox.root, `data-os-ts-${index}`);
         sandbox.env['KEEL_DATA_DIR'] = sandbox.data;
         mkdirSync(sandbox.data);
         item.setup(sandbox.data);
-        sandbox.runner = RUNNERS[impl];
         const run = sandbox.keel(item.args, { cwd: item.cwd });
         return [run.rc, normalize(run.stdout, sandbox.data), normalize(run.stderr, sandbox.data)];
       };
-      const python = recordedPython(sandbox, { test: 'os-wording', label: item.label }, () => resultOf('py'));
-      const typescript = resultOf('ts');
+      const python = recordedPython<Array<number | string>>(sandbox, { test: 'os-wording', label: item.label });
+      const typescript = resultOf();
       assert.ok(String(python[2]).includes(item.errno), `${item.label}: python stderr ${String(python[2])}`);
       assert.deepEqual(typescript, python, item.label);
     }
@@ -520,17 +481,16 @@ describe('cross-implementation evidence compatibility', () => {
       symlinkSync(located, join(tools, name));
     }
     sandbox.env['PATH'] = tools;
-    const outcomeOf = (impl: Impl) => {
-      const interpreter = impl === 'py' ? spawnSync('sh', ['-c', 'command -v python3'], { encoding: 'utf8' }).stdout.trim() : process.execPath;
-      sandbox.data = join(sandbox.root, `data-no-mkfifo-${impl}`);
+    const outcomeOf = () => {
+      sandbox.data = join(sandbox.root, 'data-no-mkfifo-ts');
       sandbox.env['KEEL_DATA_DIR'] = sandbox.data;
       mkdirSync(sandbox.data);
-      sandbox.runner = [interpreter, impl === 'py' ? KEEL_PYTHON : join(KEEL_HOME, 'bin', 'keel.ts')];
+      sandbox.runner = [process.execPath, join(KEEL_HOME, 'bin', 'keel.ts')];
       const run = sandbox.keel(['test', '--', '/bin/echo', 'Ran 1 test'], { cwd: repo.path });
       return { run: [run.rc, normalize(run.stdout, sandbox.data), normalize(run.stderr, sandbox.data)], recorded: sandbox.evidenceFiles('tests').length };
     };
-    const python = recordedPython(sandbox, { test: 'no-mkfifo' }, () => outcomeOf('py'));
-    const typescript = outcomeOf('ts');
+    const python = recordedPython<ReturnType<typeof outcomeOf>>(sandbox, { test: 'no-mkfifo' });
+    const typescript = outcomeOf();
     assert.deepEqual(typescript, python);
     assert.deepEqual(python.run.slice(0, 2), [0, 'Ran 1 test\n']);
     assert.equal(python.recorded, 1);
@@ -593,21 +553,19 @@ describe('cross-implementation evidence compatibility', () => {
       { args: ['test', '--', './loop-a.sh'], cwd: repo.path }, { args: ['test', '--', './' + 'n'.repeat(300)], cwd: repo.path },
       { args: ['test', '--', 'both'], cwd: repo.path }, { args: ['test', '--', 'later'], cwd: repo.path }, { args: ['test', '--', ''], cwd: repo.path },
     ];
-    const resultOf = (impl: Impl, item: { args: string[]; stdin?: string; cwd?: string }) => {
-      sandbox.runner = RUNNERS[impl];
+    const resultOf = (item: { args: string[]; stdin?: string; cwd?: string }) => {
       const run = sandbox.keel(item.args, { stdin: item.stdin, cwd: item.cwd });
       return [run.rc, normalize(run.stdout, sandbox.data), normalize(run.stderr, sandbox.data)];
     };
     const mismatches: string[] = [];
     for (const [index, item] of cases.entries()) {
-      const python = recordedPython(sandbox, { test: 'cli-error-paths', index, args: item.args, stdin: item.stdin ?? null }, () => resultOf('py', item));
-      const typescript = resultOf('ts', item);
+      const python = recordedPython<Array<number | string>>(sandbox, { test: 'cli-error-paths', index, args: item.args, stdin: item.stdin ?? null });
+      const typescript = resultOf(item);
       if (!isDeepStrictEqual(typescript, python)) {
         mismatches.push(`${JSON.stringify(item.args)}: python ${JSON.stringify(python)} typescript ${JSON.stringify(typescript)}`);
       }
     }
     assert.deepEqual(mismatches, []);
-    sandbox.runner = RUNNERS.ts;
     const filesBefore = filesUnder(sandbox.data).length;
     const shebangless = sandbox.keel(['test', '--', './no-shebang.sh'], { cwd: repo.path });
     assert.equal(shebangless.rc, 70);

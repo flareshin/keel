@@ -76,10 +76,8 @@ function run(box: EvalSandbox, command: string, args: string[], cwd: string): Ou
 function runBoth(box: EvalSandbox, parityCase: ParityCase): { python: Outcome; ts: Outcome } {
   const cwd = parityCase.cwd ? parityCase.cwd(box) : box.root
   const tool = parityCase.tool
-  const pythonEntry = path.join(CHECKOUT, "measure", tool)
   const tsEntry = path.join(CHECKOUT, "measure", `${tool}.ts`)
-  const askPython = (): Outcome[] => [run(box, pythonEntry, parityCase.args, cwd)]
-  const python = recordedAnswers("measure-parity", [{ name: parityCase.name, args: parityCase.args }], askPython, { "{{ROOT}}": box.root })[0] as Outcome
+  const python = recordedAnswers<unknown, Outcome>("measure-parity", [{ name: parityCase.name, args: parityCase.args }], { "{{ROOT}}": box.root })[0] as Outcome
   return { python, ts: run(box, process.execPath, [tsEntry, ...parityCase.args], cwd) }
 }
 

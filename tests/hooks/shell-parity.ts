@@ -1,5 +1,4 @@
-import { spawnSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { isDeepStrictEqual } from "node:util";
 import { join } from "node:path";
 import * as shell from "../../hooks/lib/hookkit/shell.ts";
@@ -8,7 +7,6 @@ import { recordedAnswers } from "../recorded.ts";
 import { ADVERSARIAL_SPELLINGS } from "./shell-parity-corpus.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..");
-const COMPANION = join(import.meta.dirname, "shell_parity_py.py");
 const PUSH_MERGE_SPELLINGS = join(ROOT, "tests", "fixtures", "push-merge-spellings.tsv");
 const CWD = "/work";
 const EXEMPT_PREFIXES = ["/tmp/", "/work/"];
@@ -32,11 +30,6 @@ interface CompanionCoverage {
   executable: number;
   executed: number;
   unexecuted: UnexecutedLine[];
-}
-
-interface CompanionRun {
-  results: Json[];
-  coverage: CompanionCoverage;
 }
 
 export interface ParityReport {
@@ -164,19 +157,6 @@ function runTypeScriptWithCurrentEnvironment(calls: Call[]): Json[] {
   });
 }
 
-function runCompanion(mode: string, input: string, files: string[] = []): unknown {
-  const python = spawnSync("sh", ["-c", "command -v python3"], { encoding: "utf8" }).stdout.trim();
-  const result = spawnSync(python, ["-I", COMPANION, join(ROOT, "hooks", "lib"), mode, ...files], {
-    input, encoding: "utf8", maxBuffer: 1 << 30, env: FIXED_ENVIRONMENT,
-  });
-  if (result.status !== 0) throw new Error(`companion failed: ${result.stderr || result.error?.message}`);
-  return JSON.parse(result.stdout) as Json;
-}
-
-function pythonFiles(directory: string): string[] {
-  return readdirSync(join(ROOT, directory)).filter((name) => name.endsWith(".py")).sort().map((name) => join(ROOT, directory, name));
-}
-
 function fixtureCommands(): string[] {
   const rows = readFileSync(PUSH_MERGE_SPELLINGS, "utf8").split("\n").filter((line) => line !== "" && !line.startsWith("#"));
   const commands: string[] = [];
@@ -189,9 +169,7 @@ function fixtureCommands(): string[] {
 }
 
 export function buildCorpus(): string[] {
-  const [literals] = recordedAnswers("shell-parity-literals", ["python tests"], () => [
-    runCompanion("corpus", "", [...pythonFiles("tests/hooks"), ...pythonFiles("tests/ship-gate")]) as string[],
-  ]) as [string[]];
+  const [literals] = recordedAnswers<string, string[]>("shell-parity-literals", ["python tests"]) as [string[]];
   return sortedByCodePoint(new Set([...literals, ...fixtureCommands(), ...ADVERSARIAL_SPELLINGS]));
 }
 
@@ -239,12 +217,8 @@ function argvCalls(corpus: string[]): Call[] {
 export function runParity(): ParityReport {
   const corpus = buildCorpus();
   const calls = [...textCalls(corpus), ...argvCalls(corpus)];
-  let recordedRun: CompanionRun | undefined;
-  const expected = recordedAnswers("shell-parity", calls, (questions) => {
-    recordedRun = runCompanion("run", JSON.stringify(questions)) as CompanionRun;
-    return recordedRun.results;
-  });
-  const coverage = recordedAnswers("shell-parity-coverage", ["shell.py"], () => [(recordedRun as CompanionRun).coverage])[0] as CompanionCoverage;
+  const expected = recordedAnswers<Call, Json>("shell-parity", calls);
+  const coverage = recordedAnswers<string, CompanionCoverage>("shell-parity-coverage", ["shell.py"])[0] as CompanionCoverage;
   const actual = runTypeScript(calls);
   const details: string[] = [];
   let mismatches = 0;

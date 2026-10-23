@@ -1,11 +1,10 @@
 import assert from "node:assert/strict"
 import { after, describe, it } from "node:test"
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
 
 import { recordedAnswers } from "../recorded.ts"
-import { LINK_ENTRY, LinkSandbox, PYTHON_LINK_ENTRY, maskDigests, normalizeStamps, onlyBackup, scratchRoot, snapshotTree } from "./helpers.ts"
+import { LINK_ENTRY, LinkSandbox, maskDigests, normalizeStamps, onlyBackup, scratchRoot, snapshotTree } from "./helpers.ts"
 import type { LinkResult, RedirectedStream } from "./helpers.ts"
 
 const SCRATCH_ROOT = scratchRoot()
@@ -315,15 +314,14 @@ function outcomeOf(command: string[], setup: (box: LinkSandbox) => void, args: s
   }
 }
 
-function recordedPythonOutcome(name: string, setup: (box: LinkSandbox) => void, args: string[]): Outcome {
-  const askPython = () => [outcomeOf([PYTHON_LINK_ENTRY], setup, args)]
-  return recordedAnswers("link-failure-paths", [{ name, args }], askPython, { "{{ROOT}}": SCRATCH_ROOT })[0] as Outcome
+function recordedPythonOutcome(name: string, args: string[]): Outcome {
+  return recordedAnswers<unknown, Outcome>("link-failure-paths", [{ name, args }], { "{{ROOT}}": SCRATCH_ROOT })[0] as Outcome
 }
 
 describe("link failure paths match the recorded python entry", () => {
   for (const [name, setup, args, status] of FAILURE_CASES) {
     it(`${name}_exitsWith${status}AndPrintsTheSameStreams`, { skip: RUNNING_AS_ROOT && name === "dataDirIsReadOnly" }, () => {
-      const python = recordedPythonOutcome(name, setup, args)
+      const python = recordedPythonOutcome(name, args)
       const typescript = outcomeOf([process.execPath, LINK_ENTRY], setup, args)
       compared++
       try {

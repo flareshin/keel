@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import { isTestPath as riskIsTestPath, TEST_BASENAME_GLOBS as riskTestBasenameGlobs, TEST_SEGMENTS as riskTestSegments } from "../../lib/evidence/risk.ts";
 import { foldDottedAndDotlessI as hookkitFold } from "../../hooks/lib/hookkit/pycompat.ts";
 import { foldDottedAndDotlessI, isTestPath, TEST_BASENAME_GLOBS, TEST_SEGMENTS } from "../../skills/readable-code/scripts/rule-checks.ts";
-import { Isolated, KEEL_HOME, RULE_CHECKS } from "./helpers.ts";
+import { Isolated, RULE_CHECKS } from "./helpers.ts";
 
 const ANY_LINE = "const v: any = 1\n";
 const CLEAN_LINE = "export const v = 1\n";

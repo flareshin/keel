@@ -1,19 +1,16 @@
 import { spawnSync } from "node:child_process"
 import { createHash, randomBytes } from "node:crypto"
 import {
-  chmodSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync,
+  chmodSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync,
 } from "node:fs"
-import { basename, join, relative } from "node:path"
-import { gunzipSync, gzipSync } from "node:zlib"
+import { basename, join } from "node:path"
+import { gunzipSync } from "node:zlib"
 
 const CHECKOUT = realpathSync(join(import.meta.dirname, ".."))
 const CHECKOUT_TOKEN = "{{KEEL_HOME}}"
 
 export const ROOT_TOKEN = "{{ROOT}}"
 const ENV_TOKEN_PATTERN = /\{\{ENV:([^}]+)\}\}/g
-const SKIPPED_SUFFIX = ".sample"
-const BLOB_ID_LENGTH = 16
-const TREE_ID_LENGTH = 12
 
 export type TreeEntry = [path: string, kind: "d" | "f" | "l", mode: number, reference: string]
 
@@ -32,12 +29,6 @@ export interface ObservedDelta {
 
 const MIN_RANDOM_CHARACTERS = 8
 const ROOT_STEM = "keel-parity-"
-
-const NON_ASCII = /[^\x00-\x7f]/g
-
-export function asciiJson(value: unknown): string {
-  return JSON.stringify(value).replace(NON_ASCII, (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`)
-}
 
 export function digestOf(text: string): string {
   return createHash("sha1").update(text).digest("hex")
@@ -60,53 +51,6 @@ export function tokenized(text: string, root: string): string {
 export function restored(text: string, root: string): string {
   return text.replaceAll(ROOT_TOKEN, root).replaceAll(UPPER_TOKEN, root.toUpperCase()).replaceAll(LOWER_TOKEN, root.toLowerCase())
     .replaceAll(SLUG_TOKEN, slugOf(root)).replaceAll(NAME_TOKEN, basename(root)).replaceAll(CHECKOUT_TOKEN, CHECKOUT)
-}
-
-export class SnapshotPacker {
-  readonly store: SnapshotStore = { blobs: {}, trees: {} }
-  addTree(directory: string, root: string): string {
-    const entries: TreeEntry[] = []
-    this.walk(directory, directory, root, entries)
-    const identifier = digestOf(JSON.stringify(entries)).slice(0, TREE_ID_LENGTH)
-    this.store.trees[identifier] = entries
-    return identifier
-  }
-
-  private walk(base: string, directory: string, root: string, entries: TreeEntry[]): void {
-    for (const name of readdirSync(directory).sort()) {
-      const path = join(directory, name)
-      const key = tokenized(relative(base, path), root)
-      const status = lstatSync(path)
-      const mode = status.mode & 0o7777
-      if (status.isSymbolicLink()) entries.push([key, "l", mode, tokenized(readlinkSync(path), root)])
-      else if (status.isDirectory()) {
-        entries.push([key, "d", mode, ""])
-        this.walk(base, path, root, entries)
-      } else if (!name.endsWith(SKIPPED_SUFFIX)) entries.push([key, "f", mode, this.addBlob(readableBytes(path), root)])
-    }
-  }
-
-  private addBlob(content: Buffer, root: string): string {
-    const text = textOf(content)
-    const encoded = text === null ? `b${content.toString("base64")}` : `t${tokenized(text, root)}`
-    const identifier = digestOf(encoded).slice(0, BLOB_ID_LENGTH)
-    this.store.blobs[identifier] = encoded
-    return identifier
-  }
-}
-
-function readableBytes(path: string): Buffer {
-  try {
-    return readFileSync(path)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EACCES") throw error
-    return Buffer.alloc(0)
-  }
-}
-
-function textOf(content: Buffer): string | null {
-  const text = content.toString("utf8")
-  return Buffer.from(text, "utf8").equals(content) && !text.includes("\0") ? text : null
 }
 
 export function materialize(store: SnapshotStore, identifier: string, destination: string): void {
@@ -136,16 +80,6 @@ function blobContent(store: SnapshotStore, reference: string, destination: strin
 }
 
 const SANDBOX_ENV_PREFIXES = ["KEEL_", "GIT_"]
-const SHELL_MANAGED_NAMES = new Set(["PWD", "OLDPWD", "SHLVL", "_"])
-
-export function envTemplate(env: Record<string, string>, inherited: NodeJS.ProcessEnv, root: string): Record<string, string> {
-  const overridden = Object.entries(env).filter(([name, value]) => inherited[name] !== value && !SHELL_MANAGED_NAMES.has(name))
-  return Object.fromEntries(overridden.map(([name, value]) => {
-    const own = inherited[name]
-    const rooted = tokenized(value, root)
-    return [name, own === undefined || own === "" ? rooted : rooted.replaceAll(own, `{{ENV:${name}}}`)]
-  }))
-}
 
 export function envFromTemplate(template: Record<string, string>, root: string): Record<string, string> {
   const inherited = Object.entries(process.env).flatMap(([name, value]): Array<[string, string]> => (
@@ -192,7 +126,7 @@ export interface Execution {
 }
 
 const OUTPUT_LIMIT_BYTES = 1 << 28
-const EXCERPT_CHARACTERS = Number(process.env["KEEL_PARITY_EXCERPT"] ?? 240)
+const EXCERPT_CHARACTERS = 240
 
 export function runInSandbox(root: string, prepare: (root: string) => void, execution: Execution, readTree: (root: string) => Map<string, string>): Run {
   rmSync(root, { recursive: true, force: true })
@@ -253,11 +187,4 @@ export function readFixtureFile(directory: string, name: string): string {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
     return gunzipSync(readFileSync(join(directory, `${name}.gz`))).toString("utf8")
   }
-}
-
-export function writeFixtureFile(directory: string, name: string, text: string, compress: boolean): void {
-  rmSync(join(directory, name), { force: true })
-  rmSync(join(directory, `${name}.gz`), { force: true })
-  if (compress) writeFileSync(join(directory, `${name}.gz`), gzipSync(text, { level: 9 }))
-  else writeFileSync(join(directory, name), text)
 }

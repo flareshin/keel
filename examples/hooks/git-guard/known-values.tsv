@@ -1,4 +1,4 @@
-# Overlay list of where secret values live (F-secrets known-values scan; hookkit/knownvalues.py).
+# Overlay list of where secret values live (F-secrets known-values scan; hookkit/knownvalues.ts).
 # file: a glob of config files; values of secret-named keys (password, pwd, secret, token, key,
 #       credential, auth) six characters or longer are the known values.
 # env:  an environment variable whose value is a known value.

@@ -8,7 +8,7 @@ import { KEEL_ROOT, LinkSandbox, assertExit, problemKinds, readFile } from "./he
 const LEDGER_HEADER =
   "id\tscope\ttype\tstatement\tlayer\tenforced_at\twhy_not_stronger\tjustification\t" +
   "incidents\tmetric\treview_by\tgrace_until\tstatus"
-const GATE_HOOK: Record<string, unknown> = { type: "command", command: "python3 {{KEEL}}/hooks/git-guard/git-guard.py", timeout: 10, onFailure: "block" }
+const GATE_HOOK: Record<string, unknown> = { type: "command", command: "node {{KEEL}}/hooks/git-guard/git-guard.ts", timeout: 10, onFailure: "block" }
 
 function hookRow(rowId: string, hook: string, scope: string = "core", status: string = "active"): string {
   return [rowId, scope, "floor", "A demo rule.", "hook", "hook:" + hook, "-", "-", "-", "fires:" + rowId, "-", "-", status].join("\t")
@@ -125,12 +125,12 @@ describe("link gate on failure", () => {
   })
 
   it("check_acceptsAFloatTimeout_asANumericTimeout", () => {
-    box.writeKeel("settings/core.json", `{"hooks": {"PreToolUse": [{"matcher": "Edit", "hooks": [{"type": "command", "command": "python3 {{KEEL}}/hooks/git-guard/git-guard.py", "timeout": 10.5, "onFailure": "block"}]}]}}`)
+    box.writeKeel("settings/core.json", `{"hooks": {"PreToolUse": [{"matcher": "Edit", "hooks": [{"type": "command", "command": "node {{KEEL}}/hooks/git-guard/git-guard.ts", "timeout": 10.5, "onFailure": "block"}]}]}}`)
     assert.ok(!problemKinds(box.runLink("--check")).includes("gate-onfailure-missing"))
   })
 
   it("check_skipsGateHookOnAToolItDoesNotGate", () => {
-    writeCoreHook("Skill", { type: "command", command: "python3 {{KEEL}}/hooks/ship-gate/ship-gate.py", timeout: 30 })
+    writeCoreHook("Skill", { type: "command", command: "node {{KEEL}}/hooks/ship-gate/ship-gate.ts", timeout: 30 })
     assertExit(box.runLink("--write"), 0)
     assertExit(box.runLink("--check"), 0)
   })

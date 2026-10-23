@@ -1,5 +1,4 @@
 import assert from "node:assert/strict"
-import { spawnSync } from "node:child_process"
 import { after, before, describe, it } from "node:test"
 import fs from "node:fs"
 import os from "node:os"
@@ -11,39 +10,6 @@ import { OsError } from "../../measure/lib/measurekit/pyerrors.ts"
 import { readBytes } from "../../measure/lib/measurekit/pyio.ts"
 import { runProcess } from "../../measure/lib/measurekit/subprocess.ts"
 import { recordedAnswers, recordedPlatformMatches } from "../recorded.ts"
-
-const PYTHON_ORACLE = String.raw`
-import json, os, sys
-
-def fail(operation):
-    root = sys.argv[1]
-    at = lambda name: os.path.join(root, name)
-    operations = {
-        "readMissing": lambda: open(at("missing")).close(),
-        "mkdirExisting": lambda: os.mkdir(at("dir")),
-        "rmdirNonEmpty": lambda: os.rmdir(at("full")),
-        "openSymlinkLoop": lambda: open(at("loop")).close(),
-        "openTooLongName": lambda: open(at("x" * 300)).close(),
-        "openBelowAFile": lambda: open(at("file/child")).close(),
-        "openDirectoryForWriting": lambda: open(at("dir"), "w").close(),
-        "renameMissing": lambda: os.rename(at("missing"), at("other")),
-        "symlinkOverExisting": lambda: os.symlink(at("src"), at("file")),
-        "hardLinkToDirectory": lambda: os.link(at("dir"), at("hardlink")),
-        "unlinkMissing": lambda: os.unlink(at("missing")),
-        "chmodMissing": lambda: os.chmod(at("missing"), 0o600),
-    }
-    try:
-        operations[operation]()
-    except OSError as error:
-        return type(error).__name__ + ": " + str(error)
-    return "no error"
-
-request = json.load(sys.stdin)
-json.dump({
-    "errnos": {name: [type(OSError(number, "")).__name__, os.strerror(number)] for name, number in request["errnos"].items()},
-    "operations": {name: fail(name) for name in request["operations"]},
-}, sys.stdout)
-`
 
 const OPERATIONS: Record<string, (at: (name: string) => string) => void> = {
   readMissing: (at) => fs.readFileSync(at("missing")),
@@ -78,12 +44,7 @@ type PythonAnswers = { errnos: Record<string, [string, string]>; operations: Rec
 
 function pythonAnswers(): PythonAnswers {
   const request = { errnos: Object.fromEntries(knownErrnoCodes().map((code) => [code, os.constants.errno[code as keyof typeof os.constants.errno]])), operations: Object.keys(OPERATIONS) }
-  const askPython = ([question]: (typeof request)[]): PythonAnswers[] => {
-    const completed = spawnSync("python3", ["-I", "-c", PYTHON_ORACLE, root], { input: JSON.stringify(question), encoding: "utf8" })
-    assert.equal(completed.status, 0, completed.stderr)
-    return [JSON.parse(completed.stdout)]
-  }
-  return recordedAnswers("measure-pyerrno", [request], askPython, { "{{ROOT}}": root })[0] as PythonAnswers
+  return recordedAnswers("measure-pyerrno", [request], { "{{ROOT}}": root })[0] as PythonAnswers
 }
 
 function internalErrorOf(operation: () => void): string {

@@ -1,35 +1,11 @@
 import assert from "node:assert/strict"
-import { spawnSync } from "node:child_process"
 import { after, describe, it } from "node:test"
-import path from "node:path"
 
 import { driftedOwnedKeys, listDroppedItems, spliceOwnedKeys } from "../../lib/link/settings_json.ts"
 import { errorName } from "../../measure/lib/measurekit/pyerrors.ts"
 import { pythonJsonLoads } from "../../measure/lib/measurekit/pyjson.ts"
 import type { JsonObject } from "../../measure/lib/measurekit/pyvalue.ts"
 import { recordedAnswers } from "../recorded.ts"
-import { KEEL_ROOT } from "./helpers.ts"
-
-const PYTHON_ORACLE = String.raw`
-import json, sys
-sys.path.insert(0, sys.argv[1])
-sys.path.insert(0, sys.argv[2])
-from link.settings_json import LiveSettings, drifted_owned_keys, list_dropped_items, splice_owned_keys
-
-def run(op, first, second):
-    try:
-        if op == "splice":
-            return splice_owned_keys(first, json.loads(second))
-        live, merged = json.loads(first), json.loads(second)
-        if op == "dropped":
-            return list_dropped_items(live, merged)
-        return drifted_owned_keys(LiveSettings(path="settings.json", text=first, values=live), merged)
-    except Exception as error:
-        return "ERR " + type(error).__name__ + ": " + str(error)
-
-cases = json.load(sys.stdin)
-json.dump([run(*case) for case in cases], sys.stdout)
-`
 
 type Case = [string, string, string]
 
@@ -105,16 +81,6 @@ function structuredSettings(): string {
   return `{${members.join(", ")}}`
 }
 
-function askPython(cases: Case[]): string[] {
-  const completed = spawnSync("python3", ["-I", "-c", PYTHON_ORACLE, path.join(KEEL_ROOT, "lib"), path.join(KEEL_ROOT, "measure", "lib")], {
-    input: JSON.stringify(cases),
-    encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024,
-  })
-  assert.equal(completed.status, 0, completed.stderr)
-  return JSON.parse(completed.stdout)
-}
-
 function typescriptResult(operation: string, first: string, second: string): unknown {
   try {
     if (operation === "splice") return spliceOwnedKeys(first, pythonJsonLoads(second) as JsonObject)
@@ -128,7 +94,7 @@ function typescriptResult(operation: string, first: string, second: string): unk
 }
 
 function assertParity(cases: Case[]): void {
-  const expected = recordedAnswers("link-settings-parity", cases, askPython)
+  const expected = recordedAnswers("link-settings-parity", cases)
   const bad = cases.flatMap(([operation, first, second], index) => {
     const actual = typescriptResult(operation, first, second)
     return JSON.stringify(actual) === JSON.stringify(expected[index]) ? [] : [{ operation, first, second, expected: expected[index], actual }]

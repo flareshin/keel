@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { constants, tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -252,14 +251,8 @@ describe('failure classification', () => {
 describe('pyOsErrorMessage', () => {
   const reportable = [...getSystemErrorMap()].flatMap(([errno, [code]]) => (code in constants.errno ? [{ errno, code }] : []));
 
-  const askPython = (errnos: number[]): string[] => {
-    const python = spawnSync('python3', ['-I', '-c', 'import os, sys\nfor n in sys.argv[1:]: print(os.strerror(-int(n)))', ...errnos.map(String)], { encoding: 'utf8' });
-    assert.equal(python.status, 0, python.stderr);
-    return python.stdout.split('\n').slice(0, errnos.length);
-  };
-
   test('words every errno node can report like the host os.strerror', { skip: recordedPlatformMatches() ? false : 'os.strerror wording was recorded on darwin' }, () => {
-    const strerror = recordedAnswers('ship-gate-strerror', reportable.map(({ errno }) => errno), askPython);
+    const strerror = recordedAnswers<number, string>('ship-gate-strerror', reportable.map(({ errno }) => errno));
     assert.ok(reportable.length > 50, `only ${reportable.length} errnos compared`);
     const differing = reportable.flatMap(({ errno, code }, index) => {
       const ours = pyOsErrorMessage(Object.assign(new Error('unused'), { errno, code }));

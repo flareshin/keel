@@ -1,10 +1,9 @@
-import { spawnSync } from "node:child_process";
 import {
   chmodSync, copyFileSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-import { deltaBetween, differencesFromRecorded, digestOf, envFromTemplate, excerpt, materialize, paddedRoot, restored, runInSandbox, tokenized } from "../recorded-cases.ts";
+import { differencesFromRecorded, digestOf, envFromTemplate, excerpt, materialize, paddedRoot, restored, runInSandbox, tokenized } from "../recorded-cases.ts";
 import type { Observation, ObservedDelta, Run, SnapshotStore } from "../recorded-cases.ts";
 import { KEEL_HOME } from "./helpers.ts";
 import { buildAdversarialSet } from "./hook-parity-adversarial.ts";
@@ -14,7 +13,6 @@ import type { TsOutcome } from "./hook-parity-json-limits.ts";
 export const FIXTURE_DIRECTORY = join(import.meta.dirname, "fixtures", "hook-parity");
 export const RUN_TIMEOUT_MS = 60_000;
 const MAX_MISMATCHES_SHOWN = 12;
-const EXCERPT_CHARACTERS = Number(process.env["KEEL_EXCERPT"] ?? 240);
 const FIRES_TIMESTAMP = /^(\{"ts": ")[^"]*(")/;
 const HANDOFF_TIMESTAMP = /^(> Generated )\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ /m;
 const UNREADABLE = "<unreadable>";

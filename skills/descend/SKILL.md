@@ -11,7 +11,7 @@ The enforcement ladder is `repo` > `hook` > `skill` > `prose`. A finding reviewe
 
 1. **Pick the finding from review history.** Collect the last 30–60 days of findings for one repo:
    - reviewer reports (`/lens-review` final reports in subagent transcripts under `$KEEL_DATA_DIR/projects/`), grep for the lens or rule id;
-   - `rule-checks.py` signals the rule-checks lens confirmed;
+   - `rule-checks.ts` signals the rule-checks lens confirmed;
    - PR review comments (`gh pr view <n> --comments`);
    - `keel-fires.jsonl` deny lines for hook rules;
    - owner corrections in session transcripts: the same mistake corrected twice is a finding even when no reviewer raised it.

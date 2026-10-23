@@ -1,37 +1,14 @@
 import assert from "node:assert/strict"
-import { spawnSync } from "node:child_process"
 import { describe, it } from "node:test"
 
 import { pythonJsonDumps, pythonJsonLoads, pythonJsonRawDecode } from "../../measure/lib/measurekit/pyjson.ts"
 import { shlexQuote } from "../../measure/lib/measurekit/shlex.ts"
 import { recordedAnswers } from "../recorded.ts"
 
-const PYTHON_ORACLE = String.raw`
-import json, shlex, sys
-
-def run(op, args):
-    if op == "dumps":
-        text, sort_keys, indent, ensure_ascii = args
-        return json.dumps(json.loads(text), sort_keys=sort_keys, indent=indent, ensure_ascii=ensure_ascii)
-    if op == "raw":
-        text, index = args
-        return json.JSONDecoder().raw_decode(text, index)[1]
-    return shlex.quote(args[0])
-
-cases = json.load(sys.stdin)
-json.dump([run(op, args) for op, args in cases], sys.stdout)
-`
-
 type Case = [string, unknown[]]
 
-function askPython(cases: Case[]): unknown[] {
-  const completed = spawnSync("python3", ["-I", "-c", PYTHON_ORACLE], { input: JSON.stringify(cases), encoding: "utf8" })
-  assert.equal(completed.status, 0, completed.stderr)
-  return JSON.parse(completed.stdout)
-}
-
 function compare(cases: Case[], actual: unknown[]): void {
-  const expected = recordedAnswers("link-compat", cases, askPython)
+  const expected = recordedAnswers("link-compat", cases)
   const mismatches = cases.flatMap((entry, index) => (JSON.stringify(expected[index]) === JSON.stringify(actual[index]) ? [] : [{ entry, expected: expected[index], actual: actual[index] }]))
   assert.deepEqual(mismatches, [])
 }

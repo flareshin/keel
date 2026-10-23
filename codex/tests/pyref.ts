@@ -1,12 +1,8 @@
-import { spawnSync } from "node:child_process";
-import { join } from "node:path";
 import { recordedAnswers } from "../../tests/recorded.ts";
 import { pythonFloatRepr } from "../lib/pyjson.ts";
 import { TomlTemporal } from "../lib/toml.ts";
 import type { TomlValue } from "../lib/toml.ts";
 
-const COMPANION = join(import.meta.dirname, "pyref.py");
-const MAX_OUTPUT_BYTES = 1 << 28;
 
 export interface ReferenceCall {
   fn: string;
@@ -20,15 +16,7 @@ export interface Outcome {
 }
 
 export function pythonReference(cwd: string, calls: ReferenceCall[]): Outcome[] {
-  return recordedAnswers("codex-pyref", calls, (questions) => askPython(cwd, questions), { "{{CWD}}": cwd });
-}
-
-function askPython(cwd: string, calls: ReferenceCall[]): Outcome[] {
-  const result = spawnSync("python3", ["-I", COMPANION], {
-    input: JSON.stringify({ cwd, calls }), encoding: "utf8", maxBuffer: MAX_OUTPUT_BYTES,
-  });
-  if (result.status !== 0) throw new Error(`pyref.py failed: ${result.stderr}`);
-  return JSON.parse(result.stdout) as Outcome[];
+  return recordedAnswers<ReferenceCall, Outcome>("codex-pyref", calls, { "{{CWD}}": cwd });
 }
 
 export function outcomeOf(body: () => unknown): Outcome {

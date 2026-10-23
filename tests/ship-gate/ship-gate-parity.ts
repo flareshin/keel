@@ -12,6 +12,9 @@ const MAX_MISMATCHES_SHOWN = 60;
 const DENY_EXIT_CODE = 2;
 const FIRES_LOG_NAME = "keel-fires.jsonl";
 const FIRES_TIMESTAMP = /"ts": "[^"]*"/g;
+const CC_VERSION_FILE = ".cc-version";
+const CC_VERSION_FIELD = /cc_version=[^"\\]*/g;
+const CC_VERSION_PLACEHOLDER = "<version>";
 const GIT_STATE = new Set(["HEAD", "config", "packed-refs", "FETCH_HEAD", "refs"]);
 const UNREADABLE = "<unreadable>";
 const OVER_BOUND_NESTINGS = [10001, 200000];
@@ -136,7 +139,8 @@ function readOrMark(path: string): string {
 }
 
 function normalized(key: string, content: string): string {
-  return key.endsWith(FIRES_LOG_NAME) ? content.replace(FIRES_TIMESTAMP, '"ts": "<ts>"') : content;
+  if (key.endsWith(CC_VERSION_FILE)) return CC_VERSION_PLACEHOLDER;
+  return key.endsWith(FIRES_LOG_NAME) ? content.replace(FIRES_TIMESTAMP, '"ts": "<ts>"').replace(CC_VERSION_FIELD, `cc_version=${CC_VERSION_PLACEHOLDER}`) : content;
 }
 
 export interface Verdict {

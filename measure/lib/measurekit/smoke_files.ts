@@ -4,10 +4,10 @@ import path from "node:path"
 
 import { BoundaryUsageError, fileLines, loadRules, scan } from "./boundary.ts"
 import { readJsonl, readTsvRecords, TsvError } from "./datafiles.ts"
-import { entryExists, InvalidUtf8Error, isExecutable, isFile, isSymlink, isSystemError, readUtf8, splitLines, walkEntries } from "./files.ts"
+import { entryExists, InvalidUtf8Error, isDir, isExecutable, isFile, isSymlink, isSystemError, readUtf8, splitLines } from "./files.ts"
 import { GitError, isGitRepo, runGit } from "./gitutil.ts"
 import { iterRegistrations } from "./hook_settings.ts"
-import { displayText, isJsonObject, parseJson } from "./json.ts"
+import { compareCodePoints, displayText, isJsonObject, parseJson } from "./json.ts"
 import type { JsonObject, JsonValue } from "./json.ts"
 import { FAIL, PASS, stderrExcerpt, WARN } from "./metrics.ts"
 import { runProcess, TimeoutExpired } from "./subprocess.ts"
@@ -273,6 +273,20 @@ export function checkDangling(ctx: SmokeContext): Assertion[] {
 }
 
 function danglingLinks(dataDir: string, top: string): string[] {
-  const candidates = isSymlink(top) ? [top] : walkEntries(top)
-  return candidates.filter((candidate) => isSymlink(candidate) && !fs.existsSync(candidate)).map((link) => path.relative(dataDir, link))
+  const isDangling = (candidate: string): boolean => isSymlink(candidate) && !fs.existsSync(candidate)
+  if (isSymlink(top)) return isDangling(top) ? [path.relative(dataDir, top)] : []
+  const found: string[] = []
+  const visit = (directory: string): void => {
+    let names: string[]
+    try {
+      names = fs.readdirSync(directory).sort(compareCodePoints)
+    } catch {
+      return
+    }
+    const entries = names.map((name) => path.join(directory, name))
+    found.push(...entries.filter(isDangling).map((link) => path.relative(dataDir, link)))
+    for (const entry of entries) if (!isSymlink(entry) && isDir(entry)) visit(entry)
+  }
+  visit(top)
+  return found
 }

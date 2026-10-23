@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
 import { afterEach, beforeEach, describe, it } from "node:test"
 import fs from "node:fs"
+import os from "node:os"
 import path from "node:path"
 
 import { ASK_EVENT, ASK_TEXT, EDIT_EVENT, EvalSandbox, initEvent, resultEvent } from "./eval_helpers.ts"
@@ -17,6 +18,7 @@ const CASES = path.join("measure", "evals", "review", "cases")
 const FAKE_AWS_KEY = "AKIA" + "ABCDEFGHIJKLMNOP"
 const INVENTED_PRIVATE_IP = "10.250." + "3.4"
 
+const TMPDIR = fs.realpathSync(os.tmpdir())
 const MASKS: [RegExp, string][] = [
   [/smoke-\d{8}T\d{6}Z-[0-9a-f]{6}/g, "<run-id>"],
   [/\d{8}T\d{6}Z-[0-9a-f]{4}/g, "<stamp>"],
@@ -66,7 +68,8 @@ function run(box: EvalSandbox, command: string, args: string[], cwd: string): Ru
 function runCase(box: EvalSandbox, cliCase: CliCase): OutcomeSummary {
   const cwd = cliCase.cwd ? cliCase.cwd(box) : box.root
   const outcome = run(box, path.join(CHECKOUT, "measure", cliCase.tool), cliCase.args, cwd)
-  return JSON.parse(JSON.stringify(summarizeOutcome(outcome)).replaceAll(JSON.stringify(box.root).slice(1, -1), "{{ROOT}}")) as OutcomeSummary
+  const text = JSON.stringify(summarizeOutcome(outcome)).replaceAll(JSON.stringify(box.root).slice(1, -1), "{{ROOT}}")
+  return JSON.parse(text.replaceAll(JSON.stringify(TMPDIR).slice(1, -1), "<tmpdir>")) as OutcomeSummary
 }
 
 function ledgerBox(box: EvalSandbox, rows: ReturnType<typeof ledgerRow>[]): void {
@@ -124,6 +127,7 @@ const CLI_CASES: CliCase[] = [
   { name: "boundary range", tool: "boundary", args: ["--range", "HEAD~1..HEAD"], setup: (box) => { const repo = repoWithStaged(box); box.git(repo, "commit", "-q", "--no-verify", "-m", "Fix TKT-4321 \u00e9") }, cwd: (box) => path.join(box.root, "work") },
   { name: "boundary range from zero sha", tool: "boundary", args: ["--range", `${"0".repeat(40)}..HEAD`], setup: (box) => { const repo = repoWithStaged(box); box.git(repo, "commit", "-q", "--no-verify", "-m", "m") }, cwd: (box) => path.join(box.root, "work") },
   { name: "boundary bad range", tool: "boundary", args: ["--range", "HEAD"], setup: (box) => void repoWithStaged(box), cwd: (box) => path.join(box.root, "work") },
+  { name: "boundary empty range", tool: "boundary", args: ["--range="], setup: (box) => void repoWithStaged(box), cwd: (box) => path.join(box.root, "work") },
   { name: "boundary no source", tool: "boundary", args: ["--generic-only"] },
   { name: "boundary two sources", tool: "boundary", args: ["--staged", "--paths", "x"] },
   { name: "boundary abbreviation", tool: "boundary", args: ["--gen", "--pa", "notes.txt"], setup: (box) => box.write("work/notes.txt", `key ${FAKE_AWS_KEY}\n`), cwd: (box) => path.join(box.root, "work") },
@@ -147,6 +151,7 @@ const CLI_CASES: CliCase[] = [
   { name: "run negative-number-looking value", tool: "run", args: ["C-demo", "--since", "-5"], setup: (box) => ledgerBox(box, [ledgerRow("C-demo")]) },
   { name: "run double dash", tool: "run", args: ["--", "C-demo"], setup: (box) => ledgerBox(box, [ledgerRow("C-demo")]) },
   { name: "run option without value", tool: "run", args: ["C-demo", "--since"] },
+  { name: "run help flag given as the since value", tool: "run", args: ["C-demo", "--since", "-h"], setup: (box) => ledgerBox(box, [ledgerRow("C-demo")]) },
   { name: "run missing id with option", tool: "run", args: ["--since", "2020-01-01"] },
   { name: "run unknown short option", tool: "run", args: ["-x", "C-demo"] },
   { name: "run unique prefix", tool: "run", args: ["--s", "2020-01-01", "C-demo"], setup: (box) => ledgerBox(box, [ledgerRow("C-demo")]) },
@@ -228,6 +233,11 @@ const CLI_CASES: CliCase[] = [
   { name: "eval repeat with a misplaced underscore", tool: "evals/eval", args: ["K4", "--model", "m", "--repeat", "1__0"] },
   { name: "eval repeat in another script", tool: "evals/eval", args: ["K4", "--model", "m", "--repeat", "\u0663", "--dry-run"], stub: "eval", setup: (box) => { box.linkKeel(); box.seedSuite(box.askScenario(), box.editScenario()) } },
   { name: "eval repeat not positive", tool: "evals/eval", args: ["K4", "--model", "m", "--repeat", "0"] },
+  {
+    name: "eval repeat and timeout with leading zeros", tool: "evals/eval", args: ["K4", "--model", "m", "--repeat", "010", "--timeout-seconds", "010", "--dry-run"], stub: "eval",
+    setup: (box) => { box.linkKeel(); box.seedSuite(box.askScenario(), box.editScenario()) },
+  },
+  { name: "eval repeat with a plus sign", tool: "evals/eval", args: ["K4", "--model", "m", "--repeat", "+5"] },
   { name: "eval repeat not integer", tool: "evals/eval", args: ["K4", "--model", "m", "--repeat", "two"] },
   { name: "eval split invalid choice", tool: "evals/eval", args: ["K4", "--model", "m", "--split", "dev"] },
   { name: "eval full run", tool: "evals/eval", args: ["K4", "--model", "requested", "--repeat", "2"], stub: "eval", setup: (box) => { box.linkKeel(); box.seedSuite(box.askScenario(), box.editScenario()) } },
@@ -272,11 +282,11 @@ const principlesBulletKeptInItsLine = (summary: OutcomeSummary): void => {
   assert.deepEqual(assertions.find((item) => item.check === "id-tagging" && item.scope === "principles"), { check: "id-tagging", scope: "principles", status: "PASS", detail: "3 lines checked" })
 }
 
-const CHANGED_OUTCOMES: Record<string, (summary: OutcomeSummary) => void> = {
+const EXPLICIT_OUTCOMES: Record<string, (summary: OutcomeSummary) => void> = {
   "boundary paths with lexicon regex and generic hits": (summary) => {
     assert.deepEqual([summary.status, (summary.stdout as { scanned: number }).scanned], [1, 11])
-    assert.deepEqual(hitsOf(summary).filter((hit) => hit.file === "nested/bé.txt"), [
-      { file: "nested/bé.txt", line: 1, rule: "lexicon:2" }, { file: "nested/bé.txt", line: 1, rule: "regex:1" }, { file: "nested/bé.txt", line: 2, rule: "lexicon:1" },
+    assert.deepEqual(hitsOf(summary).filter((hit) => hit.file === "nested/b\u00e9.txt"), [
+      { file: "nested/b\u00e9.txt", line: 1, rule: "lexicon:2" }, { file: "nested/b\u00e9.txt", line: 1, rule: "regex:1" }, { file: "nested/b\u00e9.txt", line: 2, rule: "lexicon:1" },
     ])
   },
   "boundary generic-only matches the dotted capital I only by itself": (summary) => assert.deepEqual([summary.status, hitsOf(summary)], [0, []]),
@@ -293,6 +303,13 @@ const CHANGED_OUTCOMES: Record<string, (summary: OutcomeSummary) => void> = {
   "run unique prefix": exitsTwoWithUsage,
   "eval repeat with spaces and underscores": exitsTwoWithUsage,
   "eval repeat in another script": exitsTwoWithUsage,
+  "eval repeat with a plus sign": exitsTwoWithUsage,
+  "run help flag given as the since value": exitsTwoWithUsage,
+  "eval repeat and timeout with leading zeros": (summary) => {
+    const plan = summary.stdout as { repeat: number; timeout_seconds: number }
+    assert.deepEqual([summary.status, plan.repeat, plan.timeout_seconds], [0, 10, 10])
+  },
+  "boundary empty range": (summary) => assert.deepEqual([summary.status, summary.stdout, summary.usageError], [2, "", false]),
   "run runner with a whole-number float count is counted": (summary) => {
     assert.equal(summary.status, 0)
     assert.deepEqual(summary.stdout, { id: "C-demo", metric: "run:odd", count: 1, items: [], status: "PASS" })
@@ -351,14 +368,14 @@ describe("measure entries keep their exit code, JSON output and written logs", (
       if (cliCase.stub === "review") box.env["PATH"] = REVIEW_STUB_DIR + path.delimiter + (box.env["PATH"] ?? "").replace(STUBS_DIR + path.delimiter, "")
       if (cliCase.args.includes("@RAW")) cliCase.args = cliCase.args.map((arg) => (arg === "@RAW" ? path.join(box.data, "logs", "keel-eval-K4-old") : arg))
       const summary = runCase(box, cliCase)
-      const changed = CHANGED_OUTCOMES[cliCase.name]
-      if (changed === undefined) assert.deepEqual(summary, RECORDED_OUTCOMES[cliCase.name])
-      else changed(summary)
+      const explicit = EXPLICIT_OUTCOMES[cliCase.name]
+      if (explicit === undefined) assert.deepEqual(summary, RECORDED_OUTCOMES[cliCase.name])
+      else explicit(summary)
     })
   }
 
-  it("recordedOutcomes_coverEveryUnchangedCase_andNoOther", () => {
-    const unchanged = CLI_CASES.map((cliCase) => cliCase.name).filter((name) => !(name in CHANGED_OUTCOMES))
+  it("recordedOutcomes_coverEveryCaseWithoutAnExplicitOutcome_andNoOther", () => {
+    const unchanged = CLI_CASES.map((cliCase) => cliCase.name).filter((name) => !(name in EXPLICIT_OUTCOMES))
     assert.deepEqual(Object.keys(RECORDED_OUTCOMES).sort(), unchanged.sort())
   })
 })

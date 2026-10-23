@@ -11,7 +11,7 @@ export const EXIT_INTERNAL = 70
 
 const HELP_FLAGS = ["-h", "--help"]
 const END_OF_OPTIONS = "--"
-const POSITIVE_INTEGER = /^[1-9]\d*$/
+const DIGITS = /^\d+$/
 
 export class UsageExit extends Error {
   readonly code: number
@@ -47,7 +47,7 @@ export function runMain(main: (argv: string[]) => number): void {
 }
 
 export function parseCommandLine(spec: CommandSpec, argv: string[]): ParsedCommandLine {
-  if (asksForHelp(argv)) {
+  if (asksForHelp(argv, spec.options)) {
     process.stdout.write(helpText(spec))
     throw new UsageExit(EXIT_OK)
   }
@@ -93,7 +93,7 @@ export function dateOption(spec: CommandSpec, flag: string, text: string | undef
 
 export function positiveIntOption(spec: CommandSpec, flag: string, text: string | undefined, fallback: number): number {
   if (text === undefined) return fallback
-  if (!POSITIVE_INTEGER.test(text)) usageError(spec, `${flag}: expected a positive integer, got ${JSON.stringify(text)}`)
+  if (!DIGITS.test(text) || Number(text) === 0) usageError(spec, `${flag}: expected a positive integer, got ${JSON.stringify(text)}`)
   return Number(text)
 }
 
@@ -114,9 +114,19 @@ function parseArgsWithTokens(options: ParseArgsOptionsConfig, argv: string[]) {
   return parseArgs({ args: argv, options, allowPositionals: true, strict: true, tokens: true })
 }
 
-function asksForHelp(argv: string[]): boolean {
-  const end = argv.indexOf(END_OF_OPTIONS)
-  return (end < 0 ? argv : argv.slice(0, end)).some((arg) => HELP_FLAGS.includes(arg))
+function asksForHelp(argv: string[], options: ParseArgsOptionsConfig): boolean {
+  for (let index = 0; index < argv.length; index++) {
+    const arg = argv[index] as string
+    if (arg === END_OF_OPTIONS) return false
+    if (HELP_FLAGS.includes(arg)) return true
+    if (takesSeparateValue(arg, options)) index++
+  }
+  return false
+}
+
+function takesSeparateValue(arg: string, options: ParseArgsOptionsConfig): boolean {
+  if (!arg.startsWith("--") || arg.includes("=")) return false
+  return options[arg.slice(2)]?.type === "string"
 }
 
 function isParseArgsError(error: unknown): error is TypeError {

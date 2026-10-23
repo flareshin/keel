@@ -1,14 +1,13 @@
+import path from "node:path"
+
 import * as env from "./env.ts"
 import { readJsonl } from "./datafiles.ts"
 import { gitSucceeds } from "./gitutil.ts"
 import { EMPTY } from "./ledger.ts"
 import type { LedgerRow } from "./ledger.ts"
-import { isOsError, ValueError } from "./pyerrors.ts"
-import { pythonJsonLoads } from "./pyjson.ts"
-import { expanduser, isExecutable, isFile, pyJoin } from "./pypath.ts"
-import { firstCodePoints, pyStrip } from "./pystr.ts"
-import { isJsonObject, isPyInt, pyIntSign, pyRepr, pyStr } from "./pyvalue.ts"
-import type { JsonObject, PyInt, PyValue } from "./pyvalue.ts"
+import { expandHome, isExecutable, isFile, isSystemError } from "./files.ts"
+import { isJsonObject, parseJson } from "./json.ts"
+import type { JsonObject, JsonValue } from "./json.ts"
 import { runProcess, TimeoutExpired } from "./subprocess.ts"
 import type { RunResult } from "./subprocess.ts"
 
@@ -18,6 +17,7 @@ export const GRACE = "GRACE"
 export const WARN = "WARN"
 export const DEFAULT_WINDOW_DAYS = 60
 const RUNNER_TIMEOUT_SECONDS = 120
+const ISO_DATE_LENGTH = 10
 const STDERR_EXCERPT_CHARS = 200
 const NON_DECISION_OUTCOMES = new Set(["error", "contract-miss"])
 
@@ -26,18 +26,18 @@ export class MetricError extends Error {}
 export interface MetricResult {
   id: string
   metric: string
-  count: PyInt
-  items: PyValue[]
+  count: number
+  items: JsonValue[]
   status: string
   error?: string
 }
 
-export type MetricItems = [PyInt, PyValue[]]
+export type MetricItems = [number, JsonValue[]]
 
 export function evaluateMetric(row: LedgerRow, since: string, today: string): MetricResult {
   try {
     const [count, items] = collectMetricItems(row.metric, since)
-    const status = pyIntSign(count) > 0 ? PASS : row.isInGrace(today) ? GRACE : FAIL
+    const status = count > 0 ? PASS : row.isInGrace(today) ? GRACE : FAIL
     return { id: row.id, metric: row.metric, count, items, status }
   } catch (error) {
     if (!(error instanceof MetricError)) throw error
@@ -55,12 +55,12 @@ export function collectMetricItems(metric: string, since: string): MetricItems {
     case "evals": return evalItems(argument, since)
     case "run": return runnerItems(argument, since)
     case "exists": return existenceItems(argument)
-    default: throw new MetricError(`unknown metric kind ${pyRepr(kind)}`)
+    default: throw new MetricError(`unknown metric kind ${JSON.stringify(kind)}`)
   }
 }
 
 function firesItems(ruleId: string, since: string): MetricItems {
-  const { records } = readJsonl(pyJoin(env.logsDir(), "keel-fires.jsonl"))
+  const { records } = readJsonl(path.join(env.logsDir(), "keel-fires.jsonl"))
   const items = records.filter(
     (record) => record["rule_id"] === ruleId && !NON_DECISION_OUTCOMES.has(record["outcome"] as string) && isWithinWindow(record, since),
   )
@@ -68,14 +68,14 @@ function firesItems(ruleId: string, since: string): MetricItems {
 }
 
 function evalItems(evalId: string, since: string): MetricItems {
-  const { records } = readJsonl(pyJoin(env.logsDir(), "keel-evals.jsonl"))
+  const { records } = readJsonl(path.join(env.logsDir(), "keel-evals.jsonl"))
   const items = records.filter((record) => record["eval_id"] === evalId && record["pass"] === true && isWithinWindow(record, since))
   return [items.length, items]
 }
 
 function isWithinWindow(record: JsonObject, since: string): boolean {
-  const timestamp = "ts" in record ? pyStr(record["ts"]) : ""
-  return firstCodePoints(timestamp, 10) >= since
+  const timestamp = record["ts"]
+  return typeof timestamp === "string" && timestamp.slice(0, ISO_DATE_LENGTH) >= since
 }
 
 function runnerItems(runner: string, since: string): MetricItems {
@@ -85,25 +85,25 @@ function runnerItems(runner: string, since: string): MetricItems {
   try {
     completed = runProcess([path, "--since", since], { timeoutSeconds: RUNNER_TIMEOUT_SECONDS })
   } catch (error) {
-    if (error instanceof TimeoutExpired || isOsError(error)) throw new MetricError(`runner ${runner} could not run: ${(error as Error).message}`)
+    if (error instanceof TimeoutExpired || isSystemError(error)) throw new MetricError(`runner ${runner} could not run: ${(error as Error).message}`)
     throw error
   }
   if (completed.returncode !== 0) throw new MetricError(`runner ${runner} exited ${completed.returncode}: ${stderrExcerpt(completed)}`)
-  let payload: PyValue
+  let payload: JsonValue
   try {
-    payload = pythonJsonLoads(completed.stdout)
+    payload = parseJson(completed.stdout)
   } catch (error) {
-    if (error instanceof ValueError) throw new MetricError(`runner ${runner} did not print one JSON object`)
+    if (error instanceof SyntaxError) throw new MetricError(`runner ${runner} did not print one JSON object`)
     throw error
   }
   const count = isJsonObject(payload) ? payload["count"] : undefined
   const items = isJsonObject(payload) ? payload["items"] : undefined
-  if (!isPyInt(count) || !Array.isArray(items)) throw new MetricError(`runner ${runner} must print {"count": int, "items": [...]}`)
-  return [count, items]
+  if (!Number.isInteger(count) || !Array.isArray(items)) throw new MetricError(`runner ${runner} must print {"count": int, "items": [...]}`)
+  return [count as number, items]
 }
 
 export function findRunner(runner: string): string | null {
-  const candidates = [env.keelHome(), env.overlayDir()].map((root) => pyJoin(root, "measure", "metrics", runner))
+  const candidates = [env.keelHome(), env.overlayDir()].map((root) => path.join(root, "measure", "metrics", runner))
   return candidates.find((path) => isFile(path) && isExecutable(path)) ?? null
 }
 
@@ -112,7 +112,7 @@ function existenceItems(argument: string): MetricItems {
   if (parts.length !== 3) throw new MetricError("exists metric needs <repo path>:<ref>:<path>")
   const [repo, ref, path] = parts as [string, string, string]
   const objectName = `${ref}:${path}`
-  if (!gitSucceeds(expanduser(repo), ["cat-file", "-e", objectName])) return [0, []]
+  if (!gitSucceeds(expandHome(repo), ["cat-file", "-e", objectName])) return [0, []]
   return [1, [objectName]]
 }
 
@@ -130,5 +130,5 @@ function splitAtMost(text: string, separator: string, maxSplits: number): string
 }
 
 export function stderrExcerpt(completed: RunResult): string {
-  return firstCodePoints(pyStrip(completed.stderr), STDERR_EXCERPT_CHARS)
+  return Array.from(completed.stderr.trim()).slice(0, STDERR_EXCERPT_CHARS).join("")
 }

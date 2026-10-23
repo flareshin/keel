@@ -1,12 +1,9 @@
 import fs from "node:fs"
 import os from "node:os"
+import path from "node:path"
 
+import { InvalidUtf8Error, isDir, isExecutable, isSystemError, readUtf8, splitLines } from "../../../lib/measurekit/files.ts"
 import { runGit } from "../../../lib/measurekit/gitutil.ts"
-import { isDir, pyJoin } from "../../../lib/measurekit/pypath.ts"
-import { compilePythonRegex } from "../../../lib/measurekit/pyregex.ts"
-import { readText, UnicodeDecodeError } from "../../../lib/measurekit/pyio.ts"
-import { isOsError } from "../../../lib/measurekit/pyerrors.ts"
-import { pySplitlines, pyStrip } from "../../../lib/measurekit/pystr.ts"
 import { runProcess, TimeoutExpired } from "../../../lib/measurekit/subprocess.ts"
 import { QUESTION_MARKER } from "./grade.ts"
 import { projectDirFor } from "./liveconfig.ts"
@@ -20,8 +17,8 @@ const TIMEOUT_EXIT = 124
 export const UNSIGNED = ["-c", "commit.gpgsign=false"]
 export const NEUTRAL_PROJECT_NAME = "app"
 const HARNESS_WORDS = ["eval", "test", "judge", "fixture", "keel", "candidate"]
-const README_TITLE = compilePythonRegex("^#[ \\t]+(.+)$", "m")
-const NON_SLUG_CHARS = compilePythonRegex("[^a-z0-9]+", "g")
+const README_TITLE = /^#[ \t]+(.+)$/m
+const NON_SLUG_CHARS = /[^a-z0-9]+/g
 const OUTSIDE_FIXTURE = [".", ":!.claude"]
 export const QUESTION_PROTOCOL =
   "This session is non-interactive and the AskUserQuestion tool is unavailable. To ask the user something, " +
@@ -51,21 +48,27 @@ export function claudeCommand(model: string): string[] {
 
 export function runOnce(prompt: string, fixture: string, command: string[], configDir: string, timeoutSeconds: number): RunRecord {
   const project = resolveProjectName(fixture)
-  const parent = fs.mkdtempSync(pyJoin(os.tmpdir(), "tmp"))
-  const work = pyJoin(parent, project)
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), "tmp"))
+  const work = path.join(parent, project)
   try {
     prepareFixtureRepo(fixture, work, project)
     const claudeRun = runClaude(command, prompt, work, timeoutSeconds)
-    const changed = pyStrip(runGit(work, ["status", "--porcelain", "--", ...OUTSIDE_FIXTURE])) !== ""
+    const changed = runGit(work, ["status", "--porcelain", "--", ...OUTSIDE_FIXTURE]).trim() !== ""
     const leftover = projectDirFor(work, configDir)
     const facts = new RunFacts({
-      stream: summarizeStream(pySplitlines(claudeRun.streamText)), exitCode: claudeRun.exitCode, timedOut: claudeRun.timedOut,
+      stream: summarizeStream(splitLines(claudeRun.streamText)), exitCode: claudeRun.exitCode, timedOut: claudeRun.timedOut,
       changed, leftoverProjectDir: isDir(leftover) ? leftover : null,
     })
     return { facts, streamText: claudeRun.streamText, diff: diffOfChanges(work) }
   } finally {
     fs.rmSync(parent, { recursive: true, force: true })
   }
+}
+
+export function findOnPath(command: string): string | null {
+  const directories = (process.env["PATH"] ?? "").split(path.delimiter)
+  const candidates = command.includes("/") ? [command] : directories.map((directory) => path.join(directory || ".", command))
+  return candidates.find((candidate) => isExecutable(candidate) && !isDir(candidate)) ?? null
 }
 
 export function resolveProjectName(fixture: string): string {
@@ -76,10 +79,10 @@ export function resolveProjectName(fixture: string): string {
 
 function readmeTitle(fixture: string): string {
   try {
-    const match = README_TITLE.exec(readText(pyJoin(fixture, "README.md")))
+    const match = README_TITLE.exec(readUtf8(path.join(fixture, "README.md")))
     return match ? (match[1] as string) : ""
   } catch (error) {
-    if (error instanceof UnicodeDecodeError || isOsError(error)) return ""
+    if (error instanceof InvalidUtf8Error || isSystemError(error)) return ""
     throw error
   }
 }

@@ -1,21 +1,19 @@
 import fs from "node:fs"
+import path from "node:path"
 
 import { dataLines, readTsvRecords, TsvError } from "./datafiles.ts"
 import { CHECKOUT_ROOT } from "./env.ts"
+import { InvalidUtf8Error, isDir, isFile, isSymlink, isSystemError, splitLines, walkEntries } from "./files.ts"
 import { GitError, runGit } from "./gitutil.ts"
-import { decodeReplacing } from "./pyio.ts"
-import { isDir, isFile, isLink, pyJoin, pyRelpath, pyNormpath, walk } from "./pypath.ts"
-import { compilePythonRegex, PyRegexError } from "./pyregex.ts"
-import { pySplitlines, pySplitWhitespace, pyStrip, sortedByCodePoint } from "./pystr.ts"
-import { isOsError } from "./pyerrors.ts"
-import { pyRepr } from "./pyvalue.ts"
 
-const GENERIC_RULES_PATH = pyJoin(CHECKOUT_ROOT, "measure", "boundary-generic.tsv")
+const GENERIC_RULES_PATH = path.join(CHECKOUT_ROOT, "measure", "boundary-generic.tsv")
 const ZERO_SHA_PATTERN = /^0+$/
 const HUNK_HEADER = /^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/
 const DIFF_ARGS = ["-c", "core.quotePath=false", "diff", "-U0", "--no-color", "--no-ext-diff", "--no-renames"]
 const CHANGED_NAMES_ARGS = ["diff", "--name-only", "-z", "--no-renames", "--diff-filter=d"]
 const PATH_NAME_LINE = 0
+const IGNORE_CASE_PREFIX = "(?i)"
+const WHITESPACE_RUN = /\s+/
 
 export type ScanLine = [string, number, string]
 
@@ -35,7 +33,7 @@ export interface Hit {
 export function loadRules(overlayDir: string, genericOnly: boolean): Rule[] {
   const rules = genericRules()
   if (genericOnly) return rules
-  const lexiconPath = pyJoin(overlayDir, "boundary", "lexicon.txt")
+  const lexiconPath = path.join(overlayDir, "boundary", "lexicon.txt")
   if (!isFile(lexiconPath)) {
     throw new BoundaryUsageError(`overlay lexicon missing: ${lexiconPath} (set KEEL_OVERLAY_DIR or pass --generic-only)`)
   }
@@ -44,7 +42,7 @@ export function loadRules(overlayDir: string, genericOnly: boolean): Rule[] {
     throw new BoundaryUsageError(`overlay lexicon has no terms: ${lexiconPath}; an empty lexicon would pass every private term`)
   }
   rules.push(...lexiconRules)
-  const regexPath = pyJoin(overlayDir, "boundary", "regex.txt")
+  const regexPath = path.join(overlayDir, "boundary", "regex.txt")
   if (isFile(regexPath)) rules.push(...dataLines(regexPath).map(([number, pattern]) => regexRule(`regex:${number}`, pattern)))
   return rules
 }
@@ -54,7 +52,7 @@ function genericRules(): Rule[] {
   try {
     records = readTsvRecords(GENERIC_RULES_PATH, ["name", "regex"])
   } catch (error) {
-    if (error instanceof TsvError || isOsError(error)) throw new BoundaryUsageError(`generic rules unreadable: ${(error as Error).message}`)
+    if (error instanceof TsvError || error instanceof InvalidUtf8Error || isSystemError(error)) throw new BoundaryUsageError(`generic rules unreadable: ${(error as Error).message}`)
     throw error
   }
   return records.map((record) => regexRule("generic:" + record["name"], record["regex"] as string))
@@ -66,11 +64,12 @@ function lexiconRule(name: string, term: string): Rule {
 }
 
 function regexRule(name: string, pattern: string): Rule {
+  const ignoreCase = pattern.startsWith(IGNORE_CASE_PREFIX)
   let compiled: RegExp
   try {
-    compiled = compilePythonRegex(pattern)
+    compiled = new RegExp(ignoreCase ? pattern.slice(IGNORE_CASE_PREFIX.length) : pattern, ignoreCase ? "i" : "")
   } catch (error) {
-    if (error instanceof PyRegexError) throw new BoundaryUsageError(`rule ${name} has an invalid regex: ${error.message}`)
+    if (error instanceof SyntaxError) throw new BoundaryUsageError(`rule ${name} has an invalid regex: ${error.message}`)
     throw error
   }
   return { name, matches: (text) => compiled.test(text) }
@@ -88,8 +87,8 @@ export function scan(lines: Iterable<ScanLine>, rules: Rule[]): { scanned: numbe
 
 export function* fileLines(root: string, relativePaths: Iterable<string>): Generator<ScanLine> {
   for (const relativePath of relativePaths) {
-    const fullPath = pyJoin(root, relativePath)
-    if (isDir(fullPath) && !isLink(fullPath)) {
+    const fullPath = path.resolve(root, relativePath)
+    if (isDir(fullPath) && !isSymlink(fullPath)) {
       yield* fileLines(root, directoryFiles(root, fullPath))
       continue
     }
@@ -106,8 +105,8 @@ function directoryFiles(root: string, directory: string): string[] {
     if (error instanceof GitError) return walkWithoutGit(root, directory)
     throw error
   }
-  const members = tracked.filter((name) => name !== "").map((name) => pyNormpath(pyJoin(directory, name)))
-  const found = members.filter((member) => member !== pyNormpath(directory)).map((member) => pyRelpath(member, root))
+  const members = tracked.filter((name) => name !== "").map((name) => path.resolve(directory, name))
+  const found = members.filter((member) => member !== path.resolve(directory)).map((member) => path.relative(root, member))
   if (found.length === 0 && walkWithoutGit(root, directory).length > 0) {
     throw new BoundaryUsageError(`${directory} holds no tracked file; stage its files or name them`)
   }
@@ -115,19 +114,16 @@ function directoryFiles(root: string, directory: string): string[] {
 }
 
 function walkWithoutGit(root: string, directory: string): string[] {
-  const found: string[] = []
-  for (const entry of walk(directory, new Set([".git"]))) {
-    for (const name of entry.fileNames) if (name !== ".git") found.push(pyRelpath(pyJoin(entry.current, name), root))
-  }
-  return sortedByCodePoint(found)
+  const files = walkEntries(directory, new Set([".git"])).filter((entry) => !isDir(entry))
+  return files.map((file) => path.relative(root, file)).sort()
 }
 
 function* splitlinesOfFile(label: string, fullPath: string): Generator<ScanLine> {
-  if (isLink(fullPath) || !isFile(fullPath)) return
+  if (isSymlink(fullPath) || !isFile(fullPath)) return
   const content = fs.readFileSync(fullPath)
   if (content.includes(0)) return
   let number = 1
-  for (const line of pySplitlines(decodeReplacing(content))) yield [label, number++, line]
+  for (const line of splitLines(content.toString("utf8"))) yield [label, number++, line]
 }
 
 export function* stagedLines(repo: string): Generator<ScanLine> {
@@ -139,7 +135,7 @@ export function* rangeLines(repo: string, commitRange: string): Generator<ScanLi
     const short = commit.slice(0, 12)
     const message = runGit(repo, ["log", "-1", "--format=%B", commit])
     let number = 1
-    for (const line of pySplitlines(message)) yield [`${short}:message`, number++, line]
+    for (const line of splitLines(message)) yield [`${short}:message`, number++, line]
     yield* diffLines(repo, [firstParent(repo, commit), commit], short + ":")
   }
 }
@@ -156,15 +152,20 @@ function commitsInRange(repo: string, commitRange: string): string[] {
   const old = separatorAt < 0 ? commitRange : commitRange.slice(0, separatorAt)
   const next = separatorAt < 0 ? "" : commitRange.slice(separatorAt + 2)
   if (separatorAt < 0 || old === "" || next === "" || next.startsWith(".")) {
-    throw new BoundaryUsageError(`--range takes <old>..<new>, got ${pyRepr(commitRange)}`)
+    throw new BoundaryUsageError(`--range takes <old>..<new>, got ${JSON.stringify(commitRange)}`)
   }
-  if (ZERO_SHA_PATTERN.test(old)) return pySplitWhitespace(runGit(repo, ["rev-list", "--reverse", next, "--not", "--remotes"]))
-  return pySplitWhitespace(runGit(repo, ["rev-list", "--reverse", `${old}..${next}`]))
+  if (ZERO_SHA_PATTERN.test(old)) return words(runGit(repo, ["rev-list", "--reverse", next, "--not", "--remotes"]))
+  return words(runGit(repo, ["rev-list", "--reverse", `${old}..${next}`]))
 }
 
 function firstParent(repo: string, commit: string): string {
-  const parents = pySplitWhitespace(runGit(repo, ["rev-list", "--parents", "-n", "1", commit])).slice(1)
-  return parents[0] ?? pyStrip(runGit(repo, ["hash-object", "-t", "tree", "--stdin"], {}, ""))
+  const parents = words(runGit(repo, ["rev-list", "--parents", "-n", "1", commit])).slice(1)
+  return parents[0] ?? runGit(repo, ["hash-object", "-t", "tree", "--stdin"], {}, "").trim()
+}
+
+function words(text: string): string[] {
+  const trimmed = text.trim()
+  return trimmed === "" ? [] : trimmed.split(WHITESPACE_RUN)
 }
 
 export function* addedLines(diffText: string, labelPrefix: string): Generator<ScanLine> {
@@ -172,7 +173,7 @@ export function* addedLines(diffText: string, labelPrefix: string): Generator<Sc
   let nextNewLine = 0
   let oldLeft = 0
   let newLeft = 0
-  for (const line of pySplitlines(diffText)) {
+  for (const line of splitLines(diffText)) {
     const inHunk = oldLeft > 0 || newLeft > 0
     const header = inHunk ? null : HUNK_HEADER.exec(line)
     if (inHunk && line.startsWith("-")) {

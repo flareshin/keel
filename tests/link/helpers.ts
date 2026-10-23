@@ -5,7 +5,7 @@ import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { lexists } from "../../measure/lib/measurekit/pypath.ts"
+import { entryExists } from "../../measure/lib/measurekit/files.ts"
 import { paddedRoot } from "../recorded-cases.ts"
 import { isCallerSpecificVariable } from "../measure/helpers.ts"
 
@@ -212,7 +212,7 @@ export function writeAdoptingEveryDrop(box: LinkSandbox): LinkResult {
 export function backupsOf(box: LinkSandbox, relative: string): string[] {
   const backupRoot = path.join(box.data, "state", "keel", "link-backup")
   if (!fs.existsSync(backupRoot)) return []
-  return fs.readdirSync(backupRoot).sort().map((stamp) => path.join(backupRoot, stamp, relative)).filter((candidate) => lexists(candidate))
+  return fs.readdirSync(backupRoot).sort().map((stamp) => path.join(backupRoot, stamp, relative)).filter((candidate) => entryExists(candidate))
 }
 
 export function onlyBackup(box: LinkSandbox, relative: string): string {

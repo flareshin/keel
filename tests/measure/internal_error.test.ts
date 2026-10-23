@@ -19,16 +19,20 @@ interface Outcome {
   lastStderrLine: string
 }
 
-type InternalErrorCase = [name: string, setup: (box: MeasureSandbox) => void, tool: string, args: string[]]
+type InternalErrorCase = [name: string, setup: (box: MeasureSandbox) => void, tool: string, args: string[], reason: RegExp]
+
+const IS_A_DIRECTORY = /^internal error: Error: EISDIR: /
+const PERMISSION_DENIED = /^internal error: Error: EACCES: .*ledger\.tsv/
+const NOT_UTF8_LEDGER = /^internal error: InvalidUtf8Error: .*ledger\.tsv is not valid UTF-8$/
 
 const CASES: InternalErrorCase[] = [
-  ["ledgerIsADirectory", (box) => fs.mkdirSync(path.join(box.keel, "ledger.tsv")), "run", ["C-demo"]],
-  ["ledgerIsUnreadable", (box) => { box.write("keel/ledger.tsv", "x"); fs.chmodSync(path.join(box.keel, "ledger.tsv"), 0) }, "run", ["C-demo"]],
-  ["ledgerIsNotUtf8", (box) => fs.writeFileSync(path.join(box.keel, "ledger.tsv"), NOT_UTF8), "run", ["C-demo"]],
-  ["ledgerHasBadBytesPastTheFirstChunk", (box) => fs.writeFileSync(path.join(box.keel, "ledger.tsv"), afterPadding("id\tx\n", 9000)), "run", ["C-demo"]],
-  ["ledgerHasBadBytesJustInsideTheFirstChunk", (box) => fs.writeFileSync(path.join(box.keel, "ledger.tsv"), afterPadding("id\tx\n", CHUNK_BYTES - 20)), "run", ["C-demo"]],
-  ["ledgerHasBadBytesInTheThirdChunk", (box) => fs.writeFileSync(path.join(box.keel, "ledger.tsv"), afterPadding("id\tx\n", CHUNK_BYTES * 2 + 100)), "run", ["C-demo"]],
-  ["ledgerHasATruncatedCharacterAtTheChunkEdge", (box) => fs.writeFileSync(path.join(box.keel, "ledger.tsv"), Buffer.concat([Buffer.from("id\tx\n#"), Buffer.alloc(CHUNK_BYTES - 7, 0x61), Buffer.from([0xed, 0xa0, 0x80, 0x0a])])), "run", ["C-demo"]],
+  ["ledgerIsADirectory", (box) => fs.mkdirSync(path.join(box.keel, "ledger.tsv")), "run", ["C-demo"], IS_A_DIRECTORY],
+  ["ledgerIsUnreadable", (box) => { box.write("keel/ledger.tsv", "x"); fs.chmodSync(path.join(box.keel, "ledger.tsv"), 0) }, "run", ["C-demo"], PERMISSION_DENIED],
+  ["ledgerIsNotUtf8", (box) => fs.writeFileSync(path.join(box.keel, "ledger.tsv"), NOT_UTF8), "run", ["C-demo"], NOT_UTF8_LEDGER],
+  ["ledgerHasBadBytesPastTheFirstChunk", (box) => fs.writeFileSync(path.join(box.keel, "ledger.tsv"), afterPadding("id\tx\n", 9000)), "run", ["C-demo"], NOT_UTF8_LEDGER],
+  ["ledgerHasBadBytesJustInsideTheFirstChunk", (box) => fs.writeFileSync(path.join(box.keel, "ledger.tsv"), afterPadding("id\tx\n", CHUNK_BYTES - 20)), "run", ["C-demo"], NOT_UTF8_LEDGER],
+  ["ledgerHasBadBytesInTheThirdChunk", (box) => fs.writeFileSync(path.join(box.keel, "ledger.tsv"), afterPadding("id\tx\n", CHUNK_BYTES * 2 + 100)), "run", ["C-demo"], NOT_UTF8_LEDGER],
+  ["ledgerHasATruncatedCharacterAtTheChunkEdge", (box) => fs.writeFileSync(path.join(box.keel, "ledger.tsv"), Buffer.concat([Buffer.from("id\tx\n#"), Buffer.alloc(CHUNK_BYTES - 7, 0x61), Buffer.from([0xed, 0xa0, 0x80, 0x0a])])), "run", ["C-demo"], NOT_UTF8_LEDGER],
   [
     "fireLogHasBadBytesPastTheFirstChunk",
     (box) => {
@@ -38,19 +42,19 @@ const CASES: InternalErrorCase[] = [
     },
     "run",
     ["C-demo"],
+    /^internal error: InvalidUtf8Error: .*keel-fires\.jsonl is not valid UTF-8$/,
   ],
-  ["ledgerIsADirectoryForProposals", (box) => fs.mkdirSync(path.join(box.keel, "ledger.tsv")), "propose", []],
-  ["ledgerIsNotUtf8ForTheWeeklyReport", (box) => fs.writeFileSync(path.join(box.keel, "ledger.tsv"), NOT_UTF8), "weekly", []],
+  ["ledgerIsADirectoryForProposals", (box) => fs.mkdirSync(path.join(box.keel, "ledger.tsv")), "propose", [], IS_A_DIRECTORY],
+  ["ledgerIsNotUtf8ForTheWeeklyReport", (box) => fs.writeFileSync(path.join(box.keel, "ledger.tsv"), NOT_UTF8), "weekly", [], NOT_UTF8_LEDGER],
 ]
 
-function runEntry(box: MeasureSandbox, command: string[], args: string[]): Outcome {
-  const [program = "", ...leading] = command
-  const completed = spawnSync(program, [...leading, ...args], { encoding: "utf8", env: box.env, cwd: box.root })
+function runEntry(box: MeasureSandbox, tool: string, args: string[]): Outcome {
+  const completed = spawnSync(path.join(MEASURE_DIR, tool), args, { encoding: "utf8", env: box.env, cwd: box.root })
   const lines = completed.stderr.trimEnd().split("\n")
   return { status: completed.status, stdout: completed.stdout, lastStderrLine: lines[lines.length - 1] ?? "" }
 }
 
-describe("measure internal errors print python's class name and message", () => {
+describe("measure internal errors exit 70 with one internal error line", () => {
   let box: MeasureSandbox
 
   beforeEach(() => {
@@ -61,15 +65,13 @@ describe("measure internal errors print python's class name and message", () => 
     box.cleanup()
   })
 
-  for (const [name, setup, tool, args] of CASES) {
-    it(`${name}_exitsWith70AndTheSameInternalErrorLineAsPython`, { skip: RUNNING_AS_ROOT && name === "ledgerIsUnreadable" }, () => {
+  for (const [name, setup, tool, args, reason] of CASES) {
+    it(`${name}_exitsWith70AndAnInternalErrorLine`, { skip: RUNNING_AS_ROOT && name === "ledgerIsUnreadable" }, () => {
       fs.mkdirSync(box.keel, { recursive: true })
       setup(box)
-      const python = runEntry(box, [path.join(MEASURE_DIR, tool)], args)
-      const typescript = runEntry(box, [process.execPath, path.join(MEASURE_DIR, `${tool}.ts`)], args)
-      assert.equal(python.status, 70)
-      assert.match(python.lastStderrLine, /^internal error: (IsADirectoryError|PermissionError|UnicodeDecodeError): /)
-      assert.deepEqual(typescript, python)
+      const outcome = runEntry(box, tool, args)
+      assert.deepEqual([outcome.status, outcome.stdout], [70, ""])
+      assert.match(outcome.lastStderrLine, reason)
     })
   }
 })

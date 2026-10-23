@@ -1,11 +1,6 @@
 import { spawnSync } from "node:child_process"
 import os from "node:os"
 
-import { toOsError } from "./pyerrno.ts"
-import { OsError } from "./pyerrors.ts"
-import { translateNewlines } from "./pyio.ts"
-import { pyRepr } from "./pyvalue.ts"
-
 export interface RunOptions {
   input?: string
   cwd?: string
@@ -25,7 +20,7 @@ export class TimeoutExpired extends Error {
   readonly partialStdout: string
 
   constructor(command: string[] | string, timeoutSeconds: number, partialStdout: string) {
-    super(`Command '${typeof command === "string" ? command : pyRepr(command)}' timed out after ${timeoutSeconds} seconds`)
+    super(`command ${JSON.stringify(command)} timed out after ${timeoutSeconds} seconds`)
     this.partialStdout = partialStdout
   }
 }
@@ -48,7 +43,7 @@ export function runProcess(command: string[] | string, options: RunOptions = {})
   })
   const error = result.error as NodeJS.ErrnoException | undefined
   if (error?.code === "ETIMEDOUT") throw new TimeoutExpired(command, options.timeoutSeconds ?? 0, result.stdout ?? "")
-  if (error) throw toOsError(error, program) ?? new OsError(`${error.message}: ${pyRepr(program)}`)
+  if (error) throw error
   const returncode = result.status ?? -(os.constants.signals[result.signal as NodeJS.Signals] ?? 0)
-  return { returncode, stdout: translateNewlines(result.stdout ?? ""), stderr: translateNewlines(result.stderr ?? "") }
+  return { returncode, stdout: result.stdout ?? "", stderr: result.stderr ?? "" }
 }

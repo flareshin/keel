@@ -1,9 +1,12 @@
-import { setMember } from "../../measure/lib/measurekit/pydict.ts"
-import { isJsonObject } from "../../measure/lib/measurekit/pyvalue.ts"
-import type { JsonObject, PyValue } from "../../measure/lib/measurekit/pyvalue.ts"
+import { isJsonObject } from "../../measure/lib/measurekit/json.ts"
+import type { JsonObject, JsonValue } from "../../measure/lib/measurekit/json.ts"
 
-export function member(object: JsonObject, key: string): PyValue | undefined {
+export function member(object: JsonObject, key: string): JsonValue | undefined {
   return Object.hasOwn(object, key) ? object[key] : undefined
+}
+
+export function setMember(object: JsonObject, key: string, value: JsonValue): void {
+  Object.defineProperty(object, key, { value, enumerable: true, writable: true, configurable: true })
 }
 
 export function objectMember(object: JsonObject, key: string): JsonObject {
@@ -19,10 +22,10 @@ export function childObject(parent: JsonObject, key: string): JsonObject {
   return created
 }
 
-export function childList(parent: JsonObject, key: string): PyValue[] {
+export function childList(parent: JsonObject, key: string): JsonValue[] {
   const existing = member(parent, key)
   if (Array.isArray(existing)) return existing
-  const created: PyValue[] = []
+  const created: JsonValue[] = []
   setMember(parent, key, created)
   return created
 }

@@ -1,26 +1,25 @@
 #!/usr/bin/env node
 import { randomBytes } from "node:crypto"
 import fs from "node:fs"
+import path from "node:path"
 
-import { ArgumentParser, positiveInt } from "../lib/measurekit/argparse.ts"
-import type { ParsedArguments } from "../lib/measurekit/argparse.ts"
-import { EXIT_NEGATIVE, EXIT_OK, EXIT_USAGE, printJson, runMain } from "../lib/measurekit/cli.ts"
+import {
+  choiceOption, EXIT_NEGATIVE, EXIT_OK, EXIT_USAGE, exactlyOnePositional, flagOption, parseCommandLine, positiveIntOption, printJson,
+  runMain, stringOption, usageError,
+} from "../lib/measurekit/cli.ts"
+import type { CommandSpec } from "../lib/measurekit/cli.ts"
 import { appendJsonl, readJsonl } from "../lib/measurekit/datafiles.ts"
+import { compactUtcSeconds, utcSeconds } from "../lib/measurekit/dates.ts"
 import * as env from "../lib/measurekit/env.ts"
+import { InvalidUtf8Error, isDir, isSystemError, readUtf8, resolveLinks, splitLines } from "../lib/measurekit/files.ts"
 import { GitError } from "../lib/measurekit/gitutil.ts"
+import { displayText, isJsonObject, parseJson, stringifySorted } from "../lib/measurekit/json.ts"
+import type { JsonObject, JsonValue } from "../lib/measurekit/json.ts"
 import { allRows, loadLedgersFrom } from "../lib/measurekit/ledger.ts"
-import { utcStamp } from "../lib/measurekit/pydate.ts"
-import { isOsError, ValueError } from "../lib/measurekit/pyerrors.ts"
-import { readText } from "../lib/measurekit/pyio.ts"
-import { pythonJsonDumps, pythonJsonLoads } from "../lib/measurekit/pyjson.ts"
-import { isDir, pyBasename, pyJoin, pyNormpath, realpath, which } from "../lib/measurekit/pypath.ts"
-import { sortedByCodePoint, pySplitlines } from "../lib/measurekit/pystr.ts"
-import { isJsonObject, pyRepr, pyStr, pyTruthy } from "../lib/measurekit/pyvalue.ts"
-import type { JsonObject, PyValue } from "../lib/measurekit/pyvalue.ts"
 import { Case, CaseError, loadCases, selectCases, SPLITS, splitGaps } from "./lib/evalkit/cases.ts"
 import { faultReason, graderCommit, LEFTOVER_FAULT, runPasses } from "./lib/evalkit/grade.ts"
 import { cliConfigDir, configFingerprint, isKeelLive, suiteEvalId } from "./lib/evalkit/liveconfig.ts"
-import { CLAUDE_BINARY, claudeCommand, runOnce } from "./lib/evalkit/runner.ts"
+import { CLAUDE_BINARY, claudeCommand, findOnPath, runOnce } from "./lib/evalkit/runner.ts"
 import type { RunRecord } from "./lib/evalkit/runner.ts"
 import { RunFacts, summarizeStream } from "./lib/evalkit/stream.ts"
 import { CaseVerdict, splitVerdict, suitePasses } from "./lib/evalkit/verdict.ts"
@@ -33,8 +32,39 @@ const CASE_SUFFIX = ".case"
 const SKILL_ENFORCEMENT = "skill:"
 const RAW_DIR_PREFIX = "keel-eval-"
 const RUN_RECORD_KEYS = ["case", "run", "kind", "exit", "timed_out", "changed"]
+const JSON_INDENT = 2
+const COMMAND: CommandSpec = {
+  prog: "measure/evals/eval",
+  usage: "measure/evals/eval [-h] [--regrade RAW_DIR] [--model MODEL] [--split {train,holdout}] [--case CASE] [--repeat N] [--timeout-seconds S] [--dry-run] ID",
+  description: "Grade a skill's behavior on its trajectory cases.",
+  argumentHelp: [
+    ["ID", "ledger row id whose cases to run, e.g. K4"],
+    ["--regrade RAW_DIR", "grade an earlier run's raw dir again with the current grader; calls no claude"],
+    ["--model MODEL", "model to pin for this baseline (passed to claude --model); required unless --regrade"],
+    ["--split {train,holdout}", "run one split only (writes <id>-partial, never <id>)"],
+    ["--case CASE", "run one case only (writes <id>-partial, never <id>)"],
+    ["--repeat N", `runs per case (default ${DEFAULT_REPEAT})`],
+    ["--timeout-seconds S", `per-run limit (default ${DEFAULT_TIMEOUT_SECONDS})`],
+    ["--dry-run", "print the plan and the command; run nothing"],
+  ],
+  options: {
+    regrade: { type: "string" }, model: { type: "string" }, split: { type: "string" }, case: { type: "string" },
+    repeat: { type: "string" }, "timeout-seconds": { type: "string" }, "dry-run": { type: "boolean" },
+  },
+}
 
 class PlanError extends Error {}
+
+interface EvalArgs {
+  id: string
+  regrade: string | undefined
+  model: string | undefined
+  split: string | undefined
+  caseId: string | undefined
+  repeat: number
+  timeoutSeconds: number
+  dryRun: boolean
+}
 
 interface Plan {
   evalId: string
@@ -65,8 +95,8 @@ function summaryEvalId(plan: Plan): string {
 }
 
 function main(argv: string[]): number {
-  const args = parseArgs(argv)
-  if (args["regrade"]) return regrade(args["id"] as string, args["regrade"] as string)
+  const args = parseEvalArgs(argv)
+  if (args.regrade) return regrade(args.id, args.regrade)
   let plan: Plan
   try {
     plan = buildPlan(args)
@@ -82,7 +112,7 @@ function main(argv: string[]): number {
     return EXIT_NEGATIVE
   }
   describePlan(plan)
-  if (args["dry_run"] === true) {
+  if (args.dryRun) {
     printJson(planReport(plan))
     return EXIT_OK
   }
@@ -92,36 +122,32 @@ function main(argv: string[]): number {
   return gradeAndWrite(plan, rawDir, results, {}, {})
 }
 
-function parseArgs(argv: string[]): ParsedArguments {
-  const parser = new ArgumentParser({
-    prog: "measure/evals/eval",
-    description: "Grade a skill's behavior on its trajectory cases.",
-    arguments: [
-      { flags: [], dest: "id", kind: "value", help: "ledger row id whose cases to run, e.g. K4" },
-      { flags: ["--regrade"], dest: "regrade", kind: "value", metavar: "RAW_DIR", help: "grade an earlier run's raw dir again with the current grader; calls no claude" },
-      { flags: ["--model"], dest: "model", kind: "value", help: "model to pin for this baseline (passed to claude --model); required unless --regrade" },
-      { flags: ["--split"], dest: "split", kind: "value", choices: SPLITS, help: "run one split only (writes <id>-partial, never <id>)" },
-      { flags: ["--case"], dest: "case", kind: "value", help: "run one case only (writes <id>-partial, never <id>)" },
-      { flags: ["--repeat"], dest: "repeat", kind: "value", convert: positiveInt, typeName: "positive_int", defaultValue: DEFAULT_REPEAT, help: `runs per case (default ${DEFAULT_REPEAT})` },
-      { flags: ["--timeout-seconds"], dest: "timeout_seconds", kind: "value", convert: positiveInt, typeName: "positive_int", defaultValue: DEFAULT_TIMEOUT_SECONDS, help: `per-run limit (default ${DEFAULT_TIMEOUT_SECONDS})` },
-      { flags: ["--dry-run"], dest: "dry_run", kind: "flag", help: "print the plan and the command; run nothing" },
-    ],
-  })
-  const args = parser.parse(argv)
-  if (args["regrade"] && (args["model"] || args["split"] || args["case"] || args["dry_run"])) {
-    parser.error("--regrade takes its model and cases from the raw dir; drop --model, --split, --case and --dry-run")
+function parseEvalArgs(argv: string[]): EvalArgs {
+  const parsed = parseCommandLine(COMMAND, argv)
+  const args: EvalArgs = {
+    id: exactlyOnePositional(COMMAND, parsed, "ID"),
+    regrade: stringOption(parsed, "regrade"),
+    model: stringOption(parsed, "model"),
+    split: choiceOption(COMMAND, "--split", stringOption(parsed, "split"), SPLITS),
+    caseId: stringOption(parsed, "case"),
+    repeat: positiveIntOption(COMMAND, "--repeat", stringOption(parsed, "repeat"), DEFAULT_REPEAT),
+    timeoutSeconds: positiveIntOption(COMMAND, "--timeout-seconds", stringOption(parsed, "timeout-seconds"), DEFAULT_TIMEOUT_SECONDS),
+    dryRun: flagOption(parsed, "dry-run"),
   }
-  if (!args["regrade"] && !args["model"]) parser.error("--model is required")
+  if (args.regrade && (args.model || args.split || args.caseId || args.dryRun)) {
+    usageError(COMMAND, "--regrade takes its model and cases from the raw dir; drop --model, --split, --case and --dry-run")
+  }
+  if (!args.regrade && !args.model) usageError(COMMAND, "--model is required")
   return args
 }
 
-function buildPlan(args: ParsedArguments): Plan {
+function buildPlan(args: EvalArgs): Plan {
   const keelHome = env.keelHome()
   const overlayDir = env.overlayDir()
-  const evalId = args["id"] as string
+  const evalId = args.id
   const skill = skillEnforcing(evalId, keelHome, overlayDir)
-  const split = args["split"] as string | undefined
-  const caseId = args["case"] as string | undefined
+  const split = args.split
+  const caseId = args.caseId
   let cases: Case[]
   try {
     cases = selectCases(loadCases(evalId, [keelHome, overlayDir]), split, caseId)
@@ -132,27 +158,27 @@ function buildPlan(args: ParsedArguments): Plan {
   if (cases.length === 0) throw new PlanError(`no case selected (split=${split || "all"}, case=${caseId || "all"})`)
   const fullRun = split === undefined && caseId === undefined
   if (fullRun && splitGaps(cases).length > 0) throw new PlanError("a full run needs an ambiguous and a clear case in each split: " + splitGaps(cases).join("; "))
-  const fixture = pyJoin(keelHome, "measure", "evals", evalId, "repo")
+  const fixture = path.join(keelHome, "measure", "evals", evalId, "repo")
   if (!isDir(fixture)) throw new PlanError(`no fixture repo at ${fixture}`)
-  if (which(CLAUDE_BINARY) === null) throw new PlanError(`no \`${CLAUDE_BINARY}\` on PATH`)
+  if (findOnPath(CLAUDE_BINARY) === null) throw new PlanError(`no \`${CLAUDE_BINARY}\` on PATH`)
   const configDir = cliConfigDir()
-  const model = args["model"] as string
+  const model = args.model as string
   return {
-    evalId, skill, cases, fullRun, repeat: args["repeat"] as number, model, command: claudeCommand(model), fixture, configDir,
-    keelLive: isKeelLive(configDir, keelHome, skill), timeoutSeconds: args["timeout_seconds"] as number,
+    evalId, skill, cases, fullRun, repeat: args.repeat, model, command: claudeCommand(model), fixture, configDir,
+    keelLive: isKeelLive(configDir, keelHome, skill), timeoutSeconds: args.timeoutSeconds,
   }
 }
 
 function skillEnforcing(evalId: string, keelHome: string, overlayDir: string): string {
   const row = allRows(loadLedgersFrom(keelHome, overlayDir)).find((candidate) => candidate.id === evalId)
-  if (row === undefined) throw new PlanError(`no ledger row with id ${pyRepr(evalId)}`)
+  if (row === undefined) throw new PlanError(`no ledger row with id ${JSON.stringify(evalId)}`)
   if (!row.enforcedAt.startsWith(SKILL_ENFORCEMENT)) throw new PlanError(`ledger row ${evalId} is enforced at ${row.enforcedAt}, not by a skill`)
   return row.enforcedAt.slice(SKILL_ENFORCEMENT.length)
 }
 
 function configDirFault(configDir: string): string | null {
   const dataDir = env.dataDir()
-  if (realpath(configDir) !== realpath(dataDir)) {
+  if (resolveLinks(configDir) !== resolveLinks(dataDir)) {
     return `CLI config dir ${configDir} differs from KEEL_DATA_DIR ${dataDir}; which config is under test is ambiguous`
   }
   return null
@@ -176,8 +202,8 @@ function planReport(plan: Plan): JsonObject {
 }
 
 function createRawDir(plan: Plan): string {
-  const stamp = utcStamp(new Date(), true)
-  const rawDir = pyJoin(env.logsDir(), `${RAW_DIR_PREFIX}${plan.evalId}-${stamp}-${randomBytes(2).toString("hex")}`)
+  const stamp = compactUtcSeconds(new Date())
+  const rawDir = path.join(env.logsDir(), `${RAW_DIR_PREFIX}${plan.evalId}-${stamp}-${randomBytes(2).toString("hex")}`)
   fs.mkdirSync(rawDir, { recursive: true })
   saveConfig(rawDir, plan, [])
   return rawDir
@@ -205,7 +231,7 @@ function regrade(evalId: string, rawDir: string): number {
     loaded = loadRawDir(evalId, rawDir)
     grader = graderCommit(env.CHECKOUT_ROOT)
   } catch (error) {
-    if (error instanceof PlanError || error instanceof GitError || isOsError(error)) {
+    if (error instanceof PlanError || error instanceof GitError || isSystemError(error)) {
       process.stderr.write(`eval: ${(error as Error).message}\n`)
       return EXIT_USAGE
     }
@@ -215,13 +241,13 @@ function regrade(evalId: string, rawDir: string): number {
   if (leftoverUnknown.length > 0) {
     process.stderr.write(`eval: ${rawDir} recorded no leftover project dir check for ${leftoverUnknown.join(", ")}; graded without it\n`)
   }
-  const provenance = { regraded_from: pyBasename(pyNormpath(rawDir)), grader }
+  const provenance = { regraded_from: path.basename(path.normalize(rawDir)), grader }
   return gradeAndWrite(plan, rawDir, results, provenance, { leftover_unknown: leftoverUnknown })
 }
 
 function loadRawDir(evalId: string, rawDir: string): { plan: Plan; results: RunResult[]; leftoverUnknown: string[] } {
-  const config = readJsonObject(pyJoin(rawDir, "config.json"))
-  if (config["eval_id"] !== evalId) throw new PlanError(`${rawDir} holds a ${pyStr(config["eval_id"])} run, not ${evalId}`)
+  const config = readJsonObject(path.join(rawDir, "config.json"))
+  if (config["eval_id"] !== evalId) throw new PlanError(`${rawDir} holds a ${displayText(config["eval_id"])} run, not ${evalId}`)
   const keelHome = env.keelHome()
   const overlayDir = env.overlayDir()
   const byId = new Map<string, Case>()
@@ -235,8 +261,8 @@ function loadRawDir(evalId: string, rawDir: string): { plan: Plan; results: RunR
   const missing = configCases.filter((caseId) => !byId.has(caseId))
   if (missing.length > 0) throw new PlanError(`${rawDir}: case(s) ${missing.join(", ")} are no longer in the case files`)
   const records = readRuns(rawDir)
-  const strays = sortedByCodePoint(new Set(records.map(recordCase).filter((caseId) => !configCases.includes(caseId))))
-  const stale = sortedByCodePoint(new Set(records.filter((record) => byId.has(recordCase(record)) && record["kind"] !== byId.get(recordCase(record))?.kind).map(recordCase)))
+  const strays = [...new Set(records.map(recordCase).filter((caseId) => !configCases.includes(caseId)))].sort()
+  const stale = [...new Set(records.filter((record) => byId.has(recordCase(record)) && record["kind"] !== byId.get(recordCase(record))?.kind).map(recordCase))].sort()
   if (strays.length > 0 || stale.length > 0) throw new PlanError(`${rawDir}: run(s) of case(s) ${[...strays, ...stale].join(", ")} do not match the case files`)
   const runsPerCase = new Map<string, number>()
   for (const record of records) runsPerCase.set(recordCase(record), (runsPerCase.get(recordCase(record)) ?? 0) + 1)
@@ -249,7 +275,7 @@ function loadRawDir(evalId: string, rawDir: string): { plan: Plan; results: RunR
   const timeoutSeconds = "timeout_seconds" in config ? (config["timeout_seconds"] as number) : DEFAULT_TIMEOUT_SECONDS
   const plan: Plan = {
     evalId, skill: skillEnforcing(evalId, keelHome, overlayDir), cases: configured.filter((configuredCase) => (runsPerCase.get(configuredCase.id) ?? 0) > 0),
-    fullRun, repeat, model: ((pyTruthy(config["model_observed"]) ? config["model_observed"] : config["model_requested"]) as string), command: config["command"] as string[],
+    fullRun, repeat, model: (config["model_observed"] || config["model_requested"]) as string, command: config["command"] as string[],
     fixture: "", configDir: config["config_dir"] as string, keelLive: config["keel_live"] as boolean, timeoutSeconds,
   }
   const results = records.map((record) => regradedRun(rawDir, byId.get(recordCase(record)) as Case, record, plan.timeoutSeconds))
@@ -262,21 +288,21 @@ function recordCase(record: JsonObject): string {
 }
 
 function readRuns(rawDir: string): JsonObject[] {
-  const path = pyJoin(rawDir, "runs.jsonl")
-  if (!fs.existsSync(path) || !fs.statSync(path).isFile()) throw new PlanError(`no runs.jsonl in ${rawDir}`)
-  const { records, malformed: unreadable } = readJsonl(path)
+  const runsPath = path.join(rawDir, "runs.jsonl")
+  if (!fs.existsSync(runsPath) || !fs.statSync(runsPath).isFile()) throw new PlanError(`no runs.jsonl in ${rawDir}`)
+  const { records, malformed: unreadable } = readJsonl(runsPath)
   const malformed = unreadable + records.filter((record) => !RUN_RECORD_KEYS.every((key) => key in record)).length
-  if (malformed > 0) throw new PlanError(`${path} has ${malformed} malformed line(s)`)
-  if (records.length === 0) throw new PlanError(`${path} holds no run`)
+  if (malformed > 0) throw new PlanError(`${runsPath} has ${malformed} malformed line(s)`)
+  if (records.length === 0) throw new PlanError(`${runsPath} holds no run`)
   return records
 }
 
 function regradedRun(rawDir: string, regradedCase: Case, record: JsonObject, timeoutSeconds: number): RunResult {
-  const stem = pyJoin(rawDir, runName(regradedCase.id, record["run"] as number))
+  const stem = path.join(rawDir, runName(regradedCase.id, record["run"] as number))
   const streamText = readRawText(stem + ".stream.jsonl")
   const diff = readRawText(stem + ".diff")
   const facts = new RunFacts({
-    stream: summarizeStream(pySplitlines(streamText)), exitCode: record["exit"] as number, timedOut: record["timed_out"] as boolean,
+    stream: summarizeStream(splitLines(streamText)), exitCode: record["exit"] as number, timedOut: record["timed_out"] as boolean,
     changed: record["changed"] as boolean, leftoverProjectDir: recordedLeftover(record),
   })
   return graded(regradedCase, record["run"] as number, { facts, streamText, diff }, timeoutSeconds)
@@ -284,7 +310,7 @@ function regradedRun(rawDir: string, regradedCase: Case, record: JsonObject, tim
 
 function recordedLeftover(record: JsonObject): string | null {
   if ("leftover_project_dir" in record) return record["leftover_project_dir"] as string | null
-  const fault = pyTruthy(record["fault"]) ? (record["fault"] as string) : ""
+  const fault = typeof record["fault"] === "string" ? record["fault"] : ""
   return fault.startsWith(LEFTOVER_FAULT) ? fault.slice(LEFTOVER_FAULT.length) : null
 }
 
@@ -312,12 +338,12 @@ function gradeAndWrite(plan: Plan, rawDir: string, results: RunResult[], provena
 }
 
 function saveRun(rawDir: string, result: RunResult): void {
-  const stem = pyJoin(rawDir, runName(result.case.id, result.index))
+  const stem = path.join(rawDir, runName(result.case.id, result.index))
   const facts = result.record.facts
   writeText(stem + ".stream.jsonl", result.record.streamText)
   writeText(stem + ".diff", result.record.diff)
   writeText(stem + ".final.txt", facts.finalText ?? "")
-  appendJsonl(pyJoin(rawDir, "runs.jsonl"), {
+  appendJsonl(path.join(rawDir, "runs.jsonl"), {
     case: result.case.id, run: result.index, kind: result.case.kind, exit: facts.exitCode, timed_out: facts.timedOut, changed: facts.changed,
     asked_tool: facts.askedTool, tried_to_change: facts.triedToChange, denied_tools: facts.stream.deniedTools, skill_calls: facts.stream.skillCalls,
     leftover_project_dir: facts.leftoverProjectDir, fault: result.fault, pass: result.passed,
@@ -332,8 +358,8 @@ function saveConfig(rawDir: string, plan: Plan, results: RunResult[]): void {
     repeat: plan.repeat, cases: plan.cases.map((planned) => planned.id), command: plan.command, timeout_seconds: plan.timeoutSeconds,
     ...configFingerprint(plan.configDir, plan.skill),
   }
-  writeText(pyJoin(rawDir, "config.json"), pythonJsonDumps(config, { sortKeys: true, indent: 2 }) + "\n")
-  writeText(pyJoin(rawDir, "skill-diagnostic.json"), pythonJsonDumps(skillDiagnostic(plan, results), { sortKeys: true, indent: 2 }) + "\n")
+  writeText(path.join(rawDir, "config.json"), stringifySorted(config, JSON_INDENT) + "\n")
+  writeText(path.join(rawDir, "skill-diagnostic.json"), stringifySorted(skillDiagnostic(plan, results), JSON_INDENT) + "\n")
 }
 
 function skillDiagnostic(plan: Plan, results: RunResult[]): JsonObject {
@@ -355,13 +381,13 @@ function observedModel(results: RunResult[]): string | null {
 }
 
 function appendEvalLines(plan: Plan, verdicts: CaseVerdict[], splits: SplitVerdict[], model: string, provenance: Provenance): void {
-  const path = pyJoin(env.logsDir(), "keel-evals.jsonl")
-  const ts = utcStamp(new Date(), false)
+  const evalsLog = path.join(env.logsDir(), "keel-evals.jsonl")
+  const ts = utcSeconds(new Date())
   for (const verdict of verdicts) {
-    appendJsonl(path, { ts, eval_id: plan.evalId + CASE_SUFFIX, rule_id: plan.evalId, case: verdict.case.id, pass: verdict.passed, model, ...provenance })
+    appendJsonl(evalsLog, { ts, eval_id: plan.evalId + CASE_SUFFIX, rule_id: plan.evalId, case: verdict.case.id, pass: verdict.passed, model, ...provenance })
   }
   const counts = splits.map((split) => `${split.split}=${split.passedCases}/${split.cases}`).join(" ")
-  appendJsonl(path, {
+  appendJsonl(evalsLog, {
     ts, eval_id: summaryEvalId(plan), rule_id: plan.evalId, case: `${plan.fullRun ? "suite" : "subset"} ${counts}`, pass: suitePasses(splits), model, ...provenance,
   })
 }
@@ -380,7 +406,7 @@ function buildReport(plan: Plan, rawDir: string, verdicts: CaseVerdict[], splits
 function printSummary(report: JsonObject, rawDir: string): void {
   const splitReports = report["splits"] as { [split: string]: JsonObject }
   const splits = Object.entries(splitReports).map(([name, split]) => `${name} ${split["passed"]}/${split["cases"]}`).join(" ")
-  const faults = report["faults"] as PyValue[]
+  const faults = report["faults"] as JsonValue[]
   const verdict = faults.length > 0
     ? `FAULT (${faults.length} run(s)); nothing written`
     : `${report["pass"] ? "PASS" : "FAIL"}; wrote ${report["eval_id"]}`
@@ -391,28 +417,29 @@ function runName(caseId: string, run: number): string {
   return `${caseId}-${run}`
 }
 
-function readJsonObject(path: string): JsonObject {
+function readJsonObject(file: string): JsonObject {
+  let value: JsonValue
   try {
-    const value = pythonJsonLoads(readText(path))
-    if (!isJsonObject(value)) throw new ValueError("not an object")
-    return value
+    value = parseJson(readUtf8(file))
   } catch (error) {
-    if (error instanceof ValueError || isOsError(error)) throw new PlanError(`cannot read ${path}: ${(error as Error).message}`)
+    if (error instanceof SyntaxError || error instanceof InvalidUtf8Error || isSystemError(error)) throw new PlanError(`cannot read ${file}: ${error.message}`)
+    throw error
+  }
+  if (!isJsonObject(value)) throw new PlanError(`cannot read ${file}: not an object`)
+  return value
+}
+
+function readRawText(file: string): string {
+  try {
+    return readUtf8(file)
+  } catch (error) {
+    if (isSystemError(error)) throw new PlanError(`cannot read ${file}: ${error.message}`)
     throw error
   }
 }
 
-function readRawText(path: string): string {
-  try {
-    return readText(path)
-  } catch (error) {
-    if (isOsError(error)) throw new PlanError(`cannot read ${path}: ${(error as Error).message}`)
-    throw error
-  }
-}
-
-function writeText(path: string, text: string): void {
-  fs.writeFileSync(path, text, "utf8")
+function writeText(file: string, text: string): void {
+  fs.writeFileSync(file, text, "utf8")
 }
 
 runMain(main)

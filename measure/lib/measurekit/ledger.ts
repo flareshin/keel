@@ -1,10 +1,9 @@
 import { dataLines, readTsvLines, TsvError } from "./datafiles.ts"
-import { parseIsoDate } from "./pydate.ts"
-import { ValueError } from "./pyerrors.ts"
-import { isFile, pathExists, pyJoin } from "./pypath.ts"
-import { compilePythonRegex } from "./pyregex.ts"
-import { pyStrip } from "./pystr.ts"
-import { pyRepr } from "./pyvalue.ts"
+import fs from "node:fs"
+import path from "node:path"
+
+import { parseIsoDate } from "./dates.ts"
+import { isFile } from "./files.ts"
 
 export const KEEL_SOURCE = "keel"
 export const OVERLAY_SOURCE = "overlay"
@@ -18,13 +17,12 @@ const CHARTER_SCOPE = "charter"
 const STACK_SCOPE_PREFIX = "stack:"
 const FLOOR_TYPE = "floor"
 
-const ID_PATTERN_SOURCE = "^(K[1-7]|risk|[CSOF]-[a-z0-9-]+)$"
-const ID_PATTERN = compilePythonRegex(ID_PATTERN_SOURCE)
-const SCOPE_PATTERN = compilePythonRegex("^(charter|core|overlay|stack:[a-z0-9-]+)$")
-const ENFORCED_AT_PATTERN = compilePythonRegex("^(hook|skill):[a-z0-9-]+$|^prose:\\S+$|^repo:[^:\\s/]+/[^:\\s/]+:\\S+$")
-const METRIC_PATTERN = compilePythonRegex("^(fires|evals):\\S+$|^run:[A-Za-z0-9._-]+$|^exists:[^:]+:[^:]+:.+$")
-const INCIDENT_PATTERN = compilePythonRegex("^docs/incidents/[A-Za-z0-9._-]+\\.md$|^private:[A-Za-z0-9._-]+$")
-const STACK_NAME_PATTERN = compilePythonRegex("^[a-z0-9][a-z0-9-]*$")
+const ID_PATTERN = /^(K[1-7]|risk|[CSOF]-[a-z0-9-]+)$/
+const SCOPE_PATTERN = /^(charter|core|overlay|stack:[a-z0-9-]+)$/
+const ENFORCED_AT_PATTERN = /^(hook|skill):[a-z0-9-]+$|^prose:\S+$|^repo:[^:\s/]+\/[^:\s/]+:\S+$/
+const METRIC_PATTERN = /^(fires|evals):\S+$|^run:[A-Za-z0-9._-]+$|^exists:[^:]+:[^:]+:.+$/
+const INCIDENT_PATTERN = /^docs\/incidents\/[A-Za-z0-9._-]+\.md$|^private:[A-Za-z0-9._-]+$/
+const STACK_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/
 
 export const COLUMNS = [
   "id", "scope", "type", "statement", "layer", "enforced_at", "why_not_stronger",
@@ -32,6 +30,8 @@ export const COLUMNS = [
 ] as const
 
 type RowCells = [string, string, string, string, string, string, string, string, string, string, string, string, string]
+
+export class StackNameError extends Error {}
 
 export class LedgerRow {
   readonly source: string
@@ -81,7 +81,7 @@ export class LedgerRow {
 
   get incidentRefs(): string[] {
     if (this.incidents === EMPTY) return []
-    return this.incidents.split(",").map(pyStrip).filter((ref) => ref !== "")
+    return this.incidents.split(",").map((ref) => ref.trim()).filter((ref) => ref !== "")
   }
 
   isInGrace(today: string): boolean {
@@ -100,17 +100,17 @@ export interface Ledger {
 
 export function loadLedgersFrom(keelHome: string, overlayDir: string): Ledger[] {
   return [
-    loadLedger(pyJoin(keelHome, "ledger.tsv"), KEEL_SOURCE),
-    loadLedger(pyJoin(overlayDir, "ledger.tsv"), OVERLAY_SOURCE),
+    loadLedger(path.join(keelHome, "ledger.tsv"), KEEL_SOURCE),
+    loadLedger(path.join(overlayDir, "ledger.tsv"), OVERLAY_SOURCE),
   ]
 }
 
-export function loadLedger(path: string, source: string): Ledger {
-  const ledger: Ledger = { source, path, present: pathExists(path), rows: [], problems: [] }
+export function loadLedger(ledgerPath: string, source: string): Ledger {
+  const ledger: Ledger = { source, path: ledgerPath, present: fs.existsSync(ledgerPath), rows: [], problems: [] }
   if (!ledger.present) return ledger
   let lines: [number, string[]][]
   try {
-    lines = readTsvLines(path, COLUMNS)
+    lines = readTsvLines(ledgerPath, COLUMNS)
   } catch (error) {
     if (error instanceof TsvError) {
       ledger.problems.push(error.message)
@@ -143,11 +143,11 @@ export function hookRowsInForce(ledgers: Ledger[], activeStacks: string[]): Ledg
 }
 
 export function activeStackNames(overlayDir: string): string[] {
-  const stacksFile = pyJoin(overlayDir, "stacks.txt")
+  const stacksFile = path.join(overlayDir, "stacks.txt")
   if (!isFile(stacksFile)) return []
-  const names = dataLines(stacksFile).map(([, line]) => pyStrip(line))
+  const names = dataLines(stacksFile).map(([, line]) => line.trim())
   for (const name of names) {
-    if (!STACK_NAME_PATTERN.test(name)) throw new ValueError(`${stacksFile}: invalid stack name ${pyRepr(name)}`)
+    if (!STACK_NAME_PATTERN.test(name)) throw new StackNameError(`${stacksFile}: invalid stack name ${JSON.stringify(name)}`)
   }
   return names
 }
@@ -161,25 +161,25 @@ export function validateRow(row: LedgerRow): string[] {
   const enforcedAtKnown = ENFORCED_AT_PATTERN.test(row.enforcedAt)
   const badRefs = row.incidentRefs.filter((ref) => !INCIDENT_PATTERN.test(ref))
   const checks: [boolean, string][] = [
-    [!ID_PATTERN.test(row.id), `id does not match ${ID_PATTERN_SOURCE}`],
-    [!scopeKnown, `unknown scope ${pyRepr(row.scope)}`],
+    [!ID_PATTERN.test(row.id), `id does not match ${ID_PATTERN.source}`],
+    [!scopeKnown, `unknown scope ${JSON.stringify(row.scope)}`],
     [scopeKnown && row.scope !== expectedScope(row), `id prefix needs scope ${expectedScope(row)}`],
     [(row.scope === "overlay") !== (row.source === OVERLAY_SOURCE), "overlay rows live only in the overlay ledger, and it holds only overlay rows"],
-    [!TYPES.includes(row.type), `unknown type ${pyRepr(row.type)}`],
+    [!TYPES.includes(row.type), `unknown type ${JSON.stringify(row.type)}`],
     [row.id.startsWith("F-") !== (row.type === FLOOR_TYPE), "F- ids and type=floor go together"],
-    [row.statement === EMPTY || pyStrip(row.statement) === "", "statement is empty"],
-    [!LAYERS.includes(row.layer), `unknown layer ${pyRepr(row.layer)}`],
-    [!enforcedAtKnown, `enforced_at ${pyRepr(row.enforcedAt)} is not hook:/skill:/prose:/repo:<owner/repo>:<path>`],
-    [enforcedAtKnown && row.enforcedAt.split(":", 1)[0] !== row.layer, `enforced_at kind differs from layer ${pyRepr(row.layer)}`],
+    [row.statement === EMPTY || row.statement.trim() === "", "statement is empty"],
+    [!LAYERS.includes(row.layer), `unknown layer ${JSON.stringify(row.layer)}`],
+    [!enforcedAtKnown, `enforced_at ${JSON.stringify(row.enforcedAt)} is not hook:/skill:/prose:/repo:<owner/repo>:<path>`],
+    [enforcedAtKnown && row.enforcedAt.split(":", 1)[0] !== row.layer, `enforced_at kind differs from layer ${JSON.stringify(row.layer)}`],
     [["skill", "prose"].includes(row.layer) && row.whyNotStronger === EMPTY, `layer ${row.layer} needs why_not_stronger`],
     [row.isCharterOrFloor && row.justification === EMPTY, "charter and floor rows need a justification"],
     [badRefs.length > 0, `bad incident refs: ${badRefs.join(",")}`],
-    [row.metric !== EMPTY && !METRIC_PATTERN.test(row.metric), `metric ${pyRepr(row.metric)} is not fires:/evals:/run:/exists:`],
-    [row.reviewBy !== EMPTY && parseDate(row.reviewBy) === null, `review_by ${pyRepr(row.reviewBy)} is not YYYY-MM-DD`],
-    [row.graceUntil !== EMPTY && parseDate(row.graceUntil) === null, `grace_until ${pyRepr(row.graceUntil)} is not YYYY-MM-DD`],
+    [row.metric !== EMPTY && !METRIC_PATTERN.test(row.metric), `metric ${JSON.stringify(row.metric)} is not fires:/evals:/run:/exists:`],
+    [row.reviewBy !== EMPTY && parseDate(row.reviewBy) === null, `review_by ${JSON.stringify(row.reviewBy)} is not YYYY-MM-DD`],
+    [row.graceUntil !== EMPTY && parseDate(row.graceUntil) === null, `grace_until ${JSON.stringify(row.graceUntil)} is not YYYY-MM-DD`],
     [row.isCharterOrFloor && row.reviewBy !== EMPTY, "charter and floor rows use review_by '-'"],
     [!row.isCharterOrFloor && row.reviewBy === EMPTY, "review_by is required"],
-    [!STATUSES.includes(row.status), `unknown status ${pyRepr(row.status)}`],
+    [!STATUSES.includes(row.status), `unknown status ${JSON.stringify(row.status)}`],
   ]
   return checks.filter(([violated]) => violated).map(([, message]) => `${row.id} (line ${row.line}): ${message}`)
 }

@@ -1,13 +1,10 @@
 import fs from "node:fs"
+import path from "node:path"
 
-import { ArgumentParser } from "../../measure/lib/measurekit/argparse.ts"
-import type { ParsedArguments } from "../../measure/lib/measurekit/argparse.ts"
-import { ValueError, isOsError } from "../../measure/lib/measurekit/pyerrors.ts"
-import { backslashReplaceLoneSurrogates, readTextByLines, newlineSeparatedLines } from "../../measure/lib/measurekit/pyio.ts"
-import { pythonJsonDumps } from "../../measure/lib/measurekit/pyjson.ts"
-import { isFile, pyJoin, realpath } from "../../measure/lib/measurekit/pypath.ts"
-import { pySplitlines, pyStrip } from "../../measure/lib/measurekit/pystr.ts"
-import type { JsonObject } from "../../measure/lib/measurekit/pyvalue.ts"
+import { flagOption, noPositionals, parseCommandLine, stringOption, usageError } from "../../measure/lib/measurekit/cli.ts"
+import type { CommandSpec } from "../../measure/lib/measurekit/cli.ts"
+import { isFile, isSystemError, readUtf8, resolveLinks, splitLines } from "../../measure/lib/measurekit/files.ts"
+import type { JsonObject } from "../../measure/lib/measurekit/json.ts"
 import { shlexQuote } from "../../measure/lib/measurekit/shlex.ts"
 import * as claudeMd from "./claude_md.ts"
 import { EXIT_INTERNAL, EXIT_NEGATIVE, EXIT_OK, EXIT_REFUSED, Refused, resolvePaths, runGit } from "./config.ts"
@@ -20,6 +17,25 @@ import type { BlockLevel, Plan, Problem } from "./plan.ts"
 import * as settingsJson from "./settings_json.ts"
 
 const V1_TAG = "v1-final"
+const COMMAND: CommandSpec = {
+  prog: "link",
+  usage: "link [-h] [--write | --check | --unlink] [--force] [--allow-worktree] [--adopt] [--accept-drops FILE]",
+  description: "Link keel into KEEL_DATA_DIR. No flag = dry run.",
+  argumentHelp: [
+    ["--write", "create/repair links, CLAUDE.md and owned settings keys"],
+    ["--check", "report drift; exit 1 when any; write nothing"],
+    ["--unlink", "remove keel links and print the v1 restore command"],
+    ["--force", "with --write: move what is in the way aside, overwrite hand-edited owned keys"],
+    ["--allow-worktree", "with --write: allow KEEL_HOME to be a linked worktree"],
+    ["--adopt", "with --write: take over owned keys keel has never written; lists every drop"],
+    ["--accept-drops FILE", "with --adopt: file listing each dropped item the user accepted"],
+  ],
+  options: {
+    write: { type: "boolean" }, check: { type: "boolean" }, unlink: { type: "boolean" }, force: { type: "boolean" },
+    "allow-worktree": { type: "boolean" }, adopt: { type: "boolean" }, "accept-drops": { type: "string" },
+  },
+}
+const MODES = ["write", "check", "unlink"]
 
 interface LinkArgs {
   readonly write: boolean
@@ -32,7 +48,7 @@ interface LinkArgs {
 }
 
 export function main(argv: string[]): number {
-  const args = parseArgs(argv)
+  const args = parseLinkArgs(argv)
   try {
     const paths = resolvePaths()
     if (args.unlink) return runUnlink(paths)
@@ -85,13 +101,13 @@ function runUnlink(paths: KeelPaths): number {
   const settingsRestore = settingsJson.restorePreKeelSettings(paths)
   const actions: JsonObject[] = settingsRestore ? [settingsRestore] : []
   for (const entry of entries) {
-    const path = pyJoin(paths.dataDir, entry.target)
-    if (links.isKeelLink(path, paths)) {
-      fs.unlinkSync(path)
-      actions.push({ op: "remove-link", path })
+    const link = path.join(paths.dataDir, entry.target)
+    if (links.isKeelLink(link, paths)) {
+      fs.unlinkSync(link)
+      actions.push({ op: "remove-link", path: link })
     }
   }
-  const generated = pyJoin(paths.dataDir, claudeMd.FILE_NAME)
+  const generated = path.join(paths.dataDir, claudeMd.FILE_NAME)
   if (claudeMd.isGeneratedClaudeMd(generated)) {
     fs.unlinkSync(generated)
     actions.push({ op: "remove-link", path: generated })
@@ -101,7 +117,7 @@ function runUnlink(paths: KeelPaths): number {
   if (isFile(settingsJson.linkStatePath(paths))) fs.unlinkSync(settingsJson.linkStatePath(paths))
   const restorePaths = pathsLeftForV1(entries, claudeMdRestore !== null, settingsRestore)
   say("link: to restore v1, run:\n  " + buildV1RestoreCommand(paths.dataDir, restorePaths))
-  process.stdout.write(pythonJsonDumps({ actions, problems: [] }) + "\n")
+  process.stdout.write(JSON.stringify({ actions, problems: [] }) + "\n")
   return EXIT_OK
 }
 
@@ -117,12 +133,12 @@ export function buildV1RestoreCommand(dataDir: string, candidates: string[]): st
   return `git -C ${shlexQuote(dataDir)} checkout ${V1_TAG} -- ${restorable.map(shlexQuote).join(" ")}`
 }
 
-export function readAcceptedDrops(path: string | undefined): Set<string> {
-  if (path === undefined) return new Set()
+export function readAcceptedDrops(file: string | undefined): Set<string> {
+  if (file === undefined) return new Set()
   try {
-    return new Set(newlineSeparatedLines(readTextByLines(path)).filter((line) => pyStrip(line) !== "" && !line.startsWith("#")))
+    return new Set(splitLines(readUtf8(file)).filter((line) => line.trim() !== "" && !line.startsWith("#")))
   } catch (error) {
-    if (isOsError(error)) throw new Refused(`--accept-drops ${path}: ${(error as Error).message}`)
+    if (isSystemError(error)) throw new Refused(`--accept-drops ${file}: ${error.message}`)
     throw error
   }
 }
@@ -130,12 +146,12 @@ export function readAcceptedDrops(path: string | undefined): Set<string> {
 function isLinkedWorktree(keelHome: string): boolean {
   const output = runGit(keelHome, "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir")
   if (output === null) return false
-  const lines = pySplitlines(output)
+  const lines = splitLines(output)
   const [gitDir, commonDir] = lines
   if (lines.length !== 2 || gitDir === undefined || commonDir === undefined) {
-    throw new ValueError(lines.length < 2 ? `not enough values to unpack (expected 2, got ${lines.length})` : "too many values to unpack (expected 2)")
+    throw new TypeError(`git rev-parse printed ${lines.length} lines, expected the git dir and the common dir`)
   }
-  return realpath(gitDir) !== realpath(commonDir)
+  return resolveLinks(gitDir) !== resolveLinks(commonDir)
 }
 
 function pathsLeftForV1(entries: links.LinkEntry[], claudeMdRestored: boolean, settingsRestore: JsonObject | null): string[] {
@@ -168,38 +184,26 @@ function buildWriteCommand(plan: Plan, allowWorktree: boolean): string {
   return "bin/link " + flags.join(" ")
 }
 
-function parseArgs(argv: string[]): LinkArgs {
-  const parser = new ArgumentParser({
-    prog: "link",
-    description: "Link keel into KEEL_DATA_DIR. No flag = dry run.",
-    arguments: [
-      { flags: ["--write"], dest: "write", kind: "flag", help: "create/repair links, CLAUDE.md and owned settings keys" },
-      { flags: ["--check"], dest: "check", kind: "flag", help: "report drift; exit 1 when any; write nothing" },
-      { flags: ["--unlink"], dest: "unlink", kind: "flag", help: "remove keel links and print the v1 restore command" },
-      { flags: ["--force"], dest: "force", kind: "flag", help: "with --write: move what is in the way aside, overwrite hand-edited owned keys" },
-      { flags: ["--allow-worktree"], dest: "allow_worktree", kind: "flag", help: "with --write: allow KEEL_HOME to be a linked worktree" },
-      { flags: ["--adopt"], dest: "adopt", kind: "flag", help: "with --write: take over owned keys keel has never written; lists every drop" },
-      { flags: ["--accept-drops"], dest: "accept_drops", kind: "value", metavar: "FILE", help: "with --adopt: file listing each dropped item the user accepted" },
-    ],
-    exclusive: [{ dests: ["write", "check", "unlink"], required: false }],
-  })
-  const parsed: ParsedArguments = parser.parse(argv)
+function parseLinkArgs(argv: string[]): LinkArgs {
+  const parsed = parseCommandLine(COMMAND, argv)
+  noPositionals(COMMAND, parsed)
+  if (MODES.filter((mode) => flagOption(parsed, mode)).length > 1) usageError(COMMAND, "give at most one of --write, --check, --unlink")
   const args: LinkArgs = {
-    write: parsed["write"] === true,
-    check: parsed["check"] === true,
-    unlink: parsed["unlink"] === true,
-    force: parsed["force"] === true,
-    allowWorktree: parsed["allow_worktree"] === true,
-    adopt: parsed["adopt"] === true,
-    acceptDrops: typeof parsed["accept_drops"] === "string" ? parsed["accept_drops"] : undefined,
+    write: flagOption(parsed, "write"),
+    check: flagOption(parsed, "check"),
+    unlink: flagOption(parsed, "unlink"),
+    force: flagOption(parsed, "force"),
+    allowWorktree: flagOption(parsed, "allow-worktree"),
+    adopt: flagOption(parsed, "adopt"),
+    acceptDrops: stringOption(parsed, "accept-drops"),
   }
-  if ((args.force || args.allowWorktree || args.adopt) && !args.write) parser.error("--force, --allow-worktree and --adopt require --write")
-  if (args.acceptDrops && !args.adopt) parser.error("--accept-drops requires --adopt")
+  if ((args.force || args.allowWorktree || args.adopt) && !args.write) usageError(COMMAND, "--force, --allow-worktree and --adopt require --write")
+  if (args.acceptDrops && !args.adopt) usageError(COMMAND, "--accept-drops requires --adopt")
   return args
 }
 
 function emit(changes: Plan["changes"], problems: Problem[], dryRunFields: JsonObject = {}): void {
-  process.stdout.write(pythonJsonDumps({ actions: changes.map(changeToJson), problems: problems.map(problemToJson), ...dryRunFields }) + "\n")
+  process.stdout.write(JSON.stringify({ actions: changes.map(changeToJson), problems: problems.map(problemToJson), ...dryRunFields }) + "\n")
 }
 
 function sayDrops(dropped: string[]): void {
@@ -207,5 +211,5 @@ function sayDrops(dropped: string[]): void {
 }
 
 function say(message: string): void {
-  process.stderr.write(backslashReplaceLoneSurrogates(message) + "\n")
+  process.stderr.write(message + "\n")
 }

@@ -131,7 +131,7 @@ describe("candidate smoke", () => {
     assert.equal(completed.status, 1)
     const item = linkIntegrity(result)
     assert.equal(item.status, "FAIL")
-    assert.ok(item.detail.includes("active stack 'demo-stack' has no"), item.detail)
+    assert.ok(item.detail.includes('active stack "demo-stack" has no'), item.detail)
   })
 
   it("candidateSmoke_passesLinkIntegrity_whenCandidateAddsAScheduledTask", () => {

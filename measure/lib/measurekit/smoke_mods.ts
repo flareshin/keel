@@ -1,14 +1,12 @@
+import path from "node:path"
+
 import { dataLines } from "./datafiles.ts"
+import { InvalidUtf8Error, isFile, isSystemError, readUtf8, resolveLinks } from "./files.ts"
 import { GitError, runGit } from "./gitutil.ts"
+import { isJsonObject, parseJson } from "./json.ts"
+import type { JsonObject, JsonValue } from "./json.ts"
 import { FAIL, PASS, stderrExcerpt, WARN } from "./metrics.ts"
-import { isOsError, ValueError } from "./pyerrors.ts"
-import { readText } from "./pyio.ts"
-import { pythonJsonLoads } from "./pyjson.ts"
-import { isFile, pyJoin, pyRelpath, realpath } from "./pypath.ts"
 import { isUnder, mainWorktreeOverlay } from "./overlay_checkout.ts"
-import { pyStrip } from "./pystr.ts"
-import { isJsonObject } from "./pyvalue.ts"
-import type { JsonObject, PyValue } from "./pyvalue.ts"
 import { runProcess, TimeoutExpired } from "./subprocess.ts"
 import { assertion, firstItems } from "./smoke_context.ts"
 import type { Assertion, SmokeContext } from "./smoke_context.ts"
@@ -31,7 +29,7 @@ export function checkModTrust(ctx: SmokeContext): Assertion[] {
     if (error instanceof PluginListUnavailable) return [assertion("mod-trust", "all", WARN, `mod check could not run: ${error.message}`)]
     throw error
   }
-  const reviewedFile = pyJoin(ctx.overlayDir, REVIEWED_MODS_FILE)
+  const reviewedFile = path.join(ctx.overlayDir, REVIEWED_MODS_FILE)
   const reviewedIds = reviewedIdsIn(reviewedFile)
   const mainOverlay = mainWorktreeOverlay(ctx.overlayDir)
   const mods = plugins.filter((plugin) => isMod(plugin.installPath))
@@ -51,44 +49,44 @@ function installedPlugins(): Plugin[] {
   try {
     completed = runProcess([cli, "plugin", "list", "--json"], { stdin: "ignore", timeoutSeconds: PLUGIN_LIST_TIMEOUT_SECONDS })
   } catch (error) {
-    if (error instanceof TimeoutExpired || isOsError(error)) throw new PluginListUnavailable(`${cli} plugin list --json: ${(error as Error).message}`)
+    if (error instanceof TimeoutExpired || isSystemError(error)) throw new PluginListUnavailable(`${cli} plugin list --json: ${(error as Error).message}`)
     throw error
   }
   if (completed.returncode !== 0) {
     throw new PluginListUnavailable(`${cli} plugin list --json exited ${completed.returncode}: ${stderrExcerpt(completed)}`)
   }
-  let plugins: PyValue
+  let plugins: JsonValue
   try {
-    plugins = pythonJsonLoads(completed.stdout)
+    plugins = parseJson(completed.stdout)
   } catch (error) {
-    if (error instanceof ValueError) throw new PluginListUnavailable("plugin list output is not JSON")
+    if (error instanceof SyntaxError) throw new PluginListUnavailable("plugin list output is not JSON")
     throw error
   }
   if (!isPluginList(plugins)) throw new PluginListUnavailable('plugin list output is not [{"id", "installPath"}, ...]')
   return plugins
 }
 
-function isPluginList(value: PyValue): value is JsonObject[] & Plugin[] {
+function isPluginList(value: JsonValue): value is JsonObject[] & Plugin[] {
   return Array.isArray(value) && value.every((plugin) => isJsonObject(plugin) && typeof plugin["id"] === "string" && typeof plugin["installPath"] === "string")
 }
 
 function reviewedIdsIn(reviewedFile: string): Set<string> {
   if (!isFile(reviewedFile)) return new Set()
-  return new Set(dataLines(reviewedFile).map(([, line]) => pyStrip(line)))
+  return new Set(dataLines(reviewedFile).map(([, line]) => line.trim()))
 }
 
 function isMod(installPath: string): boolean {
-  if (!isFile(pyJoin(installPath, "hooks", "hooks.json"))) return false
+  if (!isFile(path.join(installPath, "hooks", "hooks.json"))) return false
   const modules = listedModules(installPath)
   return modules === null || modules.length > 0
 }
 
 function listedModules(installPath: string): string[] | null {
-  let hooks: PyValue
+  let hooks: JsonValue
   try {
-    hooks = pythonJsonLoads(readText(pyJoin(installPath, "hooks", "hooks.json")))
+    hooks = parseJson(readUtf8(path.join(installPath, "hooks", "hooks.json")))
   } catch (error) {
-    if (error instanceof ValueError || isOsError(error)) return null
+    if (error instanceof SyntaxError || error instanceof InvalidUtf8Error || isSystemError(error)) return null
     throw error
   }
   if (!isJsonObject(hooks)) return null
@@ -98,11 +96,11 @@ function listedModules(installPath: string): string[] | null {
 }
 
 function isCommittedOverlayMod(installPath: string, overlay: string | null): boolean {
-  const mod = realpath(installPath)
+  const mod = resolveLinks(installPath)
   const modules = listedModules(mod)
   if (overlay === null || !isUnder(mod, new Set([overlay])) || modules === null) return false
-  const moduleFiles = new Set(modules.map((module) => pyRelpath(realpath(pyJoin(mod, "hooks", module)), overlay)))
-  const pathspec = ":(literal)" + pyRelpath(mod, overlay)
+  const moduleFiles = new Set(modules.map((module) => path.relative(overlay, resolveLinks(path.join(mod, "hooks", module)))))
+  const pathspec = ":(literal)" + (path.relative(overlay, mod) || ".")
   let tracked: Set<string>
   let changes: string
   try {
@@ -110,8 +108,8 @@ function isCommittedOverlayMod(installPath: string, overlay: string | null): boo
     tracked.delete("")
     changes = runGit(overlay, ["status", "--porcelain", "--", pathspec])
   } catch (error) {
-    if (error instanceof GitError || isOsError(error)) return false
+    if (error instanceof GitError || isSystemError(error)) return false
     throw error
   }
-  return tracked.size > 0 && pyStrip(changes) === "" && [...moduleFiles].every((file) => tracked.has(file))
+  return tracked.size > 0 && changes.trim() === "" && [...moduleFiles].every((file) => tracked.has(file))
 }

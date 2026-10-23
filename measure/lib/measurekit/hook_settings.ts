@@ -1,8 +1,8 @@
-import { memberEntries } from "./pydict.ts"
+import path from "node:path"
+
+import { isJsonObject } from "./json.ts"
+import type { JsonObject, JsonValue } from "./json.ts"
 import { shlexSplit, ShlexError } from "./shlex.ts"
-import { pyBasename, pySplitext } from "./pypath.ts"
-import { isJsonObject } from "./pyvalue.ts"
-import type { JsonObject, PyValue } from "./pyvalue.ts"
 
 const SCRIPT_INTERPRETERS = new Set(["python3", "python", "bash", "sh", "node"])
 const MATCH_ALL = new Set(["", "*"])
@@ -30,11 +30,11 @@ export class Registration {
       if (error instanceof ShlexError) return this.command
       throw error
     }
-    return words.find((word) => !SCRIPT_INTERPRETERS.has(pyBasename(word))) ?? this.command
+    return words.find((word) => !SCRIPT_INTERPRETERS.has(path.basename(word))) ?? this.command
   }
 
   get hookName(): string {
-    return pySplitext(pyBasename(this.script))[0]
+    return path.basename(this.script, path.extname(this.script))
   }
 
   coversTool(toolName: string): boolean {
@@ -42,14 +42,14 @@ export class Registration {
   }
 }
 
-export function iterRegistrations(hooks: PyValue | undefined): Registration[] {
+export function iterRegistrations(hooks: JsonValue | undefined): Registration[] {
   return iterHookEntries(hooks).filter((entry) => isCommandHook(entry.hook))
 }
 
-export function iterHookEntries(hooks: PyValue | undefined): Registration[] {
+export function iterHookEntries(hooks: JsonValue | undefined): Registration[] {
   const entries: Registration[] = []
   if (!isJsonObject(hooks)) return entries
-  for (const [event, groups] of memberEntries(hooks)) {
+  for (const [event, groups] of Object.entries(hooks)) {
     for (const group of Array.isArray(groups) ? groups : []) {
       if (!isJsonObject(group)) continue
       const matcher = group["matcher"]

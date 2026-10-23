@@ -4,7 +4,7 @@ import fs from "node:fs"
 import path from "node:path"
 
 import { HEADER } from "../../lib/link/claude_md.ts"
-import { lexists } from "../../measure/lib/measurekit/pypath.ts"
+import { entryExists } from "../../measure/lib/measurekit/files.ts"
 import { KEEL_ROOT, LinkSandbox, PRINCIPLES, assertExit, onlyBackup, problemKinds, readFile } from "./helpers.ts"
 
 describe("link claude md", () => {
@@ -65,7 +65,7 @@ describe("link claude md", () => {
     assert.deepEqual(problemKinds(result), ["claude-md-drift"])
     assert.ok(result.json.problems[0].detail.includes("4096-byte cap"))
     assert.equal(fs.existsSync(box.dataPath("CLAUDE.md")), false)
-    assert.equal(lexists(box.dataPath("bin/keel")), false)
+    assert.equal(entryExists(box.dataPath("bin/keel")), false)
   })
 
   it("write_succeeds_whenGeneratedFileIsExactly4096Bytes", () => {

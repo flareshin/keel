@@ -1,17 +1,15 @@
 import fs from "node:fs"
+import path from "node:path"
 
+import { entryExists, isFile, isSymlink, readUtf8, resolveLinks } from "../../measure/lib/measurekit/files.ts"
 import { iterRegistrations } from "../../measure/lib/measurekit/hook_settings.ts"
 import type { Registration } from "../../measure/lib/measurekit/hook_settings.ts"
+import type { JsonObject } from "../../measure/lib/measurekit/json.ts"
 import { hookRowsInForce, loadLedgersFrom } from "../../measure/lib/measurekit/ledger.ts"
-import { encodeStrict } from "../../measure/lib/measurekit/pyio.ts"
-import { isFile, isLink, lexists, pyJoin, realpath } from "../../measure/lib/measurekit/pypath.ts"
-import { pyStrip } from "../../measure/lib/measurekit/pystr.ts"
-import { PyFloat, pyRepr } from "../../measure/lib/measurekit/pyvalue.ts"
-import type { JsonObject } from "../../measure/lib/measurekit/pyvalue.ts"
 import { runProcess } from "../../measure/lib/measurekit/subprocess.ts"
 import { copyFileAtomic, moveAside, replaceWithSymlink, writeTextAtomic } from "./atomic.ts"
 import * as claudeMd from "./claude_md.ts"
-import { readText, runGit } from "./config.ts"
+import { runGit } from "./config.ts"
 import type { KeelPaths } from "./config.ts"
 import { OWNED_KEYS, activeStacks, loadMergedFragments } from "./fragments.ts"
 import * as links from "./links.ts"
@@ -102,80 +100,80 @@ function addProblem(plan: Plan, kind: string, path: string, detail: string, bloc
 }
 
 function planLink(plan: Plan, entry: links.LinkEntry, paths: KeelPaths, backupRoot: string): void {
-  const path = pyJoin(paths.dataDir, entry.target)
-  const backupPath = pyJoin(backupRoot, entry.target)
-  const linkNow = () => replaceWithSymlink(entry.source, path)
+  const target = path.join(paths.dataDir, entry.target)
+  const backupPath = path.join(backupRoot, entry.target)
+  const linkNow = () => replaceWithSymlink(entry.source, target)
   if (!fs.existsSync(entry.source)) {
-    addProblem(plan, "dangling", path, `source does not exist: ${entry.source}`, BLOCKS_ALWAYS)
-  } else if (!lexists(path)) {
-    addProblem(plan, "link-missing", path, `should link to ${entry.source}`)
-    plan.changes.push({ op: "symlink", path, apply: linkNow })
-  } else if (!isLink(path)) {
-    addProblem(plan, "target-occupied", path, `a real file or directory is in the way; --force moves it to ${backupPath}`, BLOCKS_UNLESS_FORCED)
-    plan.changes.push({ op: "symlink", path, apply: afterMovingAside(path, backupPath, linkNow) })
-  } else if (fs.readlinkSync(path) === entry.source) {
+    addProblem(plan, "dangling", target, `source does not exist: ${entry.source}`, BLOCKS_ALWAYS)
+  } else if (!entryExists(target)) {
+    addProblem(plan, "link-missing", target, `should link to ${entry.source}`)
+    plan.changes.push({ op: "symlink", path: target, apply: linkNow })
+  } else if (!isSymlink(target)) {
+    addProblem(plan, "target-occupied", target, `a real file or directory is in the way; --force moves it to ${backupPath}`, BLOCKS_UNLESS_FORCED)
+    plan.changes.push({ op: "symlink", path: target, apply: afterMovingAside(target, backupPath, linkNow) })
+  } else if (fs.readlinkSync(target) === entry.source) {
     return
-  } else if (links.isKeelLink(path, paths)) {
-    addProblem(plan, "link-wrong", path, `keel link points at ${fs.readlinkSync(path)}, should be ${entry.source}`)
-    plan.changes.push({ op: "replace-link", path, apply: linkNow })
+  } else if (links.isKeelLink(target, paths)) {
+    addProblem(plan, "link-wrong", target, `keel link points at ${fs.readlinkSync(target)}, should be ${entry.source}`)
+    plan.changes.push({ op: "replace-link", path: target, apply: linkNow })
   } else {
-    const detail = `foreign link points at ${fs.readlinkSync(path)}, should be ${entry.source}; --force moves it to ${backupPath}`
-    addProblem(plan, "link-wrong", path, detail, BLOCKS_UNLESS_FORCED)
-    plan.changes.push({ op: "replace-link", path, apply: afterMovingAside(path, backupPath, linkNow) })
+    const detail = `foreign link points at ${fs.readlinkSync(target)}, should be ${entry.source}; --force moves it to ${backupPath}`
+    addProblem(plan, "link-wrong", target, detail, BLOCKS_UNLESS_FORCED)
+    plan.changes.push({ op: "replace-link", path: target, apply: afterMovingAside(target, backupPath, linkNow) })
   }
 }
 
 function planCopy(plan: Plan, entry: links.LinkEntry, paths: KeelPaths, backupRoot: string): void {
-  const path = pyJoin(paths.dataDir, entry.target)
-  const backupPath = pyJoin(backupRoot, entry.target)
-  const copyNow = () => copyFileAtomic(entry.source, path)
+  const target = path.join(paths.dataDir, entry.target)
+  const backupPath = path.join(backupRoot, entry.target)
+  const copyNow = () => copyFileAtomic(entry.source, target)
   if (!isFile(entry.source)) {
-    addProblem(plan, "dangling", path, `source is not a file: ${entry.source}`, BLOCKS_ALWAYS)
-  } else if (!lexists(path)) {
-    addProblem(plan, "copy-missing", path, `should be a copy of ${entry.source}`)
-    plan.changes.push({ op: "copy", path, apply: copyNow })
-  } else if (links.isKeelLink(path, paths)) {
-    addProblem(plan, "link-instead-of-copy", path, `keel link should be a copy of ${entry.source}`)
-    plan.changes.push({ op: "copy", path, apply: copyNow })
-  } else if (isLink(path)) {
-    const detail = `foreign link points at ${fs.readlinkSync(path)}, should be a copy of ${entry.source}; --force moves it to ${backupPath}`
-    addProblem(plan, "link-wrong", path, detail, BLOCKS_UNLESS_FORCED)
-    plan.changes.push({ op: "copy", path, apply: afterMovingAside(path, backupPath, copyNow) })
-  } else if (!isFile(path)) {
-    addProblem(plan, "target-occupied", path, `a directory is in the way; --force moves it to ${backupPath}`, BLOCKS_UNLESS_FORCED)
-    plan.changes.push({ op: "copy", path, apply: afterMovingAside(path, backupPath, copyNow) })
-  } else if (!fs.readFileSync(entry.source).equals(fs.readFileSync(path))) {
+    addProblem(plan, "dangling", target, `source is not a file: ${entry.source}`, BLOCKS_ALWAYS)
+  } else if (!entryExists(target)) {
+    addProblem(plan, "copy-missing", target, `should be a copy of ${entry.source}`)
+    plan.changes.push({ op: "copy", path: target, apply: copyNow })
+  } else if (links.isKeelLink(target, paths)) {
+    addProblem(plan, "link-instead-of-copy", target, `keel link should be a copy of ${entry.source}`)
+    plan.changes.push({ op: "copy", path: target, apply: copyNow })
+  } else if (isSymlink(target)) {
+    const detail = `foreign link points at ${fs.readlinkSync(target)}, should be a copy of ${entry.source}; --force moves it to ${backupPath}`
+    addProblem(plan, "link-wrong", target, detail, BLOCKS_UNLESS_FORCED)
+    plan.changes.push({ op: "copy", path: target, apply: afterMovingAside(target, backupPath, copyNow) })
+  } else if (!isFile(target)) {
+    addProblem(plan, "target-occupied", target, `a directory is in the way; --force moves it to ${backupPath}`, BLOCKS_UNLESS_FORCED)
+    plan.changes.push({ op: "copy", path: target, apply: afterMovingAside(target, backupPath, copyNow) })
+  } else if (!fs.readFileSync(entry.source).equals(fs.readFileSync(target))) {
     const detail = `differs from ${entry.source}; --force moves it to ${backupPath} and copies the source`
-    addProblem(plan, "copy-drift", path, detail, BLOCKS_UNLESS_FORCED)
-    plan.changes.push({ op: "copy", path, apply: afterMovingAside(path, backupPath, copyNow) })
+    addProblem(plan, "copy-drift", target, detail, BLOCKS_UNLESS_FORCED)
+    plan.changes.push({ op: "copy", path: target, apply: afterMovingAside(target, backupPath, copyNow) })
   }
 }
 
 function planClaudeMd(plan: Plan, paths: KeelPaths, backupRoot: string): void {
-  const path = pyJoin(paths.dataDir, claudeMd.FILE_NAME)
+  const claudeMdPath = path.join(paths.dataDir, claudeMd.FILE_NAME)
   const content = claudeMd.buildClaudeMd(paths)
-  const writeNow = () => writeTextAtomic(path, content, CLAUDE_MD_MODE)
-  plan.claudeMdBytes = encodeStrict(content).length
+  const writeNow = () => writeTextAtomic(claudeMdPath, content, CLAUDE_MD_MODE)
+  plan.claudeMdBytes = Buffer.byteLength(content, "utf8")
   if (plan.claudeMdBytes > claudeMd.MAX_BYTES) {
     const detail = `generated CLAUDE.md would be ${plan.claudeMdBytes} bytes, over the ${claudeMd.MAX_BYTES}-byte cap`
-    addProblem(plan, "claude-md-drift", path, detail, BLOCKS_ALWAYS)
-  } else if (!lexists(path)) {
-    addProblem(plan, "claude-md-drift", path, "generated CLAUDE.md is missing")
-    plan.changes.push({ op: "write-claude-md", path, apply: writeNow })
-  } else if (!claudeMd.isGeneratedClaudeMd(path)) {
-    const backupPath = pyJoin(backupRoot, claudeMd.FILE_NAME)
+    addProblem(plan, "claude-md-drift", claudeMdPath, detail, BLOCKS_ALWAYS)
+  } else if (!entryExists(claudeMdPath)) {
+    addProblem(plan, "claude-md-drift", claudeMdPath, "generated CLAUDE.md is missing")
+    plan.changes.push({ op: "write-claude-md", path: claudeMdPath, apply: writeNow })
+  } else if (!claudeMd.isGeneratedClaudeMd(claudeMdPath)) {
+    const backupPath = path.join(backupRoot, claudeMd.FILE_NAME)
     plan.claudeMdBackup = backupPath
-    addProblem(plan, "target-occupied", path, `not a keel-generated CLAUDE.md; --force moves it to ${backupPath}`, BLOCKS_UNLESS_FORCED)
-    plan.changes.push({ op: "write-claude-md", path, apply: afterMovingAside(path, backupPath, writeNow) })
-  } else if (readText(path) !== content) {
-    addProblem(plan, "claude-md-drift", path, "generated CLAUDE.md is drifted")
-    plan.changes.push({ op: "write-claude-md", path, apply: writeNow })
+    addProblem(plan, "target-occupied", claudeMdPath, `not a keel-generated CLAUDE.md; --force moves it to ${backupPath}`, BLOCKS_UNLESS_FORCED)
+    plan.changes.push({ op: "write-claude-md", path: claudeMdPath, apply: afterMovingAside(claudeMdPath, backupPath, writeNow) })
+  } else if (readUtf8(claudeMdPath) !== content) {
+    addProblem(plan, "claude-md-drift", claudeMdPath, "generated CLAUDE.md is drifted")
+    plan.changes.push({ op: "write-claude-md", path: claudeMdPath, apply: writeNow })
   }
 }
 
-function afterMovingAside(path: string, backupPath: string, then: () => void): () => void {
+function afterMovingAside(file: string, backupPath: string, then: () => void): () => void {
   return () => {
-    moveAside(path, backupPath)
+    moveAside(file, backupPath)
     then()
   }
 }
@@ -198,7 +196,7 @@ function planSettings(plan: Plan, paths: KeelPaths, backupRoot: string): void {
     const unadoptedDetail = `keel has never written these owned keys; the dry run and --write --adopt list the ${plan.droppedSettings.length} items it would drop`
     addProblem(plan, "settings-unadopted", live.path, unadoptedDetail, BLOCKS_UNLESS_ADOPTED)
   }
-  const settingsBackup = pyJoin(backupRoot, settingsJson.FILE_NAME)
+  const settingsBackup = path.join(backupRoot, settingsJson.FILE_NAME)
   plan.settingsBackup = settingsBackup
   plan.changes.push({ op: "merge-settings", path: live.path, apply: () => settingsJson.writeSettings(live, mergedSettings, settingsBackup) })
 }
@@ -207,14 +205,14 @@ function checkHookWiring(plan: Plan, paths: KeelPaths): void {
   const stacks = activeStacks(paths)
   const registrations = iterRegistrations(member(plan.mergedSettings, "hooks"))
   const registered = new Set(registrations.map((registration) => registration.hookName))
-  const ledgerPath = pyJoin(paths.keelHome, "ledger.tsv")
+  const ledgerPath = path.join(paths.keelHome, "ledger.tsv")
   for (const row of hookRowsInForce(loadLedgersFrom(paths.keelHome, paths.overlayDir), stacks)) {
     if (!registered.has(row.hookName as string)) {
       const detail = `${row.id} (${row.source} ledger): hook ${row.hookName} is not registered in the merged settings`
       addProblem(plan, "hook-unregistered", ledgerPath, detail, BLOCKS_ALWAYS)
     }
   }
-  const corePath = pyJoin(paths.keelHome, "settings", "core.json")
+  const corePath = path.join(paths.keelHome, "settings", "core.json")
   for (const registration of registrations) {
     if (isGate(registration) && !failsClosed(registration.hook)) {
       const detail = `PreToolUse[${registration.matcher}] ${registration.hookName}: needs "onFailure": "${FAIL_CLOSED}" and a numeric "timeout"`
@@ -229,9 +227,7 @@ function isGate(registration: Registration): boolean {
 }
 
 function failsClosed(hook: JsonObject): boolean {
-  const timeout = hook["timeout"]
-  const isNumber = typeof timeout === "number" || typeof timeout === "bigint" || timeout instanceof PyFloat
-  return hook["onFailure"] === FAIL_CLOSED && isNumber
+  return hook["onFailure"] === FAIL_CLOSED && typeof hook["timeout"] === "number"
 }
 
 function isFirstWriteOverOwnedKeys(paths: KeelPaths, live: settingsJson.LiveSettings): boolean {
@@ -244,7 +240,7 @@ function planHooksPath(plan: Plan, paths: KeelPaths): void {
     addProblem(plan, "hookspath-drift", keelHome, "KEEL_HOME is not the root of a git checkout; githooks cannot be installed", BLOCKS_ALWAYS)
     return
   }
-  const current = pyStrip(runGit(keelHome, "config", "--get", "core.hooksPath") ?? "")
+  const current = (runGit(keelHome, "config", "--get", "core.hooksPath") ?? "").trim()
   if (current === HOOKS_PATH) return
   addProblem(plan, "hookspath-drift", keelHome, `core.hooksPath is ${current || "unset"}, should be ${HOOKS_PATH}`)
   plan.changes.push({ op: "set-hooks-path", path: keelHome, apply: () => setHooksPath(keelHome) })
@@ -253,10 +249,10 @@ function planHooksPath(plan: Plan, paths: KeelPaths): void {
 function setHooksPath(keelHome: string): void {
   const command = ["git", "-C", keelHome, "config", "core.hooksPath", HOOKS_PATH]
   const configRun = runProcess(command)
-  if (configRun.returncode !== 0) throw new CalledProcessError(`Command '${pyRepr(command)}' returned non-zero exit status ${configRun.returncode}.`)
+  if (configRun.returncode !== 0) throw new CalledProcessError(`command ${JSON.stringify(command)} exited ${configRun.returncode}`)
 }
 
 function isCheckoutRoot(keelHome: string): boolean {
   const toplevel = runGit(keelHome, "rev-parse", "--show-toplevel")
-  return toplevel !== null && realpath(pyStrip(toplevel)) === realpath(keelHome)
+  return toplevel !== null && resolveLinks(toplevel.trim()) === resolveLinks(keelHome)
 }

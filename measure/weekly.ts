@@ -1,24 +1,31 @@
 #!/usr/bin/env node
 import fs from "node:fs"
+import path from "node:path"
 
-import { ArgumentParser } from "./lib/measurekit/argparse.ts"
-import { EXIT_OK, printJson, runMain } from "./lib/measurekit/cli.ts"
+import { EXIT_OK, noPositionals, parseCommandLine, printJson, runMain } from "./lib/measurekit/cli.ts"
+import type { CommandSpec } from "./lib/measurekit/cli.ts"
+import { isDir, isFile } from "./lib/measurekit/files.ts"
 import { runGit } from "./lib/measurekit/gitutil.ts"
+import type { JsonValue } from "./lib/measurekit/json.ts"
 import { collectMetricItems, MetricError } from "./lib/measurekit/metrics.ts"
 import { buildExpiryProposals } from "./lib/measurekit/propose.ts"
-import { isDir, isFile, pyJoin, pySplitext } from "./lib/measurekit/pypath.ts"
-import { countNewlines } from "./lib/measurekit/pyio.ts"
-import { sortedByCodePoint } from "./lib/measurekit/pystr.ts"
-import type { PyValue } from "./lib/measurekit/pyvalue.ts"
 import { SmokeContext } from "./lib/measurekit/smoke_context.ts"
 
+const COMMAND: CommandSpec = {
+  prog: "measure/weekly",
+  usage: "measure/weekly [-h]",
+  description: "Weekly measurement report.",
+  argumentHelp: [],
+  options: {},
+}
 const DEFECT_RUNNER_PREFIX = "defects-"
 const TESTS_PREFIX = "tests/"
 const EXECUTABLE_MODE = "100755"
 const CODE_EXTENSIONS = new Set([".py", ".js", ".mjs", ".sh"])
+const NEWLINE_BYTE = 0x0a
 
 function main(argv: string[]): number {
-  new ArgumentParser({ prog: "measure/weekly", description: "Weekly measurement report.", arguments: [] }).parse(argv)
+  noPositionals(COMMAND, parseCommandLine(COMMAND, argv))
   printJson(buildWeeklyReport(SmokeContext.fromEnvironment()))
   return EXIT_OK
 }
@@ -29,8 +36,8 @@ function buildWeeklyReport(ctx: SmokeContext): object {
   return {
     repo_layer_rules: { count: repoRows.length, ids: repoRows },
     always_loaded: {
-      claude_md: fileSize(pyJoin(ctx.dataDir, "CLAUDE.md")),
-      memory_indexes: ctx.memoryIndexes().reduce((total, path) => total + fileSize(path), 0),
+      claude_md: fileSize(path.join(ctx.dataDir, "CLAUDE.md")),
+      memory_indexes: ctx.memoryIndexes().reduce((total, index) => total + fileSize(index), 0),
     },
     core_size: measureCoreSize(ctx.keelHome),
     defects: collectDefects(ctx),
@@ -44,21 +51,22 @@ function measureCoreSize(keelHome: string): object {
   for (const entry of index.split("\0").filter((candidate) => candidate !== "")) {
     const tab = entry.indexOf("\t")
     const meta = entry.slice(0, tab)
-    const path = entry.slice(tab + 1)
-    const isCode = meta.split(/\s+/)[0] === EXECUTABLE_MODE || CODE_EXTENSIONS.has(pySplitext(path)[1])
-    if (!path.startsWith(TESTS_PREFIX) && isCode) lines += countLines(pyJoin(keelHome, path))
+    const trackedPath = entry.slice(tab + 1)
+    const isCode = meta.split(/\s+/)[0] === EXECUTABLE_MODE || CODE_EXTENSIONS.has(path.extname(trackedPath))
+    if (!trackedPath.startsWith(TESTS_PREFIX) && isCode) lines += countLines(path.join(keelHome, trackedPath))
   }
-  return { non_test_loc: lines, design_md_bytes: fileSize(pyJoin(keelHome, "docs", "DESIGN.md")) }
+  return { non_test_loc: lines, design_md_bytes: fileSize(path.join(keelHome, "docs", "DESIGN.md")) }
 }
 
-function countLines(path: string): number {
-  return isFile(path) ? countNewlines(fs.readFileSync(path)) : 0
+function countLines(file: string): number {
+  if (!isFile(file)) return 0
+  return fs.readFileSync(file).reduce((count, byte) => (byte === NEWLINE_BYTE ? count + 1 : count), 0)
 }
 
-function collectDefects(ctx: SmokeContext): Record<string, PyValue> {
-  const runnerDir = pyJoin(ctx.overlayDir, "measure", "metrics")
-  const names = isDir(runnerDir) ? sortedByCodePoint(fs.readdirSync(runnerDir)) : []
-  const defects: Record<string, PyValue> = {}
+function collectDefects(ctx: SmokeContext): Record<string, JsonValue> {
+  const runnerDir = path.join(ctx.overlayDir, "measure", "metrics")
+  const names = isDir(runnerDir) ? fs.readdirSync(runnerDir).sort() : []
+  const defects: Record<string, JsonValue> = {}
   for (const name of names.filter((candidate) => candidate.startsWith(DEFECT_RUNNER_PREFIX))) {
     try {
       const [count, items] = collectMetricItems("run:" + name, ctx.metricWindowStart)
@@ -71,8 +79,8 @@ function collectDefects(ctx: SmokeContext): Record<string, PyValue> {
   return defects
 }
 
-function fileSize(path: string): number {
-  return isFile(path) ? fs.statSync(path).size : 0
+function fileSize(file: string): number {
+  return isFile(file) ? fs.statSync(file).size : 0
 }
 
 runMain(main)

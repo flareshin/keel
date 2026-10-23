@@ -10,7 +10,7 @@ import { faultReason, graderCommit, runPasses, textAnswers, textAsks } from "../
 import { GENERATED_CLAUDE_MD_HEADER, isKeelLive, projectDirFor, suiteEvalId } from "../../measure/evals/lib/evalkit/liveconfig.ts"
 import { QUESTION_PROTOCOL, claudeCommand } from "../../measure/evals/lib/evalkit/runner.ts"
 import { RunFacts, summarizeStream } from "../../measure/evals/lib/evalkit/stream.ts"
-import type { JsonObject } from "../../measure/lib/measurekit/pyvalue.ts"
+import type { JsonObject } from "../../measure/lib/measurekit/json.ts"
 import { CaseVerdict, passesNeeded, splitVerdict, suitePasses } from "../../measure/evals/lib/evalkit/verdict.ts"
 
 const TIMEOUT = 300

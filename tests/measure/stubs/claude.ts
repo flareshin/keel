@@ -1,8 +1,6 @@
 import fs from "node:fs"
 import path from "node:path"
 
-import { pythonJsonDumps } from "../../../measure/lib/measurekit/pyjson.ts"
-import type { PyValue } from "../../../measure/lib/measurekit/pyvalue.ts"
 
 interface Scenario {
   events?: unknown[]
@@ -36,7 +34,7 @@ function main(): number {
   const name = firstLine(fs.readFileSync(0, "utf8"))
   const roundIndex = previousCalls(name)
   const call = { argv: process.argv.slice(2), cwd: process.cwd(), scenario: name, auto_memory_disabled: process.env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] ?? null }
-  fs.appendFileSync(CALLS_LOG, pythonJsonDumps(call as unknown as PyValue) + "\n")
+  fs.appendFileSync(CALLS_LOG, JSON.stringify(call) + "\n")
   let scenario = JSON.parse(fs.readFileSync(path.join(SCENARIO_DIR, `${name}.json`), "utf8")) as Scenario
   if (scenario.rounds !== undefined && scenario.rounds.length > 0) scenario = scenario.rounds[roundIndex % scenario.rounds.length] as Scenario
   for (const [relativePath, content] of Object.entries(scenario.writes ?? {})) {
@@ -49,7 +47,7 @@ function main(): number {
     fs.mkdirSync(path.join(process.env["CLAUDE_CONFIG_DIR"] as string, "projects", slug), { recursive: true })
   }
   sleep(scenario.sleep ?? 0)
-  for (const event of scenario.events ?? []) fs.writeSync(1, pythonJsonDumps(event as PyValue) + "\n")
+  for (const event of scenario.events ?? []) fs.writeSync(1, JSON.stringify(event) + "\n")
   return scenario.exit ?? 0
 }
 

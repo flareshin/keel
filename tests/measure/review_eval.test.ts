@@ -9,10 +9,10 @@ import path from "node:path"
 import { CaseError } from "../../measure/evals/lib/evalkit/cases.ts"
 import { loadReviewCases } from "../../measure/evals/lib/evalkit/reviewcases.ts"
 import type { ReviewCase } from "../../measure/evals/lib/evalkit/reviewcases.ts"
-import { gradeResult, suiteNumbers } from "../../measure/evals/lib/evalkit/reviewgrade.ts"
+import { gradeResult, roundToFourDecimals, suiteNumbers } from "../../measure/evals/lib/evalkit/reviewgrade.ts"
 import { BuildError, buildCaseRepo } from "../../measure/evals/lib/evalkit/reviewrun.ts"
 import { runGit } from "../../measure/lib/measurekit/gitutil.ts"
-import type { JsonObject } from "../../measure/lib/measurekit/pyvalue.ts"
+import type { JsonObject } from "../../measure/lib/measurekit/json.ts"
 import { CHECKOUT, MeasureSandbox, readText } from "./helpers.ts"
 import type { Completed } from "./helpers.ts"
 
@@ -97,12 +97,12 @@ describe("cases", () => {
     assert.throws(() => loadReviewCases([keel]), (error) => error instanceof CaseError && /relative/.test(error.message))
   })
 
-  it("load_namesTheMissingAndUnknownKeysInPythonListSpelling", () => {
+  it("load_namesTheMissingAndUnknownKeys", () => {
     const directory = writeCase(keel, "mean-1")
     fs.writeFileSync(path.join(directory, "expect.json"), JSON.stringify({ lens: "boundary", extra: 1 }))
     assert.throws(
       () => loadReviewCases([keel]),
-      (error) => error instanceof CaseError && error.message.endsWith("missing ['must_find', 'source', 'split', 'locations'], unknown ['extra']"),
+      (error) => error instanceof CaseError && error.message.endsWith('missing ["must_find","source","split","locations"], unknown ["extra"]'),
     )
   })
 })
@@ -138,7 +138,7 @@ describe("build", () => {
     const reviewCase = loadReviewCases([keel])[0] as ReviewCase
     assert.throws(
       () => buildCaseRepo(reviewCase, path.join(root, "work")),
-      (error) => error instanceof BuildError && error.message.includes("no such line") && error.message.includes("Location(file='calc.ts', line=8)"),
+      (error) => error instanceof BuildError && error.message.includes("no such line") && error.message.includes("calc.ts:8"),
     )
   })
 
@@ -146,6 +146,21 @@ describe("build", () => {
     writeCase(keel, "mean-1", { base: false })
     const reviewCase = loadReviewCases([keel])[0] as ReviewCase
     assert.throws(() => buildCaseRepo(reviewCase, path.join(root, "work")), BuildError)
+  })
+})
+
+describe("four-decimal rounding", () => {
+  it("roundToFourDecimals_givesTheRecordedValue_forEveryRatioUpToSixtyFourRuns", () => {
+    const recorded = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "..", "fixtures", "measure", "four-decimal-ratios.json"), "utf8")) as Record<string, number[]>
+    const mismatches = Object.entries(recorded).flatMap(([whole, values]) =>
+      values.flatMap((expected, part) => (roundToFourDecimals(part / Number(whole)) === expected ? [] : [{ part, whole, expected }])),
+    )
+    assert.equal(Object.keys(recorded).length, 64)
+    assert.deepEqual(mismatches, [])
+  })
+
+  it("roundToFourDecimals_roundsAnExactTieToEven", () => {
+    assert.deepEqual([roundToFourDecimals(1 / 32), roundToFourDecimals(3 / 32)], [0.0312, 0.0938])
   })
 })
 
@@ -204,8 +219,8 @@ describe("grade", () => {
     assert.deepEqual([noisy.passed, noisy.blocking, noisy.hit], [false, 2, false])
   })
 
-  it("quotedLineNumbers_writtenInAnotherScriptsDigits_areReadByTheirValue", () => {
-    assert.equal(gradeResult(defect, 1, result([finding("calc.ts:٦")])).hit, true)
+  it("quotedLineNumbers_areAsciiDigitsOnly_soOtherScriptsDigitsNameNoLine", () => {
+    assert.equal(gradeResult(defect, 1, result([finding("calc.ts:\u0666")])).hit, false)
   })
 
   it("suiteNumbers_recallNoiseVarianceAgreement", () => {
@@ -218,10 +233,10 @@ describe("grade", () => {
     const numbers = suiteNumbers(grades)
     const train = numbers.train
     assert.deepEqual(
-      [train.defect_runs, train.hits, train.recall?.value, train.clean_runs, train.noisy_runs, train.noise_rate?.value, train.blocking_per_clean_run?.value, train.recall_stdev?.value],
+      [train.defect_runs, train.hits, train.recall, train.clean_runs, train.noisy_runs, train.noise_rate, train.blocking_per_clean_run, train.recall_stdev],
       [2, 1, 0.5, 2, 1, 0.5, 0.5, 0.5],
     )
-    assert.deepEqual([numbers.case_agreement?.value, numbers.headroom, numbers.holdout.recall], [0, true, null])
+    assert.deepEqual([numbers.case_agreement, numbers.headroom, numbers.holdout.recall], [0, true, null])
   })
 
   it("suiteNumbers_reportNoHeadroomWhenTrainIsPerfect", () => {
@@ -267,19 +282,17 @@ describe("review-eval cli", () => {
     const numbers = report.numbers
     assert.deepEqual([numbers.train.recall, numbers.train.noise_rate, numbers.holdout.recall, numbers.holdout.recall_stdev], [1.0, 0.0, 0.5, 0.5])
     assert.deepEqual([numbers.case_agreement, numbers.headroom, report.faults], [Math.round((2 / 3) * 10000) / 10000, false, []])
-    assert.ok(completed.stderr.includes("review-eval train: recall 1.0 (2/2), noise 0.0 (0/2 clean runs)"), completed.stderr)
+    assert.ok(completed.stderr.includes("review-eval train: recall 1 (2/2), noise 0 (0/2 clean runs)"), completed.stderr)
     assert.deepEqual(summaryLines().map((line) => line.numbers), [numbers])
     assert.deepEqual(fs.readdirSync(path.join(box.data, "projects")), [])
   })
 
-  it("fullRun_writesFloatsTheWayPythonDoes_inStdoutAndTheSummaryLog", () => {
+  it("fullRun_writesZeroRatesAndANullAgreement_inStdoutAndTheSummaryLog", () => {
     play([{ result: result() }, { result: result() }, { result: result() }])
-    const [completed] = runEval("--repeat", "1")
+    const [completed, report] = runEval("--repeat", "1")
     assert.equal(completed.status, 0, completed.stderr)
-    assert.ok(completed.stdout.includes('"recall": 0.0'), completed.stdout)
-    assert.ok(completed.stdout.includes('"case_agreement": null'), completed.stdout)
-    assert.ok(completed.stdout.includes('"noise_rate": 0.0'), completed.stdout)
-    assert.ok(readText(path.join(box.data, "logs", "keel-review-eval.jsonl")).includes('"noise_rate": 0.0'))
+    assert.deepEqual([report.numbers.train.recall, report.numbers.train.noise_rate, report.numbers.case_agreement], [0, 0, null])
+    assert.deepEqual(summaryLines().map((line) => line.numbers.train.noise_rate), [0])
   })
 
   it("prompt_namesTheWorkflowTheBuiltRangeAndTheCallerSkill", () => {
@@ -347,7 +360,7 @@ describe("review-eval cli", () => {
 
   describe("faults", () => {
     const cases: [object, string[], string][] = [
-      [{ status: "killed", result: result() }, [], "status 'killed'"],
+      [{ status: "killed", result: result() }, [], 'status "killed"'],
       [{ result: { verdict: "PASS" } }, [], "no blocking list"],
       [{ result: result(), sleep: 5 }, ["--timeout-seconds", "1"], "timed out after 1s"],
     ]

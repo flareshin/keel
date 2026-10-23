@@ -1,13 +1,12 @@
-import { compilePythonRegex } from "../../../lib/measurekit/pyregex.ts"
-import { pyInt, pyStrip } from "../../../lib/measurekit/pystr.ts"
-import { isJsonObject, PyFloat, pyStr, pyTruthy, roundToFourDecimals } from "../../../lib/measurekit/pyvalue.ts"
-import type { PyValue } from "../../../lib/measurekit/pyvalue.ts"
+import { isJsonObject } from "../../../lib/measurekit/json.ts"
+import type { JsonObject, JsonValue } from "../../../lib/measurekit/json.ts"
 import { SPLITS } from "./cases.ts"
 import type { Location, ReviewCase } from "./reviewcases.ts"
 
 const LINE_TOLERANCE = 3
-const PATH_LINE_REF = compilePythonRegex("([^\\s:`'\"(),\\[\\]]+):(\\d+)(?:-(\\d+))?", "g")
-const BARE_LINE_REF = compilePythonRegex(":(\\d+)(?:-(\\d+))?", "g")
+const PATH_LINE_REF = /([^\s:`'"(),[\]]+):(\d+)(?:-(\d+))?/g
+const BARE_LINE_REF = /:(\d+)(?:-(\d+))?/g
+const ROUNDING_TIE_SCALE = 32
 
 export class RunGrade {
   readonly case: ReviewCase
@@ -30,38 +29,38 @@ export class RunGrade {
 export interface SplitNumbers {
   defect_runs: number
   hits: number
-  recall: PyFloat | null
+  recall: number | null
   clean_runs: number
   noisy_runs: number
-  noise_rate: PyFloat | null
-  blocking_per_clean_run: PyFloat | null
-  recall_stdev: PyFloat | null
+  noise_rate: number | null
+  blocking_per_clean_run: number | null
+  recall_stdev: number | null
 }
 
 export interface SuiteNumbers {
   train: SplitNumbers
   holdout: SplitNumbers
   headroom: boolean
-  case_agreement: PyFloat | null
+  case_agreement: number | null
 }
 
 type LineRange = [number, number]
 
-export function gradeResult(gradedCase: ReviewCase, run: number, result: PyValue | undefined): RunGrade {
+export function gradeResult(gradedCase: ReviewCase, run: number, result: JsonValue | undefined): RunGrade {
   const rawBlocking = isJsonObject(result) ? result["blocking"] : undefined
-  const blocking = pyTruthy(rawBlocking) ? (rawBlocking as PyValue[]) : []
+  const blocking = Array.isArray(rawBlocking) ? rawBlocking : []
   const hit = !gradedCase.isClean && blocking.some((finding) => gradedCase.locations.some((location) => atLocation(finding, location)))
   return new RunGrade(gradedCase, run, blocking.length, hit)
 }
 
-function atLocation(finding: PyValue, location: Location): boolean {
+function atLocation(finding: JsonValue, location: Location): boolean {
   if (!isJsonObject(finding)) return false
   const low = location.line - LINE_TOLERANCE
   const high = location.line + LINE_TOLERANCE
   return quotedLines(finding, location.file).some(([start, end]) => start <= high && end >= low)
 }
 
-function quotedLines(finding: { [key: string]: PyValue }, expectedFile: string): LineRange[] {
+function quotedLines(finding: JsonObject, expectedFile: string): LineRange[] {
   const quote = textOf(finding["quote"])
   const ranges: LineRange[] = []
   for (const match of quote.matchAll(PATH_LINE_REF)) {
@@ -73,24 +72,24 @@ function quotedLines(finding: { [key: string]: PyValue }, expectedFile: string):
   return ranges
 }
 
-function textOf(value: PyValue | undefined): string {
-  return pyTruthy(value) ? pyStr(value) : ""
+function textOf(value: JsonValue | undefined): string {
+  return typeof value === "string" ? value : ""
 }
 
 function sameFile(path: string, expectedFile: string): boolean {
-  const normalized = pyStrip(path).replaceAll("\\", "/")
+  const normalized = path.trim().replaceAll("\\", "/")
   return normalized !== "" && (normalized === expectedFile || normalized.endsWith("/" + expectedFile) || expectedFile.endsWith("/" + normalized))
 }
 
 function toRange(start: string, end: string | undefined): LineRange {
-  return [pyInt(start), pyInt(end || start)]
+  return [Number(start), Number(end || start)]
 }
 
 export function suiteNumbers(grades: RunGrade[]): SuiteNumbers {
   const [trainSplit, holdoutSplit] = SPLITS as [string, string]
   const train = splitNumbers(grades.filter((grade) => grade.case.split === trainSplit))
   const holdout = splitNumbers(grades.filter((grade) => grade.case.split === holdoutSplit))
-  const headroom = !(train.recall?.value === 1 && train.noise_rate?.value === 0)
+  const headroom = !(train.recall === 1 && train.noise_rate === 0)
   return { train, holdout, headroom, case_agreement: caseAgreement(grades) }
 }
 
@@ -108,17 +107,17 @@ function splitNumbers(grades: RunGrade[]): SplitNumbers {
   }
 }
 
-function recallStdev(defect: RunGrade[]): PyFloat | null {
+function recallStdev(defect: RunGrade[]): number | null {
   const byRun = new Map<number, boolean[]>()
   for (const grade of defect) byRun.set(grade.run, [...(byRun.get(grade.run) ?? []), grade.hit])
   const recalls = [...byRun.values()].map((hits) => hits.filter(Boolean).length / hits.length)
   if (recalls.length <= 1) return null
   const mean = recalls.reduce((total, recall) => total + recall, 0) / recalls.length
   const variance = recalls.reduce((total, recall) => total + (recall - mean) ** 2, 0) / recalls.length
-  return new PyFloat(roundToFourDecimals(Math.sqrt(variance)))
+  return roundToFourDecimals(Math.sqrt(variance))
 }
 
-function caseAgreement(grades: RunGrade[]): PyFloat | null {
+function caseAgreement(grades: RunGrade[]): number | null {
   const outcomes = new Map<string, Set<boolean>>()
   const counts = new Map<string, number>()
   for (const grade of grades) {
@@ -129,6 +128,14 @@ function caseAgreement(grades: RunGrade[]): PyFloat | null {
   return ratio(repeated.filter((caseId) => outcomes.get(caseId)?.size === 1).length, repeated.length)
 }
 
-function ratio(part: number, whole: number): PyFloat | null {
-  return whole > 0 ? new PyFloat(roundToFourDecimals(part / whole)) : null
+function ratio(part: number, whole: number): number | null {
+  return whole > 0 ? roundToFourDecimals(part / whole) : null
+}
+
+export function roundToFourDecimals(value: number): number {
+  const scaled = value * ROUNDING_TIE_SCALE
+  const isExactTie = Number.isInteger(scaled) && Math.abs(scaled) % 2 === 1
+  if (!isExactTie) return Number(value.toFixed(4))
+  const lower = Math.floor(value * 10000)
+  return (lower % 2 === 0 ? lower : lower + 1) / 10000
 }

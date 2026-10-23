@@ -1,7 +1,5 @@
-import { pythonJsonLoads } from "../../../lib/measurekit/pyjson.ts"
-import { ValueError } from "../../../lib/measurekit/pyerrors.ts"
-import { isJsonObject, pyStr, pyTruthy } from "../../../lib/measurekit/pyvalue.ts"
-import type { JsonObject, PyValue } from "../../../lib/measurekit/pyvalue.ts"
+import { displayText, isJsonObject, parseJson } from "../../../lib/measurekit/json.ts"
+import type { JsonObject, JsonValue } from "../../../lib/measurekit/json.ts"
 
 export const ASK_TOOL = "AskUserQuestion"
 export const SKILL_TOOL = "Skill"
@@ -59,7 +57,7 @@ export class RunFacts {
 
   get finalText(): string | null {
     const result = this.stream.result
-    if (result === null || result["subtype"] !== RESULT_SUCCESS || pyTruthy(result["is_error"])) return null
+    if (result === null || result["subtype"] !== RESULT_SUCCESS || result["is_error"] === true) return null
     const text = result["result"]
     return typeof text === "string" ? text : null
   }
@@ -80,7 +78,7 @@ export function summarizeStream(lines: Iterable<string>): StreamSummary {
     } else if (kind === "result") {
       summary.result = event
       const denials = event["permission_denials"]
-      summary.deniedTools = Array.isArray(denials) ? denials.filter(isJsonObject).map((denial) => pyStr(denial["tool_name"])) : []
+      summary.deniedTools = Array.isArray(denials) ? denials.filter(isJsonObject).map((denial) => displayText(denial["tool_name"])) : []
     }
   }
   return summary
@@ -88,11 +86,11 @@ export function summarizeStream(lines: Iterable<string>): StreamSummary {
 
 function* jsonEvents(lines: Iterable<string>): Generator<JsonObject> {
   for (const line of lines) {
-    let event: PyValue
+    let event: JsonValue
     try {
-      event = pythonJsonLoads(line)
+      event = parseJson(line)
     } catch (error) {
-      if (error instanceof ValueError) continue
+      if (error instanceof SyntaxError) continue
       throw error
     }
     if (isJsonObject(event)) yield event

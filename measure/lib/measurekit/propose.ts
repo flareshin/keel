@@ -1,9 +1,7 @@
+import { addDays } from "./dates.ts"
 import { evaluateMetric } from "./metrics.ts"
 import { parseDate } from "./ledger.ts"
 import type { LedgerRow } from "./ledger.ts"
-import { addDays } from "./pydate.ts"
-import { pyIntSign, pyIntText } from "./pyvalue.ts"
-import type { PyInt } from "./pyvalue.ts"
 
 const NEXT_LOWER_LAYER: Record<string, string> = { hook: "skill", skill: "prose", prose: "retired" }
 const REVIEW_EXTENSION_DAYS = 60
@@ -33,12 +31,12 @@ export function isPastReview(row: LedgerRow, today: string): boolean {
   return reviewBy !== null && today > reviewBy
 }
 
-export function proposeForExpiredRow(row: LedgerRow, count: PyInt, today: string): Proposal {
-  if (row.layer === REPO_LAYER && pyIntSign(count) === 0) {
+export function proposeForExpiredRow(row: LedgerRow, count: number, today: string): Proposal {
+  if (row.layer === REPO_LAYER && count === 0) {
     return proposal(row, "recheck", REPO_LAYER, REPO_LAYER, "repo rule's existence check failed; re-check where it lives")
   }
-  if (row.layer === REPO_LAYER || pyIntSign(count) > 0) {
-    return proposal(row, "extend", row.reviewBy, addDays(today, REVIEW_EXTENSION_DAYS), `metric counted ${pyIntText(count)} item(s) in the window`)
+  if (row.layer === REPO_LAYER || count > 0) {
+    return proposal(row, "extend", row.reviewBy, addDays(today, REVIEW_EXTENSION_DAYS), `metric counted ${count} item(s) in the window`)
   }
   const lower = NEXT_LOWER_LAYER[row.layer] ?? row.layer
   const action = lower === "retired" ? "retire" : "demote"

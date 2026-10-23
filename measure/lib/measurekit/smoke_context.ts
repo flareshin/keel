@@ -1,12 +1,12 @@
 import fs from "node:fs"
+import path from "node:path"
 
+import { addDays, todayLocal } from "./dates.ts"
 import * as env from "./env.ts"
+import { isDir, isFile } from "./files.ts"
 import { allRows, countedRows, loadLedgersFrom } from "./ledger.ts"
 import type { Ledger, LedgerRow } from "./ledger.ts"
 import { DEFAULT_WINDOW_DAYS } from "./metrics.ts"
-import { addDays, todayLocal } from "./pydate.ts"
-import { isDir, isFile, pyJoin } from "./pypath.ts"
-import { sortedByCodePoint } from "./pystr.ts"
 
 export interface Assertion {
   check: string
@@ -51,9 +51,9 @@ export class SmokeContext {
   }
 
   memoryIndexes(): string[] {
-    const projects = pyJoin(this.dataDir, "projects")
+    const projects = path.join(this.dataDir, "projects")
     if (!isDir(projects)) return []
-    const candidates = sortedByCodePoint(fs.readdirSync(projects)).map((name) => pyJoin(projects, name, "memory", "MEMORY.md"))
+    const candidates = fs.readdirSync(projects).sort().map((name) => path.join(projects, name, "memory", "MEMORY.md"))
     return candidates.filter(isFile)
   }
 }

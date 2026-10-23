@@ -4,7 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { addDays, todayLocal } from "../../measure/lib/measurekit/pydate.ts"
+import { addDays, todayLocal } from "../../measure/lib/measurekit/dates.ts"
 
 export const CHECKOUT = path.dirname(path.dirname(path.dirname(fs.realpathSync(fileURLToPath(import.meta.url)))))
 export const MEASURE_DIR = path.join(CHECKOUT, "measure")

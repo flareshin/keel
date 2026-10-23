@@ -177,7 +177,7 @@ describe("eval cli", () => {
     box.writeCases("overlay/measure/evals/K4/train.tsv", [caseRow("a1", "ambiguous", "ask")])
     const completed = box.runEval("K4", "--model", MODEL)
     assert.equal(completed.status, 2)
-    assert.ok(completed.stderr.includes("duplicate case id 'a1'"))
+    assert.ok(completed.stderr.includes('duplicate case id "a1"'))
     assert.deepEqual([box.stubCalls(), box.evalLines()], [[], []])
   })
 
@@ -202,7 +202,7 @@ describe("eval cli", () => {
     box.seedSuite(box.askScenario(), box.editScenario())
     const completed = box.runEval("K9", "--model", MODEL)
     assert.equal(completed.status, 2)
-    assert.ok(completed.stderr.includes("no ledger row with id 'K9'"))
+    assert.ok(completed.stderr.includes('no ledger row with id "K9"'))
   })
 
   it("ambiguousRun_passes_whenTheFinalTextCarriesAQuestionLine", () => {
@@ -216,7 +216,7 @@ describe("eval cli", () => {
     box.writeCases("keel/measure/evals/K4/train.tsv", [caseRow("a1", "vague", "ask")])
     const completed = box.runEval("K4", "--model", MODEL)
     assert.equal(completed.status, 2)
-    assert.ok(completed.stderr.includes("unknown kind 'vague'"))
+    assert.ok(completed.stderr.includes('unknown kind "vague"'))
   })
 
   it("dryRun_printsThePlanAndCommand_andSpendsNothing", () => {
@@ -256,7 +256,7 @@ describe("eval cli", () => {
     assert.deepEqual(fs.readdirSync(raw).filter((name) => name.startsWith("c1-1")).sort(), ["c1-1.diff", "c1-1.final.txt", "c1-1.stream.jsonl"])
   })
 
-  it("rawDir_filesAreByteIdenticalToPythonJsonDump_withSortedKeysTwoSpaceIndent", () => {
+  it("rawDir_jsonFilesHaveSortedKeysAndATwoSpaceIndent", () => {
     box.linkKeel()
     box.seedSuite(box.askScenario(), box.editScenario())
     const [, report] = box.runEvalJson("K4", "--model", "pinned", ...RUN_ONCE)

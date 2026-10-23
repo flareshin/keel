@@ -1,11 +1,11 @@
 import fs from "node:fs"
+import path from "node:path"
 
 import { KEEL_SOURCE, OVERLAY_SOURCE, validateRow } from "./ledger.ts"
 import type { LedgerRow } from "./ledger.ts"
 import { evaluateMetric, FAIL, GRACE, PASS, WARN } from "./metrics.ts"
-import { isFile, pyBasename, pyJoin } from "./pypath.ts"
+import { isFile } from "./files.ts"
 import { isPastReview } from "./propose.ts"
-import { sortedByCodePoint } from "./pystr.ts"
 import { assertion, firstItems } from "./smoke_context.ts"
 import type { Assertion, SmokeContext } from "./smoke_context.ts"
 
@@ -33,14 +33,14 @@ export function checkLedgerFormat(ctx: SmokeContext): Assertion[] {
 export function checkIdUnique(ctx: SmokeContext): Assertion[] {
   const counts = new Map<string, number>()
   for (const row of ctx.rows) counts.set(row.id, (counts.get(row.id) ?? 0) + 1)
-  const duplicates = sortedByCodePoint([...counts].filter(([, count]) => count > 1).map(([id]) => id))
+  const duplicates = [...counts].filter(([, count]) => count > 1).map(([id]) => id).sort()
   if (duplicates.length > 0) return [assertion("id-unique", "all", FAIL, "duplicate ids: " + duplicates.join(", "))]
   return [assertion("id-unique", "all", PASS, `${ctx.rows.length} ids`)]
 }
 
 export function checkRowCaps(ctx: SmokeContext): Assertion[] {
   const rows = ctx.countedRows
-  const stackScopes = sortedByCodePoint(new Set(rows.filter((row) => row.scope.startsWith("stack:")).map((row) => row.scope)))
+  const stackScopes = [...new Set(rows.filter((row) => row.scope.startsWith("stack:")).map((row) => row.scope))].sort()
   const countOf = (predicate: (row: LedgerRow) => boolean): number => rows.filter(predicate).length
   return [
     cap("charter", countOf((row) => row.scope === "charter"), CHARTER_CAP),
@@ -71,30 +71,30 @@ export function checkRuleOfTwo(ctx: SmokeContext): Assertion[] {
 }
 
 function ruleOfTwoProblem(row: LedgerRow, keelHome: string): string {
-  const refs = sortedByCodePoint(new Set(row.incidentRefs))
+  const refs = [...new Set(row.incidentRefs)].sort()
   const privateRefs = refs.filter((ref) => ref.startsWith(PRIVATE_REF_PREFIX))
   if (row.source === KEEL_SOURCE && privateRefs.length > 0) return "private refs belong only in the overlay ledger"
-  const missing = refs.filter((ref) => !privateRefs.includes(ref) && !isFile(pyJoin(keelHome, ref)))
+  const missing = refs.filter((ref) => !privateRefs.includes(ref) && !isFile(path.join(keelHome, ref)))
   if (missing.length > 0) return "missing incident files: " + missing.join(",")
   if (refs.length < MIN_INCIDENTS) return `${refs.length} of ${MIN_INCIDENTS} incident refs`
   return ""
 }
 
 function incidentCandidatesNote(dataDir: string): string {
-  const projects = pyJoin(dataDir, "projects")
+  const projects = path.join(dataDir, "projects")
   const names: string[] = []
   for (const project of listDirectory(projects).filter((name) => !name.startsWith("."))) {
-    for (const file of listDirectory(pyJoin(projects, project, "memory"))) {
-      if (!file.startsWith(".") && file.startsWith("feedback_")) names.push(pyJoin(projects, project, "memory", file))
+    for (const file of listDirectory(path.join(projects, project, "memory"))) {
+      if (!file.startsWith(".") && file.startsWith("feedback_")) names.push(path.join(projects, project, "memory", file))
     }
   }
   if (names.length === 0) return ""
-  return ", incident candidates (feedback memories): " + firstItems(sortedByCodePoint(names).map(pyBasename))
+  return ", incident candidates (feedback memories): " + firstItems(names.sort().map((name) => path.basename(name)))
 }
 
-function listDirectory(path: string): string[] {
+function listDirectory(directory: string): string[] {
   try {
-    return fs.readdirSync(path)
+    return fs.readdirSync(directory)
   } catch {
     return []
   }

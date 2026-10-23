@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { afterEach, beforeEach, describe, it } from "node:test"
 import path from "node:path"
 
-import { addDays } from "../../measure/lib/measurekit/pydate.ts"
+import { addDays } from "../../measure/lib/measurekit/dates.ts"
 import { FUTURE, PAST, TODAY, MeasureSandbox, charterRow, ledgerRow } from "./helpers.ts"
 
 const EXTENDED = addDays(TODAY, 60)

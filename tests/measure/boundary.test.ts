@@ -270,7 +270,9 @@ describe("boundary", () => {
     const none = box.runMeasure("boundary", ["--generic-only"], repo)
     const both = box.runMeasure("boundary", ["--staged", "--paths", "notes.txt"], repo)
     assert.deepEqual([none.status, both.status], [2, 2])
-    assert.ok(none.stderr.includes("one of the arguments --staged --range --paths is required"))
-    assert.ok(both.stderr.includes("not allowed with argument"))
+    for (const usageError of [none, both]) {
+      assert.ok(usageError.stderr.startsWith("usage: measure/boundary"), usageError.stderr)
+      assert.ok(usageError.stderr.includes("exactly one of --staged, --range, --paths"), usageError.stderr)
+    }
   })
 })

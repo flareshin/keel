@@ -1,8 +1,9 @@
+import path from "node:path"
+
 import * as env from "../../measure/lib/measurekit/env.ts"
-import { isDir, pyAbspath, realpath } from "../../measure/lib/measurekit/pypath.ts"
-import { readTextUntranslated } from "../../measure/lib/measurekit/pyio.ts"
-import { pythonJsonDumps } from "../../measure/lib/measurekit/pyjson.ts"
-import type { PyValue } from "../../measure/lib/measurekit/pyvalue.ts"
+import { isDir, resolveLinks } from "../../measure/lib/measurekit/files.ts"
+import { isJsonObject } from "../../measure/lib/measurekit/json.ts"
+import type { JsonValue } from "../../measure/lib/measurekit/json.ts"
 import { runProcess } from "../../measure/lib/measurekit/subprocess.ts"
 
 export const EXIT_OK = 0
@@ -21,7 +22,7 @@ export interface KeelPaths {
 }
 
 export function resolvePaths(): KeelPaths {
-  return { keelHome: realpath(env.keelHome()), overlayDir: realpath(env.overlayDir()), dataDir: pyAbspath(env.dataDir()) }
+  return { keelHome: resolveLinks(env.keelHome()), overlayDir: resolveLinks(env.overlayDir()), dataDir: path.resolve(env.dataDir()) }
 }
 
 export function expandPlaceholders(text: string, paths: KeelPaths, where: string): string {
@@ -38,10 +39,11 @@ export function runGit(cwd: string, ...args: string[]): string | null {
   return gitRun.returncode === 0 ? gitRun.stdout : null
 }
 
-export function readText(path: string): string {
-  return readTextUntranslated(path)
-}
-
-export function canonicalJson(value: PyValue | undefined): string {
-  return pythonJsonDumps(value ?? null, { sortKeys: true, ensureAscii: false })
+export function canonicalJson(value: JsonValue | undefined): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(", ")}]`
+  if (isJsonObject(value)) {
+    const members = Object.keys(value).sort().map((key) => `${JSON.stringify(key)}: ${canonicalJson(value[key])}`)
+    return `{${members.join(", ")}}`
+  }
+  return JSON.stringify(value ?? null)
 }

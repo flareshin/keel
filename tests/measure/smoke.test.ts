@@ -92,11 +92,11 @@ describe("ledger checks", () => {
     assertStatus("ledger-format", "overlay", "PASS", "1 rows")
   })
 
-  it("ledgerFormat_namesEveryViolationOfARowWithPythonRepr", () => {
+  it("ledgerFormat_namesEveryViolationOfARowWithTheQuotedValue", () => {
     keelRows(charterRow("K1"), ledgerRow("C-demo", { scope: "nowhere", type: "odd", metric: "bogus" }))
     const item = harness.assertion("ledger-format", "keel")
-    assert.ok(item.detail.includes("unknown scope 'nowhere'"), item.detail)
-    assert.ok(item.detail.includes("unknown type 'odd'"), item.detail)
+    assert.ok(item.detail.includes('unknown scope "nowhere"'), item.detail)
+    assert.ok(item.detail.includes('unknown type "odd"'), item.detail)
   })
 
   it("idUnique_fails_whenAnIdRepeatsAcrossLedgers", () => {
@@ -208,7 +208,7 @@ describe("file checks", () => {
 
   it("hookScriptCap_fails_whenSettingsJsonIsNotJson", () => {
     harness.box.write("data/settings.json", "{oops")
-    assertStatus("caps", "hook-scripts", "FAIL", "settings.json unreadable: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)")
+    assertStatus("caps", "hook-scripts", "FAIL", "settings.json unreadable: ")
   })
 
   it("memoryIndexCap_warns_whenAnIndexExceeds8192Bytes", () => {
@@ -226,19 +226,19 @@ describe("file checks", () => {
     assertStatus("id-tagging", "principles", "FAIL", "line 2: bullet without [ID]")
   })
 
-  it("idTagging_failsOnABulletAfterAUnicodeLineSeparator", () => {
-    harness.box.write("keel/PRINCIPLES.md", "# Principles\n\n- [K1] Tagged.\u2028- untagged bullet\n")
+  it("idTagging_failsOnABulletAfterALoneCarriageReturn", () => {
+    harness.box.write("keel/PRINCIPLES.md", "# Principles\n\n- [K1] Tagged.\r- untagged bullet\n")
     assertStatus("id-tagging", "principles", "FAIL", "line 4: bullet without [ID]")
   })
 
-  it("idTagging_failsOnABulletAfterAFormFeed", () => {
-    harness.box.write("keel/PRINCIPLES.md", "# Principles\n\n- [K1] Tagged.\f- untagged bullet\n")
-    assertStatus("id-tagging", "principles", "FAIL", "line 4: bullet without [ID]")
+  it("idTagging_keepsAUnicodeLineSeparatorOrFormFeedInsideTheLine", () => {
+    harness.box.write("keel/PRINCIPLES.md", "# Principles\n\n- [K1] Tagged.\u2028- more\f- text\n")
+    assertStatus("id-tagging", "principles", "PASS", "3 lines checked")
   })
 
-  it("idTagging_numbersTheRulesSectionOfASkillByPythonLineBreaks", () => {
-    harness.box.write("keel/skills/demo/SKILL.md", "# Demo\n\u0085\n## Rules\n\n- [K1] Tagged.\v- untagged bullet\n")
-    assertStatus("id-tagging", "skill:demo", "FAIL", "line 7: bullet without [ID]")
+  it("idTagging_numbersTheRulesSectionOfASkillByCrlfLines", () => {
+    harness.box.write("keel/skills/demo/SKILL.md", "# Demo\r\n\r\n## Rules\r\n\r\n- [K1] Tagged.\r\n- untagged bullet\r\n")
+    assertStatus("id-tagging", "skill:demo", "FAIL", "line 6: bullet without [ID]")
   })
 
   it("idTagging_fails_whenATagNamesNoLedgerRow", () => {

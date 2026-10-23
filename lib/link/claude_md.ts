@@ -1,10 +1,10 @@
 import fs from "node:fs"
+import path from "node:path"
 
-import { firstLineOf, readBytes } from "../../measure/lib/measurekit/pyio.ts"
-import { isFile, isLink, lexists, pyJoin } from "../../measure/lib/measurekit/pypath.ts"
-import { pyTruthy, pyTypeName } from "../../measure/lib/measurekit/pyvalue.ts"
-import type { PyValue } from "../../measure/lib/measurekit/pyvalue.ts"
-import { readText, Refused } from "./config.ts"
+import { entryExists, firstLine, isFile, isSymlink, readUtf8 } from "../../measure/lib/measurekit/files.ts"
+import { isJsonObject } from "../../measure/lib/measurekit/json.ts"
+import type { JsonValue } from "../../measure/lib/measurekit/json.ts"
+import { Refused } from "./config.ts"
 import type { KeelPaths } from "./config.ts"
 
 export const HEADER =
@@ -21,28 +21,34 @@ export interface RestoreAction {
 }
 
 export function buildClaudeMd(paths: KeelPaths): string {
-  const principlesPath = pyJoin(paths.keelHome, "PRINCIPLES.md")
+  const principlesPath = path.join(paths.keelHome, "PRINCIPLES.md")
   if (!isFile(principlesPath)) throw new Refused(`${principlesPath} is missing; CLAUDE.md cannot be generated`)
   let text = HEADER + "\n" + readWithFinalNewline(principlesPath)
-  const personalPath = pyJoin(paths.overlayDir, "PERSONAL.md")
+  const personalPath = path.join(paths.overlayDir, "PERSONAL.md")
   if (isFile(personalPath)) text += "\n" + readWithFinalNewline(personalPath)
   return text
 }
 
-export function isGeneratedClaudeMd(path: string): boolean {
-  if (isLink(path) || !isFile(path)) return false
-  return firstLineOf(readBytes(path)).replace(/\n$/, "") === HEADER
+export function isGeneratedClaudeMd(file: string): boolean {
+  if (isSymlink(file) || !isFile(file)) return false
+  return firstLine(file) === HEADER
 }
 
-export function restoreMovedAside(path: string, backupPath: PyValue | undefined): RestoreAction | null {
-  if (!pyTruthy(backupPath)) return null
-  if (typeof backupPath !== "string") throw new TypeError(`lstat: path should be string, bytes or os.PathLike, not ${pyTypeName(backupPath)}`)
-  if (!lexists(backupPath) || lexists(path)) return null
-  fs.renameSync(backupPath, path)
-  return { op: RESTORE_OP, path, from: backupPath }
+export function restoreMovedAside(file: string, backupPath: JsonValue | undefined): RestoreAction | null {
+  if (recordsNoBackup(backupPath)) return null
+  if (typeof backupPath !== "string") throw new TypeError(`the recorded CLAUDE.md backup must be a path string, got ${JSON.stringify(backupPath)}`)
+  if (!entryExists(backupPath) || entryExists(file)) return null
+  fs.renameSync(backupPath, file)
+  return { op: RESTORE_OP, path: file, from: backupPath }
 }
 
-function readWithFinalNewline(path: string): string {
-  const text = readText(path)
+function recordsNoBackup(value: JsonValue | undefined): boolean {
+  if (Array.isArray(value)) return value.length === 0
+  if (isJsonObject(value)) return Object.keys(value).length === 0
+  return !value
+}
+
+function readWithFinalNewline(file: string): string {
+  const text = readUtf8(file)
   return text.endsWith("\n") ? text : text + "\n"
 }

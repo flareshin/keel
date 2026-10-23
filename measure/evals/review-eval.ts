@@ -2,19 +2,19 @@
 import { createHash, randomBytes } from "node:crypto"
 import fs from "node:fs"
 import os from "node:os"
+import path from "node:path"
 
-import { ArgumentParser, positiveInt } from "../lib/measurekit/argparse.ts"
-import type { ParsedArguments } from "../lib/measurekit/argparse.ts"
-import { EXIT_NEGATIVE, EXIT_OK, EXIT_USAGE, printJson, runMain } from "../lib/measurekit/cli.ts"
+import {
+  choiceOption, EXIT_NEGATIVE, EXIT_OK, EXIT_USAGE, flagOption, noPositionals, parseCommandLine, positiveIntOption, printJson, runMain,
+  stringOption, usageError,
+} from "../lib/measurekit/cli.ts"
+import type { CommandSpec } from "../lib/measurekit/cli.ts"
 import { appendJsonl, readJsonl } from "../lib/measurekit/datafiles.ts"
+import { compactUtcSeconds, utcSeconds } from "../lib/measurekit/dates.ts"
 import * as env from "../lib/measurekit/env.ts"
-import { utcStamp } from "../lib/measurekit/pydate.ts"
-import { readText } from "../lib/measurekit/pyio.ts"
-import { pythonJsonDumps, pythonJsonLoads } from "../lib/measurekit/pyjson.ts"
-import { isFile, pyBasename, pyJoin, pyNormpath, which } from "../lib/measurekit/pypath.ts"
-import { sortedByCodePoint } from "../lib/measurekit/pystr.ts"
-import { isJsonObject, pyFloatRepr, pyStr } from "../lib/measurekit/pyvalue.ts"
-import type { JsonObject, PyFloat } from "../lib/measurekit/pyvalue.ts"
+import { isFile, readUtf8 } from "../lib/measurekit/files.ts"
+import { displayText, isJsonObject, parseJson, stringifySorted } from "../lib/measurekit/json.ts"
+import type { JsonObject } from "../lib/measurekit/json.ts"
 import { CaseError, SPLITS } from "./lib/evalkit/cases.ts"
 import { cliConfigDir } from "./lib/evalkit/liveconfig.ts"
 import { loadReviewCases, selectReviewCases } from "./lib/evalkit/reviewcases.ts"
@@ -23,7 +23,7 @@ import { gradeResult, suiteNumbers } from "./lib/evalkit/reviewgrade.ts"
 import type { RunGrade, SplitNumbers, SuiteNumbers } from "./lib/evalkit/reviewgrade.ts"
 import { BuildError, buildCaseRepo, reviewCommand, runFault, runReview } from "./lib/evalkit/reviewrun.ts"
 import type { ReviewRun } from "./lib/evalkit/reviewrun.ts"
-import { CLAUDE_BINARY } from "./lib/evalkit/runner.ts"
+import { CLAUDE_BINARY, findOnPath } from "./lib/evalkit/runner.ts"
 
 const DEFAULT_REPEAT = 3
 const DEFAULT_MODEL = "sonnet"
@@ -31,6 +31,35 @@ const DEFAULT_TIMEOUT_SECONDS = 1800
 const RAW_DIR_PREFIX = "keel-review-eval-"
 const SUMMARY_LOG = "keel-review-eval.jsonl"
 const REVIEWER_FILES = ["lens-review.js", "adversarial-audit.js"]
+const JSON_INDENT = 2
+const COMMAND: CommandSpec = {
+  prog: "measure/evals/review-eval",
+  usage: "measure/evals/review-eval [-h] [--split {train,holdout}] [--case CASE] [--repeat N] [--model MODEL] [--timeout-seconds S] [--dry-run] [--regrade RAW_DIR]",
+  description: "Score the lens-review reviewer on known incidents and clean diffs.",
+  argumentHelp: [
+    ["--split {train,holdout}", "run one split only"],
+    ["--case CASE", "run one case only"],
+    ["--repeat N", `reviews per case (default ${DEFAULT_REPEAT})`],
+    ["--model MODEL", `model of the session that starts the workflow (default ${DEFAULT_MODEL}); the reviewer agents use lens-review's own`],
+    ["--timeout-seconds S", `per-review limit (default ${DEFAULT_TIMEOUT_SECONDS})`],
+    ["--dry-run", "build every case repo and print the plan; run nothing"],
+    ["--regrade RAW_DIR", "grade an earlier run's saved workflow records again; calls no claude"],
+  ],
+  options: {
+    split: { type: "string" }, case: { type: "string" }, repeat: { type: "string" }, model: { type: "string" },
+    "timeout-seconds": { type: "string" }, "dry-run": { type: "boolean" }, regrade: { type: "string" },
+  },
+}
+
+interface ReviewEvalArgs {
+  split: string | undefined
+  caseId: string | undefined
+  repeat: number
+  model: string
+  timeoutSeconds: number
+  dryRun: boolean
+  regrade: string | undefined
+}
 
 interface RunConfig {
   full_run: boolean
@@ -50,16 +79,16 @@ interface Fault {
 }
 
 function main(argv: string[]): number {
-  const args = parseArgs(argv)
+  const args = parseReviewEvalArgs(argv)
   let cases: ReviewCase[]
   try {
-    cases = selectReviewCases(loadReviewCases([env.keelHome(), env.overlayDir()]), args["split"] as string | undefined, args["case"] as string | undefined)
+    cases = selectReviewCases(loadReviewCases([env.keelHome(), env.overlayDir()]), args.split, args.caseId)
   } catch (error) {
     if (!(error instanceof CaseError)) throw error
     process.stderr.write(`review-eval: ${error.message}\n`)
     return EXIT_USAGE
   }
-  if (args["regrade"]) return regrade(args["regrade"] as string, cases)
+  if (args.regrade) return regrade(args.regrade, cases)
   const problem = planProblem(cases)
   if (problem) {
     process.stderr.write(`review-eval: ${problem}\n`)
@@ -70,49 +99,43 @@ function main(argv: string[]): number {
   process.stderr.write(
     `review-eval: ${cases.length} cases (${perSplit}) x ${config.repeat} = ${cases.length * config.repeat} reviews, driver model ${config.model}\n`,
   )
-  if (args["dry_run"] === true) {
+  if (args.dryRun) {
     printJson(config)
     return EXIT_OK
   }
   const rawDir = createRawDir(config)
   const { grades, faults } = runAll(cases, config, rawDir)
   const report = buildReport(config, grades, faults, rawDir)
-  if (faults.length === 0 && config.full_run) appendJsonl(pyJoin(env.logsDir(), SUMMARY_LOG), summaryLine(report))
+  if (faults.length === 0 && config.full_run) appendJsonl(path.join(env.logsDir(), SUMMARY_LOG), summaryLine(report))
   printJson(report)
   printSummary(report)
   return faults.length > 0 ? EXIT_NEGATIVE : EXIT_OK
 }
 
-function parseArgs(argv: string[]): ParsedArguments {
-  const parser = new ArgumentParser({
-    prog: "measure/evals/review-eval",
-    description: "Score the lens-review reviewer on known incidents and clean diffs.",
-    arguments: [
-      { flags: ["--split"], dest: "split", kind: "value", choices: SPLITS, help: "run one split only" },
-      { flags: ["--case"], dest: "case", kind: "value", help: "run one case only" },
-      { flags: ["--repeat"], dest: "repeat", kind: "value", convert: positiveInt, typeName: "positive_int", defaultValue: DEFAULT_REPEAT, help: `reviews per case (default ${DEFAULT_REPEAT})` },
-      {
-        flags: ["--model"], dest: "model", kind: "value", defaultValue: DEFAULT_MODEL,
-        help: `model of the session that starts the workflow (default ${DEFAULT_MODEL}); the reviewer agents use lens-review's own`,
-      },
-      { flags: ["--timeout-seconds"], dest: "timeout_seconds", kind: "value", convert: positiveInt, typeName: "positive_int", defaultValue: DEFAULT_TIMEOUT_SECONDS, help: `per-review limit (default ${DEFAULT_TIMEOUT_SECONDS})` },
-      { flags: ["--dry-run"], dest: "dry_run", kind: "flag", help: "build every case repo and print the plan; run nothing" },
-      { flags: ["--regrade"], dest: "regrade", kind: "value", metavar: "RAW_DIR", help: "grade an earlier run's saved workflow records again; calls no claude" },
-    ],
-  })
-  const args = parser.parse(argv)
-  if (args["regrade"] && (args["split"] || args["case"] || args["dry_run"])) {
-    parser.error("--regrade takes its cases from the raw dir; drop --split, --case and --dry-run")
+function parseReviewEvalArgs(argv: string[]): ReviewEvalArgs {
+  const parsed = parseCommandLine(COMMAND, argv)
+  noPositionals(COMMAND, parsed)
+  const args: ReviewEvalArgs = {
+    split: choiceOption(COMMAND, "--split", stringOption(parsed, "split"), SPLITS),
+    caseId: stringOption(parsed, "case"),
+    repeat: positiveIntOption(COMMAND, "--repeat", stringOption(parsed, "repeat"), DEFAULT_REPEAT),
+    model: stringOption(parsed, "model") ?? DEFAULT_MODEL,
+    timeoutSeconds: positiveIntOption(COMMAND, "--timeout-seconds", stringOption(parsed, "timeout-seconds"), DEFAULT_TIMEOUT_SECONDS),
+    dryRun: flagOption(parsed, "dry-run"),
+    regrade: stringOption(parsed, "regrade"),
+  }
+  if (args.regrade && (args.split || args.caseId || args.dryRun)) {
+    usageError(COMMAND, "--regrade takes its cases from the raw dir; drop --split, --case and --dry-run")
   }
   return args
 }
 
 function planProblem(cases: ReviewCase[]): string | null {
   if (cases.length === 0) return "no case selected"
-  if (which(CLAUDE_BINARY) === null) return `no \`${CLAUDE_BINARY}\` on PATH`
-  const parent = fs.mkdtempSync(pyJoin(os.tmpdir(), "tmp"))
+  if (findOnPath(CLAUDE_BINARY) === null) return `no \`${CLAUDE_BINARY}\` on PATH`
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), "tmp"))
   try {
-    for (const planned of cases) buildCaseRepo(planned, pyJoin(parent, planned.id))
+    for (const planned of cases) buildCaseRepo(planned, path.join(parent, planned.id))
   } catch (error) {
     if (error instanceof BuildError) return error.message
     throw error
@@ -122,12 +145,12 @@ function planProblem(cases: ReviewCase[]): string | null {
   return null
 }
 
-function runConfig(args: ParsedArguments, cases: ReviewCase[]): RunConfig {
+function runConfig(args: ReviewEvalArgs, cases: ReviewCase[]): RunConfig {
   const configDir = cliConfigDir()
-  const model = args["model"] as string
+  const model = args.model
   return {
-    full_run: args["split"] === undefined && args["case"] === undefined,
-    repeat: args["repeat"] as number, model, timeout_seconds: args["timeout_seconds"] as number, config_dir: configDir,
+    full_run: args.split === undefined && args.caseId === undefined,
+    repeat: args.repeat, model, timeout_seconds: args.timeoutSeconds, config_dir: configDir,
     command: reviewCommand(model), reviewer: reviewerFingerprint(configDir),
     cases: cases.map((planned) => ({ id: planned.id, split: planned.split, clean: planned.isClean })),
   }
@@ -136,16 +159,16 @@ function runConfig(args: ParsedArguments, cases: ReviewCase[]): RunConfig {
 function reviewerFingerprint(configDir: string): { [file: string]: string | null } {
   const fingerprint: { [file: string]: string | null } = {}
   for (const name of REVIEWER_FILES) {
-    const path = pyJoin(configDir, "workflows", name)
-    fingerprint[name] = isFile(path) ? createHash("sha256").update(fs.readFileSync(path)).digest("hex") : null
+    const workflowPath = path.join(configDir, "workflows", name)
+    fingerprint[name] = isFile(workflowPath) ? createHash("sha256").update(fs.readFileSync(workflowPath)).digest("hex") : null
   }
   return fingerprint
 }
 
 function createRawDir(config: RunConfig): string {
-  const rawDir = pyJoin(env.logsDir(), `${RAW_DIR_PREFIX}${utcStamp(new Date(), true)}-${randomBytes(2).toString("hex")}`)
+  const rawDir = path.join(env.logsDir(), `${RAW_DIR_PREFIX}${compactUtcSeconds(new Date())}-${randomBytes(2).toString("hex")}`)
   fs.mkdirSync(rawDir, { recursive: true })
-  writeJson(pyJoin(rawDir, "config.json"), config)
+  writeJson(path.join(rawDir, "config.json"), config)
   return rawDir
 }
 
@@ -174,10 +197,10 @@ function describe(grade: RunGrade): string {
 }
 
 function saveRun(rawDir: string, reviewed: ReviewCase, index: number, run: ReviewRun, fault: string | null, grade: RunGrade | null): void {
-  const stem = pyJoin(rawDir, `${reviewed.id}-${index}`)
+  const stem = path.join(rawDir, `${reviewed.id}-${index}`)
   fs.writeFileSync(stem + ".stream.jsonl", run.streamText, "utf8")
   if (run.workflowRecord !== null) writeJson(stem + ".workflow.json", run.workflowRecord)
-  appendJsonl(pyJoin(rawDir, "runs.jsonl"), {
+  appendJsonl(path.join(rawDir, "runs.jsonl"), {
     case: reviewed.id, run: index, exit: run.exitCode, timed_out: run.timedOut, fault,
     blocking: grade ? grade.blocking : null, hit: grade ? grade.hit : null, pass: grade ? grade.passed : null,
   })
@@ -205,11 +228,11 @@ function buildReport(config: RunConfig, grades: RunGrade[], faults: Fault[], raw
 }
 
 function summaryLine(report: Report): object {
-  return { ts: utcStamp(new Date(), false), reviewer: report.reviewer, repeat: report.repeat, numbers: report.numbers, raw_dir: pyBasename(report.raw_dir) }
+  return { ts: utcSeconds(new Date()), reviewer: report.reviewer, repeat: report.repeat, numbers: report.numbers, raw_dir: path.basename(report.raw_dir) }
 }
 
-function floatText(value: PyFloat | null): string {
-  return value === null ? "None" : pyFloatRepr(value.value)
+function floatText(value: number | null): string {
+  return value === null ? "none" : String(value)
 }
 
 function printSummary(report: Report): void {
@@ -229,12 +252,12 @@ function printSummary(report: Report): void {
 
 function regrade(rawDir: string, cases: ReviewCase[]): number {
   const byId = new Map(cases.map((planned) => [planned.id, planned]))
-  const { records, malformed } = readJsonl(pyJoin(rawDir, "runs.jsonl"))
+  const { records, malformed } = readJsonl(path.join(rawDir, "runs.jsonl"))
   if (malformed > 0 || records.length === 0) {
     process.stderr.write(`review-eval: ${rawDir}/runs.jsonl is missing, empty or malformed\n`)
     return EXIT_USAGE
   }
-  const unknown = sortedByCodePoint(new Set(records.map((record) => record["case"] as string).filter((caseId) => !byId.has(caseId))))
+  const unknown = [...new Set(records.map((record) => record["case"] as string).filter((caseId) => !byId.has(caseId)))].sort()
   if (unknown.length > 0) {
     process.stderr.write(`review-eval: case(s) ${unknown.join(", ")} are no longer in the case files\n`)
     return EXIT_USAGE
@@ -242,7 +265,7 @@ function regrade(rawDir: string, cases: ReviewCase[]): number {
   const graded = records.filter((record) => !record["fault"]).map((record) => ({ record, grade: regraded(rawDir, byId.get(record["case"] as string) as ReviewCase, record) }))
   const same = graded.filter(({ record, grade }) => record["hit"] === grade.hit && record["blocking"] === grade.blocking).length
   printJson({
-    regraded_from: pyBasename(pyNormpath(rawDir)), runs: graded.length, same_grade: same,
+    regraded_from: path.basename(path.normalize(rawDir)), runs: graded.length, same_grade: same,
     numbers: suiteNumbers(graded.map(({ grade }) => grade)),
   })
   process.stderr.write(`review-eval: regrade ${same}/${graded.length} runs graded the same\n`)
@@ -250,13 +273,13 @@ function regrade(rawDir: string, cases: ReviewCase[]): number {
 }
 
 function regraded(rawDir: string, reviewed: ReviewCase, record: JsonObject): RunGrade {
-  const workflow = pythonJsonLoads(readText(pyJoin(rawDir, `${reviewed.id}-${record["run"]}.workflow.json`)))
-  if (!isJsonObject(workflow)) throw new TypeError(`workflow record of ${reviewed.id} is not an object: ${pyStr(workflow)}`)
+  const workflow = parseJson(readUtf8(path.join(rawDir, `${reviewed.id}-${record["run"]}.workflow.json`)))
+  if (!isJsonObject(workflow)) throw new TypeError(`workflow record of ${reviewed.id} is not an object: ${displayText(workflow)}`)
   return gradeResult(reviewed, record["run"] as number, workflow["result"])
 }
 
-function writeJson(path: string, value: object): void {
-  fs.writeFileSync(path, pythonJsonDumps(value as JsonObject, { sortKeys: true, indent: 2 }) + "\n", "utf8")
+function writeJson(file: string, value: object): void {
+  fs.writeFileSync(file, stringifySorted(value, JSON_INDENT) + "\n", "utf8")
 }
 
 runMain(main)

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, it } from "node:test"
 import fs from "node:fs"
 import path from "node:path"
 
-import { addDays } from "../../measure/lib/measurekit/pydate.ts"
+import { addDays } from "../../measure/lib/measurekit/dates.ts"
 import { FUTURE, NOW_TS, PAST, TODAY, MeasureSandbox, ledgerRow } from "./helpers.ts"
 import type { LedgerRowValues } from "./helpers.ts"
 
@@ -71,13 +71,20 @@ describe("measure run", () => {
     assert.deepEqual([result.count, result.items, result.status], [2, ["a", "b"], "PASS"])
   })
 
-  it("run_keepsTheRunnerCountAsPrinted_whenItIsABooleanOrBeyondDoublePrecision", () => {
+  it("run_failsWithError_whenTheRunnerCountIsABoolean", () => {
     givenKeelRows(ledgerRow("C-demo", { metric: "run:odd" }))
-    for (const printed of ["true", "12345678901234567890"]) {
+    box.write("keel/measure/metrics/odd", "#!/bin/bash\necho '{\"count\": true, \"items\": []}'\n", true)
+    const [completed, result] = box.runJson("run", ["C-demo"])
+    assert.deepEqual([completed.status, result.status, result.count], [1, "FAIL", 0])
+    assert.ok(result.error.includes('must print {"count": int'), result.error)
+  })
+
+  it("run_countsTheRunnerCount_whenItIsAnIntegralNumberInAnySpelling", () => {
+    givenKeelRows(ledgerRow("C-demo", { metric: "run:odd" }))
+    for (const [printed, count] of [["1.0", 1], ["12345678901234567890", 1.2345678901234567e19]] as const) {
       box.write("keel/measure/metrics/odd", `#!/bin/bash\necho '{"count": ${printed}, "items": []}'\n`, true)
-      const [completed] = box.runJson("run", ["C-demo"])
-      assert.equal(completed.status, 0)
-      assert.ok(completed.stdout.includes(`"count": ${printed},`), completed.stdout)
+      const [completed, result] = box.runJson("run", ["C-demo"])
+      assert.deepEqual([completed.status, result.status, result.count], [0, "PASS", count])
     }
   })
 

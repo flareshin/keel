@@ -1,14 +1,11 @@
 import fs from "node:fs"
 import os from "node:os"
+import path from "node:path"
 
+import { InvalidUtf8Error, isDir, isSystemError, readUtf8, resolveLinks, splitLines } from "../../../lib/measurekit/files.ts"
 import { GitError, runGit } from "../../../lib/measurekit/gitutil.ts"
-import { isOsError, ValueError } from "../../../lib/measurekit/pyerrors.ts"
-import { readText, UnicodeDecodeError, newlineSeparatedLines } from "../../../lib/measurekit/pyio.ts"
-import { pythonJsonDumps, pythonJsonLoads } from "../../../lib/measurekit/pyjson.ts"
-import { isDir, pyDirname, pyJoin, realpath } from "../../../lib/measurekit/pypath.ts"
-import { firstCodePoints, pySplitlines, pySplitWhitespace } from "../../../lib/measurekit/pystr.ts"
-import { isJsonObject, PyFloat, pyRepr, pyStr } from "../../../lib/measurekit/pyvalue.ts"
-import type { JsonObject } from "../../../lib/measurekit/pyvalue.ts"
+import { displayText, isJsonObject, parseJson } from "../../../lib/measurekit/json.ts"
+import type { JsonObject } from "../../../lib/measurekit/json.ts"
 import { projectDirFor } from "./liveconfig.ts"
 import { describeLocation } from "./reviewcases.ts"
 import type { ReviewCase } from "./reviewcases.ts"
@@ -21,6 +18,7 @@ const ERROR_VERDICT = "ERROR"
 const MAX_TURNS = 20
 const ALLOWED_TOOLS = "Workflow,Skill,Read,Grep,Glob,Bash"
 const DENIED_TOOLS = "Edit,Write,NotebookEdit,WebFetch,WebSearch"
+const DETAIL_EXCERPT_CHARS = 200
 
 export class BuildError extends Error {}
 
@@ -48,7 +46,7 @@ export function reviewCommand(model: string): string[] {
 export function reviewPrompt(reviewCase: ReviewCase, repo: string, base: string, head: string): string {
   const workflowArgs: JsonObject = { diffs: [{ repo, base, head }] }
   if (reviewCase.requirement) workflowArgs["requirement"] = reviewCase.requirement
-  const lines = [`Run the saved workflow named ${WORKFLOW} with these args (JSON):`, pythonJsonDumps(workflowArgs)]
+  const lines = [`Run the saved workflow named ${WORKFLOW} with these args (JSON):`, JSON.stringify(workflowArgs)]
   if (reviewCase.callerSkill) {
     lines.push(`Before running it, load the skill ${reviewCase.callerSkill} and follow it for this diff: pass the lenses it says fire as args.lenses.`)
   }
@@ -57,8 +55,8 @@ export function reviewPrompt(reviewCase: ReviewCase, repo: string, base: string,
 }
 
 export function buildCaseRepo(reviewCase: ReviewCase, parent: string): CaseRepo {
-  const repo = pyJoin(parent, NEUTRAL_PROJECT_NAME)
-  fs.mkdirSync(pyDirname(repo), { recursive: true })
+  const repo = path.join(parent, NEUTRAL_PROJECT_NAME)
+  fs.mkdirSync(path.dirname(repo), { recursive: true })
   if (isDir(reviewCase.baseDir)) fs.cpSync(reviewCase.baseDir, repo, { recursive: true, dereference: true })
   else fs.mkdirSync(repo, { recursive: true })
   const identity = projectIdentity(NEUTRAL_PROJECT_NAME)
@@ -71,7 +69,7 @@ export function buildCaseRepo(reviewCase: ReviewCase, parent: string): CaseRepo 
     runGit(repo, ["apply", "--whitespace=nowarn", reviewCase.changePath])
     runGit(repo, ["add", "-A"])
     runGit(repo, [...UNSIGNED, "commit", "-q", "-m", "change"], identity)
-    ;[base, head] = pySplitWhitespace(runGit(repo, ["rev-parse", "HEAD~1", "HEAD"])) as [string, string]
+    ;[base, head] = runGit(repo, ["rev-parse", "HEAD~1", "HEAD"]).trim().split(/\s+/) as [string, string]
   } catch (error) {
     if (error instanceof GitError) throw new BuildError(`${reviewCase.id}: ${error.message}`)
     throw error
@@ -83,20 +81,20 @@ export function buildCaseRepo(reviewCase: ReviewCase, parent: string): CaseRepo 
 
 function hasLine(repo: string, relativePath: string, line: number): boolean {
   try {
-    return newlineSeparatedLines(readText(pyJoin(repo, relativePath))).length >= line
+    return splitLines(readUtf8(path.join(repo, relativePath))).length >= line
   } catch (error) {
-    if (error instanceof UnicodeDecodeError || isOsError(error)) return false
+    if (error instanceof InvalidUtf8Error || isSystemError(error)) return false
     throw error
   }
 }
 
 export function runReview(reviewCase: ReviewCase, command: string[], configDir: string, timeoutSeconds: number): ReviewRun {
-  const parent = realpath(fs.mkdtempSync(pyJoin(os.tmpdir(), "tmp")))
+  const parent = resolveLinks(fs.mkdtempSync(path.join(os.tmpdir(), "tmp")))
   try {
     const { repo, base, head } = buildCaseRepo(reviewCase, parent)
     const claudeRun = runClaude(command, reviewPrompt(reviewCase, repo, base, head), repo, timeoutSeconds)
     const projectDir = projectDirFor(repo, configDir)
-    const sessionId = summarizeStream(pySplitlines(claudeRun.streamText)).init?.["session_id"]
+    const sessionId = summarizeStream(splitLines(claudeRun.streamText)).init?.["session_id"]
     const record = findWorkflowRecord(projectDir, typeof sessionId === "string" ? sessionId : null)
     fs.rmSync(projectDir, { recursive: true, force: true })
     return { streamText: claudeRun.streamText, workflowRecord: record, exitCode: claudeRun.exitCode, timedOut: claudeRun.timedOut, repo }
@@ -107,7 +105,7 @@ export function runReview(reviewCase: ReviewCase, command: string[], configDir: 
 
 export function findWorkflowRecord(projectDir: string, sessionId: string | null): JsonObject | null {
   if (!sessionId) return null
-  const directory = pyJoin(projectDir, sessionId, "workflows")
+  const directory = path.join(projectDir, sessionId, "workflows")
   let names: string[]
   try {
     names = fs.readdirSync(directory)
@@ -117,10 +115,10 @@ export function findWorkflowRecord(projectDir: string, sessionId: string | null)
   const records: JsonObject[] = []
   for (const name of names.filter((candidate) => candidate.endsWith(".json") && !candidate.startsWith(".")).sort()) {
     try {
-      const record = pythonJsonLoads(readText(pyJoin(directory, name)))
+      const record = parseJson(readUtf8(path.join(directory, name)))
       if (isJsonObject(record) && record["workflowName"] === WORKFLOW) records.push(record)
     } catch (error) {
-      if (!(error instanceof ValueError) && !isOsError(error)) throw error
+      if (!(error instanceof SyntaxError) && !(error instanceof InvalidUtf8Error) && !isSystemError(error)) throw error
     }
   }
   return records.reduce<JsonObject | null>((latest, record) => (latest === null || startTime(record) > startTime(latest) ? record : latest), null)
@@ -128,21 +126,19 @@ export function findWorkflowRecord(projectDir: string, sessionId: string | null)
 
 function startTime(record: JsonObject): number {
   const value = record["startTime"]
-  if (typeof value === "number") return value
-  if (value instanceof PyFloat) return value.value
-  return typeof value === "bigint" ? Number(value) : 0
+  return typeof value === "number" ? value : 0
 }
 
 export function runFault(run: ReviewRun, timeoutSeconds: number): string | null {
   if (run.timedOut) return `timed out after ${timeoutSeconds}s`
   const record = run.workflowRecord
   if (record === null) return `no ${WORKFLOW} workflow record for the session (exit ${run.exitCode})`
-  if (record["status"] !== COMPLETED) return `${WORKFLOW} workflow status ${pyRepr(record["status"])}`
+  if (record["status"] !== COMPLETED) return `${WORKFLOW} workflow status ${JSON.stringify(record["status"] ?? null)}`
   const result = record["result"]
   const verdict = isJsonObject(result) ? result["verdict"] : undefined
   if (!isJsonObject(result) || verdict === undefined || verdict === null || verdict === ERROR_VERDICT) {
     const detail = isJsonObject(result) ? result["error"] : result
-    return `${WORKFLOW} returned no verdict: ${firstCodePoints(pyStr(detail), 200)}`
+    return `${WORKFLOW} returned no verdict: ${Array.from(displayText(detail)).slice(0, DETAIL_EXCERPT_CHARS).join("")}`
   }
   if (!Array.isArray(result["blocking"])) return `${WORKFLOW} result has no blocking list`
   return null

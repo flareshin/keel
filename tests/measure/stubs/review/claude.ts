@@ -1,8 +1,6 @@
 import fs from "node:fs"
 import path from "node:path"
 
-import { pythonJsonDumps } from "../../../../measure/lib/measurekit/pyjson.ts"
-import type { PyValue } from "../../../../measure/lib/measurekit/pyvalue.ts"
 
 interface Record_ {
   workflowName?: string
@@ -41,7 +39,7 @@ function writeRecord(sessionId: string, index: number, record: Record_): void {
   fs.mkdirSync(directory, { recursive: true })
   const result = JSON.parse(JSON.stringify(record.result ?? null).replaceAll("{{REPO}}", repo))
   const body = { workflowName: record.workflowName ?? "lens-review", status: record.status ?? "completed", startTime: record.startTime ?? 1, result }
-  fs.writeFileSync(path.join(directory, `wf_stub_${index}.json`), pythonJsonDumps(body as PyValue))
+  fs.writeFileSync(path.join(directory, `wf_stub_${index}.json`), JSON.stringify(body))
 }
 
 function sleep(seconds: number): void {
@@ -51,14 +49,14 @@ function sleep(seconds: number): void {
 function main(): number {
   const prompt = fs.readFileSync(0, "utf8")
   const callIndex = previousCalls()
-  fs.appendFileSync(CALLS_LOG, pythonJsonDumps({ argv: process.argv.slice(2), cwd: process.cwd(), prompt }) + "\n")
+  fs.appendFileSync(CALLS_LOG, JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd(), prompt }) + "\n")
   const rounds = (JSON.parse(fs.readFileSync(path.join(SCENARIO_DIR, "review.json"), "utf8")) as { rounds: Round[] }).rounds
   const round = rounds[callIndex % rounds.length] as Round
   const sessionId = `session-${callIndex}`
-  fs.writeSync(1, pythonJsonDumps({ type: "system", subtype: "init", session_id: sessionId, model: "stub-model" }) + "\n")
+  fs.writeSync(1, JSON.stringify({ type: "system", subtype: "init", session_id: sessionId, model: "stub-model" }) + "\n")
   recordsOf(round).forEach((record, index) => writeRecord(sessionId, index, record))
   sleep(round.sleep ?? 0)
-  fs.writeSync(1, pythonJsonDumps({ type: "result", subtype: "success", result: "VERDICT: done" }) + "\n")
+  fs.writeSync(1, JSON.stringify({ type: "result", subtype: "success", result: "VERDICT: done" }) + "\n")
   return round.exit ?? 0
 }
 

@@ -1,6 +1,7 @@
+import path from "node:path"
+
 import { readTsvRecords, TsvError } from "../../../lib/measurekit/datafiles.ts"
-import { isFile, pyJoin } from "../../../lib/measurekit/pypath.ts"
-import { pyRepr } from "../../../lib/measurekit/pyvalue.ts"
+import { isFile } from "../../../lib/measurekit/files.ts"
 
 export const COLUMNS = ["id", "kind", "expect", "prompt"]
 export const TRAIN = "train"
@@ -39,12 +40,12 @@ export function loadCases(evalId: string, checkouts: string[]): Case[] {
   const firstFileOf = new Map<string, string>()
   for (const checkout of checkouts) {
     for (const split of SPLITS) {
-      const path = pyJoin(checkout, "measure", "evals", evalId, split + ".tsv")
-      if (!isFile(path)) continue
-      for (const loaded of readCases(path, split)) {
+      const casesPath = path.join(checkout, "measure", "evals", evalId, split + ".tsv")
+      if (!isFile(casesPath)) continue
+      for (const loaded of readCases(casesPath, split)) {
         const first = firstFileOf.get(loaded.id)
-        if (first !== undefined) throw new CaseError(`${path}: duplicate case id ${pyRepr(loaded.id)} (first in ${first})`)
-        firstFileOf.set(loaded.id, path)
+        if (first !== undefined) throw new CaseError(`${casesPath}: duplicate case id ${JSON.stringify(loaded.id)} (first in ${first})`)
+        firstFileOf.set(loaded.id, casesPath)
         cases.push(loaded)
       }
     }
@@ -52,10 +53,10 @@ export function loadCases(evalId: string, checkouts: string[]): Case[] {
   return cases
 }
 
-function readCases(path: string, split: string): Case[] {
+function readCases(casesPath: string, split: string): Case[] {
   let records: Record<string, string>[]
   try {
-    records = readTsvRecords(path, COLUMNS)
+    records = readTsvRecords(casesPath, COLUMNS)
   } catch (error) {
     if (error instanceof TsvError) throw new CaseError(error.message)
     throw error
@@ -63,9 +64,9 @@ function readCases(path: string, split: string): Case[] {
   return records.map((record) => {
     const { id, kind, expect, prompt } = record as Record<string, string>
     if (!KINDS.includes(kind as string)) {
-      throw new CaseError(`${path}: case ${id} has unknown kind ${pyRepr(kind as string)} (want one of ${KINDS.join(", ")})`)
+      throw new CaseError(`${casesPath}: case ${id} has unknown kind ${JSON.stringify(kind)} (want one of ${KINDS.join(", ")})`)
     }
-    if (kind === CLEAR_ANSWER && expect === NO_EXPECT) throw new CaseError(`${path}: clear-answer case ${id} needs an expect token`)
+    if (kind === CLEAR_ANSWER && expect === NO_EXPECT) throw new CaseError(`${casesPath}: clear-answer case ${id} needs an expect token`)
     return new Case(id as string, split, kind as string, expect as string, prompt as string)
   })
 }

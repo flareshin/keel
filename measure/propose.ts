@@ -1,20 +1,22 @@
 #!/usr/bin/env node
-import { ArgumentParser } from "./lib/measurekit/argparse.ts"
-import { EXIT_OK, printJson, runMain } from "./lib/measurekit/cli.ts"
+import { EXIT_OK, noPositionals, parseCommandLine, printJson, runMain, stringOption } from "./lib/measurekit/cli.ts"
+import type { CommandSpec } from "./lib/measurekit/cli.ts"
 import { buildExpiryProposals, buildRereviewProposals } from "./lib/measurekit/propose.ts"
 import { SmokeContext } from "./lib/measurekit/smoke_context.ts"
 
+const COMMAND: CommandSpec = {
+  prog: "measure/propose",
+  usage: "measure/propose [-h] [--model-upgrade MODEL]",
+  description: "Propose demotions for expired ledger rows.",
+  argumentHelp: [["--model-upgrade MODEL", "emit one re-review proposal per active row instead"]],
+  options: { "model-upgrade": { type: "string" } },
+}
+
 function main(argv: string[]): number {
-  const parser = new ArgumentParser({
-    prog: "measure/propose",
-    description: "Propose demotions for expired ledger rows.",
-    arguments: [
-      { flags: ["--model-upgrade"], dest: "model_upgrade", kind: "value", metavar: "MODEL", help: "emit one re-review proposal per active row instead" },
-    ],
-  })
-  const args = parser.parse(argv)
+  const parsed = parseCommandLine(COMMAND, argv)
+  noPositionals(COMMAND, parsed)
   const ctx = SmokeContext.fromEnvironment()
-  const modelUpgrade = args["model_upgrade"] as string | undefined
+  const modelUpgrade = stringOption(parsed, "model-upgrade")
   const proposals = modelUpgrade
     ? buildRereviewProposals(ctx.countedRows, modelUpgrade)
     : buildExpiryProposals(ctx.countedRows, ctx.metricWindowStart, ctx.today)

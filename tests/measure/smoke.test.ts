@@ -350,6 +350,16 @@ describe("file checks", () => {
     assertStatus("dangling", "data", "FAIL", "3 dangling links: skills/a-b; skills/c; skills/a/z")
   })
 
+  it("dangling_recursesIntoSubdirectoriesInUtf16Order_likeTheBaseWalk", () => {
+    const { box } = harness
+    const skills = path.join(box.data, "skills")
+    for (const [directory, name] of [["\u{1F600}", "x"], ["\uFF10", "y"]]) {
+      fs.mkdirSync(path.join(skills, directory), { recursive: true })
+      fs.symlinkSync(path.join(box.root, "gone"), path.join(skills, directory, name))
+    }
+    assertStatus("dangling", "data", "FAIL", "2 dangling links: skills/\u{1F600}/x; skills/\uFF10/y")
+  })
+
   it("assertionCap_fails_whenSkillsOutgrowTheAllowance", () => {
     for (let number = 0; number < 30; number++) harness.box.write(`keel/skills/s${number}/SKILL.md`, "## Rules\n\n- [K1] Tagged.\n")
     const [completed, result] = harness.runSmoke()

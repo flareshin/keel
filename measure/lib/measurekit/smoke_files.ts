@@ -279,13 +279,15 @@ function danglingLinks(dataDir: string, top: string): string[] {
   const visit = (directory: string): void => {
     let names: string[]
     try {
-      names = fs.readdirSync(directory).sort(compareCodePoints)
+      names = fs.readdirSync(directory)
     } catch {
       return
     }
-    const entries = names.map((name) => path.join(directory, name))
-    found.push(...entries.filter(isDangling).map((link) => path.relative(dataDir, link)))
-    for (const entry of entries) if (!isSymlink(entry) && isDir(entry)) visit(entry)
+    const listed = [...names].sort(compareCodePoints).map((name) => path.join(directory, name))
+    found.push(...listed.filter(isDangling).map((link) => path.relative(dataDir, link)))
+    // The base walk recursed in UTF-16 order; it differs from code point order only for names above U+FFFF.
+    const recursed = [...names].sort().map((name) => path.join(directory, name))
+    for (const entry of recursed) if (!isSymlink(entry) && isDir(entry)) visit(entry)
   }
   visit(top)
   return found

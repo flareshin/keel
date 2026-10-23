@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { differencesFromRecorded } from "../recorded-cases.ts";
 import type { ObservedDelta, Observation, Run } from "../recorded-cases.ts";
-import { EXPECTED_DIVERGENCES, isDenyToPass, judgeCase, runShipGateParity, summary } from "./ship-gate-parity.ts";
+import { EXPECTED_DIVERGENCES, isDenyToPass, judgeCase, runShipGateParity, summary, withoutCheckoutRepoKey } from "./ship-gate-parity.ts";
 
 const MIN_CASES = 600;
 const PARITY_TIMEOUT_MS = 120 * 60_000;
@@ -37,6 +37,18 @@ describe("ship-gate parity comparison", () => {
     assert.equal(isDenyToPass(recorded(DENY, "x"), observation(null, "")), true);
     assert.equal(isDenyToPass(recorded(0, ""), observation(DENY, "x")), false);
     assert.equal(isDenyToPass(recorded(DENY, "x"), observation(DENY, "x")), false);
+  });
+});
+
+describe("ship-gate parity checkout repo key", () => {
+  const line = '{"hook": "ship-gate", "outcome": "pass", "repo": "someone/keel"}';
+
+  it("replaces the key the checkout's origin remote names", () => {
+    assert.equal(withoutCheckoutRepoKey(line, "someone/keel"), '{"hook": "ship-gate", "outcome": "pass", "repo": "{{KEEL_REPO}}"}');
+  });
+
+  it("leaves the text alone when the checkout has no origin remote", () => {
+    assert.equal(withoutCheckoutRepoKey(line, null), line);
   });
 });
 

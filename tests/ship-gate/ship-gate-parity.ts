@@ -1,8 +1,10 @@
+import { execFileSync } from "node:child_process";
 import { lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { differencesFromRecorded, envFromTemplate, excerpt, materialize, paddedRoot, readFixtureFile, restored, runInSandbox } from "../recorded-cases.ts";
 import type { Observation, ObservedDelta, Run, SnapshotStore } from "../recorded-cases.ts";
+import { normalizeRepoKey } from "../../lib/evidence/registry.ts";
 import { KEEL_HOME } from "./helpers.ts";
 
 export const FIXTURE_DIRECTORY = join(import.meta.dirname, "fixtures", "ship-gate-parity");
@@ -15,6 +17,8 @@ const FIRES_TIMESTAMP = /"ts": "[^"]*"/g;
 const CC_VERSION_FILE = ".cc-version";
 const CC_VERSION_FIELD = /cc_version=[^"\\]*/g;
 const CC_VERSION_PLACEHOLDER = "<version>";
+const CHECKOUT_REPO_TOKEN = "{{KEEL_REPO}}";
+const CHECKOUT_REPO_KEY = checkoutRepoKey();
 const GIT_STATE = new Set(["HEAD", "config", "packed-refs", "FETCH_HEAD", "refs"]);
 const UNREADABLE = "<unreadable>";
 const OVER_BOUND_NESTINGS = [10001, 200000];
@@ -138,9 +142,23 @@ function readOrMark(path: string): string {
   }
 }
 
+function checkoutRepoKey(): string | null {
+  try {
+    return normalizeRepoKey(execFileSync("git", ["-C", KEEL_HOME, "remote", "get-url", "origin"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim());
+  } catch {
+    return null;
+  }
+}
+
+export function withoutCheckoutRepoKey(content: string, repoKey: string | null): string {
+  return repoKey === null || repoKey === "" ? content : content.replaceAll(repoKey, CHECKOUT_REPO_TOKEN);
+}
+
 function normalized(key: string, content: string): string {
   if (key.endsWith(CC_VERSION_FILE)) return CC_VERSION_PLACEHOLDER;
-  return key.endsWith(FIRES_LOG_NAME) ? content.replace(FIRES_TIMESTAMP, '"ts": "<ts>"').replace(CC_VERSION_FIELD, `cc_version=${CC_VERSION_PLACEHOLDER}`) : content;
+  if (!key.endsWith(FIRES_LOG_NAME)) return content;
+  const masked = content.replace(FIRES_TIMESTAMP, '"ts": "<ts>"').replace(CC_VERSION_FIELD, `cc_version=${CC_VERSION_PLACEHOLDER}`);
+  return withoutCheckoutRepoKey(masked, CHECKOUT_REPO_KEY);
 }
 
 export interface Verdict {

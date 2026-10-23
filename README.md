@@ -20,6 +20,80 @@ keel answers these with a few rules held by code where possible:
 - Every rule is a row in a ledger. The row says where the rule is enforced, how it is measured and when it is reviewed again.
 - A rule that stops earning its place is proposed for demotion and, eventually, retirement.
 
+## Getting started
+
+This takes a new user from a clone to a first gated push. It needs `node` 24 or newer, `bash`, `git` and `jq`. The later sections explain each part.
+
+### 1. Clone a dedicated checkout
+
+```bash
+git clone <keel repo url> ~/git/keel
+```
+
+`bin/link` points `~/.claude` into this checkout, so it should move only by merge: update it from your own terminal with `git -C ~/git/keel pull --ff-only`, then run `~/git/keel/bin/link --check`; if it reports drift, run `~/git/keel/bin/link --write` and check again. Do not edit in it. Once keel is installed, git-guard denies Claude Code writes there and asks for a worktree (`C-isolation`). `bin/link --write` refuses to link from a linked worktree.
+
+### 2. Start without an overlay
+
+The overlay (`~/git/keel-overlay`, or `KEEL_OVERLAY_DIR`) holds your own rules and data. Every file in it is optional, so you can start without one. Until you add one:
+
+- No repo is gated. ship-gate warns once per session and lets pushes and merges through, except one it cannot attribute to one repo and branch, such as `git subtree push` or a `GIT_DIR` override, which it still denies.
+- `git-guard`, `report-gate`, `model-assign` and `handoff` still run in every repo. For example, `model-assign` assigns a model and an effort to an agent dispatch that names none, and denies a Workflow script whose `agent()` calls name none.
+- The generated `CLAUDE.md` holds `PRINCIPLES.md` only.
+- `measure/smoke` fails until the overlay has `boundary/lexicon.txt`, and while any installed Claude Code mod is missing from the overlay's `reviewed-mods.txt`.
+
+[`examples/`](examples) shows sample data for the main overlay files, grouped by component, with invented values. DESIGN.md (a) lists every overlay file.
+
+### 3. Link it into `~/.claude`
+
+Run these from a terminal outside Claude Code:
+
+```bash
+cd ~/git/keel
+bin/link
+```
+
+This dry run prints JSON: `actions` (what `--write` would do), `problems` and `dropped`. With no existing `~/.claude` setup nothing blocks:
+
+```bash
+bin/link --write
+bin/link --check
+```
+
+With an existing setup, one or both of two problems block `--write`. A refused `--write` writes nothing and prints the exact command to run after `link: or, once each one is reviewed, run:`.
+
+- `target-occupied` on `CLAUDE.md`: the file is yours, not generated. `--force` moves it to `~/.claude/state/keel/link-backup/<time>/CLAUDE.md`. To keep its rules, move them into the overlay's `PERSONAL.md`; `bin/link` appends that file to the generated `CLAUDE.md`. The generated file is capped at 4096 bytes and `PRINCIPLES.md` uses about half, so `PERSONAL.md` has about 1.9 KB; no flag lifts the cap, and the dry run's `claude_md_bytes` shows the size.
+- `settings-unadopted`: keel takes over the `hooks`, `permissions` and `env` keys of `settings.json`, and `dropped` lists every existing item it would remove. To keep an item, declare it in an overlay settings fragment, such as `~/git/keel-overlay/settings/mine.json`, with the same key and value as in your `settings.json`. A plain `bin/link --write` refuses, writes nothing and prints each item on stderr as `link: adopt drops: <item>`. Copy each item you accept losing into a file, one per line, exactly as those lines print it (the JSON in `dropped` escapes quotes and backslashes).
+
+With both problems, that command is:
+
+```bash
+bin/link --write --adopt --force --accept-drops <file>
+bin/link --check
+```
+
+Other settings keys, such as `model`, stay as they are. The `keel` CLI is linked at `~/.claude/bin/keel`; add `~/.claude/bin` to your `PATH` so that you and Claude Code can run `keel`. Start a new Claude Code session so the hooks, skills and `CLAUDE.md` load. `bin/link --unlink` restores the backed-up `settings.json` and `CLAUDE.md`; ignore the `v1-final` restore command it prints unless you used keel v1.
+
+### 4. Gate your first repo
+
+From your own terminal, create `~/git/keel-overlay/gated-repos.tsv`, tab-separated, with your repo's `owner/repo`. Create and edit overlay files there, not through Claude Code: git-guard treats the overlay like the keel checkout and denies Claude Code writes in it. The file looks like this:
+
+```
+origin	gate	integration_base	risk_rules	tests	push_approval
+you/your-repo	code	main	-	required	false
+```
+
+`risk_rules` `-` means no rule set, so test paths are classed `light` and every other path `standard`. To class paths as `light`, `heavy` or `smoke-only`, add rows under a set name to `risk-rules.tsv` and put that set name in the repo's `risk_rules` column. DESIGN.md (h) specifies both files.
+
+### 5. Ship a first change
+
+In a Claude Code session in that repo:
+
+1. Work in a worktree, not the main checkout.
+2. Run the tests through keel, for example `keel test -- npm test`. The run must report a nonzero test count.
+3. Review with `/lens-review`. Its report starts with `VERDICT: PASS` or `VERDICT: NEEDS_FIXES` and carries a `KEEL-EVIDENCE` line that names the chain's `root_run_id`. Fixes are reviewed as deltas on the same chain.
+4. Approve from your own terminal: `keel approve <root_run_id>`. Agents are denied this command. `keel evidence show --repo <path>` lists the repo's chains.
+5. Push and open or merge the PR. ship-gate checks the evidence. A denial names the missing piece and, where needed, the command for your own terminal.
+
 ## Principles
 
 The charter lives in [`PRINCIPLES.md`](PRINCIPLES.md). `bin/link` turns it into the user-level `CLAUDE.md`.

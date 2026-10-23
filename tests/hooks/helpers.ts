@@ -54,6 +54,7 @@ export class Sandbox {
 
 export const EXAMPLES = join(KEEL_HOME, "examples", "hooks");
 export const REPORT_GATE = "hooks/report-gate/report-gate.ts";
+export const SHIP_GATE = "hooks/ship-gate/ship-gate.ts";
 export const GIT_GUARD = "hooks/git-guard/git-guard.ts";
 export const MODEL_ASSIGN = "hooks/model-assign/model-assign.ts";
 export const HANDOFF = "hooks/handoff/handoff.ts";

@@ -6,7 +6,7 @@ import {
   assertBulletIdsSeeded, assertFired, bash, GIT_GUARD, HookSandbox, KEEL_HOME, preToolUse, withEnv,
 } from "./helpers.ts";
 import type { HookResult } from "./helpers.ts";
-import { APPROVAL_LOOKUP_TIMEOUT_SECONDS, BOUNDARY_TIMEOUT_SECONDS, GuardError, scanStagedSecrets } from "../../hooks/git-guard/git-guard.ts";
+import { BOUNDARY_TIMEOUT_SECONDS, GuardError, scanStagedSecrets } from "../../hooks/git-guard/git-guard.ts";
 import { GIT_TIMEOUT_SECONDS } from "../../hooks/lib/hookkit/repo.ts";
 
 const ATTRIBUTION_TRAILER = "Co-Authored-By: Claude <noreply@example.invalid>";
@@ -806,7 +806,6 @@ describe("SubprocessTimeoutTest", () => {
   it("subprocessTimeouts_stayBelowTheRegisteredTimeout", () => {
     const registered = registeredTimeout("git-guard/git-guard");
     assert.ok(BOUNDARY_TIMEOUT_SECONDS + DECISION_MARGIN_SECONDS < registered);
-    assert.ok(APPROVAL_LOOKUP_TIMEOUT_SECONDS + DECISION_MARGIN_SECONDS < registered);
     assert.ok(GIT_TIMEOUT_SECONDS + DECISION_MARGIN_SECONDS < registered);
   });
 

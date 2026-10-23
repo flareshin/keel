@@ -1,3 +1,4 @@
+import { approvedFastForward } from "../../lib/evidence/activation.ts";
 import { boundaryScanner, dataDir, keelHome, overlayDir, overlayPath } from "../lib/hookkit/env.ts";
 import { FireLog } from "../lib/hookkit/fires.ts";
 import * as knownvalues from "../lib/hookkit/knownvalues.ts";
@@ -35,11 +36,8 @@ const ACTION_DENY_COMMIT = "deny-commit";
 const ACTION_DENY_PATH = "deny-path";
 const ALWAYS_PROTECTED_BRANCHES = ["main", "master"];
 export const BOUNDARY_TIMEOUT_SECONDS = 8;
-export const APPROVAL_LOOKUP_TIMEOUT_SECONDS = 8;
 const BOUNDARY_EXIT_CLEAN = 0;
 const BOUNDARY_EXIT_HITS = 1;
-const APPROVAL_EXIT_APPROVED = 0;
-const APPROVAL_EXIT_NOT_APPROVED = 3;
 const COMMIT_MESSAGE_OPTIONS: ReadonlySet<string> = new Set(["-m", "--message"]);
 const COMMIT_FILE_OPTIONS: ReadonlySet<string> = new Set(["-F", "--file"]);
 const COMMIT_STAGING_LONG_OPTIONS: ReadonlySet<string> = new Set(["--all"]);
@@ -238,7 +236,7 @@ function collect(hits: Map<string, string[]>, rule: string | null, path: string)
   hits.set(rule, paths);
 }
 
-function checkLiveCheckouts(call: readonly Step[]): Violation[] {
+export function checkLiveCheckouts(call: readonly Step[]): Violation[] {
   const live = new LiveCheckouts();
   if (live.roots.length === 0) return [];
   const found: Array<[what: string, root: string | null]> = [];
@@ -261,18 +259,7 @@ function checkLiveCheckouts(call: readonly Step[]): Violation[] {
 
 function isApprovedFastForward(args: readonly string[], repo: string): boolean {
   if (args.length !== 3 || args[0] !== "merge" || args[1] !== "--ff-only") return false;
-  return approvedFastForwardViaPython(repo, args[2] ?? "");
-}
-
-function approvedFastForwardViaPython(repo: string, target: string): boolean {
-  const lookup =
-    "import sys; sys.path.insert(0, sys.argv[1]); from evidence.activation import approved_fast_forward; " +
-    `sys.exit(${APPROVAL_EXIT_APPROVED} if approved_fast_forward(sys.argv[2], sys.argv[3]) else ${APPROVAL_EXIT_NOT_APPROVED})`;
-  const evidenceLibrary = joinPath(import.meta.dirname, "..", "..", "lib");
-  const result = run(["python3", "-I", "-c", lookup, evidenceLibrary, repo, target], APPROVAL_LOOKUP_TIMEOUT_SECONDS);
-  if (result.returncode === APPROVAL_EXIT_APPROVED) return true;
-  if (result.returncode === APPROVAL_EXIT_NOT_APPROVED) return false;
-  throw new GuardError(`approval lookup exit ${result.returncode}: ${truncate(strip(result.stderr), 120)}`);
+  return approvedFastForward(repo, args[2] ?? "");
 }
 
 function liveViolation(what: string, root: string): Violation {

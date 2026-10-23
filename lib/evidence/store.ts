@@ -2,7 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync
 import { randomBytes } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import * as env from './env.ts';
-import { compareCodePoints, decodeStrict, isDirectory, isJsonObject, pyOsErrorMessage, pythonJsonDumps, pythonJsonLoads, sortedStrings, universalNewlines } from './pycompat.ts';
+import { RecursionError, compareCodePoints, decodeStrict, isDirectory, isJsonObject, pyOsErrorMessage, pythonJsonDumps, pythonJsonLoads, sortedStrings, universalNewlines } from './pycompat.ts';
 import type { JsonValue } from './pycompat.ts';
 
 export const REPO_SCOPED_KINDS = ['review', 'tests', 'smoke'];
@@ -112,6 +112,7 @@ export function readFile(path: string): Evidence {
   try {
     evidence = pythonJsonLoads(universalNewlines(decodeStrict(readFileSync(path))));
   } catch (error) {
+    if (error instanceof RecursionError) throw error;
     throw new EvidenceError(`unreadable evidence ${path}: ${readFailure(error, path)}`);
   }
   if (!isJsonObject(evidence) || typeof evidence['expires_at'] !== 'string') {

@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, test } from 'node:test';
 import type { TestContext } from 'node:test';
+import { spawnSync } from 'node:child_process';
+import { checkLiveCheckouts } from '../../hooks/git-guard/git-guard.ts';
+import { steps } from '../../hooks/lib/hookkit/shell.ts';
 import { approvedFastForward } from '../../lib/evidence/activation.ts';
-import { Sandbox } from './helpers.ts';
+import { KEEL_HOME, Sandbox } from './helpers.ts';
 import type { Repo } from './helpers.ts';
 
 class ActivationFixture {
@@ -44,6 +48,38 @@ describe('ActivationTest', () => {
     assert.equal(approvedFastForward(f.repo.path, 'main'), false);
     f.repo.write('dirty.txt', 'unreviewed\n');
     assert.equal(approvedFastForward(f.repo.path, f.target), false);
+  });
+
+  test('activation_guardAllowsOnlyApprovedLiteralFastForward', (t) => {
+    const f = new ActivationFixture(t);
+    f.approveTarget();
+    f.box.patchProcessEnv(t, { KEEL_HOME: f.repo.path });
+
+    const approved = checkLiveCheckouts(steps('git merge --ff-only ' + f.target, f.repo.path));
+    const ordinary = checkLiveCheckouts(steps('git merge ' + f.target, f.repo.path));
+
+    assert.deepEqual(approved, []);
+    assert.ok(ordinary.some((item) => item.ruleId === 'C-isolation'));
+  });
+
+  test('activation_gitGuardProcess_passesAnApprovedFastForward_andDeniesTheSameMergeWithoutApproval', (t) => {
+    const f = new ActivationFixture(t);
+    const guard = (command: string) => spawnSync(process.execPath, [join(KEEL_HOME, 'hooks', 'git-guard', 'git-guard.ts')], {
+      input: JSON.stringify(f.box.bashPayload(f.repo, command)), encoding: 'utf8', env: { ...f.box.env, KEEL_HOME: f.repo.path },
+    });
+    const merge = 'git merge --ff-only ' + f.target;
+
+    const unapproved = guard(merge);
+    f.approveTarget();
+    const approved = guard(merge);
+    const ordinary = guard('git merge ' + f.target);
+
+    assert.equal(unapproved.status, 2, unapproved.stderr);
+    assert.match(unapproved.stderr, /\[C-isolation\]/);
+    assert.equal(approved.status, 0, approved.stderr);
+    assert.equal(approved.stderr, '');
+    assert.equal(ordinary.status, 2, ordinary.stderr);
+    assert.match(ordinary.stderr, /\[C-isolation\]/);
   });
 
   test('activation_refusesDifferentCommitWithSameTree', (t) => {

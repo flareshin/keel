@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
+import { readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
+import type { TestContext } from 'node:test';
 import { onlyCommentDeletions } from '../../lib/evidence/comment_cleanup.ts';
+import { PUSH_APPROVAL_REGISTRY, Sandbox } from './helpers.ts';
+import type { Repo } from './helpers.ts';
 
 function check(path: string, before: string, after: string): boolean {
   return onlyCommentDeletions(path, Buffer.from(before), Buffer.from(after));
@@ -55,5 +59,119 @@ describe('CommentDeletionTest', () => {
       assert.equal(check('notebook.py', before, 'x = 1\n'), false, marker);
       assert.equal(check('notebook.py', before, `# ${marker}\nx = 1\n`), false, marker);
     }
+  });
+});
+
+const PUSH_FEATURE = 'git push origin feature';
+
+class CommentReuseFixture {
+  box: Sandbox;
+  repo: Repo;
+  before: string;
+
+  constructor(t: TestContext) {
+    this.box = new Sandbox(t, PUSH_APPROVAL_REGISTRY);
+    this.repo = this.box.clone('acme', 'app');
+    this.repo.branch('feature');
+    this.repo.commit({
+      'src/a.py': '# Ordinary explanation.\nprint(1)\n',
+      'tests/test_a.py': 'def test_a():\n    # Ordinary explanation.\n    assert True\n',
+    });
+    this.box.fullBundle(this.repo);
+    this.before = this.repo.head();
+  }
+}
+
+describe('CommentReuseGateTest', () => {
+  test('push_reusesApprovedReviewAndTests_afterPureCommentDeletion', (t) => {
+    const f = new CommentReuseFixture(t);
+    f.repo.commit({ 'src/a.py': 'print(1)\n' });
+
+    const result = f.box.push(f.repo, PUSH_FEATURE);
+
+    assert.equal(result.rc, 0, result.stderr);
+    assert.equal(f.box.evidenceFiles('review').length, 1);
+    assert.equal(f.box.evidenceFiles('tests').length, 1);
+  });
+
+  test('merge_reusesApprovedReviewAndTests_afterPureCommentDeletion', (t) => {
+    const f = new CommentReuseFixture(t);
+    f.repo.commit({ 'src/a.py': 'print(1)\n' });
+    f.repo.git('push', '-q', 'origin', 'feature');
+    writeFileSync(f.box.ghResponse, JSON.stringify({
+      state: 'OPEN', isDraft: false, mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', statusCheckRollup: [],
+      baseRefName: 'main', headRefOid: f.repo.head(),
+    }));
+
+    const result = f.box.push(f.repo, 'gh pr merge 7 --squash --match-head-commit ' + f.repo.head());
+
+    assert.equal(result.rc, 0, result.stderr);
+  });
+
+  test('push_reusesEvidence_whenOnlyTestCommentsAreDeleted', (t) => {
+    const f = new CommentReuseFixture(t);
+    f.repo.commit({ 'tests/test_a.py': 'def test_a():\n    assert True\n' });
+
+    const result = f.box.push(f.repo, PUSH_FEATURE);
+
+    assert.equal(result.rc, 0, result.stderr);
+  });
+
+  test('push_stillRequiresApproval_afterPureCommentDeletion', (t) => {
+    const f = new CommentReuseFixture(t);
+    for (const path of f.box.evidenceFiles('approval')) unlinkSync(path);
+    f.repo.commit({ 'src/a.py': 'print(1)\n' });
+
+    const result = f.box.push(f.repo, PUSH_FEATURE);
+
+    assert.equal(result.rc, 2);
+    assert.ok(result.stderr.includes('no approval bound'), result.stderr);
+  });
+
+  test('push_rejectsBehaviorOrTestChanges_afterReviewedCandidate', (t) => {
+    const f = new CommentReuseFixture(t);
+    for (const [path, content] of [['src/a.py', 'print(2)\n'], ['tests/test_a.py', 'def test_a():\n    assert False\n']] as const) {
+      f.repo.git('checkout', '--detach', f.before);
+      f.repo.commit({ [path]: content });
+      const result = f.box.push(f.repo, 'git push origin HEAD:feature');
+      assert.equal(result.rc, 2, path);
+      assert.ok(result.stderr.includes('content or mode changed after review'), result.stderr);
+    }
+  });
+
+  test('push_reusesEvidence_withoutNewTestInCommentOnlyRange', (t) => {
+    const f = new CommentReuseFixture(t);
+    f.repo.git('push', '-q', 'origin', 'HEAD:main');
+    f.repo.git('fetch', '-q', 'origin');
+    f.repo.commit({ 'src/a.py': 'print(1)\n' });
+
+    const result = f.box.push(f.repo, PUSH_FEATURE);
+
+    assert.equal(result.rc, 0, result.stderr);
+  });
+
+  test('push_refusesModeChanges_evenAfterPureCommentDeletion', (t) => {
+    const f = new CommentReuseFixture(t);
+    f.repo.write('src/a.py', 'print(1)\n', true);
+    f.repo.commit({});
+
+    const result = f.box.push(f.repo, PUSH_FEATURE);
+
+    assert.equal(result.rc, 2);
+    assert.ok(result.stderr.includes('content or mode changed after review'), result.stderr);
+  });
+
+  test('push_refusesExpiredTests_evenAfterPureCommentDeletion', (t) => {
+    const f = new CommentReuseFixture(t);
+    const path = f.box.evidenceFiles('tests')[0]!;
+    const evidence = JSON.parse(readFileSync(path, 'utf8'));
+    evidence.expires_at = '2000-01-01T00:00:00Z';
+    writeFileSync(path, JSON.stringify(evidence));
+    f.repo.commit({ 'src/a.py': 'print(1)\n' });
+
+    const result = f.box.push(f.repo, PUSH_FEATURE);
+
+    assert.equal(result.rc, 2);
+    assert.ok(result.stderr.includes('no tests evidence'), result.stderr);
   });
 });

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { join } from "node:path";
 import {
-  bash, ENV_PREFLIGHT, GIT_GUARD, HookSandbox, MODEL_ASSIGN, preToolUse, REPORT_GATE, SEEDED_RULE_IDS, subagentStop,
+  bash, ENV_PREFLIGHT, GIT_GUARD, HookSandbox, MODEL_ASSIGN, preToolUse, REPORT_GATE, SEEDED_RULE_IDS, SHIP_GATE, subagentStop,
 } from "./helpers.ts";
 import { HANDBACK_TAIL } from "../../hooks/report-gate/report-gate.ts";
 
@@ -40,7 +40,46 @@ function assertDenyShape(message: string): void {
   assert.ok(Array.from(message.replace(/\n+$/, "")).length <= MESSAGE_LIMIT, message);
 }
 
+function assertWarnShape(message: string): void {
+  const lines = messageLines(message);
+  assert.match(lines[0] ?? "", FIRST_LINE);
+  for (const line of lines.slice(1)) assert.ok(BULLET.test(line) || FIRST_LINE.test(line), line);
+  assert.ok(Array.from(message).length <= MESSAGE_LIMIT, message);
+}
+
+function gatedFeatureRepo(): string {
+  sandbox.write(join(sandbox.overlay, "gated-repos.tsv"),
+    "origin\tgate\tintegration_base\trisk_rules\ttests\nacme/app\tcode\tmain\t-\trequired\n");
+  const repo = sandbox.makeRepo("acme", "app");
+  sandbox.git(repo, "checkout", "-q", "-b", "feature");
+  sandbox.commitFile(repo, "src/a.py", "x\n", "feature work");
+  return repo;
+}
+
 describe("MessageContractTest", () => {
+  it("shipGate_deny_followsTheContract", () => {
+    const repo = gatedFeatureRepo();
+    const result = sandbox.runHook(SHIP_GATE, { payload: bash("git push origin feature", repo) });
+    assert.equal(result.code, 2, result.stderr);
+    assertDenyShape(result.stderr);
+    assert.ok(messageLines(result.stderr).pop()?.startsWith(RUN_YOURSELF + "cd "), result.stderr);
+  });
+
+  it("shipGate_warn_followsTheContract", () => {
+    const repo = gatedFeatureRepo();
+    const result = sandbox.runHook(SHIP_GATE, { payload: bash("gh pr create --title t --body b", repo) });
+    assert.equal(result.code, 0, result.stderr);
+    assertWarnShape(result.json().hookSpecificOutput.additionalContext);
+  });
+
+  it("shipGate_failClosed_followsTheContract", () => {
+    const result = sandbox.runHook(SHIP_GATE, {
+      raw: '{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "git push origin x"',
+    });
+    assert.equal(result.code, 2);
+    assertDenyShape(result.stderr);
+  });
+
   it("gitGuard_bashDeny_followsTheContract", () => {
     const repo = sandbox.makeRepo("example", "app");
     const result = sandbox.runHook(GIT_GUARD, { payload: bash("git push --force origin main", repo) });
@@ -108,6 +147,15 @@ describe("MessageContractTest", () => {
   });
 
   it("everyFiresLine_namesASeededRuleId", () => {
-    for (const fire of sandbox.fires()) assert.ok(SEEDED_RULE_IDS.has(fire.rule_id), JSON.stringify(fire));
+    const repo = gatedFeatureRepo();
+    const denied = sandbox.runHook(SHIP_GATE, { payload: bash("git push origin feature", repo) });
+    const warned = sandbox.runHook(SHIP_GATE, { payload: bash("gh pr create --title t --body b", repo) });
+    const failedClosed = sandbox.runHook(SHIP_GATE, {
+      raw: '{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "git push origin x"',
+    });
+    assert.deepEqual([denied.code, warned.code, failedClosed.code], [2, 0, 2]);
+    const fires = sandbox.fires();
+    assert.ok(fires.length > 0, "the ship-gate runs wrote no fires line");
+    for (const fire of fires) assert.ok(SEEDED_RULE_IDS.has(fire.rule_id), JSON.stringify(fire));
   });
 });

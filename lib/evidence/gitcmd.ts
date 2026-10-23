@@ -11,6 +11,7 @@ export const GIT_TIMEOUT_SECONDS = 20;
 export const FETCH_TIMEOUT_SECONDS = 20;
 export const SNAPSHOT_TIMEOUT_SECONDS = 300;
 const DEFAULT_REMOTE = 'origin';
+export const GH_RESOLVED_BASE = 'base';
 const GH_DEFAULT_REMOTE_KEYS = '^remote\\..*\\.gh-resolved$';
 const GH_RESOLVED_SUFFIX = '.gh-resolved';
 const REMOTE_PREFIX = 'remote.';

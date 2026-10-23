@@ -1,6 +1,6 @@
 import { posix } from 'node:path';
 import * as gitcmd from './gitcmd.ts';
-import { PYTHON_SPACE_PATTERN, decodeStrict, pyStrip } from './pycompat.ts';
+import { PYTHON_SPACE_PATTERN, UnicodeDecodeError, decodeStrict, pyStrip } from './pycompat.ts';
 import { runCaptured } from './subprocess.ts';
 
 const MAX_SOURCE_BYTES = 1024 * 1024;
@@ -86,7 +86,7 @@ export function onlyCommentDeletions(path: string, before: Buffer, after: Buffer
     old = decodeStrict(before);
     current = decodeStrict(after);
   } catch (error) {
-    if (!(error instanceof TypeError)) throw error;
+    if (!(error instanceof UnicodeDecodeError)) throw error;
     return false;
   }
   if (old.replaceAll('\r\n', '').includes('\r') || FORBIDDEN_CHARS.some((char) => old.includes(char))) return false;

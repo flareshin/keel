@@ -286,6 +286,14 @@ describe('WriteReviewTest', () => {
     assert.equal(sandbox.keel(['evidence', 'write-review'], { stdin: JSON.stringify(longReason) }).rc, 0);
   });
 
+  test('reviewPrepare_reportsAnInternalError_whenStdinNestsPastTheBound', (t) => {
+    const sandbox = new Sandbox(t);
+    const run = sandbox.keel(['review', 'prepare'], { stdin: '['.repeat(200_000) + ']'.repeat(200_000) });
+    assert.equal(run.rc, 70, run.stderr);
+    assert.ok(run.stderr.includes('keel: internal error: RecursionError'), run.stderr.slice(0, 300));
+    assert.ok(!run.stderr.includes('stdin is not JSON'), run.stderr.slice(0, 300));
+  });
+
   test('writeReview_refuses_whenObjectsAreMissing', (t) => {
     const sandbox = new Sandbox(t);
     const repo = feature(sandbox);

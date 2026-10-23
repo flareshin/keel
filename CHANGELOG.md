@@ -4,6 +4,62 @@ All notable changes to keel are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+`measure` and `bin/link` drop their Python emulation and run on plain Node behavior: `JSON.parse` and
+`JSON.stringify`, `node:path`, `node:fs`, `RegExp` and `node:util` `parseArgs`.
+
+### Changed
+- What stays the same: exit codes for every documented outcome, the field names and values of every JSON and JSONL
+  line the tools print or write (`measure/{run,smoke,propose,weekly,boundary}`, `measure/evals/{eval,review-eval}`,
+  `bin/link`, the `keel-*.jsonl` logs and raw-dir files), the `[ID]` tags in messages, and the CLI flags with their
+  meaning, including exit 2 with a `usage:` line on bad arguments.
+- What may differ and does: JSON is compact `JSON.stringify` output with non-ASCII written as is (keys stay sorted
+  where they were sorted, and indented files keep two spaces); help and usage text is a short hand-written usage
+  string without wrapping or colour; error messages use Node's wording and JSON-style quoting instead of Python's
+  `repr` (`unknown scope "x"` was `unknown scope 'x'`; `internal error: InvalidUtf8Error: <path> is not valid UTF-8`
+  and `internal error: Error: EISDIR: ...` replace Python class names); the review-eval stderr summary prints
+  numbers as JavaScript does (`recall 1`, `none`).
+- Command lines: option prefixes are no longer expanded (`--gen`, `--sin=2020-1-1` and `--s` now exit 2 as unknown
+  options); `--repeat` and `--timeout-seconds` take ASCII digits only (` 1_0 ` and other scripts' digits now exit 2);
+  dates (`--since`, `review_by`, `grace_until`) take ASCII digits, one or two for month and day, and no space padding.
+- `boundary/regex.txt` and `measure/boundary-generic.tsv` are JavaScript `RegExp` syntax; a leading `(?i)` still
+  makes a line case-insensitive. Python-only forms change meaning or exit 2 (`x{,3}` is literal text, `(?P<n>...)` and
+  `(?x)` do not compile), `\d`, `\w` and `\b` are ASCII, and case folding no longer equates `İ` or `ı` with `i`.
+- Text files are split into lines at `\r\n`, `\r` and `\n` only. A ` `, `\f` or `\v` no longer starts a line, which
+  moves boundary hit line numbers and keeps a bullet after one of them out of the `[ID]` tagging check.
+- Metric runners must print a JSON integer count: `true` and `false` are now an error (FAIL, a `recheck` proposal, a
+  weekly `error` entry), `1.0` counts as 1, and a count beyond 2^53 is printed as the nearest double
+  (`12345678901234567890` becomes `12345678901234567000`). Floats in runner items print in JavaScript form (`1.0` is `1`).
+- Every text input is decoded as strict UTF-8 in full. A `CLAUDE.md` with an invalid byte past its first 8 KiB now
+  makes `bin/link --check`, `--unlink` and `measure/evals/eval --dry-run` exit 70, as an invalid byte earlier already did.
+- `bin/link`: a `settings.json` holding `NaN` or `Infinity` is refused as invalid JSON (exit 3, was a drift report);
+  a lone surrogate in a settings value is written as a `\udXXX` escape (`--write` exit 0, was 70) and shown as U+FFFD
+  on stderr; integer-like keys inside an owned object (`env`, `permissions`) are written first, in ascending order;
+  a drift report counts a non-list value where a list belongs as 0 items instead of failing or counting characters.
+- The `settings_owned_sha256` digests in `state/keel/link-state.json` hash the same text as before (sorted keys,
+  `", "` and `": "` separators, non-ASCII as is) for strings, integers, booleans, null, lists and objects; only floats
+  are written differently (`10.0` is `10`, `1e-07` is `1e-7`).
+
+### Removed
+- The Python-emulation modules `measure/lib/measurekit/{pydate,pydict,pyerrno,pyerrors,pyio,pyjson,pypath,pyregex,
+  pystr,pytextwrap,pyvalue}.ts` and the argparse clone `measure/lib/measurekit/{argparse,arghelp,argcolor}.ts`. Their
+  place is taken by `measure/lib/measurekit/{json,files,dates}.ts`, `parseCommandLine` in `measurekit/cli.ts` and
+  `lib/link/json_spans.ts`.
+- The byte-for-byte Python recordings of measure and link (`tests/fixtures/python/measure-{parity,pty,pycompat,pyerrno}`
+  and `link-{compat,cross-impl,failure-paths,settings-parity}`) and the tests that compared against them
+  (`tests/measure/{pycompat,pyerrno,pyio_encode,pty}.test.ts`, `tests/link/compat.test.ts`). The outcomes they
+  recorded live on in `tests/fixtures/measure` and `tests/fixtures/link` and in `tests/measure/cli_outcomes.test.ts`,
+  `tests/link/{failure_paths,cross_impl,settings_functions}.test.ts` and new tests for each kept helper; the cases whose
+  outcome changed are tested with explicit expectations.
+
+### Upgrading
+- No step is needed for a live `~/.claude` whose owned settings hold no floats. If one does, the first
+  `bin/link --check` after the upgrade may report `<key> changed since the last --write`; when you have not edited
+  it and the dry run (`bin/link`) lists no other problem that `--force` would act on, run `bin/link --write --force` once.
+- Check an overlay `boundary/regex.txt` written for Python `re` with `measure/boundary --paths <any file>`: exit 2 names
+  the line that no longer compiles.
+
 ## [1.0.0] - 2026-10-23
 
 The first released version, and the Node-only release. TypeScript replaces the Python in every hook, command, workflow

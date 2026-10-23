@@ -311,7 +311,7 @@ npm ci   # once, before the typecheck
 npx tsc -p tsconfig.json
 ```
 
-The parity harnesses compare the TypeScript with outputs recorded from the earlier Python implementation (Python 3.15.0, macOS) and stored as fixtures under `tests/fixtures/python`, `tests/hooks/fixtures`, `tests/ship-gate/fixtures` and `tests/skills/fixtures`. The fixtures are frozen: the tools that recorded them needed the Python, which is gone, and survive only in the git history of the commits that introduced the fixtures. The errno-wording checks were recorded on macOS and skip on other platforms.
+The parity harnesses compare the TypeScript with outputs recorded from the earlier Python implementation (Python 3.15.0, macOS) and stored as fixtures under `tests/fixtures/python`, `tests/hooks/fixtures`, `tests/ship-gate/fixtures` and `tests/skills/fixtures`. `measure` and `bin/link` run on plain Node behavior instead; their tests keep the recorded outcomes (exit code, JSON fields, written files) in `tests/fixtures/measure` and `tests/fixtures/link`. The fixtures are frozen: the tools that recorded them needed the Python, which is gone, and survive only in the git history of the commits that introduced the fixtures. The errno-wording checks were recorded on macOS and skip on other platforms.
 
 To enable the boundary-scan git hooks in a checkout, run `git config core.hooksPath githooks`.
 

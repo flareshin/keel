@@ -47,7 +47,12 @@ describe("ship-gate parity checkout repo key", () => {
     assert.equal(withoutCheckoutRepoKey(line, "someone/keel"), '{"hook": "ship-gate", "outcome": "pass", "repo": "{{KEEL_REPO}}"}');
   });
 
-  it("leaves the text alone when the checkout has no origin remote", () => {
+  it("also replaces the key the fixtures were recorded with", () => {
+    const recorded = '{"repo": "flareshin/keel"}\n' + line;
+    assert.equal(withoutCheckoutRepoKey(recorded, "someone/keel"), '{"repo": "{{KEEL_REPO}}"}\n{"hook": "ship-gate", "outcome": "pass", "repo": "{{KEEL_REPO}}"}');
+  });
+
+  it("leaves other text alone when the checkout has no origin remote", () => {
     assert.equal(withoutCheckoutRepoKey(line, null), line);
   });
 });

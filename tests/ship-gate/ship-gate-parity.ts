@@ -18,6 +18,7 @@ const CC_VERSION_FILE = ".cc-version";
 const CC_VERSION_FIELD = /cc_version=[^"\\]*/g;
 const CC_VERSION_PLACEHOLDER = "<version>";
 const CHECKOUT_REPO_TOKEN = "{{KEEL_REPO}}";
+const RECORDED_CHECKOUT_REPO_KEY = "flareshin/keel";
 const CHECKOUT_REPO_KEY = checkoutRepoKey();
 const GIT_STATE = new Set(["HEAD", "config", "packed-refs", "FETCH_HEAD", "refs"]);
 const UNREADABLE = "<unreadable>";
@@ -151,7 +152,8 @@ function checkoutRepoKey(): string | null {
 }
 
 export function withoutCheckoutRepoKey(content: string, repoKey: string | null): string {
-  return repoKey === null || repoKey === "" ? content : content.replaceAll(repoKey, CHECKOUT_REPO_TOKEN);
+  const recorded = content.replaceAll(RECORDED_CHECKOUT_REPO_KEY, CHECKOUT_REPO_TOKEN);
+  return repoKey === null || repoKey === "" ? recorded : recorded.replaceAll(repoKey, CHECKOUT_REPO_TOKEN);
 }
 
 function normalized(key: string, content: string): string {

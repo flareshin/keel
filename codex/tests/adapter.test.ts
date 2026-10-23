@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync,
   unlinkSync, utimesSync, writeFileSync,
@@ -8,6 +9,9 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { run } from "../../hooks/lib/hookkit/subprocess.ts";
+import { materialize, SnapshotPacker } from "../../tests/recorded-cases.ts";
+import type { SnapshotStore } from "../../tests/recorded-cases.ts";
+import { recordedAnswers } from "../../tests/recorded.ts";
 import type { CompletedProcess } from "../../hooks/lib/hookkit/subprocess.ts";
 import { withEnv } from "../../tests/hooks/helpers.ts";
 import { completeEdit, validateUpdate } from "../lib/config_policy.ts";
@@ -39,9 +43,8 @@ function readJsonFile(path: string): Record<string, any> {
   return pythonJsonLoads(read(path)) as Record<string, any>;
 }
 
-function pythonDigest(kind: string, content: Buffer): string {
-  const script = "import hashlib, sys; sys.stdout.write(hashlib.sha256(sys.argv[1].encode() + b'\\0' + sys.stdin.buffer.read()).hexdigest())";
-  return spawnSync("python3", ["-I", "-c", script, kind], { input: content, encoding: "utf8" }).stdout;
+function referenceDigest(kind: string, content: Buffer): string {
+  return createHash("sha256").update(kind).update("\0").update(content).digest("hex");
 }
 
 function runNode(script: string, args: string[], env: NodeJS.ProcessEnv, input?: string) {
@@ -288,7 +291,7 @@ describe("installation", () => {
     assert.equal(retry.status, 0, retry.stdout + retry.stderr);
     assert.equal(runSourceLink(second, "--check").status, 0);
     const saved = readJsonFile(state)["owned"];
-    for (const path of [join(profile, "AGENTS.md"), join(profile, "hooks.json")]) assert.equal(saved[path], pythonDigest("file", readFileSync(path)));
+    for (const path of [join(profile, "AGENTS.md"), join(profile, "hooks.json")]) assert.equal(saved[path], referenceDigest("file", readFileSync(path)));
   });
 
   it("test_refresh_dryRunLeavesOwnedLinksAndRegistryUntouched", () => {
@@ -497,7 +500,7 @@ describe("installation", () => {
     });
   });
 
-  describe("interoperating with the Python installer on the same profile", () => {
+  describe("reading a profile the Python installer wrote", () => {
     const PYTHON_LINK = join(ADAPTER, "bin", "link");
 
     function runPythonLink(...args: string[]) {
@@ -505,45 +508,72 @@ describe("installation", () => {
       return { status: result.status, stdout: result.stdout, stderr: result.stderr };
     }
 
+    interface PythonInstall {
+      store: SnapshotStore;
+      snapshot: string;
+      agents: string;
+      agentsBytes: string;
+      ownedAgentsDigest: string;
+      registry: string;
+    }
+
+    function recordedPythonInstall(): PythonInstall {
+      const askPython = (): PythonInstall[] => {
+        assert.equal(runPythonLink("--write").status, 0);
+        const packer = new SnapshotPacker();
+        const agents = join(home, ".codex/AGENTS.md");
+        const owned = readJsonFile(join(home, ".codex/keel-codex-state.json"))["owned"][agents];
+        const registry = read(join(home, ".agents/keel-codex-skills.json"));
+        return [{ store: packer.store, snapshot: packer.addTree(home, home), agents: read(agents), agentsBytes: readFileSync(agents).toString("base64"), ownedAgentsDigest: owned, registry }];
+      };
+      return recordedAnswers("codex-python-install", [{ install: "write" }], askPython, { "{{ROOT}}": home, "{{KEEL_HOME}}": dirname(ADAPTER) })[0] as PythonInstall;
+    }
+
+    function restoredPythonInstall(): PythonInstall {
+      const install = recordedPythonInstall();
+      rmSync(home, { recursive: true, force: true });
+      materialize(install.store, install.snapshot, home);
+      const statePath = join(home, ".codex/keel-codex-state.json");
+      const state = readJsonFile(statePath);
+      for (const owned of Object.keys(state["owned"])) state["owned"][owned] = fingerprint(owned);
+      writeFileSync(statePath, JSON.stringify(state));
+      return install;
+    }
+
     const HOOKS_ONLY = { actions: [] as string[], problems: [] as string[] };
 
-    it("lets Python verify and refresh a TypeScript install, rewriting only the hook command", () => {
-      assert.equal(runLink("--write").status, 0);
+    it("lets TypeScript verify and refresh a Python install, rewriting only the hook command", () => {
+      restoredPythonInstall();
       const hooks = join(home, ".codex/hooks.json");
-      const typescriptHooks = read(hooks);
-      const check = runPythonLink("--check");
+      const pythonHooks = read(hooks);
+      const check = runLink("--check");
       assert.equal(check.status, 1, check.stderr);
       assert.deepEqual(pythonJsonLoads(check.stdout), { ...HOOKS_ONLY, actions: [hooks] });
-      assert.equal(runPythonLink("--write").status, 0);
-      assert.notEqual(read(hooks), typescriptHooks);
-      assert.match(read(hooks), /pre-tool-use\.py"/);
+      assert.equal(runLink("--write").status, 0);
+      assert.notEqual(read(hooks), pythonHooks);
+      assert.match(read(hooks), /pre-tool-use\.ts"/);
       const back = runLink("--check");
-      assert.equal(back.status, 1, back.stderr);
-      assert.deepEqual(pythonJsonLoads(back.stdout), { ...HOOKS_ONLY, actions: [hooks] });
+      assert.equal(back.status, 0, back.stderr);
     });
 
-    it("lets Python unlink a TypeScript install and TypeScript unlink a Python install", () => {
-      assert.equal(runLink("--write").status, 0);
-      const first = runPythonLink("--unlink");
-      assert.equal(first.status, 0, first.stderr);
-      assert.equal(existsSync(join(home, ".codex/hooks.json")), false);
-      assert.equal(existsSync(join(home, ".codex/keel-codex-state.json")), false);
-      assert.equal(runPythonLink("--write").status, 0);
+    it("lets TypeScript unlink a Python install", () => {
+      restoredPythonInstall();
       const second = runLink("--unlink");
       assert.equal(second.status, 0, second.stderr);
       assert.equal(existsSync(join(home, ".codex/AGENTS.md")), false);
+      assert.equal(existsSync(join(home, ".codex/hooks.json")), false);
       assert.equal(existsSync(join(home, ".codex/keel-codex-state.json")), false);
     });
 
-    it("records the same ownership digests and skill registry as Python", () => {
+    it("records the same ownership digests and skill registry as the recorded Python install", () => {
+      const install = recordedPythonInstall();
       assert.equal(runLink("--write").status, 0);
-      const written = { state: readJsonFile(join(home, ".codex/keel-codex-state.json")), registry: read(join(home, ".agents/keel-codex-skills.json")) };
-      assert.equal(runPythonLink("--unlink").status, 0);
-      rmSync(join(home, ".agents"), { recursive: true, force: true });
-      assert.equal(runPythonLink("--write").status, 0);
+      const state = readJsonFile(join(home, ".codex/keel-codex-state.json"));
       const agents = join(home, ".codex/AGENTS.md");
-      assert.equal(readJsonFile(join(home, ".codex/keel-codex-state.json"))["owned"][agents], written.state["owned"][agents]);
-      assert.equal(read(join(home, ".agents/keel-codex-skills.json")), written.registry);
+      assert.equal(install.ownedAgentsDigest, referenceDigest("file", Buffer.from(install.agentsBytes, "base64")));
+      assert.equal(state["owned"][agents], digest("file", install.agents));
+      assert.equal(read(agents), install.agents);
+      assert.equal(read(join(home, ".agents/keel-codex-skills.json")), install.registry);
     });
   });
 

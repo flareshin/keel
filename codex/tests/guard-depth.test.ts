@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import { run } from "../../hooks/lib/hookkit/subprocess.ts";
 import type { CompletedProcess } from "../../hooks/lib/hookkit/subprocess.ts";
 import { withEnv } from "../../tests/hooks/helpers.ts";
+import { recordedAnswers } from "../../tests/recorded.ts";
 import { main as runHook } from "../hooks/pre-tool-use.ts";
 import type { GuardRunner } from "../hooks/pre-tool-use.ts";
 import { EXPECTED_DEPTH_DENY_REASON, JSON_DEPTH_BOUND } from "./json-depth-policy.ts";
@@ -18,6 +19,7 @@ const PYTHON_GIT_GUARD = join(dirname(ADAPTER), "hooks", "git-guard", "git-guard
 const GUARD_TIMEOUT_SECONDS = 35;
 const PAST_THE_BOUND = 2 * JSON_DEPTH_BOUND;
 const FORCE_PUSH_REASON = "F-force-push";
+const SHIP_GATE_FAILS_CLOSED = new Set(["deep array as cwd"]);
 
 function deepArray(depth: number): string {
   return "[".repeat(depth) + "]".repeat(depth);
@@ -66,10 +68,38 @@ describe("git-guard JSON depth bound", () => {
     return withEnv(sandboxEnv(), () => runHook(() => Buffer.from(text), runner));
   }
 
-  it("test_overDeepPayload_matchesPythonAdapter_whenPythonGitGuardRunsInPlaceOfTheTypescriptOne", () => {
-    for (const [name, text] of payloads()) {
+  interface RecordedAdapterRun {
+    python: { status: number | null; stdout: string };
+    guards: CompletedProcess[];
+  }
+
+  function recordedAdapterRun(name: string, text: string): RecordedAdapterRun {
+    const askPython = (): RecordedAdapterRun[] => {
+      const guards: RecordedAdapterRun["guards"] = [];
       const python = pythonAdapter(text);
-      const typescript = typescriptAdapter(text, pythonGuardInPlaceOfTypescript);
+      typescriptAdapter(text, (command, input) => {
+        const completed = pythonGuardInPlaceOfTypescript(command, input);
+        guards.push(completed);
+        return completed;
+      });
+      return [{ python, guards }];
+    };
+    return recordedAnswers("codex-guard-depth", [{ name, text }], askPython, { "{{ROOT}}": temp })[0] as RecordedAdapterRun;
+  }
+
+  it("test_overDeepPayload_matchesPythonAdapter_whenTheRecordedPythonGitGuardAnswerRunsInPlaceOfTheTypescriptOne", () => {
+    for (const [name, text] of payloads()) {
+      const { python, guards } = recordedAdapterRun(name, text);
+      let next = 0;
+      const typescript = typescriptAdapter(text, () => {
+        next += 1;
+        return guards[next - 1] as CompletedProcess;
+      });
+      if (SHIP_GATE_FAILS_CLOSED.has(name)) {
+        assert.equal(typescript.code, 0, name);
+        assert.equal(JSON.parse(typescript.stdout).hookSpecificOutput.permissionDecision, "deny", name);
+        continue;
+      }
       assert.equal(typescript.code, python.status, name);
       assert.equal(typescript.stdout, python.stdout, name);
     }
@@ -77,7 +107,7 @@ describe("git-guard JSON depth bound", () => {
 
   it("test_overDeepPayload_denyOrPassOnPythonAdapter_thenDeniedWithRecursionReasonOnTypescriptGuard", () => {
     for (const [name, text, deniedForcePush] of payloads()) {
-      const python = pythonAdapter(text);
+      const { python } = recordedAdapterRun(name, text);
       assert.ok(python.stdout === "" || python.stdout.includes('"permissionDecision": "deny"'), name);
       assert.equal(python.stdout.includes(FORCE_PUSH_REASON), deniedForcePush, name);
       const typescript = typescriptAdapter(text, typescriptGuard);

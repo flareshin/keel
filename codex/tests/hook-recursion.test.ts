@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import { recordedAnswers } from "../../tests/recorded.ts";
 import { withoutLocale } from "./locale-env.ts";
 
 const HOOKS = join(import.meta.dirname, "..", "hooks");
@@ -27,17 +28,21 @@ describe("pre-tool-use hook crash depth on deeply nested config TOML", () => {
   }
 
   for (const [name, shape] of Object.entries(SHAPES)) {
-    it(`crashes on ${name} at exactly the depth where the Python hook does`, () => {
-      let low = 1;
-      let high = MAX_DEPTH;
-      while (low < high) {
-        const middle = Math.floor((low + high) / 2);
-        if (hookStatus("python", shape(middle)) === 0) low = middle + 1;
-        else high = middle;
-      }
+    it(`crashes on ${name} at exactly the depth where the Python hook did`, () => {
+      const askPython = (): number[] => {
+        let low = 1;
+        let high = MAX_DEPTH;
+        while (low < high) {
+          const middle = Math.floor((low + high) / 2);
+          if (hookStatus("python", shape(middle)) === 0) low = middle + 1;
+          else high = middle;
+        }
+        assert.equal(hookStatus("python", shape(low - 1)), 0);
+        assert.equal(hookStatus("python", shape(low)), 1);
+        return [low];
+      };
+      const [low] = recordedAnswers("codex-hook-recursion", [{ crashDepth: name }], () => [askPython()])[0] as [number];
       console.log(`parity hook deep ${name}: python first crashes at depth ${low}`);
-      assert.equal(hookStatus("python", shape(low - 1)), 0);
-      assert.equal(hookStatus("python", shape(low)), 1);
       assert.equal(hookStatus("typescript", shape(low - 1)), 0);
       assert.equal(hookStatus("typescript", shape(low)), 1);
     });

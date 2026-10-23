@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
+import { recordedAnswers } from "../../tests/recorded.ts";
 import { EXPECTED_DEPTH_DENY_REASON } from "./json-depth-policy.ts";
 import type { JsonDepthDivergence } from "./json-depth-policy.ts";
 import { withoutLocale } from "./locale-env.ts";
@@ -13,6 +14,7 @@ const PYTHON_HOOK = join(ADAPTER, "hooks", "pre-tool-use.py");
 const TYPESCRIPT_HOOK = join(ADAPTER, "hooks", "pre-tool-use.ts");
 const NORMAL_CONFIG = "[features]\nhooks = true\n";
 const MAX_MISMATCHES_SHOWN = 6;
+const PYTHON_TRACEBACK = "<python traceback>";
 const DEPTH_FIRE_DIRECTORY = "data/logs";
 const DEPTH_FIRE_LOG = "data/logs/keel-fires.jsonl";
 const FILE_SNAPSHOT_PREFIX = /^file:\d+:/;
@@ -137,6 +139,20 @@ function observe(command: string[], testCase: HookCase, paths: Paths): Observati
   return { status: result.status, stdout: result.stdout.toString("utf8"), stderr: result.stderr.toString("utf8"), files: snapshot(paths.root), before };
 }
 
+function questionText(content: string | Buffer | null | undefined): unknown {
+  if (content === undefined || content === null) return content ?? null;
+  return typeof content === "string" ? content : { latin1: content.toString("latin1") };
+}
+
+function recordedPythonObservation(testCase: HookCase, paths: Paths): Observation {
+  const question = { name: testCase.name, stdin: questionText(testCase.stdin), config: testCase.config === undefined ? "default" : questionText(testCase.config), env: testCase.env ?? {} };
+  const askPython = (): Observation[] => {
+    const observation = observe(["python3", PYTHON_HOOK], testCase, paths);
+    return [testCase.crash && observation.stderr !== "" ? { ...observation, stderr: PYTHON_TRACEBACK } : observation];
+  };
+  return recordedAnswers("codex-hook-parity", [question], askPython, { "{{ROOT}}": paths.root })[0] as Observation;
+}
+
 function stdinDivergenceDifferences(divergence: StdinDivergence, typescript: Observation): string[] {
   const found: string[] = [];
   const { codec, encoding } = divergence;
@@ -194,7 +210,7 @@ function differences(testCase: HookCase, python: Observation, typescript: Observ
 export function runHookParity(cases: readonly HookCase[], paths: Paths): HookParityReport {
   const report: HookParityReport = { cases: cases.length, mismatches: 0, details: [], denied: 0, passed: 0, contextual: 0, divergences: 0 };
   for (const testCase of cases) {
-    const python = observe(["python3", PYTHON_HOOK], testCase, paths);
+    const python = recordedPythonObservation(testCase, paths);
     const typescript = observe([process.execPath, TYPESCRIPT_HOOK], testCase, paths);
     const found = differences(testCase, python, typescript);
     if (testCase.divergence !== undefined) report.divergences += 1;

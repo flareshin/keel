@@ -4,10 +4,11 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
-import { LINK_ENTRY, LinkSandbox, PYTHON_LINK_ENTRY, normalizeStamps, onlyBackup, snapshotTree } from "./helpers.ts"
+import { recordedAnswers } from "../recorded.ts"
+import { LINK_ENTRY, LinkSandbox, PYTHON_LINK_ENTRY, maskDigests, normalizeStamps, onlyBackup, scratchRoot, snapshotTree } from "./helpers.ts"
 import type { LinkResult, RedirectedStream } from "./helpers.ts"
 
-const SCRATCH_ROOT = path.join(os.tmpdir(), `keel-link-failure-${process.pid}`)
+const SCRATCH_ROOT = scratchRoot()
 const NOT_UTF8 = Buffer.from([0x23, 0xff, 0xfe, 0x0a])
 const OWNED_ENV_SETTINGS = '{"env":{"a":"b"}}'
 const LIVE_SETTINGS_WITH_MODEL = '{"model": "x"}'
@@ -37,14 +38,14 @@ const NON_LIST_VALUES: [string, string][] = [["Null", "null"], ["ANumber", "7"],
 
 
 type FailureCase = [string, (box: LinkSandbox) => void, string[], number]
-const writeWithPython = (box: LinkSandbox): void => {
-  const written = box.runLinkWith([PYTHON_LINK_ENTRY], "--write")
+const writeWithLink = (box: LinkSandbox): void => {
+  const written = box.runLinkWith([process.execPath, LINK_ENTRY], "--write")
   assert.equal(written.status, 0, written.stderr)
 }
 
 const writeAfterLiveSettings = (box: LinkSandbox): void => {
   box.writeData("settings.json", LIVE_SETTINGS_WITH_MODEL)
-  writeWithPython(box)
+  writeWithLink(box)
 }
 
 const withPreKeelBackup = (content: string | Buffer) => (box: LinkSandbox): void => {
@@ -53,7 +54,7 @@ const withPreKeelBackup = (content: string | Buffer) => (box: LinkSandbox): void
 }
 
 const withLinkState = (state: string) => (box: LinkSandbox): void => {
-  writeWithPython(box)
+  writeWithLink(box)
   box.writeData(LINK_STATE, state)
 }
 
@@ -107,44 +108,37 @@ interface IntendedDivergence {
   readonly literal: string
   readonly type: string
   readonly redirected: RedirectedStream[]
-  readonly python: { readonly status: number; readonly stderrIncludes: string }
 }
 
-const diverges = (name: string, literal: string, type: string, status: number, stderrIncludes: string = "", redirected: RedirectedStream[] = []): IntendedDivergence => ({
-  name, literal, type, redirected, python: { status, stderrIncludes },
-})
-
-const PYTHON_STAT_TYPE_ERROR = "TypeError: stat: path should be string, bytes, os.PathLike or integer, not "
-const PYTHON_BOOL_WARNING = "RuntimeWarning: bool is used as a file descriptor"
-const PYTHON_BAD_DESCRIPTOR = "OSError: [Errno 9] Bad file descriptor"
+const diverges = (name: string, literal: string, type: string, redirected: RedirectedStream[] = []): IntendedDivergence => ({ name, literal, type, redirected })
 
 const NON_STRING_SETTINGS_BACKUPS: IntendedDivergence[] = [
-  diverges("AList", "[1]", "list", 70, PYTHON_STAT_TYPE_ERROR + "list"),
-  diverges("AnObject", '{"a": 1}', "dict", 70, PYTHON_STAT_TYPE_ERROR + "dict"),
-  diverges("AFloat", "1.5", "float", 70, PYTHON_STAT_TYPE_ERROR + "float"),
-  diverges("EmptyList", "[]", "list", 0),
-  diverges("EmptyObject", "{}", "dict", 0),
-  diverges("False", "false", "bool", 0),
-  diverges("True", "true", "bool", 0, PYTHON_BOOL_WARNING),
-  diverges("Zero", "0", "int", 0),
-  diverges("MinusOne", "-1", "int", 0),
-  diverges("One", "1", "int", 0),
-  diverges("Two", "2", "int", 0),
-  diverges("AnUnopenedDescriptor", "7", "int", 0),
-  diverges("TheDescriptorMaximum", "2147483647", "int", 0),
-  diverges("TheDescriptorMinimum", "-2147483648", "int", 0),
-  diverges("AnIntegerOneAboveTheDescriptorMaximum", "2147483648", "int", 70, "OverflowError: fd is greater than maximum"),
-  diverges("AnIntegerOneBelowTheDescriptorMinimum", "-2147483649", "int", 70, "OverflowError: fd is less than minimum"),
-  diverges("AHugeNumber", "99999999999999999999", "int", 70, "OverflowError: fd is greater than maximum"),
-  diverges("ANegativeHugeNumber", "-99999999999999999999", "int", 70, "OverflowError: fd is less than minimum"),
-  diverges("One", "1", "int", 70, PYTHON_BAD_DESCRIPTOR, ["stdout"]),
-  diverges("True", "true", "bool", 70, PYTHON_BAD_DESCRIPTOR, ["stdout"]),
-  diverges("True", "true", "bool", 70, PYTHON_BAD_DESCRIPTOR, ["stdout", "stderr"]),
-  diverges("One", "1", "int", 0, "", ["stderr"]),
-  diverges("True", "true", "bool", 0, PYTHON_BOOL_WARNING, ["stderr"]),
-  diverges("Two", "2", "int", 0, "", ["stdout"]),
-  diverges("Two", "2", "int", 120, "", ["stderr"]),
-  diverges("Two", "2", "int", 120, "", ["stdout", "stderr"]),
+  diverges("AList", "[1]", "list"),
+  diverges("AnObject", '{"a": 1}', "dict"),
+  diverges("AFloat", "1.5", "float"),
+  diverges("EmptyList", "[]", "list"),
+  diverges("EmptyObject", "{}", "dict"),
+  diverges("False", "false", "bool"),
+  diverges("True", "true", "bool"),
+  diverges("Zero", "0", "int"),
+  diverges("MinusOne", "-1", "int"),
+  diverges("One", "1", "int"),
+  diverges("Two", "2", "int"),
+  diverges("AnUnopenedDescriptor", "7", "int"),
+  diverges("TheDescriptorMaximum", "2147483647", "int"),
+  diverges("TheDescriptorMinimum", "-2147483648", "int"),
+  diverges("AnIntegerOneAboveTheDescriptorMaximum", "2147483648", "int"),
+  diverges("AnIntegerOneBelowTheDescriptorMinimum", "-2147483649", "int"),
+  diverges("AHugeNumber", "99999999999999999999", "int"),
+  diverges("ANegativeHugeNumber", "-99999999999999999999", "int"),
+  diverges("One", "1", "int", ["stdout"]),
+  diverges("True", "true", "bool", ["stdout"]),
+  diverges("True", "true", "bool", ["stdout", "stderr"]),
+  diverges("One", "1", "int", ["stderr"]),
+  diverges("True", "true", "bool", ["stderr"]),
+  diverges("Two", "2", "int", ["stdout"]),
+  diverges("Two", "2", "int", ["stderr"]),
+  diverges("Two", "2", "int", ["stdout", "stderr"]),
 ]
 
 const PRE_KEEL_BACKUP_CONTENTS: [string, string, number][] = [
@@ -153,7 +147,7 @@ const PRE_KEEL_BACKUP_CONTENTS: [string, string, number][] = [
   ["ANumber", "5", 70], ["AFloat", "1.5", 70], ["True", "true", 70], ["Null", "null", 70],
 ]
 
-const ACCEPT_DROPS_FILE = path.join(os.tmpdir(), `keel-accept-drops-${process.pid}.txt`)
+const ACCEPT_DROPS_FILE = `${SCRATCH_ROOT}.accept-drops.txt`
 
 const withAcceptDropsFile = (content: Buffer) => (box: LinkSandbox): void => {
   box.writeData("settings.json", OWNED_ENV_SETTINGS)
@@ -246,7 +240,7 @@ const FAILURE_CASES: FailureCase[] = [
   ["dataDirIsAFile", (box) => { fs.rmSync(box.data, { recursive: true }); fs.writeFileSync(box.data, "x") }, ["--write"], 70],
   ["dataDirIsReadOnly", (box) => fs.chmodSync(box.data, 0o500), ["--write"], 70],
   ["acceptDropsFileIsMissing", (box) => box.writeData("settings.json", OWNED_ENV_SETTINGS), ["--write", "--adopt", "--accept-drops", "/nonexistent/x"], 3],
-  ["acceptDropsIsADirectory", (box) => box.writeData("settings.json", OWNED_ENV_SETTINGS), ["--write", "--adopt", "--accept-drops", os.tmpdir()], 3],
+  ["acceptDropsIsADirectory", (box) => box.writeData("settings.json", OWNED_ENV_SETTINGS), ["--write", "--adopt", "--accept-drops", path.join(SCRATCH_ROOT, "home")], 3],
   ["acceptDropsIsEmpty", (box) => box.writeData("settings.json", OWNED_ENV_SETTINGS), ["--write", "--adopt", "--accept-drops", ""], 3],
   ["fragmentIsInvalidJson", (box) => box.writeOverlay("settings/90-x.json", "{oops"), ["--check"], 3],
   ["fragmentStartsWithByteOrderMark", (box) => box.writeOverlay("settings/90-x.json", BYTE_ORDER_MARK + "{}"), ["--check"], 3],
@@ -309,25 +303,28 @@ function treeOf(root: string): unknown {
   return fs.statSync(root).isDirectory() ? snapshotTree(root) : fs.readFileSync(root, "latin1")
 }
 
-function runBoth(setup: (box: LinkSandbox) => void, args: string[]): [Outcome, Outcome] {
-  const [python, typescript] = [[PYTHON_LINK_ENTRY], [process.execPath, LINK_ENTRY]].map((command): Outcome => {
-    const box = new LinkSandbox({ root: SCRATCH_ROOT })
-    try {
-      setup(box)
-      const completed = box.runLinkRaw(command, ...args)
-      return { ...completed, stdout: normalizeStamps(completed.stdout), stderr: normalizeStamps(completed.stderr), tree: treeOf(box.data) }
-    } finally {
-      fs.chmodSync(box.data, 0o700)
-      box.remove()
-    }
-  })
-  return [python as Outcome, typescript as Outcome]
+function outcomeOf(command: string[], setup: (box: LinkSandbox) => void, args: string[]): Outcome {
+  const box = new LinkSandbox({ root: SCRATCH_ROOT })
+  try {
+    setup(box)
+    const completed = box.runLinkRaw(command, ...args)
+    return maskDigests({ ...completed, stdout: normalizeStamps(completed.stdout), stderr: normalizeStamps(completed.stderr), tree: treeOf(box.data) })
+  } finally {
+    fs.chmodSync(box.data, 0o700)
+    box.remove()
+  }
 }
 
-describe("link failure paths match the python entry", () => {
+function recordedPythonOutcome(name: string, setup: (box: LinkSandbox) => void, args: string[]): Outcome {
+  const askPython = () => [outcomeOf([PYTHON_LINK_ENTRY], setup, args)]
+  return recordedAnswers("link-failure-paths", [{ name, args }], askPython, { "{{ROOT}}": SCRATCH_ROOT })[0] as Outcome
+}
+
+describe("link failure paths match the recorded python entry", () => {
   for (const [name, setup, args, status] of FAILURE_CASES) {
     it(`${name}_exitsWith${status}AndPrintsTheSameStreams`, { skip: RUNNING_AS_ROOT && name === "dataDirIsReadOnly" }, () => {
-      const [python, typescript] = runBoth(setup, args)
+      const python = recordedPythonOutcome(name, setup, args)
+      const typescript = outcomeOf([process.execPath, LINK_ENTRY], setup, args)
       compared++
       try {
         assert.equal(python.status, status)
@@ -360,9 +357,6 @@ describe("a settings backup that is not a string is refused where python reads i
     it(`settingsBackupFieldIs${divergence.name}OnUnlink${streams === "" ? "" : `With${streams}Redirected`}_exitsWith70AndTouchesNothing`, () => {
       listedDivergences++
       try {
-        const python = runUnlinkOnce([PYTHON_LINK_ENTRY], divergence)
-        assert.equal(python.status, divergence.python.status)
-        assert.ok(python.stderr.includes(divergence.python.stderrIncludes), python.stderr)
         const typescript = runUnlinkOnce([process.execPath, LINK_ENTRY], divergence)
         assert.deepEqual(
           { status: typescript.status, stdout: typescript.stdout, stderr: typescript.stderr, untouched: typescript.after },

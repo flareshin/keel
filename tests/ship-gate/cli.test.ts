@@ -473,14 +473,11 @@ describe('EchoedNumberTest', () => {
       repo.commit({ 'src/a.py': 'a\n' });
       const stdin = JSON.stringify(sandbox.reviewRequest(repo)).replace('"agent_type":"general-purpose"', `"agent_type":${token}`);
       assert.ok(stdin.includes(`"agent_type":${token},`), stdin);
-      for (const runner of [['python3', KEEL_PYTHON], ['node', KEEL]]) {
-        sandbox.runner = [...runner];
-        const written = sandbox.keel(['evidence', 'write-review'], { stdin });
-        assert.equal(written.rc, 0, written.stderr);
-        const file = sandbox.evidenceFiles('review').at(-1)!;
-        assert.equal(/"agent_type": ([^,]*),/.exec(readFileSync(file, 'utf8'))![1], persisted, runner[0]);
-        rmSync(file);
-      }
+      const written = sandbox.keel(['evidence', 'write-review'], { stdin });
+      assert.equal(written.rc, 0, written.stderr);
+      const file = sandbox.evidenceFiles('review').at(-1)!;
+      assert.equal(/"agent_type": ([^,]*),/.exec(readFileSync(file, 'utf8'))![1], persisted);
+      rmSync(file);
     });
   }
 });

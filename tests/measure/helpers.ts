@@ -34,6 +34,8 @@ export const DEMO_HOOK = [
 
 const COLOR_VARIABLES = ["FORCE_COLOR", "NO_COLOR", "PYTHON_COLORS"]
 
+const FIXED_COMMIT_DATES = { GIT_AUTHOR_DATE: "2026-01-01T00:00:00Z", GIT_COMMITTER_DATE: "2026-01-01T00:00:00Z" }
+
 export function isCallerSpecificVariable(name: string): boolean {
   return name.startsWith("KEEL_") || name.startsWith("GIT_") || COLOR_VARIABLES.includes(name)
 }
@@ -131,7 +133,7 @@ export class MeasureSandbox {
   }
 
   git(repo: string, ...args: string[]): string {
-    const completed = spawnSync("git", ["-C", repo, ...args], { encoding: "utf8", env: this.env })
+    const completed = spawnSync("git", ["-C", repo, ...args], { encoding: "utf8", env: { ...this.env, ...FIXED_COMMIT_DATES } })
     if (completed.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${completed.stderr}`)
     return completed.stdout
   }

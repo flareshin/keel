@@ -8,6 +8,7 @@ import * as codexReview from '../../lib/evidence/codex_review.ts';
 import * as gitcmd from '../../lib/evidence/gitcmd.ts';
 import { pythonJsonLoads } from '../../lib/evidence/pycompat.ts';
 import { AUTHOR, AUDIT, CodexFixture, LENSES, VERIFY } from './codex_helpers.ts';
+import { isRecording, recordedAnswers } from '../recorded.ts';
 import { KEEL, KEEL_HOME, KEEL_PYTHON } from './helpers.ts';
 
 type Outcome = string[];
@@ -65,9 +66,15 @@ function compatibilityOutcome(f: CodexFixture, dataDir: string, runner: string[]
   return ['rc ' + completed.status, completed.stdout.trim(), completed.stderr.trim()];
 }
 
+const DELTA_IDENTITY_OFFSET = 100;
+
+function lensIdentity(index: number): string {
+  return `44444444-4444-4444-8444-${String(index).padStart(12, '0')}`;
+}
+
 function writeLensAudits(f: CodexFixture, delta?: { since: string; root: string }): string[] {
-  return LENSES.map((lens) => {
-    const identity = crypto.randomUUID();
+  return LENSES.map((lens, index) => {
+    const identity = lensIdentity(index + (delta ? DELTA_IDENTITY_OFFSET : 0));
     const report = {
       ...structuredClone(f.report), version: 2, tree: f.tree, lenses: { [lens]: structuredClone(f.report.lenses[lens]) },
       since_tree: delta?.since ?? null, root_run_id: delta?.root ?? null,
@@ -96,18 +103,22 @@ function storedReviews(dataDir: string): string[] {
 
 function pythonDataDir(f: CodexFixture): string {
   const directory = join(f.sandbox.root, 'data-py');
-  mkdirSync(directory);
+  if (isRecording()) mkdirSync(directory);
   return directory;
 }
 
-describe('Python and TypeScript agree on float spellings of version fields', () => {
+function recordedPythonOutcome(f: CodexFixture, question: { test: string; step: string }, askPython: () => Outcome): Outcome {
+  return recordedAnswers('ship-gate-cross-impl-codex', [question], () => [askPython()], { '{{ROOT}}': f.sandbox.root })[0] as Outcome;
+}
+
+describe('TypeScript agrees with the recorded Python outcomes on float spellings of version fields', () => {
   test('lens reports spelled "version": 2.0 are registered like Python', (t) => {
     const f = new CodexFixture(t);
     const pythonData = pythonDataDir(f);
     const audits = writeLensAudits(f);
     for (const identity of audits) respell(sessionFile(f, identity), /\\"version\\":2([,}])/, '\\"version\\":2.0$1');
 
-    const python = pythonOutcome(f, pythonData, 'register', JSON.stringify(audits));
+    const python = recordedPythonOutcome(f, { test: 'lens-version-float', step: 'register' }, () => pythonOutcome(f, pythonData, 'register', JSON.stringify(audits)));
     const typescript = typescriptOutcome(() => registerLenses(f, audits));
 
     assert.deepEqual(typescript, python);
@@ -119,20 +130,22 @@ describe('Python and TypeScript agree on float spellings of version fields', () 
     const pythonData = pythonDataDir(f);
     const audits = writeLensAudits(f);
     const steps: Array<[string, Outcome, Outcome]> = [];
-    const both = (label: string, python: Outcome, typescript: Outcome) => steps.push([label, python, typescript]);
-    both('register', pythonOutcome(f, pythonData, 'register', JSON.stringify(audits)), typescriptOutcome(() => registerLenses(f, audits)));
-    const [python, typescript] = [storedReviews(pythonData), storedReviews(f.sandbox.data)];
+    const test = 'stored-version-float';
+    const both = (label: string, askPython: () => Outcome, typescript: Outcome) => steps.push([label, recordedPythonOutcome(f, { test, step: label }, askPython), typescript]);
+    both('register', () => pythonOutcome(f, pythonData, 'register', JSON.stringify(audits)), typescriptOutcome(() => registerLenses(f, audits)));
+    const python = isRecording() ? storedReviews(pythonData) : [];
+    const typescript = storedReviews(f.sandbox.data);
     for (const path of [...python, ...typescript]) respell(path, /"version": 2([,}\n])/, '"version": 2.0$1');
-    both('compatibility', compatibilityOutcome(f, pythonData, ['python3', KEEL_PYTHON]), compatibilityOutcome(f, f.sandbox.data, ['node', KEEL]));
-    both('validate stored', pythonOutcome(f, pythonData, 'validate', python[0]!), typescriptOutcome(() => validateStored(typescript[0]!)));
-    both('register again', pythonOutcome(f, pythonData, 'register', JSON.stringify(audits)), typescriptOutcome(() => registerLenses(f, audits)));
+    both('compatibility', () => compatibilityOutcome(f, pythonData, ['python3', KEEL_PYTHON]), compatibilityOutcome(f, f.sandbox.data, ['node', KEEL]));
+    both('validate stored', () => pythonOutcome(f, pythonData, 'validate', python[0]!), typescriptOutcome(() => validateStored(typescript[0]!)));
+    both('register again', () => pythonOutcome(f, pythonData, 'register', JSON.stringify(audits)), typescriptOutcome(() => registerLenses(f, audits)));
 
     const previousTree = f.tree;
     const root = steps[0]![1]![2]!;
     f.repo.write('src/a.py', 'print(3)\n');
     f.tree = gitcmd.snapshotTree(f.repo.path);
     const delta = writeLensAudits(f, { since: previousTree, root });
-    both('delta', pythonOutcome(f, pythonData, 'register', JSON.stringify(delta)), typescriptOutcome(() => registerLenses(f, delta)));
+    both('delta', () => pythonOutcome(f, pythonData, 'register', JSON.stringify(delta)), typescriptOutcome(() => registerLenses(f, delta)));
 
     for (const [label, pythonResult, typescriptResult] of steps) assert.deepEqual(typescriptResult, pythonResult, label);
     assert.deepEqual(steps.map(([, pythonResult]) => pythonResult[0]), ['ok', 'rc 0', 'ok', 'ok', 'ok']);
@@ -148,7 +161,7 @@ describe('Python and TypeScript agree on float spellings of version fields', () 
       return ['ok', 'validated'];
     });
     const python = typescript[0] === 'ok'
-      ? pythonOutcome(f, join(f.sandbox.root, 'unused'), 'validate', storedReviews(f.sandbox.data)[0]!)
+      ? recordedPythonOutcome(f, { test: 'native-version-float', step: 'validate' }, () => pythonOutcome(f, join(f.sandbox.root, 'unused'), 'validate', storedReviews(f.sandbox.data)[0]!))
       : ['not registered'];
 
     assert.deepEqual(typescript, ['ok', 'validated']);

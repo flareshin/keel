@@ -6,11 +6,13 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { lexists } from "../../measure/lib/measurekit/pypath.ts"
+import { paddedRoot } from "../recorded-cases.ts"
 import { isCallerSpecificVariable } from "../measure/helpers.ts"
 
 export const KEEL_ROOT = path.dirname(path.dirname(path.dirname(fs.realpathSync(fileURLToPath(import.meta.url)))))
 export const LINK_ENTRY = path.join(KEEL_ROOT, "bin", "link.ts")
 export const PYTHON_LINK_ENTRY = path.join(KEEL_ROOT, "bin", "link")
+const SCRATCH_ROOT_LENGTH = 90
 export const EXAMPLES = path.join(KEEL_ROOT, "examples", "link")
 export const PRINCIPLES = "# Principles\n\n- [K1] Review before shipping.\n"
 export const CORE_LINKS = "source\ttarget\n{{KEEL}}/skills/demo\tskills/demo\n{{KEEL}}/bin/keel\tbin/keel\n"
@@ -33,6 +35,12 @@ const BACKUP_STAMP = /\d{8}T\d{6}Z-\d+/g
 
 export function normalizeStamps(text: string): string {
   return text.replace(BACKUP_STAMP, "STAMP")
+}
+
+const SHA256_HEX = /\b[0-9a-f]{64}\b/g
+
+export function maskDigests<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value).replace(SHA256_HEX, "<sha256>")) as T
 }
 
 export function snapshotTree(root: string): unknown[] {
@@ -74,9 +82,11 @@ export class LinkSandbox {
   readonly home: string
   readonly extraEnv: Record<string, string> = {}
 
-  constructor(options: { root?: string; dataDirName?: string } = {}) {
+  constructor(options: { root?: string; dataDirName?: string; attach?: boolean } = {}) {
     if (options.root === undefined) {
       this.root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "keel-link-test-")))
+    } else if (options.attach) {
+      this.root = fs.realpathSync(options.root)
     } else {
       fs.rmSync(options.root, { recursive: true, force: true })
       fs.mkdirSync(options.root)
@@ -86,6 +96,7 @@ export class LinkSandbox {
     this.overlay = path.join(this.root, "overlay")
     this.data = path.join(this.root, options.dataDirName ?? "data")
     this.home = path.join(this.root, "home")
+    if (options.attach) return
     fs.mkdirSync(this.data)
     fs.mkdirSync(this.home)
     fs.cpSync(EXAMPLES, this.overlay, { recursive: true })
@@ -209,4 +220,8 @@ export function onlyBackup(box: LinkSandbox, relative: string): string {
   const found = backupsOf(box, relative)
   assert.equal(found.length, 1, found.join(", "))
   return found[0] as string
+}
+
+export function scratchRoot(): string {
+  return paddedRoot(fs.realpathSync(os.tmpdir()), SCRATCH_ROOT_LENGTH)
 }

@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process"
 import { describe, it } from "node:test"
 import path from "node:path"
 
+import { recordedAnswers } from "../recorded.ts"
 import { CHECKOUT } from "./helpers.ts"
 
 const COLOR_VARIABLES = ["FORCE_COLOR", "NO_COLOR", "PYTHON_COLORS"]
@@ -38,7 +39,8 @@ describe("python and typescript entries colour alike on a pseudo terminal", { sk
     for (const [invocationName, args] of INVOCATIONS) {
       for (const [terminalName, variables, coloured] of TERMINALS) {
         it(`${entryName} ${invocationName} on ${terminalName}`, () => {
-          const python = onPseudoTerminal("python3", pythonEntry, args, variables)
+          const askPython = () => [onPseudoTerminal("python3", pythonEntry, args, variables)]
+          const python = recordedAnswers("measure-pty", [{ entry: pythonEntry, args, variables }], askPython, { "{{CHECKOUT}}": CHECKOUT })[0] as ReturnType<typeof onPseudoTerminal>
           const typescript = onPseudoTerminal(process.execPath, `${pythonEntry}.ts`, args, variables)
           assert.equal(python.stdout.includes(USAGE_PREFIX_COLOURED), coloured)
           assert.deepEqual(typescript, python)

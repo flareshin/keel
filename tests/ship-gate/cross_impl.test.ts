@@ -9,12 +9,16 @@ import * as registry from '../../lib/evidence/registry.ts';
 import * as store from '../../lib/evidence/store.ts';
 import { pythonJsonDumps } from '../../lib/evidence/pycompat.ts';
 import * as verify from '../../lib/evidence/verify.ts';
+import { materialize, SnapshotPacker } from '../recorded-cases.ts';
+import type { SnapshotStore } from '../recorded-cases.ts';
+import { isRecording, recordedAnswers } from '../recorded.ts';
 import { KEEL_HOME, KEEL_PYTHON, LOGIC_WITH_TEST, Sandbox } from './helpers.ts';
 import type { Repo, Run } from './helpers.ts';
 
 type Impl = 'py' | 'ts';
 const RUNNERS: Record<Impl, string[]> = { py: ['python3', KEEL_PYTHON], ts: ['node', join(KEEL_HOME, 'bin', 'keel.ts')] };
-const OTHER: Record<Impl, Impl> = { py: 'ts', ts: 'py' };
+const BUILDER: Impl = isRecording() ? 'py' : 'ts';
+const FIXED_COMMIT_DATE = '2026-01-01T00:00:00Z';
 const NON_ASCII_PATHS = { 'src/é😀 "q".py': 'print("é")\n', 'src/plain.py': 'print(1)\n', 'tests/test_plain.py': 'def test_a():\n    assert True\n' };
 
 const JUDGE_PYTHON = `
@@ -122,11 +126,25 @@ interface Expectation {
   k3Waiver?: string;
 }
 
-function judgedIdentically(sandbox: Sandbox, repo: Repo, label: string, needsApproval: boolean, expected: Expectation): void {
+const EVIDENCE_ID = /\b(review|tests|smoke|approval|ack)-\d{8}T\d{6}Z-[0-9a-f]{8}\b/g;
+
+function withoutEvidenceIds(judgement: string): string {
+  return judgement.replace(EVIDENCE_ID, '<EVIDENCE_ID>');
+}
+
+function withoutChainChoice(judgement: string): string {
+  const { ok, files, lines, risk_class: riskClass, k3_waiver: k3Waiver, reasons } = JSON.parse(judgement);
+  return JSON.stringify({ ok, files, lines, riskClass, k3Waiver, denied: reasons.length > 0 });
+}
+
+function judgedIdentically(sandbox: Sandbox, repo: Repo, label: string, needsApproval: boolean, expected: Expectation, chainOrderDependent = false): void {
   const base = repo.git('merge-base', 'origin/main', 'HEAD');
-  const [python, typescript] = (['py', 'ts'] as Impl[]).map((impl) => judge(impl, sandbox.data, sandbox, repo, repo.head(), base, needsApproval));
-  assert.equal(typescript, python, label);
-  const decision = JSON.parse(python!);
+  const comparable = chainOrderDependent ? withoutChainChoice : withoutEvidenceIds;
+  const python = recordedPython(sandbox, { test: 'judge', label }, () => judge('py', sandbox.data, sandbox, repo, repo.head(), base, needsApproval));
+  const typescript = judge('ts', sandbox.data, sandbox, repo, repo.head(), base, needsApproval);
+  assert.equal(comparable(typescript), comparable(python), label);
+  assert.equal(JSON.parse(typescript).ok, expected.ok, `${label}: ${typescript}`);
+  const decision = JSON.parse(chainOrderDependent ? python : typescript);
   assert.equal(decision.ok, expected.ok, `${label}: ${python}`);
   if (expected.reason !== undefined) {
     assert.ok(decision.reasons.some(([, text]: [string, string]) => text.includes(expected.reason!)), `${label}: ${python}`);
@@ -220,73 +238,115 @@ function prepare(t: TestContext) {
   return { sandbox, repo };
 }
 
-describe('cross-implementation evidence compatibility', () => {
-  test('python-written and typescript-written evidence are byte-identical modulo ids and times', (t) => {
-    const { sandbox, repo } = prepare(t);
-    const python = new Pipeline(sandbox, repo, join(sandbox.root, 'data-py'));
-    const typescript = new Pipeline(sandbox, repo, join(sandbox.root, 'data-ts'));
-    runPipeline(python, () => 'py');
-    repo.git('reset', '-q', '--hard', 'HEAD~1');
-    runPipeline(typescript, () => 'ts');
+function recordedPython<T>(sandbox: Sandbox, key: Record<string, unknown>, askPython: () => T): T {
+  return recordedAnswers('ship-gate-cross-impl', [key], () => [askPython()], { '{{ROOT}}': sandbox.root })[0] as T;
+}
 
-    assert.deepEqual(typescript.outputs.map((text) => normalize(text, typescript.dataDir)), python.outputs.map((text) => normalize(text, python.dataDir)));
+function scenarioSandbox(t: TestContext, registry?: string[]): Sandbox {
+  const sandbox = new Sandbox(t, registry);
+  sandbox.env['GIT_AUTHOR_DATE'] = FIXED_COMMIT_DATE;
+  sandbox.env['GIT_COMMITTER_DATE'] = FIXED_COMMIT_DATE;
+  sandbox.runner = RUNNERS[BUILDER];
+  return sandbox;
+}
+
+function assertEvidenceModes(dataDir: string): void {
+  for (const path of filesUnder(join(dataDir, 'state', 'keel', 'evidence'))) {
+    assert.equal(statSync(path).mode & 0o777, 0o600, path);
+    assert.equal(statSync(join(path, '..')).mode & 0o777, 0o700, path);
+  }
+}
+
+interface WrittenEvidence {
+  outputs: string[];
+  state: Array<[string, string]>;
+  logs: Array<[string, string]>;
+}
+
+function writtenBy(impl: Impl, sandbox: Sandbox, repo: Repo): WrittenEvidence {
+  const pipeline = new Pipeline(sandbox, repo, join(sandbox.root, `data-${impl}`));
+  runPipeline(pipeline, () => impl);
+  repo.git('reset', '-q', '--hard', 'HEAD~1');
+  assertEvidenceModes(pipeline.dataDir);
+  return {
+    outputs: pipeline.outputs.map((text) => normalize(text, pipeline.dataDir)),
+    state: normalizedTree(pipeline.dataDir, 'state'),
+    logs: normalizedTree(pipeline.dataDir, 'logs'),
+  };
+}
+
+interface EvidenceFacts {
+  judged: string[];
+  cli: Array<[number, string]>;
+  reserialized: string[];
+}
+
+function inspectEvidence(impl: Impl, sandbox: Sandbox, repo: Repo, mixed: Pipeline): EvidenceFacts {
+  const files = filesUnder(join(mixed.dataDir, 'state', 'keel', 'evidence')).filter((path) => path.endsWith('.json'));
+  const reserialized = impl === 'py'
+    ? spawnSync('python3', ['-I', '-X', 'utf8', '-c', REROUNDTRIP_PYTHON, ...files], { encoding: 'utf8' }).stdout.trim().split('\n')
+    : [];
+  const head = repo.head();
+  const base = repo.git('merge-base', 'origin/main', 'HEAD');
+  repo.commit({ 'src/unreviewed.py': 'print(3)\n' }, 'unreviewed');
+  const states: Array<[string, string, boolean]> = [[head, base, true], [head, base, false], [repo.head(), base, true], [base, base, true]];
+  const judged = states.map(([stateHead, stateBase, needsApproval]) => judge(impl, mixed.dataDir, sandbox, repo, stateHead, stateBase, needsApproval));
+  const probes = [['evidence', 'show', '--repo', repo.path], ['evidence', 'compatibility'], ['evidence', 'gc'], ['snapshot', repo.path]];
+  const cli = probes.map((args): [number, string] => {
+    const run = mixed.use(impl).keel(args);
+    return [run.rc, run.stdout];
+  });
+  return { judged, cli, reserialized };
+}
+
+describe('cross-implementation evidence compatibility', () => {
+  test('typescript-written evidence matches the recorded python-written evidence modulo ids and times', (t) => {
+    const { sandbox, repo } = prepare(t);
+    const python = recordedPython(sandbox, { test: 'evidence-bytes' }, () => writtenBy('py', sandbox, repo));
+    const typescript = writtenBy('ts', sandbox, repo);
+
+    assert.deepEqual(typescript.outputs, python.outputs);
     for (const [subdirectory, minimum] of [['state', 6], ['logs', 2]] as const) {
-      const pythonFiles = normalizedTree(python.dataDir, subdirectory);
-      assert.ok(pythonFiles.length >= minimum, `${subdirectory}: ${pythonFiles.length} files`);
-      assert.deepEqual(normalizedTree(typescript.dataDir, subdirectory), pythonFiles);
-    }
-    for (const dataDir of [python.dataDir, typescript.dataDir]) {
-      for (const path of filesUnder(join(dataDir, 'state', 'keel', 'evidence'))) {
-        assert.equal(statSync(path).mode & 0o777, 0o600, path);
-        assert.equal(statSync(join(path, '..')).mode & 0o777, 0o700, path);
-      }
+      assert.ok(python[subdirectory].length >= minimum, `${subdirectory}: ${python[subdirectory].length} files`);
+      assert.deepEqual(typescript[subdirectory], python[subdirectory]);
     }
   });
 
-  for (const first of ['py', 'ts'] as Impl[]) {
-    test(`evidence written alternately (${first} first) is read and judged identically by both`, (t) => {
-      const { sandbox, repo } = prepare(t);
-      const mixed = new Pipeline(sandbox, repo, join(sandbox.root, `data-mixed-${first}`));
-      runPipeline(mixed, (step) => step % 2 === 0 ? first : OTHER[first]);
-
-      const files = filesUnder(join(mixed.dataDir, 'state', 'keel', 'evidence')).filter((path) => path.endsWith('.json'));
-      assert.ok(files.length >= 6);
-      const reserialized = spawnSync('python3', ['-I', '-X', 'utf8', '-c', REROUNDTRIP_PYTHON, ...files], { encoding: 'utf8' });
-      assert.equal(reserialized.status, 0, reserialized.stderr);
-      assert.ok(reserialized.stdout.trim().split('\n').every((line) => line === 'same'), reserialized.stdout);
-      for (const path of files) {
-        const text = readFileSync(path, 'utf8');
-        assert.equal(pythonJsonDumps(store.readFile(path), { sortKeys: true }) + '\n', text, path);
-      }
-
-      const head = repo.head();
-      const base = repo.git('merge-base', 'origin/main', 'HEAD');
-      repo.commit({ 'src/unreviewed.py': 'print(3)\n' }, 'unreviewed');
-      const states: Array<[string, string, boolean]> = [[head, base, true], [head, base, false], [repo.head(), base, true], [base, base, true]];
-      for (const [stateHead, stateBase, needsApproval] of states) {
-        const results = (['py', 'ts'] as Impl[]).map((impl) => judge(impl, mixed.dataDir, sandbox, repo, stateHead, stateBase, needsApproval));
-        assert.equal(results[1], results[0], `judge ${stateHead.slice(0, 8)} approval=${needsApproval}`);
-      }
-      const reviewed = JSON.parse(judge('ts', mixed.dataDir, sandbox, repo, head, base, true));
-      assert.equal(reviewed.ok, true, JSON.stringify(reviewed.reasons));
-      assert.equal(JSON.parse(judge('py', mixed.dataDir, sandbox, repo, repo.head(), base, true)).ok, false);
-
-      for (const args of [['evidence', 'show', '--repo', repo.path], ['evidence', 'compatibility'], ['evidence', 'gc'], ['snapshot', repo.path]]) {
-        const outputs = (['py', 'ts'] as Impl[]).map((impl) => mixed.use(impl).keel(args));
-        assert.equal(outputs[1]!.rc, outputs[0]!.rc, args.join(' '));
-        assert.equal(outputs[1]!.stdout, outputs[0]!.stdout, args.join(' '));
-      }
-      const shown = mixed.use('ts').keel(['evidence', 'show', '--repo', repo.path]).json;
-      assert.deepEqual(shown.chains.map((chain: any) => [chain.root_run_id, chain.verdict, chain.paths, chain.approved, chain.acked]),
-        [['rv-root-0001', 'PASS', 4, true, true]]);
+  test('evidence written by the recorded python run is read and judged identically by typescript', (t) => {
+    const { sandbox, repo } = prepare(t);
+    const mixed = new Pipeline(sandbox, repo, join(sandbox.root, 'data-mixed'));
+    const recorded = recordedPython(sandbox, { test: 'python-written-evidence' }, () => {
+      runPipeline(mixed, () => 'py');
+      const packer = new SnapshotPacker();
+      const snapshot = packer.addTree(sandbox.root, sandbox.root);
+      const facts = inspectEvidence('py', sandbox, repo, mixed);
+      return { store: packer.store, snapshot, facts };
     });
-  }
+    rmSync(sandbox.root, { recursive: true, force: true });
+    materialize(recorded.store as SnapshotStore, recorded.snapshot, sandbox.root);
+
+    const files = filesUnder(join(mixed.dataDir, 'state', 'keel', 'evidence')).filter((path) => path.endsWith('.json'));
+    assert.ok(files.length >= 6);
+    assert.ok(recorded.facts.reserialized.length >= 6 && recorded.facts.reserialized.every((line) => line === 'same'), recorded.facts.reserialized.join('\n'));
+    for (const path of files) {
+      const text = readFileSync(path, 'utf8');
+      assert.equal(pythonJsonDumps(store.readFile(path), { sortKeys: true }) + '\n', text, path);
+    }
+
+    const facts = inspectEvidence('ts', sandbox, repo, mixed);
+    assert.deepEqual(facts.judged, recorded.facts.judged);
+    assert.deepEqual(facts.cli, recorded.facts.cli);
+    assert.equal(JSON.parse(facts.judged[0]!).ok, true, facts.judged[0]);
+    assert.equal(JSON.parse(facts.judged[2]!).ok, false, facts.judged[2]);
+    const shown = mixed.use('ts').keel(['evidence', 'show', '--repo', repo.path]).json;
+    assert.deepEqual(shown.chains.map((chain: any) => [chain.root_run_id, chain.verdict, chain.paths, chain.approved, chain.acked]),
+      [['rv-root-0001', 'PASS', 4, true, true]]);
+  });
 
   describe('verify.judge parity on evidence scenarios', () => {
-    const python = (sandbox: Sandbox) => { sandbox.runner = RUNNERS.py; return sandbox; };
 
     test('two adjacent approved reviews are reused as a series', (t) => {
-      const sandbox = python(new Sandbox(t));
+      const sandbox = scenarioSandbox(t);
       const repo = sandbox.clone('acme', 'app');
       adjacentReviews(sandbox, repo);
       judgedIdentically(sandbox, repo, 'series approved', true, { ok: true, rootRunIds: ['rv-series-0001', 'rv-series-0002'] });
@@ -294,29 +354,29 @@ describe('cross-implementation evidence compatibility', () => {
     });
 
     test('an unapproved first review or an unreviewed gap breaks the series', (t) => {
-      const unapproved = python(new Sandbox(t));
+      const unapproved = scenarioSandbox(t);
       const unapprovedRepo = unapproved.clone('acme', 'app');
       adjacentReviews(unapproved, unapprovedRepo, { approveFirst: false });
-      judgedIdentically(unapproved, unapprovedRepo, 'first review not approved', true, { ok: false });
-      const gapped = python(new Sandbox(t));
+      judgedIdentically(unapproved, unapprovedRepo, 'first review not approved', true, { ok: false }, true);
+      const gapped = scenarioSandbox(t);
       const gappedRepo = gapped.clone('acme', 'app');
       adjacentReviews(gapped, gappedRepo, { gap: true });
-      judgedIdentically(gapped, gappedRepo, 'gap between reviews', true, { ok: false, reason: 'src/gap.py' });
+      judgedIdentically(gapped, gappedRepo, 'gap between reviews', true, { ok: false, reason: 'src/gap.py' }, true);
     });
 
     test('parallel approved chains stacked by rebase are accepted, overlapping ones name the commit to review', (t) => {
-      const stacked = python(new Sandbox(t));
+      const stacked = scenarioSandbox(t);
       const stackedRepo = stacked.clone('acme', 'app', undefined, STACK_SEED);
       stackedChains(stacked, stackedRepo, { 'src/first.py': 'first = 1\n' }, [{ 'src/second.py': 'second = 2\n' }]);
-      judgedIdentically(stacked, stackedRepo, 'stacked chains', true, { ok: true, rootRunIds: ['rv-stack-0001', 'rv-stack-0002'] });
-      const overlapping = python(new Sandbox(t));
+      judgedIdentically(stacked, stackedRepo, 'stacked chains', true, { ok: true, rootRunIds: ['rv-stack-0001', 'rv-stack-0002'] }, true);
+      const overlapping = scenarioSandbox(t);
       const overlappingRepo = overlapping.clone('acme', 'app', undefined, STACK_SEED);
       stackedChains(overlapping, overlappingRepo, OVERLAP_FIRST, OVERLAP_SECOND);
-      judgedIdentically(overlapping, overlappingRepo, 'overlapping stacked chains', true, { ok: false, reason: 'no review saw the stacked content' });
+      judgedIdentically(overlapping, overlappingRepo, 'overlapping stacked chains', true, { ok: false, reason: 'no review saw the stacked content' }, true);
     });
 
     test('a smoke-gated row needs smoke evidence covering the tree', (t) => {
-      const sandbox = python(new Sandbox(t, SMOKE_REGISTRY));
+      const sandbox = scenarioSandbox(t, SMOKE_REGISTRY);
       const repo = sandbox.clone('acme', 'app');
       repo.branch('feature');
       repo.commit({ 'src/new.py': 'new = 1\n' });
@@ -326,27 +386,27 @@ describe('cross-implementation evidence compatibility', () => {
     });
 
     test('a tests=none row denies a standard change and passes a light one', (t) => {
-      const standard = python(new Sandbox(t, NO_TESTS_REGISTRY));
+      const standard = scenarioSandbox(t, NO_TESTS_REGISTRY);
       const standardRepo = featureWithEvidence(standard, LOGIC_WITH_TEST);
       judgedIdentically(standard, standardRepo, 'tests=none standard', true, { ok: false, reason: 'add test infrastructure first' });
-      const light = python(new Sandbox(t, NO_TESTS_REGISTRY));
+      const light = scenarioSandbox(t, NO_TESTS_REGISTRY);
       const lightRepo = featureWithEvidence(light, { 'docs/guide.md': 'light\n' });
       judgedIdentically(light, lightRepo, 'tests=none light', true, { ok: true });
     });
 
     test('a logic change without a test in the same range is denied unless the reviewer states why', (t) => {
-      const bare = python(new Sandbox(t));
+      const bare = scenarioSandbox(t);
       const bareRepo = featureWithEvidence(bare, { 'src/a.py': 'print(1)\n' });
       bare.testsEvidence(bareRepo);
       judgedIdentically(bare, bareRepo, 'K3 same range', true, { ok: false, reason: 'logic changed with no test in the same range' });
-      const waived = python(new Sandbox(t));
+      const waived = scenarioSandbox(t);
       const waivedRepo = featureWithEvidence(waived, { 'src/a.py': 'print(1)\n' }, { noTestReason: 'covered by the integration suite' });
       waived.testsEvidence(waivedRepo);
       judgedIdentically(waived, waivedRepo, 'K3 waiver', true, { ok: true, k3Waiver: 'covered by the integration suite' });
     });
 
     test('a chain with a single-lens link is denied even for a light change', (t) => {
-      const sandbox = python(new Sandbox(t, NO_TESTS_REGISTRY));
+      const sandbox = scenarioSandbox(t, NO_TESTS_REGISTRY);
       const repo = featureWithEvidence(sandbox, { 'docs/guide.md': 'light\n' }, { kind: 'single-lens' });
       judgedIdentically(sandbox, repo, 'single-lens', true, { ok: false, reason: 'every change needs a lens-review chain' });
     });
@@ -358,32 +418,31 @@ describe('cross-implementation evidence compatibility', () => {
     writeFileSync(join(sandbox.data, 'workflows', 'review-lenses.json'),
       '{"guardrails": "g", "lenses": [{"name": "a", "weight": 1.0, "big": 9007199254740993, "tiny": 1e-7, "neg": -0.0, "wide": 1e16, "int": -0, "exp": 2E3}]}');
     const stdin = JSON.stringify({ diffs: [{ repo: repo.path, base: 'HEAD' }] });
-    const echoed = (['py', 'ts'] as Impl[]).map((impl) => {
-      sandbox.runner = RUNNERS[impl];
-      const run = sandbox.keel(['review', 'prepare'], { stdin });
-      assert.equal(run.rc, 0, run.stderr);
-      return /"lenses_output": (\{.*?\}\]\}),/.exec(run.stdout)![1];
-    });
-    assert.equal(echoed[0], '{"guardrails": "g", "lenses": [{"big": 9007199254740993, "exp": 2000.0, "int": 0, "name": "a", "neg": -0.0, "tiny": 1e-07, "weight": 1.0, "wide": 1e+16}]}');
-    assert.equal(echoed[1], echoed[0]);
+    const run = sandbox.keel(['review', 'prepare'], { stdin });
+    assert.equal(run.rc, 0, run.stderr);
+    const echoed = /"lenses_output": (\{.*?\}\]\}),/.exec(run.stdout)![1];
+    assert.equal(echoed, '{"guardrails": "g", "lenses": [{"big": 9007199254740993, "exp": 2000.0, "int": 0, "name": "a", "neg": -0.0, "tiny": 1e-07, "weight": 1.0, "wide": 1e+16}]}');
   });
 
   test('write-review judges the claim version by numeric value like Python', (t) => {
     const { sandbox, repo } = prepare(t);
     const base = JSON.stringify(sandbox.reviewRequest(repo));
-    const outcomes: Record<string, Array<[number, string]>> = { py: [], ts: [] };
-    for (const token of ['1', '1.0', '1e0', '10e-1', 'true', '2.0', '0.5', '1.0000000000000001', '9007199254740993']) {
-      const stdin = base.replace('"v":1,', `"v":${token},`);
-      assert.ok(stdin.includes(`"v":${token},`), token);
-      for (const impl of ['py', 'ts'] as Impl[]) {
-        sandbox.runner = RUNNERS[impl];
+    const writeReviews = (impl: Impl): Array<[number, string]> => {
+      sandbox.runner = RUNNERS[impl];
+      const outcomes: Array<[number, string]> = [];
+      for (const token of ['1', '1.0', '1e0', '10e-1', 'true', '2.0', '0.5', '1.0000000000000001', '9007199254740993']) {
+        const stdin = base.replace('"v":1,', `"v":${token},`);
+        assert.ok(stdin.includes(`"v":${token},`), token);
         const run = sandbox.keel(['evidence', 'write-review'], { stdin });
-        outcomes[impl]!.push([run.rc, normalize(run.stderr, sandbox.data)]);
+        outcomes.push([run.rc, normalize(run.stderr, sandbox.data)]);
         if (run.rc === 0) rmSync(sandbox.evidenceFiles('review').at(-1)!);
       }
-    }
-    assert.deepEqual(outcomes['ts'], outcomes['py']);
-    assert.deepEqual(outcomes['py']!.map(([rc]) => rc), [0, 0, 0, 0, 0, 2, 2, 0, 2]);
+      return outcomes;
+    };
+    const python = recordedPython(sandbox, { test: 'claim-version' }, () => writeReviews('py'));
+    const typescript = writeReviews('ts');
+    assert.deepEqual(typescript, python);
+    assert.deepEqual(python.map(([rc]) => rc), [0, 0, 0, 0, 0, 2, 2, 0, 2]);
   });
 
   test('keel test reads output until every holder of the shared descriptor closes it', (t) => {
@@ -393,7 +452,7 @@ describe('cross-implementation evidence compatibility', () => {
       "(sleep 1; echo 'Ran 3 tests') & exit 3",
       "(sleep 1; echo 'Ran 3 tests' >&2) & echo foreground; exit 0",
     ];
-    const outcomes = (['py', 'ts'] as Impl[]).map((impl) => {
+    const outcomeOf = (impl: Impl) => {
       sandbox.data = join(sandbox.root, `data-background-${impl}`);
       sandbox.env['KEEL_DATA_DIR'] = sandbox.data;
       mkdirSync(sandbox.data);
@@ -403,11 +462,13 @@ describe('cross-implementation evidence compatibility', () => {
         return [run.rc, normalize(run.stdout, sandbox.data), normalize(run.stderr, sandbox.data)];
       });
       return { runs, state: treeOrEmpty(sandbox.data, 'state'), logs: treeOrEmpty(sandbox.data, 'logs') };
-    });
-    assert.deepEqual(outcomes[1], outcomes[0]);
-    assert.deepEqual(outcomes[0]!.runs.map(([rc]) => rc), [0, 3, 0]);
-    assert.match(String(outcomes[0]!.runs[0]![1]), /^Ran 3 tests\n$/);
-    assert.equal(outcomes[0]!.state.length, 2);
+    };
+    const python = recordedPython(sandbox, { test: 'background-holders' }, () => outcomeOf('py'));
+    const typescript = outcomeOf('ts');
+    assert.deepEqual(typescript, python);
+    assert.deepEqual(python.runs.map(([rc]) => rc), [0, 3, 0]);
+    assert.match(String(python.runs[0]![1]), /^Ran 3 tests\n$/);
+    assert.equal(python.state.length, 2);
   });
 
   test('file system failures in the evidence store and in spawning read like the OS wording Python prints', (t) => {
@@ -434,7 +495,7 @@ describe('cross-implementation evidence compatibility', () => {
       ...(executingBusyFileFails ? [{ label: 'script open for writing (ETXTBSY)', args: ['test', '--', './busy.sh'], cwd: repo.path, errno: 'Errno 26', setup: () => undefined }] : []),
     ];
     for (const [index, item] of cases.entries()) {
-      const results = (['py', 'ts'] as Impl[]).map((impl) => {
+      const resultOf = (impl: Impl) => {
         sandbox.data = join(sandbox.root, `data-os-${impl}-${index}`);
         sandbox.env['KEEL_DATA_DIR'] = sandbox.data;
         mkdirSync(sandbox.data);
@@ -442,9 +503,11 @@ describe('cross-implementation evidence compatibility', () => {
         sandbox.runner = RUNNERS[impl];
         const run = sandbox.keel(item.args, { cwd: item.cwd });
         return [run.rc, normalize(run.stdout, sandbox.data), normalize(run.stderr, sandbox.data)];
-      });
-      assert.ok(String(results[0]![2]).includes(item.errno), `${item.label}: python stderr ${String(results[0]![2])}`);
-      assert.deepEqual(results[1], results[0], item.label);
+      };
+      const python = recordedPython(sandbox, { test: 'os-wording', label: item.label }, () => resultOf('py'));
+      const typescript = resultOf('ts');
+      assert.ok(String(python[2]).includes(item.errno), `${item.label}: python stderr ${String(python[2])}`);
+      assert.deepEqual(typescript, python, item.label);
     }
   });
 
@@ -457,19 +520,20 @@ describe('cross-implementation evidence compatibility', () => {
       symlinkSync(located, join(tools, name));
     }
     sandbox.env['PATH'] = tools;
-    const python = spawnSync('sh', ['-c', 'command -v python3'], { encoding: 'utf8' }).stdout.trim();
-    const runners: Record<Impl, string[]> = { py: [python, KEEL_PYTHON], ts: [process.execPath, join(KEEL_HOME, 'bin', 'keel.ts')] };
-    const outcomes = (['py', 'ts'] as Impl[]).map((impl) => {
+    const outcomeOf = (impl: Impl) => {
+      const interpreter = impl === 'py' ? spawnSync('sh', ['-c', 'command -v python3'], { encoding: 'utf8' }).stdout.trim() : process.execPath;
       sandbox.data = join(sandbox.root, `data-no-mkfifo-${impl}`);
       sandbox.env['KEEL_DATA_DIR'] = sandbox.data;
       mkdirSync(sandbox.data);
-      sandbox.runner = runners[impl];
+      sandbox.runner = [interpreter, impl === 'py' ? KEEL_PYTHON : join(KEEL_HOME, 'bin', 'keel.ts')];
       const run = sandbox.keel(['test', '--', '/bin/echo', 'Ran 1 test'], { cwd: repo.path });
       return { run: [run.rc, normalize(run.stdout, sandbox.data), normalize(run.stderr, sandbox.data)], recorded: sandbox.evidenceFiles('tests').length };
-    });
-    assert.deepEqual(outcomes[1], outcomes[0]);
-    assert.deepEqual(outcomes[0]!.run.slice(0, 2), [0, 'Ran 1 test\n']);
-    assert.equal(outcomes[0]!.recorded, 1);
+    };
+    const python = recordedPython(sandbox, { test: 'no-mkfifo' }, () => outcomeOf('py'));
+    const typescript = outcomeOf('ts');
+    assert.deepEqual(typescript, python);
+    assert.deepEqual(python.run.slice(0, 2), [0, 'Ran 1 test\n']);
+    assert.equal(python.recorded, 1);
   });
 
   test('cli error paths match: usage, refusal and stdin JSON errors', (t) => {
@@ -529,25 +593,25 @@ describe('cross-implementation evidence compatibility', () => {
       { args: ['test', '--', './loop-a.sh'], cwd: repo.path }, { args: ['test', '--', './' + 'n'.repeat(300)], cwd: repo.path },
       { args: ['test', '--', 'both'], cwd: repo.path }, { args: ['test', '--', 'later'], cwd: repo.path }, { args: ['test', '--', ''], cwd: repo.path },
     ];
+    const resultOf = (impl: Impl, item: { args: string[]; stdin?: string; cwd?: string }) => {
+      sandbox.runner = RUNNERS[impl];
+      const run = sandbox.keel(item.args, { stdin: item.stdin, cwd: item.cwd });
+      return [run.rc, normalize(run.stdout, sandbox.data), normalize(run.stderr, sandbox.data)];
+    };
     const mismatches: string[] = [];
-    for (const item of cases) {
-      const results = (['py', 'ts'] as Impl[]).map((impl) => {
-        sandbox.runner = RUNNERS[impl];
-        return sandbox.keel(item.args, { stdin: item.stdin, cwd: item.cwd });
-      });
-      const [python, typescript] = results.map((run) => [run.rc, normalize(run.stdout, sandbox.data), normalize(run.stderr, sandbox.data)]);
+    for (const [index, item] of cases.entries()) {
+      const python = recordedPython(sandbox, { test: 'cli-error-paths', index, args: item.args, stdin: item.stdin ?? null }, () => resultOf('py', item));
+      const typescript = resultOf('ts', item);
       if (!isDeepStrictEqual(typescript, python)) {
         mismatches.push(`${JSON.stringify(item.args)}: python ${JSON.stringify(python)} typescript ${JSON.stringify(typescript)}`);
       }
     }
     assert.deepEqual(mismatches, []);
-    for (const impl of ['py', 'ts'] as Impl[]) {
-      sandbox.runner = RUNNERS[impl];
-      const filesBefore = filesUnder(sandbox.data).length;
-      const shebangless = sandbox.keel(['test', '--', './no-shebang.sh'], { cwd: repo.path });
-      assert.equal(shebangless.rc, 70, impl);
-      assert.match(shebangless.stderr, /^keel: internal error: OSError: \[Errno 8\] Exec format error: '\.\/no-shebang\.sh'/, impl);
-      assert.equal(filesUnder(sandbox.data).length, filesBefore, `${impl} wrote files`);
-    }
+    sandbox.runner = RUNNERS.ts;
+    const filesBefore = filesUnder(sandbox.data).length;
+    const shebangless = sandbox.keel(['test', '--', './no-shebang.sh'], { cwd: repo.path });
+    assert.equal(shebangless.rc, 70);
+    assert.match(shebangless.stderr, /^keel: internal error: OSError: \[Errno 8\] Exec format error: '\.\/no-shebang\.sh'/);
+    assert.equal(filesUnder(sandbox.data).length, filesBefore, 'typescript wrote files');
   });
 });

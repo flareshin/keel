@@ -6,6 +6,7 @@ import path from "node:path"
 
 import { ASK_EVENT, ASK_TEXT, EDIT_EVENT, EvalSandbox, initEvent, resultEvent } from "./eval_helpers.ts"
 import type { RawRun } from "./eval_helpers.ts"
+import { recordedAnswers } from "../recorded.ts"
 import { CHECKOUT, FUTURE, PAST, charterRow, ledgerRow, readText } from "./helpers.ts"
 
 const REVIEW_STUB_DIR = path.join(CHECKOUT, "tests", "measure", "stubs", "review")
@@ -17,7 +18,7 @@ const INVENTED_PRIVATE_IP = "10.250." + "3.4"
 const MASKS: [RegExp, string][] = [
   [/smoke-\d{8}T\d{6}Z-[0-9a-f]{6}/g, "<run-id>"],
   [/\d{8}T\d{6}Z-[0-9a-f]{4}/g, "<stamp>"],
-  [/\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ/g, "<ts>"],
+  [/\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z/g, "<ts>"],
   [/line \d+, in /g, "line N, in "],
   [/\/tmp[A-Za-z0-9_]{6,8}\//g, "/<tmp>/"],
 ]
@@ -76,7 +77,9 @@ function runBoth(box: EvalSandbox, parityCase: ParityCase): { python: Outcome; t
   const tool = parityCase.tool
   const pythonEntry = path.join(CHECKOUT, "measure", tool)
   const tsEntry = path.join(CHECKOUT, "measure", `${tool}.ts`)
-  return { python: run(box, pythonEntry, parityCase.args, cwd), ts: run(box, process.execPath, [tsEntry, ...parityCase.args], cwd) }
+  const askPython = (): Outcome[] => [run(box, pythonEntry, parityCase.args, cwd)]
+  const python = recordedAnswers("measure-parity", [{ name: parityCase.name, args: parityCase.args }], askPython, { "{{ROOT}}": box.root })[0] as Outcome
+  return { python, ts: run(box, process.execPath, [tsEntry, ...parityCase.args], cwd) }
 }
 
 function ledgerBox(box: EvalSandbox, rows: ReturnType<typeof ledgerRow>[]): void {

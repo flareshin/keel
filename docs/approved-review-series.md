@@ -12,7 +12,7 @@ This is evidence reuse, not a new review or approval record. `Decision.root_run_
 
 ## Reading guide
 
-Entry point: `lib/evidence/verify.py:judge`.
+Entry point: `lib/evidence/verify.ts:judge`.
 Flow: try a single chain → search approved predecessors by exact tree or by a stacked run of commits → validate every interval → verify final tests and test-path obligation.
 Changed: a range covered by consecutive approved chains, or by approved chains stacked by rebase, can pass without another whole-range review.
 Unchanged: single-chain decisions, review provenance, approval binding, evidence expiry, test coverage and submodule enforcement.

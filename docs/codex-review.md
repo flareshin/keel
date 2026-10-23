@@ -74,7 +74,7 @@ Each decision is exactly `{"id":"contract:A1","verdict":"confirmed|refuted",
 "evidence":"<independent proof>"}`. The importer derives NEEDS_FIXES when any
 confirmed or new high/medium finding remains, otherwise PASS.
 
-The rule-checks auditor runs `skills/readable-code/scripts/rule-checks.py --repo
+The rule-checks auditor runs `node skills/readable-code/scripts/rule-checks.ts --repo
 <repo> --base <base> --head <tree>` and quotes its exact clean summary once in that
 lens's evidence. Other auditors and finding verifiers do not repeat the scan to
 fill a report field. The importer reruns it to validate the actual target.

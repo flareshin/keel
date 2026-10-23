@@ -6,7 +6,7 @@ Claude installer, settings, workflow engine, authentication or model configurati
 
 ## Install
 
-Requires Python 3.11 or newer and a POSIX host (macOS/Linux). From the keel checkout:
+Requires Node 24 or newer and a POSIX host (macOS/Linux). From the keel checkout:
 
 ```sh
 codex/bin/link              # preview; writes nothing
@@ -44,7 +44,7 @@ execution depends on the installed runtime and trust settings.
 | --- | --- |
 | Charter and owner preferences | Generated user `AGENTS.md`: shared PRINCIPLES.md + optional PERSONAL.md + Codex runtime guidance |
 | Skills | Core, overlay and Codex skill folders linked into `~/.agents/skills` |
-| Tool guards | Codex PreToolUse → `codex/hooks/pre-tool-use.py` → existing git-guard and ship-gate CLIs |
+| Tool guards | Codex PreToolUse → `codex/hooks/pre-tool-use.ts` → existing git-guard and ship-gate hooks |
 | Patch edits | Each add/update/delete/move becomes a Write-shaped guard input; added text is scanned |
 | Test evidence | Existing `bin/keel test -- <command>` with explicit shared runtime paths |
 | Independent review | `$keel-review` with a fresh context or supported `codex review` invocation |
@@ -73,7 +73,7 @@ Codex responses are instructions, not report-gate enforcement.
 ## Verify
 
 ```sh
-python3 -m unittest discover -s codex/tests -v
+node --test 'codex/tests/*.test.ts'
 ```
 
 Tests use temporary homes and data directories. They exercise real guard
@@ -88,13 +88,13 @@ Official references:
 
 ## Reading guide
 
-- Entry point: `codex/bin/link` → `lib/install.py:main`.
+- Entry point: `codex/bin/link` → `lib/install.ts:main`.
 - Flow: resolve profile/overlay → build instructions/hooks/skill targets → preflight ownership/conflicts → write only requested changes.
 - Changed: Codex gets its own discoverable instructions, skills and synchronous shell/patch bridge.
 - Shared invariants: charter, evidence CLI and guard decisions stay in keel core; the Claude installer and runtime configuration are untouched.
 - Decisions: generated instructions combine shared sources with Codex-specific tool semantics; existing equivalent skills stay outside installer ownership.
 - Rejected: copying Claude settings/workflow JS into Codex would imply unsupported APIs and review provenance.
-- Read first: `hooks/pre-tool-use.py:protect_adapter` and `run_guard` decide whether a tool call receives an explicit denial; trust and callback behavior still need runtime verification.
+- Read first: `hooks/pre-tool-use.ts:protectAdapter` and `runGuard` decide whether a tool call receives an explicit denial; trust and callback behavior still need runtime verification.
 
 ## Safe configuration updates
 

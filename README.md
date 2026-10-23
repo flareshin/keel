@@ -4,7 +4,7 @@ A small, measured harness for Claude Code. It has five principles. Each one is e
 
 keel is written almost entirely by AI agents. Every change is reviewed by a separate agent context that did not write it (`lens-review`), and keel ships through its own ship-gate, which merges only with the owner's approval.
 
-Status: not yet public. No license has been chosen yet, so all rights are reserved for now. The binding spec is [`docs/DESIGN.md`](docs/DESIGN.md); where this README and the spec disagree, the spec wins.
+keel is public, at release 1.0.0 (see [`CHANGELOG.md`](CHANGELOG.md)); no license has been chosen, so all rights remain reserved. The binding spec is [`docs/DESIGN.md`](docs/DESIGN.md); where this README and the spec disagree, the spec wins.
 
 ## Why keel exists
 
@@ -144,7 +144,7 @@ Evidence lives under `$KEEL_DATA_DIR/state/keel/evidence/` as immutable JSON fil
 ### Skills and workflows
 
 - `prompt-refine` (K4): turns an ambiguous request into an approved brief and asks only the questions that change the work.
-- `readable-code` (K5): rules R1–R16 for code a person can follow. Its `scripts/rule-checks.py` produces signals for the review's rule-checks lens.
+- `readable-code` (K5): rules R1–R16 for code a person can follow. Its `scripts/rule-checks.ts` produces signals for the review's rule-checks lens.
 - `descend`: moves a recurring finding to a stronger layer.
 - `improve`: one requested structural improvement in existing code.
 - `workflows/lens-review.js`: the review engine. Lenses, adversarial audit, verification, reporter.
@@ -208,7 +208,7 @@ tests/         one directory per component, plus run-all.sh
 
 ## Running the tests
 
-Requirements: `python3` (3.9+, stdlib only), `bash`, `git`, `jq`, `node`.
+Requirements: `node` 24 or newer (the `engines` field; tested on 26.12), `bash`, `git` and `jq`. keel does not use Python.
 
 ```bash
 bash tests/run-all.sh
@@ -217,11 +217,18 @@ bash tests/run-all.sh
 Tests run in temporary directories (`KEEL_DATA_DIR`, `KEEL_OVERLAY_DIR`, `HOME`). They never touch the network or a real `~/.claude`. To run a single component:
 
 ```bash
-python3 -m unittest discover -s tests/ship-gate -t tests/ship-gate -v
+node --test 'tests/ship-gate/*.test.ts'
 node --test 'tests/workflows/*.test.mjs'
+npx tsc -p tsconfig.json
 ```
 
+The parity harnesses compare the TypeScript with outputs recorded from the earlier Python implementation (Python 3.15.0, macOS) and stored as fixtures under `tests/fixtures/python`, `tests/hooks/fixtures`, `tests/ship-gate/fixtures` and `tests/skills/fixtures`. The fixtures are frozen: the tools that recorded them needed the Python, which is gone, and survive only in the git history of the commits that introduced the fixtures. The errno-wording checks were recorded on macOS and skip on other platforms.
+
 To enable the boundary-scan git hooks in a checkout, run `git config core.hooksPath githooks`.
+
+## Contributing
+
+Contributions come only as pull requests against `main`. Only the owner (flareshin) reviews and merges them, and direct pushes to `main` are blocked for everyone else.
 
 ## Acknowledgements
 

@@ -21,11 +21,14 @@ const RUNNING_AS_ROOT = process.getuid?.() === 0
 
 let compared = 0
 let mismatches = 0
+let listedDivergences = 0
+let unmetDivergences = 0
 
 after(() => {
   fs.rmSync(SCRATCH_ROOT, { recursive: true, force: true })
   fs.rmSync(ACCEPT_DROPS_FILE, { force: true })
   console.log(`parity: ${compared} cases, ${mismatches} mismatches`)
+  console.log(`listed divergences: ${listedDivergences} cases, ${unmetDivergences} unmet`)
 })
 
 const LONE_SURROGATE_ESCAPE = "\\ud800"
@@ -33,7 +36,7 @@ const LIST_PERMISSION_KEYS = ["allow", "deny", "ask"]
 const NON_LIST_VALUES: [string, string][] = [["Null", "null"], ["ANumber", "7"], ["True", "true"], ["AnObject", '{"a": 1}']]
 
 
-type FailureCase = [string, (box: LinkSandbox) => void, string[], number, RedirectedStream[]?]
+type FailureCase = [string, (box: LinkSandbox) => void, string[], number]
 const writeWithPython = (box: LinkSandbox): void => {
   const written = box.runLinkWith([PYTHON_LINK_ENTRY], "--write")
   assert.equal(written.status, 0, written.stderr)
@@ -96,15 +99,52 @@ const PRE_KEEL_CLAUDE_MD_BACKUP_VALUES: [string, string, number][] = [
 ]
 
 const PRE_KEEL_SETTINGS_BACKUP_VALUES: [string, string, number][] = [
-  ["AList", "[1]", 70], ["AnObject", '{"a": 1}', 70], ["AFloat", "1.5", 70], ["Null", "null", 0], ["False", "false", 0], ["EmptyList", "[]", 0], ["AMissingPath", '"/nonexistent/x"', 0], ["True", "true", 0],
-  ["AHugeNumber", "99999999999999999999", 70], ["AnIntegerOneAboveTheDescriptorMaximum", "2147483648", 70], ["AnIntegerOneBelowTheDescriptorMinimum", "-2147483649", 70],
-  ["ANegativeHugeNumber", "-99999999999999999999", 70], ["TheDescriptorMaximum", "2147483647", 0], ["TheDescriptorMinimum", "-2147483648", 0],
-  ["MinusOne", "-1", 0], ["One", "1", 0], ["Two", "2", 0], ["AnUnopenedDescriptor", "7", 0],
+  ["Null", "null", 0], ["AMissingPath", '"/nonexistent/x"', 0], ["AnEmptyString", '""', 0], ["TheNoBackupMarker", '"none"', 0],
 ]
 
-const REDIRECTED_DESCRIPTOR_CASES: [string, string, RedirectedStream[], number][] = [
-  ["One", "1", ["stdout"], 70], ["True", "true", ["stdout"], 70], ["True", "true", ["stdout", "stderr"], 70], ["One", "1", ["stderr"], 0],
-  ["True", "true", ["stderr"], 0], ["Two", "2", ["stdout"], 0],
+interface IntendedDivergence {
+  readonly name: string
+  readonly literal: string
+  readonly type: string
+  readonly redirected: RedirectedStream[]
+  readonly python: { readonly status: number; readonly stderrIncludes: string }
+}
+
+const diverges = (name: string, literal: string, type: string, status: number, stderrIncludes: string = "", redirected: RedirectedStream[] = []): IntendedDivergence => ({
+  name, literal, type, redirected, python: { status, stderrIncludes },
+})
+
+const PYTHON_STAT_TYPE_ERROR = "TypeError: stat: path should be string, bytes, os.PathLike or integer, not "
+const PYTHON_BOOL_WARNING = "RuntimeWarning: bool is used as a file descriptor"
+const PYTHON_BAD_DESCRIPTOR = "OSError: [Errno 9] Bad file descriptor"
+
+const NON_STRING_SETTINGS_BACKUPS: IntendedDivergence[] = [
+  diverges("AList", "[1]", "list", 70, PYTHON_STAT_TYPE_ERROR + "list"),
+  diverges("AnObject", '{"a": 1}', "dict", 70, PYTHON_STAT_TYPE_ERROR + "dict"),
+  diverges("AFloat", "1.5", "float", 70, PYTHON_STAT_TYPE_ERROR + "float"),
+  diverges("EmptyList", "[]", "list", 0),
+  diverges("EmptyObject", "{}", "dict", 0),
+  diverges("False", "false", "bool", 0),
+  diverges("True", "true", "bool", 0, PYTHON_BOOL_WARNING),
+  diverges("Zero", "0", "int", 0),
+  diverges("MinusOne", "-1", "int", 0),
+  diverges("One", "1", "int", 0),
+  diverges("Two", "2", "int", 0),
+  diverges("AnUnopenedDescriptor", "7", "int", 0),
+  diverges("TheDescriptorMaximum", "2147483647", "int", 0),
+  diverges("TheDescriptorMinimum", "-2147483648", "int", 0),
+  diverges("AnIntegerOneAboveTheDescriptorMaximum", "2147483648", "int", 70, "OverflowError: fd is greater than maximum"),
+  diverges("AnIntegerOneBelowTheDescriptorMinimum", "-2147483649", "int", 70, "OverflowError: fd is less than minimum"),
+  diverges("AHugeNumber", "99999999999999999999", "int", 70, "OverflowError: fd is greater than maximum"),
+  diverges("ANegativeHugeNumber", "-99999999999999999999", "int", 70, "OverflowError: fd is less than minimum"),
+  diverges("One", "1", "int", 70, PYTHON_BAD_DESCRIPTOR, ["stdout"]),
+  diverges("True", "true", "bool", 70, PYTHON_BAD_DESCRIPTOR, ["stdout"]),
+  diverges("True", "true", "bool", 70, PYTHON_BAD_DESCRIPTOR, ["stdout", "stderr"]),
+  diverges("One", "1", "int", 0, "", ["stderr"]),
+  diverges("True", "true", "bool", 0, PYTHON_BOOL_WARNING, ["stderr"]),
+  diverges("Two", "2", "int", 0, "", ["stdout"]),
+  diverges("Two", "2", "int", 120, "", ["stderr"]),
+  diverges("Two", "2", "int", 120, "", ["stdout", "stderr"]),
 ]
 
 const PRE_KEEL_BACKUP_CONTENTS: [string, string, number][] = [
@@ -178,13 +218,6 @@ const NOT_UTF8_AND_CLI_CASES: FailureCase[] = [
   ]),
   ...PRE_KEEL_SETTINGS_BACKUP_VALUES.map(([label, literal, status]): FailureCase => [
     `settingsBackupFieldIs${label}OnUnlink`, withLinkState(`{"pre_keel_settings_backup": ${literal}}`), ["--unlink"], status,
-  ]),
-  ...REDIRECTED_DESCRIPTOR_CASES.map(([label, literal, redirected, status]): FailureCase => [
-    `settingsBackupFieldIs${label}OnUnlinkWith${redirected.map((stream) => stream[0]?.toUpperCase() + stream.slice(1)).join("And")}Redirected`,
-    withLinkState(`{"pre_keel_settings_backup": ${literal}}`),
-    ["--unlink"],
-    status,
-    redirected,
   ]),
   ...PRE_KEEL_BACKUP_CONTENTS.map(([label, content, status]): FailureCase => [`settingsBackupHolds${label}OnUnlink`, withPreKeelBackup(content), ["--unlink"], status]),
   ["settingsBackupIsNotUtf8OnUnlink", withPreKeelBackup(NOT_UTF8), ["--unlink"], 70],
@@ -276,12 +309,12 @@ function treeOf(root: string): unknown {
   return fs.statSync(root).isDirectory() ? snapshotTree(root) : fs.readFileSync(root, "latin1")
 }
 
-function runBoth(setup: (box: LinkSandbox) => void, args: string[], redirected: RedirectedStream[] = []): [Outcome, Outcome] {
+function runBoth(setup: (box: LinkSandbox) => void, args: string[]): [Outcome, Outcome] {
   const [python, typescript] = [[PYTHON_LINK_ENTRY], [process.execPath, LINK_ENTRY]].map((command): Outcome => {
     const box = new LinkSandbox({ root: SCRATCH_ROOT })
     try {
       setup(box)
-      const completed = box.runLinkRedirected(command, redirected, ...args)
+      const completed = box.runLinkRaw(command, ...args)
       return { ...completed, stdout: normalizeStamps(completed.stdout), stderr: normalizeStamps(completed.stderr), tree: treeOf(box.data) }
     } finally {
       fs.chmodSync(box.data, 0o700)
@@ -292,15 +325,56 @@ function runBoth(setup: (box: LinkSandbox) => void, args: string[], redirected: 
 }
 
 describe("link failure paths match the python entry", () => {
-  for (const [name, setup, args, status, redirected] of FAILURE_CASES) {
+  for (const [name, setup, args, status] of FAILURE_CASES) {
     it(`${name}_exitsWith${status}AndPrintsTheSameStreams`, { skip: RUNNING_AS_ROOT && name === "dataDirIsReadOnly" }, () => {
-      const [python, typescript] = runBoth(setup, args, redirected)
+      const [python, typescript] = runBoth(setup, args)
       compared++
       try {
         assert.equal(python.status, status)
         assert.deepEqual([typescript.status, typescript.stdout, typescript.stderr, typescript.tree], [python.status, python.stdout, python.stderr, python.tree])
       } catch (error) {
         mismatches++
+        throw error
+      }
+    })
+  }
+})
+
+type DivergentOutcome = Omit<LinkResult, "json"> & { before: unknown; after: unknown; linkStatePath: string }
+
+function runUnlinkOnce(entry: string[], divergence: IntendedDivergence): DivergentOutcome {
+  const box = new LinkSandbox({ root: SCRATCH_ROOT })
+  try {
+    withLinkState(`{"pre_keel_settings_backup": ${divergence.literal}}`)(box)
+    const before = treeOf(box.data)
+    const completed = box.runLinkRedirected(entry, divergence.redirected, "--unlink")
+    return { ...completed, before, after: treeOf(box.data), linkStatePath: box.dataPath(LINK_STATE) }
+  } finally {
+    box.remove()
+  }
+}
+
+describe("a settings backup that is not a string is refused where python reads it as a file descriptor", () => {
+  for (const divergence of NON_STRING_SETTINGS_BACKUPS) {
+    const streams = divergence.redirected.map((stream) => stream[0]?.toUpperCase() + stream.slice(1)).join("And")
+    it(`settingsBackupFieldIs${divergence.name}OnUnlink${streams === "" ? "" : `With${streams}Redirected`}_exitsWith70AndTouchesNothing`, () => {
+      listedDivergences++
+      try {
+        const python = runUnlinkOnce([PYTHON_LINK_ENTRY], divergence)
+        assert.equal(python.status, divergence.python.status)
+        assert.ok(python.stderr.includes(divergence.python.stderrIncludes), python.stderr)
+        const typescript = runUnlinkOnce([process.execPath, LINK_ENTRY], divergence)
+        assert.deepEqual(
+          { status: typescript.status, stdout: typescript.stdout, stderr: typescript.stderr, untouched: typescript.after },
+          {
+            status: 70,
+            stdout: "",
+            stderr: `link: internal error: TypeError: ${typescript.linkStatePath}: pre_keel_settings_backup must be a string, got ${divergence.type}\n`,
+            untouched: typescript.before,
+          },
+        )
+      } catch (error) {
+        unmetDivergences++
         throw error
       }
     })

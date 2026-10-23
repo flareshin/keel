@@ -132,7 +132,7 @@ describe('CodexReviewTest', () => {
 
   test('ruleChecks_refusesTimeout', (t) => {
     const f = new CodexFixture(t);
-    const timedOut = { error: Object.assign(new Error('spawnSync python3 ETIMEDOUT'), { code: 'ETIMEDOUT' }), status: null, signal: null };
+    const timedOut = { error: Object.assign(new Error('spawnSync node ETIMEDOUT'), { code: 'ETIMEDOUT' }), status: null, signal: null };
     t.mock.method(childProcess, 'spawnSync', () => timedOut);
     assert.throws(() => codexReview.runRuleChecks(f.repo.path, f.base, f.tree), refused);
   });

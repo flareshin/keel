@@ -139,7 +139,19 @@ function buildCorpus() {
   const text = [...EXOTIC_CHARS.map((char) => `${char}x${char}`), 'a\r\nb\rc\nd\ve\ff\x1cg\x1dh\x1ei\x85j\u2028k\u2029l', '\n', '', ' \t ', 'a b\tc\nd\u3000e', "it's", 'say "hi"', 'both \' and "', '\x00\x01\x7f', 'é', '😀 \u{10ffff}'];
   for (let count = 0; count < 300; count++) text.push(randomString(12));
   const pythonSources = ['x = 1\n', '# note\nx = 1\n', 'x = "# literal"\n', '# note\nx = 1\n# other\ny = 2\n', 'def f():\n    # inner\n    return 1\n',
-    '"""doc\n# not a comment\n"""\nx = 1\n', 'x = 1 # trailing\n', '#!/usr/bin/env python\nx = 1\n', '# noqa\nx = 1\n', 'x = (1,\n # inside\n 2)\n', '\n# é\nx = 1\n'];
+    '"""doc\n# not a comment\n"""\nx = 1\n', 'x = 1 # trailing\n', '#!/usr/bin/env python\nx = 1\n', '# noqa\nx = 1\n', 'x = (1,\n # inside\n 2)\n', '\n# é\nx = 1\n',
+    "x = 'it\\'s # not'\n# note here\n", 'x = "a" "b" # tail\n# note here\n', "s = '''one\n# inside\n'''\n# note here\n", "s = r'\\'\n# note here\n",
+    'p = rb"a#b"\n# note here\ny = Rb\'\\\\\'\n', 'f = f"{x}#{y}"\n# note here\n', 'f = f"{d["k"]}"\n# note here\n', "f = f'{x:#x}'\n# note here\n",
+    'f = f"{x!r:>{width}}"\n# note here\n', 'f = f"{{literal}} # kept"\n# note here\n', "f = f'{\"#\"}'\n# note here\n", 'f = f"""{\n    x  # inside the field\n}"""\n# note here\n',
+    'f = f"""{\n    # whole line in the field\n    x\n}"""\n# note here\n', 'f = f"\\N{EM DASH} #"\n# note here\n', "f = rf'{x}\\d#'\n# note here\n", 'f = f"{f"{x}"}"\n# note here\n',
+    'x = 1 + \\\n    2\n# note here\n', 'x = [\n    1,\n    # inside the list\n    2,\n]\n', 'x = {\n    # inside the dict\n    "a": 1,\n}\n',
+    'class A:\n    # first\n    x = 1\n\n    # second\n    def f(self):\n        # third\n        return 1\n# end of note\n', 'if x:\n    # only a note\n    pass\n',
+    'if x:\n    pass\n# dedent note\nelse:\n    pass\n', '@dec\n# between\ndef f():\n    pass\n', 'def f():\n\treturn 1\n# note here\n', 'def f():\n\treturn 1\n        # spaces note\n',
+    'if x:\n        a\n\tb\n# note here\n', 'if x:\n    a\n  b\n# note here\n', 'x = "unterminated\n# note here\n', "s = '''never closed\n# note here\n", 'x = (1,\n# note here\n',
+    'x = 1)\n# note here\n', 'x = $y\n# note here\n', 'x = 1  # prefix\n# note here\n', 'x = 1\r\n# note here\r\ny = 2\r\n', 'x = 1\r\n# note\r here\r\n', '# note here\n', '# only\n# comments\n',
+    '', 'x = "é😀"  # trailing\n# note 😀 here\ny = "😀"\n', 'name = "\\N{EM DASH}"\n# note here\n', 'x = lambda: 0  # tail\n# note here\n', 'if (y := 1):\n    # note here\n    pass\n',
+    'print(*a, sep="#")\n# note here\n', 'a @ b\n# note here\n', '# coding: latin-1\nx = 1\n', '# type: ignore\nx = 1\n', '# TODO(ABC-12) later\nx = 1\n', 'x = 1\n\x0c\n# note here\n',
+    '\u00e9 = 1\n# note here\n', 'class \u0130:\n    # note here\n    pass\n', 'x = """a\\\n# still a string\n"""\n# note here\n', "x = 'a\\\n# still a string'\n# note here\n"];
   const slashSources = ['// a\nconst x = 1;\n', '/* b\n c */\nconst y = 2;\n', 'const s = "// not";\n// c\n', "const t = 'it\\'s';\n// note here\n", 'x = a / b;\n// note\n',
     '// @ts-ignore\nlet z;\n', '  // indented note\n  keep();\n', 'int x; // trailing note\n', '/* unterminated\n', '// note\r\nkeep();\r\n',
     '// L\u0131cense MIT\nconst x = 1;\n', '// \u0130gnore this\nconst x = 1;\n', '/* \u0130LLEGAL ignore */\nconst x = 1;\n', '// not\u0131ce\nconst x = 1;\n',

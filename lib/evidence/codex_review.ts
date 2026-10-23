@@ -244,11 +244,11 @@ export function digest(content: Uint8Array): string {
 
 export function runRuleChecks(repo: string, base: string, tree: string): string {
   const keelHome = resolve(dirname(realpathSync(import.meta.filename)), '..', '..');
-  const script = join(keelHome, 'skills/readable-code/scripts/rule-checks.py');
+  const script = join(keelHome, 'skills/readable-code/scripts/rule-checks.ts');
   let stdout: string;
   let returncode: number;
   try {
-    const completed = runCaptured(['python3', script, '--repo', repo, '--base', base, '--head', tree],
+    const completed = runCaptured([process.execPath, script, '--repo', repo, '--base', base, '--head', tree],
       { timeoutSeconds: RULE_CHECKS_TIMEOUT_SECONDS });
     returncode = completed.returncode;
     stdout = universalNewlines(decodeStrict(completed.stdout));

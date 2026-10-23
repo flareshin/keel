@@ -1,7 +1,7 @@
 import { posix } from 'node:path';
 import * as gitcmd from './gitcmd.ts';
 import { PYTHON_SPACE_PATTERN, UnicodeDecodeError, decodeStrict, pyStrip } from './pycompat.ts';
-import { runCaptured } from './subprocess.ts';
+import { pythonCommentSpans } from './python_comments.ts';
 
 const MAX_SOURCE_BYTES = 1024 * 1024;
 const PYTHON_SPACE_MEMBERS = PYTHON_SPACE_PATTERN.slice(1, -1);
@@ -18,24 +18,6 @@ const PROTECTED = new RegExp(
 const SUPPORTED_SUFFIXES = ['.py', '.js', '.ts', '.java'];
 const REGULAR_FILE_MODES = ['100644', '100755'];
 const FORBIDDEN_CHARS = ['\0', '\ufeff', '\u2028', '\u2029'];
-const PYTHON_COMMENT_SCRIPT = `
-import ast, io, json, sys, tokenize
-old, new = json.loads(sys.stdin.read())
-try:
-    if ast.dump(ast.parse(old)) != ast.dump(ast.parse(new)):
-        print("null")
-        raise SystemExit
-    offsets = [0]
-    for line in old.splitlines(keepends=True):
-        offsets.append(offsets[-1] + len(line))
-    spans = [[offsets[t.start[0] - 1] + t.start[1], offsets[t.end[0] - 1] + t.end[1], t.string[1:]]
-             for t in tokenize.generate_tokens(io.StringIO(old).readline) if t.type == tokenize.COMMENT]
-    print(json.dumps(spans))
-except (SyntaxError, tokenize.TokenError, IndentationError, RecursionError, ValueError):
-    print("null")
-`;
-const PYTHON_TIMEOUT_SECONDS = 20;
-
 type Span = [start: number, end: number, body: string];
 
 const verdictCache = new Map<string, boolean>();
@@ -90,7 +72,7 @@ export function onlyCommentDeletions(path: string, before: Buffer, after: Buffer
     return false;
   }
   if (old.replaceAll('\r\n', '').includes('\r') || FORBIDDEN_CHARS.some((char) => old.includes(char))) return false;
-  const spans = suffix === '.py' ? pythonComments(old, current) : slashComments(old, suffix);
+  const spans = suffix === '.py' ? pythonCommentSpans(old) : slashComments(old, suffix);
   if (spans === null) return false;
   const chunks: Array<[text: string, removable: boolean]> = [];
   let cursor = 0;
@@ -112,23 +94,6 @@ export function onlyCommentDeletions(path: string, before: Buffer, after: Buffer
     else return false;
   }
   return removed && position === current.length;
-}
-
-function pythonComments(old: string, current: string): Span[] | null {
-  const completed = runCaptured(['python3', '-I', '-X', 'utf8', '-c', PYTHON_COMMENT_SCRIPT],
-    { input: JSON.stringify([old, current]), timeoutSeconds: PYTHON_TIMEOUT_SECONDS });
-  const spans = JSON.parse(completed.stdout.toString('utf8')) as Array<[number, number, string]> | null;
-  if (spans === null) return null;
-  const toUnits = codePointToUtf16Offsets(old);
-  return spans.map(([start, end, body]) => [toUnits(start), toUnits(end), body]);
-}
-
-function codePointToUtf16Offsets(text: string): (offset: number) => number {
-  if (!/[\ud800-\udbff]/.test(text)) return (offset) => offset;
-  const starts: number[] = [];
-  for (let index = 0; index < text.length; index += text.codePointAt(index)! > 0xffff ? 2 : 1) starts.push(index);
-  starts.push(text.length);
-  return (offset) => starts[offset]!;
 }
 
 function slashComments(text: string, suffix: string): Span[] | null {

@@ -1,35 +1,34 @@
-diff --git a/shop/orders.py b/shop/orders.py
-index 8c6b11e..7296019 100644
---- a/shop/orders.py
-+++ b/shop/orders.py
-@@ -3,3 +3,8 @@ import sqlite3
- 
- def open_orders(conn: sqlite3.Connection) -> list[tuple]:
-     return conn.execute("SELECT id, customer, total FROM orders WHERE status = ?", ("open",)).fetchall()
+diff --git a/shop/orders.ts b/shop/orders.ts
+index 61cb3b7..1f61cc3 100644
+--- a/shop/orders.ts
++++ b/shop/orders.ts
+@@ -3,3 +3,8 @@ import type { DatabaseSync } from 'node:sqlite'
+ export function openOrders(db: DatabaseSync): unknown[] {
+   return db.prepare('SELECT id, customer, total FROM orders WHERE status = ?').all('open')
+ }
 +
-+
-+def orders_of(conn: sqlite3.Connection, customer: str) -> list[tuple]:
-+    query = f"SELECT id, total FROM orders WHERE customer = '{customer}' ORDER BY id"
-+    return conn.execute(query).fetchall()
-diff --git a/tests/test_orders.py b/tests/test_orders.py
-index e2f4c05..0e480f5 100644
---- a/tests/test_orders.py
-+++ b/tests/test_orders.py
-@@ -1,7 +1,7 @@
- import sqlite3
- import unittest
++export function ordersOf(db: DatabaseSync, customer: string): unknown[] {
++  const query = `SELECT id, total FROM orders WHERE customer = '${customer}' ORDER BY id`
++  return db.prepare(query).all()
++}
+diff --git a/tests/orders.test.ts b/tests/orders.test.ts
+index 4f667de..ccb247b 100644
+--- a/tests/orders.test.ts
++++ b/tests/orders.test.ts
+@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
+ import { DatabaseSync } from 'node:sqlite'
+ import { test } from 'node:test'
  
--from shop.orders import open_orders
-+from shop.orders import open_orders, orders_of
+-import { openOrders } from '../shop/orders.ts'
++import { openOrders, ordersOf } from '../shop/orders.ts'
  
- 
- def seeded() -> sqlite3.Connection:
-@@ -14,3 +14,8 @@ def seeded() -> sqlite3.Connection:
- class OpenOrdersTest(unittest.TestCase):
-     def test_returnsOnlyOpenOrders(self) -> None:
-         self.assertEqual(open_orders(seeded()), [(1, "ada", 30)])
+ function seeded(): DatabaseSync {
+   const db = new DatabaseSync(':memory:')
+@@ -20,3 +20,7 @@ function plain(rows: unknown[]): unknown[] {
+ test('openOrders returns only open orders', () => {
+   assert.deepEqual(plain(openOrders(seeded())), [{ id: 1, customer: 'ada', total: 30 }])
+ })
 +
-+
-+class OrdersOfTest(unittest.TestCase):
-+    def test_returnsTheCustomersOrders(self) -> None:
-+        self.assertEqual(orders_of(seeded(), "bob"), [(2, 50)])
++test('ordersOf returns the customer orders', () => {
++  assert.deepEqual(plain(ordersOf(seeded(), 'bob')), [{ id: 2, total: 50 }])
++})

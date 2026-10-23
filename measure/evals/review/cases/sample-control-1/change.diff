@@ -1,26 +1,29 @@
-diff --git a/accounts/emails.py b/accounts/emails.py
-index 47da60e..2cf46d7 100644
---- a/accounts/emails.py
-+++ b/accounts/emails.py
-@@ -1,2 +1,6 @@
-+def normalized(address: str) -> str:
-+    return address.strip().lower()
+diff --git a/accounts/emails.ts b/accounts/emails.ts
+index 5d2de2a..8cd1c3b 100644
+--- a/accounts/emails.ts
++++ b/accounts/emails.ts
+@@ -1,3 +1,7 @@
++export function normalized(address: string): string {
++  return address.trim().toLowerCase()
++}
 +
+ export function sameAddress(left: string, right: string): boolean {
+-  return left === right
++  return normalized(left) === normalized(right)
+ }
+diff --git a/tests/emails.test.ts b/tests/emails.test.ts
+index 95ee04d..441ad90 100644
+--- a/tests/emails.test.ts
++++ b/tests/emails.test.ts
+@@ -6,3 +6,11 @@ import { sameAddress } from '../accounts/emails.ts'
+ test('equal addresses match', () => {
+   assert.equal(sameAddress('ada@example.com', 'ada@example.com'), true)
+ })
 +
- def same_address(left: str, right: str) -> bool:
--    return left == right
-+    return normalized(left) == normalized(right)
-diff --git a/tests/test_emails.py b/tests/test_emails.py
-index 16acc26..f24d148 100644
---- a/tests/test_emails.py
-+++ b/tests/test_emails.py
-@@ -6,3 +6,9 @@ from accounts.emails import same_address
- class SameAddressTest(unittest.TestCase):
-     def test_equalAddresses_match(self) -> None:
-         self.assertTrue(same_address("ada@example.com", "ada@example.com"))
++test('case and surrounding space are ignored', () => {
++  assert.equal(sameAddress(' Ada@Example.com ', 'ada@example.com'), true)
++})
 +
-+    def test_caseAndSurroundingSpace_areIgnored(self) -> None:
-+        self.assertTrue(same_address(" Ada@Example.com ", "ada@example.com"))
-+
-+    def test_differentAddresses_doNotMatch(self) -> None:
-+        self.assertFalse(same_address("ada@example.com", "bob@example.com"))
++test('different addresses do not match', () => {
++  assert.equal(sameAddress('ada@example.com', 'bob@example.com'), false)
++})

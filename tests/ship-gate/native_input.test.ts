@@ -235,7 +235,8 @@ describe('git paths are decoded as UTF-8 or refused', () => {
     const [repo, emptyTree, tree] = treeWithRawPath(Buffer.from([0x61, 0xff, 0x2e, 0x74]));
     assert.throws(() => gitcmd.diffEntries(repo, emptyTree, tree), InvalidUtf8Error);
     assert.throws(() => gitcmd.diffStats(repo, emptyTree, tree), InvalidUtf8Error);
-    assert.throws(() => gitcmd.treeEntry(repo, tree, 'd/'), InvalidUtf8Error);
+    assert.equal(gitcmd.treeEntry(repo, tree, 'd')?.[0], '040000');
+    assert.equal(gitcmd.treeEntry(repo, tree, 'd/a�.t'), null);
   });
 });
 

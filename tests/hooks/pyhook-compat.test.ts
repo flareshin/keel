@@ -1,13 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
-import { afterEach, beforeEach, describe, it } from "node:test";
-import { join } from "node:path";
+import { describe, it } from "node:test";
 import { MAX_JSON_DEPTH, pythonJsonDumps, pythonStr } from "../../hooks/lib/hookkit/pycompat.ts";
-import { fnmatchCase } from "../../hooks/lib/hookkit/pyfnmatch.ts";
 import { dumpsAscii, JSONDecodeError, loads, parsePayload } from "../../hooks/lib/hookkit/pyjson.ts";
-import { dirname, readTextFile, realpath, shlexQuote } from "../../hooks/lib/hookkit/pypath.ts";
 import { describeError, pythonErrorName, RecursionError, ValueError } from "../../hooks/lib/hookkit/pyruntime.ts";
-import { Sandbox } from "./helpers.ts";
 
 function decodeFailure(text: string): string {
   try {
@@ -237,58 +232,6 @@ describe("dumpsAscii", () => {
 
   it("keepsNonAsciiText_unlessAsked", () => {
     assert.equal(pythonJsonDumps({ k: "é" }), '{"k": "é"}');
-  });
-});
-
-describe("pyfnmatch", () => {
-  it("fnmatchCase_letsStarCrossSlashesAndIsCaseSensitive", () => {
-    assert.equal(fnmatchCase("db/patch.sql", "*.sql"), true);
-    assert.equal(fnmatchCase("a/b", "a*"), true);
-    assert.equal(fnmatchCase("A", "a"), false);
-  });
-
-  it("fnmatchCase_readsBracketsLikePython", () => {
-    const cases: Array<[string, string, boolean]> = [
-      ["x[", "x[", true], ["b", "[a-c]", true], ["d", "[!a-c]", true], ["b", "[!a-c]", false], ["]", "[]]", true],
-      ["-", "[a-]", true], ["c", "[c-a]", false], ["a", "[]", false], ["\u{1F600}", "?", true],
-    ];
-    for (const [name, pattern, expected] of cases) assert.equal(fnmatchCase(name, pattern), expected, `${name} ~ ${pattern}`);
-  });
-});
-
-describe("pypath", () => {
-  let sandbox: Sandbox;
-
-  beforeEach(() => {
-    sandbox = new Sandbox();
-  });
-
-  afterEach(() => {
-    sandbox.close();
-  });
-
-  it("dirname_dropsTrailingSlashesUnlessTheHeadIsAllSlashes", () => {
-    const cases: Array<[string, string]> = [["/a/b/", "/a/b"], ["/a", "/"], ["a", ""], ["//a//b//c", "//a//b"], ["/", "/"]];
-    for (const [path, expected] of cases) assert.equal(dirname(path), expected, path);
-  });
-
-  it("realpath_resolvesSymlinksAndKeepsTheMissingTail", () => {
-    const real = join(sandbox.root, "real");
-    mkdirSync(real);
-    symlinkSync(real, join(sandbox.root, "link"));
-    assert.equal(realpath(join(sandbox.root, "link", "x", "..", "y", "z")), join(real, "y", "z"));
-  });
-
-  it("shlexQuote_quotesWhatTheShellWouldSplit", () => {
-    const cases: Array<[string, string]> = [["a b", "'a b'"], ["", "''"], ["it's", `'it'"'"'s'`], ["a/b-c.d=e", "a/b-c.d=e"], ["é", "'é'"]];
-    for (const [text, expected] of cases) assert.equal(shlexQuote(text), expected, text);
-  });
-
-  it("readTextFile_translatesNewlinesAndNamesTheMissingPath", () => {
-    const path = join(sandbox.root, "crlf.txt");
-    writeFileSync(path, "a\r\nb\rc\n");
-    assert.equal(readTextFile(path), "a\nb\nc\n");
-    assert.throws(() => readTextFile(join(sandbox.root, "absent")), (error: NodeJS.ErrnoException) => error.path === join(sandbox.root, "absent"));
   });
 });
 

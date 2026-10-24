@@ -6,7 +6,8 @@ import type { Payload } from "../lib/hookkit/protocol.ts";
 import {
   arraysEqual, basename, getField, joinPath, lstripChar, normalizePath, partition, PY_WORD, pythonStr, truncate,
 } from "../lib/hookkit/pycompat.ts";
-import { isFile, shlexQuote } from "../lib/hookkit/pypath.ts";
+import { isFile } from "../lib/hookkit/files.ts";
+import { shlexQuote } from "../../measure/lib/measurekit/shlex.ts";
 import { AttributeError, RecursionError as StrRecursionError, pythonTypeName as pythonValueTypeName, readStdin, writeStderr } from "../lib/hookkit/pyruntime.ts";
 import * as shell from "../lib/hookkit/shell.ts";
 import type { Step } from "../lib/hookkit/shell.ts";

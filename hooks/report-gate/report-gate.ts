@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readdirSync, statSync, lstatSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, lstatSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { missDetail, missingFields, OUTCOME } from "../lib/hookkit/contract.ts";
 import { dataDir, keelCli } from "../lib/hookkit/env.ts";
 import { FireLog } from "../lib/hookkit/fires.ts";
@@ -9,7 +10,6 @@ import {
   testCaseFolded, WORD_BOUNDARY,
 } from "../lib/hookkit/pycompat.ts";
 import { dumpsAscii, loads, parsePayload } from "../lib/hookkit/pyjson.ts";
-import { dirname, readTextFile } from "../lib/hookkit/pypath.ts";
 import { AttributeError, describeError, pythonErrorName, pythonList, pythonTypeName, readStdin, stripChars, RecursionError, ValueError } from "../lib/hookkit/pyruntime.ts";
 import { OSError, run, TimeoutExpired } from "../lib/hookkit/subprocess.ts";
 import type { CompletedProcess } from "../lib/hookkit/subprocess.ts";
@@ -82,7 +82,7 @@ class TurnState {
     if (this.path === null || !existsSync(this.path)) return;
     let data: unknown;
     try {
-      data = loads(readTextFile(this.path));
+      data = loads(readFileSync(this.path, "utf8"));
     } catch (error) {
       if (!isReadFailure(error)) throw error;
       this.handedBack = true;

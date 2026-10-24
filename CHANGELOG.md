@@ -156,6 +156,13 @@ Python-shaped for now because the recorded ship-gate hook run still pins them (s
   evidence files (Python `json.loads` messages, `NaN`, the 10,000 level bound); the `RegistryError` text with Python
   `repr` quoting and the UTF-8 message of the registry reader; the `TimeoutExpired` text with a Python list repr; and
   `UnicodeEncodeError` for a command word holding a lone surrogate. They go with the parity re-recording in the hooks kit.
+- `git-guard` `repo-rules.tsv` and `env-preflight` `jdk.tsv` globs match through the same `globMatches` as
+  `risk-rules.tsv`. A backwards character range there is now an error: `git-guard` refuses the guarded command as an
+  internal error (fail closed), and `env-preflight` logs an `error` fire and lets the command run, where both used to
+  treat the rule as matching nothing.
+- The hooks read commit message files (`git commit -F`, `gh pr --body-file`), handoff notes, agent definitions and
+  report-gate state as UTF-8 text without turning a lone CR or a CRLF into a newline. An agent definition's frontmatter
+  still opens and closes with `---` on a CRLF line.
 
 ### Fixed
 - `env-preflight` (`[S-jdk]`) accepts a `java_home` lookup that names a patch release of the required major, such as
@@ -163,6 +170,10 @@ Python-shaped for now because the recorded ship-gate hook run still pins them (s
   (`17.0.*`), a trailing dot or another major is still denied.
 
 ### Removed
+- The hook modules `hooks/lib/hookkit/{pyfnmatch,pypath}.ts`. Their place is taken by `globMatches` from
+  `lib/evidence/glob.ts`, `shlexQuote` from `measure/lib/measurekit/shlex.ts`, `node:path` `dirname`, `readFileSync` and
+  `realpathSync`, and `isFile`, `isDirectory` and `resolveSymlinksKeepingMissingTail` in the new
+  `hooks/lib/hookkit/files.ts`.
 - The Python-emulation modules `codex/lib/{argparse,pycodec_names,pycodecs,pyerrors,pyfs,pyjson,pyrepr,pystdin,pystr}.ts`
   and the tests that compared them with Python (`codex/tests/{pycompat,stdin-decoding}.test.ts`, `pyref.ts`,
   `stdin-policy.ts`, `locale-env.ts`). Their place is taken by `codex/lib/{json,paths,refusal}.ts`, `readText` and

@@ -1,3 +1,6 @@
+import { readFileSync, realpathSync } from "node:fs";
+import { dirname } from "node:path";
+import { shlexQuote } from "../../measure/lib/measurekit/shlex.ts";
 import { approvedFastForward } from "../../lib/evidence/activation.ts";
 import { boundaryScanner, dataDir, keelHome, overlayDir, overlayPath } from "../lib/hookkit/env.ts";
 import { FireLog } from "../lib/hookkit/fires.ts";
@@ -9,9 +12,9 @@ import {
   basename, expandUser, getField, isRecord, isTruthy, joinPath, normalizePath, partition, PY_SPACE, pythonStr, sortedByCodePoint,
   SPACE_CLASS, splitlines, strip, testCaseFolded, truncate, WORD_BOUNDARY,
 } from "../lib/hookkit/pycompat.ts";
-import { fnmatchCase } from "../lib/hookkit/pyfnmatch.ts";
+import { globMatches } from "../../lib/evidence/glob.ts";
 import { loads, parsePayload } from "../lib/hookkit/pyjson.ts";
-import { dirname, isDirectory, isFile, readTextFile, realpath, shlexQuote } from "../lib/hookkit/pypath.ts";
+import { isDirectory, isFile, resolveSymlinksKeepingMissingTail } from "../lib/hookkit/files.ts";
 import { AttributeError, describeError, pythonErrorName, pythonList, pythonTypeName, readStdin, RecursionError, ValueError } from "../lib/hookkit/pyruntime.ts";
 import { currentBranch, findRepoKey, findToplevel, git, gitOutput, isCommit } from "../lib/hookkit/repo.ts";
 import {
@@ -506,8 +509,8 @@ function repoRuleViolations(repoKey: string | null, paths: readonly string[], ac
   const violations: Violation[] = [];
   for (const rule of readTsv(overlayPath("git-guard", "repo-rules.tsv"), REPO_RULES_HEADER)) {
     const action = rule["action"] ?? "";
-    if (!actions.includes(action) || !fnmatchCase(repoKey, rule["origin_glob"] ?? "")) continue;
-    const matched = paths.filter((path) => fnmatchCase(path, rule["pattern"] ?? ""));
+    if (!actions.includes(action) || !globMatches(repoKey, rule["origin_glob"] ?? "")) continue;
+    const matched = paths.filter((path) => globMatches(path, rule["pattern"] ?? ""));
     if (action === ACTION_DENY_COMMIT) {
       violations.push({ ruleId: rule["rule_id"] ?? "", text: rule["message"] ?? "", repo: repoKey });
     } else if (matched.length > 0) {
@@ -585,7 +588,7 @@ class LiveCheckouts {
   readonly roots: string[];
 
   constructor() {
-    this.roots = [keelHome(), overlayDir()].filter(isDirectory).map(realpath);
+    this.roots = [keelHome(), overlayDir()].filter(isDirectory).map((root) => realpathSync(root));
   }
 
   rootOf(path: string): string | null {
@@ -664,7 +667,7 @@ function readMessageFiles(args: readonly string[], options: ReadonlySet<string>,
 
 function messageSourceTexts(path: string, step: Step): string[] {
   const resolved = resolveDirectory(step.directory, path, step.expansion);
-  return isFile(resolved) ? [readTextFile(resolved)] : [];
+  return isFile(resolved) ? [readFileSync(resolved, "utf8")] : [];
 }
 
 function readCommitOption(arg: string): CommitOption {
@@ -713,7 +716,7 @@ function isUnresolved(resolvedPath: string): boolean {
 
 function spellings(path: string): string[] {
   const normalized = normalizePath(path);
-  const real = realpath(path);
+  const real = resolveSymlinksKeepingMissingTail(path);
   return real === normalized ? [normalized] : [normalized, real];
 }
 

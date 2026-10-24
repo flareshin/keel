@@ -4,9 +4,9 @@ import { readTsv } from "../../../hooks/lib/hookkit/overlay.ts";
 import * as protocol from "../../../hooks/lib/hookkit/protocol.ts";
 import type { Payload } from "../../../hooks/lib/hookkit/protocol.ts";
 import { getField, isTruthy, joinPath, normalizePath, expandUser, partition, pythonStr, strip, arraysEqual, PY_SPACE, testCaseFolded } from "../../../hooks/lib/hookkit/pycompat.ts";
-import { fnmatchCase } from "../../../hooks/lib/hookkit/pyfnmatch.ts";
+import { globMatches } from "../../../lib/evidence/glob.ts";
 import { parsePayload } from "../../../hooks/lib/hookkit/pyjson.ts";
-import { isDirectory } from "../../../hooks/lib/hookkit/pypath.ts";
+import { isDirectory } from "../../../hooks/lib/hookkit/files.ts";
 import { describeError, readStdin, ValueError } from "../../../hooks/lib/hookkit/pyruntime.ts";
 import { findRepoKey, findSuperproject, findToplevel } from "../../../hooks/lib/hookkit/repo.ts";
 import { parseCommands, unwrap } from "../../../hooks/lib/hookkit/shell.ts";
@@ -153,7 +153,7 @@ function requiredJdk(directory: string): readonly [repoKey: string, major: strin
   for (const candidate of [toplevel, superproject]) {
     const key = candidate ? findRepoKey(candidate) : null;
     for (const row of rows) {
-      if (key && fnmatchCase(key, row["origin_glob"] ?? "")) return [key, row["jdk"] ?? ""];
+      if (key && globMatches(key, row["origin_glob"] ?? "")) return [key, row["jdk"] ?? ""];
     }
   }
   return null;

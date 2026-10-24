@@ -206,3 +206,11 @@ describe("FailureTest", () => {
     assert.equal(sandbox.runHook(ENV_PREFLIGHT, { raw: "mvn" }).code, 0);
   });
 });
+
+describe("JdkMapGlobTest", () => {
+  it("mvn_passesWithErrorFire_whenAJdkMapGlobHasABackwardsRange", () => {
+    sandbox.write(join(sandbox.overlay, "stack-data", "spring-maven", "jdk.tsv"), "origin_glob\tjdk\nacmecorp/[z-a]\t17\n");
+    assertPassed(check("mvn -q test"));
+    assertFired(sandbox, "S-jdk", "error", "env-preflight");
+  });
+});

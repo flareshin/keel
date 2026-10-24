@@ -537,6 +537,11 @@ describe("AttributionTest", () => {
     assertDenied(guard("git commit -F msg.txt", repo), "F-attribution");
   });
 
+  it("commit_denied_whenMessageFileHasTrailerAndCrlfLineEnds", () => {
+    sandbox.write(join(repo, "msg.txt"), `Fix\r\n\r\n${ATTRIBUTION_TRAILER}\r\n`);
+    assertDenied(guard("git commit -F msg.txt", repo), "F-attribution");
+  });
+
   it("commit_denied_whenMessageFilePathUsesAVariableTheHookKnows", () => {
     const scratch = join(sandbox.root, "scratch");
     sandbox.write(join(scratch, "msg.txt"), `Fix\n\n${ATTRIBUTION_TRAILER}\n`);
@@ -1037,6 +1042,16 @@ describe("RepoRulesTest", () => {
     sandbox.write(join(repo, "x.sql"), "select 1;\n");
     sandbox.git(repo, "add", "x.sql");
     assertPassed(guard('git commit -m "Add x"', repo));
+  });
+
+  it("commit_deniedFailClosed_whenARepoRuleGlobHasABackwardsRange", () => {
+    sandbox.write(join(sandbox.overlay, "git-guard", "repo-rules.tsv"), "origin_glob\taction\tpattern\trule_id\tmessage\nacmecorp/*\tdeny-path\t*.[z-a]\tO-files\tNo SQL.\n");
+    const repo = sandbox.makeRepo("acmecorp", "storefront");
+    sandbox.write(join(repo, "x.sql"), "select 1;\n");
+    sandbox.git(repo, "add", "x.sql");
+    const result = guard('git commit -m "Add x"', repo);
+    assert.equal(result.code, 2);
+    assertFired(sandbox, "F-attribution", "error", "git-guard");
   });
 
   it("commit_deniedFailClosed_whenRepoRulesHeaderIsWrong", () => {

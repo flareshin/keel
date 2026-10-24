@@ -1,4 +1,5 @@
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { dataDir } from "../lib/hookkit/env.ts";
 import { FireLog, utcNow } from "../lib/hookkit/fires.ts";
 import * as protocol from "../lib/hookkit/protocol.ts";
@@ -7,7 +8,7 @@ import {
   basename, getField, isTruthy, joinPath, pythonStr, rstripChar, splitlines, strip,
 } from "../lib/hookkit/pycompat.ts";
 import { dumpsAscii, parsePayload } from "../lib/hookkit/pyjson.ts";
-import { dirname, isDirectory, isFile, readTextFile } from "../lib/hookkit/pypath.ts";
+import { isDirectory, isFile } from "../lib/hookkit/files.ts";
 import { describeError, printLine, readStdin, stripChars, RecursionError, ValueError, writeStderr } from "../lib/hookkit/pyruntime.ts";
 import { findToplevel, findUpstream, gitOutput } from "../lib/hookkit/repo.ts";
 
@@ -55,7 +56,7 @@ function main(argv: string[]): number {
   } else if (mode === "--status") {
     printLine(dumpsAscii({ path: place.file, hasResumePoint: hasResumePoint(place.file) }));
   } else if (mode === "--read") {
-    printLine(isFile(place.file) ? readTextFile(place.file) : `no handoff: ${place.file}`);
+    printLine(isFile(place.file) ? readFileSync(place.file, "utf8") : `no handoff: ${place.file}`);
   } else if (mode === "--clear") {
     if (isFile(place.file)) rmSync(place.file);
     printLine(`handoff deleted: ${place.file}`);
@@ -137,7 +138,7 @@ function renderHandoff(place: RepoPlace, note: string): string {
 function resumeNote(path: string): string {
   const noteLines: string[] = [];
   let inside = false;
-  for (const line of splitlines(readTextFile(path))) {
+  for (const line of splitlines(readFileSync(path, "utf8"))) {
     if (line === RESUME_HEADING) inside = true;
     else if (line === LOCATION_HEADING) inside = false;
     else if (inside && !line.startsWith(AUTO_PREFIX)) noteLines.push(line);
@@ -154,7 +155,7 @@ function hasResumePoint(path: string): boolean {
 function writtenHere(place: RepoPlace): boolean {
   const recorded: string[] = [];
   let inside = false;
-  for (const line of splitlines(readTextFile(place.file))) {
+  for (const line of splitlines(readFileSync(place.file, "utf8"))) {
     if (line === LOCATION_HEADING) inside = true;
     else if (line.startsWith("## ")) inside = false;
     else if (inside && (line.startsWith("- Branch: ") || line.startsWith("- Working worktree: "))) recorded.push(line);

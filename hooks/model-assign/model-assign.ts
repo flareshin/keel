@@ -1,7 +1,8 @@
 import { dataDir } from "../lib/hookkit/env.ts";
 import { FireLog } from "../lib/hookkit/fires.ts";
 import { getField, isTruthy, joinPath, PY_SPACE, PY_WORD, pythonStr } from "../lib/hookkit/pycompat.ts";
-import { isFile, readTextFile } from "../lib/hookkit/pypath.ts";
+import { readFileSync } from "node:fs";
+import { isFile } from "../lib/hookkit/files.ts";
 import { parsePayload } from "../lib/hookkit/pyjson.ts";
 import { describeError, readStdin, RecursionError, ValueError } from "../lib/hookkit/pyruntime.ts";
 import * as protocol from "../lib/hookkit/protocol.ts";
@@ -18,7 +19,7 @@ const REQUIRED_SCRIPT_OPTIONS: ReadonlyArray<readonly [string, RegExp]> = ["mode
   key, new RegExp(`${WORD_START}${key}${WORD_END}["']?[${PY_SPACE}]*:`, "u"),
 ]);
 const EFFORT_PIN_RE = new RegExp(`(?<![^\\n])effort[${PY_SPACE}]*:`);
-const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---/;
+const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
 const OPUS = "opus";
 const SONNET = "sonnet";
 const HAIKU = "haiku";
@@ -114,7 +115,7 @@ function checkWorkflowScript(toolArgs: Payload, fires: FireLog): number {
 function typePinsEffort(agentType: string): boolean {
   const path = joinPath(dataDir(), "agents", `${agentType}.md`);
   if (!agentType || !isFile(path)) return false;
-  const frontmatter = FRONTMATTER_RE.exec(readTextFile(path));
+  const frontmatter = FRONTMATTER_RE.exec(readFileSync(path, "utf8"));
   return frontmatter !== null && EFFORT_PIN_RE.test(frontmatter[1] ?? "");
 }
 
@@ -123,7 +124,7 @@ function workflowScript(toolArgs: Payload): string | null {
   const scriptPath = getField(toolArgs, "scriptPath");
   if (typeof script === "string") return script;
   if (typeof scriptPath !== "string" || !isFile(scriptPath)) return null;
-  return readTextFile(scriptPath);
+  return readFileSync(scriptPath, "utf8");
 }
 
 if (import.meta.main) process.exitCode = main();

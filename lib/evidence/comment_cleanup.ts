@@ -20,13 +20,19 @@ const FORBIDDEN_CHARS = ['\0', '\ufeff', '\u2028', '\u2029'];
 type Span = [start: number, end: number, body: string];
 
 const verdictCache = new Map<string, boolean>();
+const blobSizes = new Map<string, number>();
 
 export type Content = [mode: string, blob: string | null];
 
 export function matchesContent(repo: string, path: string, reviewed: Content | null, current: Content | null): boolean {
   if (sameContent(reviewed, current)) return true;
   if (!reviewed || !current || reviewed[0] !== current[0] || !REGULAR_FILE_MODES.includes(current[0])) return false;
+  if (!hasSupportedSuffix(path)) return false;
   return blobCommentDeletions(repo, path, reviewed[1]!, current[1]!);
+}
+
+function hasSupportedSuffix(path: string): boolean {
+  return SUPPORTED_SUFFIXES.includes(posix.extname(path));
 }
 
 function sameContent(left: Content | null, right: Content | null): boolean {
@@ -45,7 +51,7 @@ export function blobCommentDeletions(repo: string, path: string, oldBlob: string
 
 function measureBlobs(repo: string, path: string, oldBlob: string, newBlob: string): boolean {
   try {
-    const sizes = [oldBlob, newBlob].map((blob) => Number.parseInt(gitcmd.text(repo, ['cat-file', '-s', blob]), 10));
+    const sizes = [oldBlob, newBlob].map((blob) => blobSize(repo, blob));
     if (sizes.some(Number.isNaN)) return false;
     if (!(0 < sizes[1]! && sizes[1]! < sizes[0]! && sizes[0]! <= MAX_SOURCE_BYTES)) return false;
     const [before, after] = [oldBlob, newBlob].map((blob) => gitcmd.run(repo, ['cat-file', 'blob', blob]).stdout);
@@ -54,6 +60,15 @@ function measureBlobs(repo: string, path: string, oldBlob: string, newBlob: stri
     if (error instanceof gitcmd.GitError) return false;
     throw error;
   }
+}
+
+function blobSize(repo: string, blob: string): number {
+  const key = [repo, blob].join('\0');
+  const known = blobSizes.get(key);
+  if (known !== undefined) return known;
+  const size = Number.parseInt(gitcmd.text(repo, ['cat-file', '-s', blob]), 10);
+  blobSizes.set(key, size);
+  return size;
 }
 
 export function onlyCommentDeletions(path: string, before: Buffer, after: Buffer): boolean {

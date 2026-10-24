@@ -319,7 +319,7 @@ function noTestReason(chain: Chain | null): string | null {
 }
 
 function coveredBy(kind: string, outgoing: Outgoing, entries: PathEntry[]): boolean {
-  return store.load(kind, outgoing.repoKey).some((evidence) => covers(outgoing.repoRoot, evidence['tree'], entries));
+  return store.load(kind, outgoing.repoKey).reverse().some((evidence) => covers(outgoing.repoRoot, evidence['tree'], entries));
 }
 
 function smokeReasons(outgoing: Outgoing, entries: PathEntry[]): Reason[] {

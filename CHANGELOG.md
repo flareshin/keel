@@ -6,8 +6,8 @@ All notable changes to keel are recorded here. The format follows
 
 ## [Unreleased]
 
-`measure` and `bin/link` drop their Python emulation and run on plain Node behavior: `JSON.parse` and
-`JSON.stringify`, `node:path`, `node:fs`, `RegExp` and `node:util` `parseArgs`.
+`measure`, `bin/link` and the Codex adapter (`codex/`) drop their Python emulation and run on plain Node behavior:
+`JSON.parse` and `JSON.stringify`, `node:path`, `node:fs`, `RegExp`, a fatal `TextDecoder` and `node:util` `parseArgs`.
 
 ### Changed
 - What stays the same: exit codes for every documented outcome, the field names and values of every JSON and JSONL
@@ -48,7 +48,56 @@ All notable changes to keel are recorded here. The format follows
   by code point, `", "` and `": "` separators, non-ASCII as is) for strings, integers (also beyond 2^53, which settings and
   fragments keep exact), booleans, null, lists and objects; only floats are written differently (`10.0` is `10`, `1e-07` is `1e-7`).
 
+- Codex adapter (`codex/hooks/pre-tool-use.ts`, `codex/bin/{link,config}`):
+  - What stays the same: the exit codes (hook 0 with a JSON decision or empty output, link `0`, `1` for a pending
+    `--check`, `3` for a refusal, `2` for bad arguments, config `0`, `3`, `2`), the JSON field names and values of the hook
+    decision, the link and config reports, `hooks.json`, `keel-codex-state.json` and the shared skill registry, the `[ID]`
+    tags in messages, the flag names and meanings, which tool calls the hook denies, passes or sends to git-guard and
+    ship-gate, and the TOML reader's accepted and refused documents (`codex/lib/toml.ts` is unchanged apart from quoting
+    in its messages). The ownership digests in the state file hash the same text as before.
+  - What may differ and does: JSON is compact `JSON.stringify` output with non-ASCII written as is (the indented files keep
+    two spaces; `hooks.json`, the state file and the registry are unchanged byte for byte when their content is ASCII);
+    the text sent to git-guard and ship-gate is compact and still escapes every character outside space to `~`; help and
+    usage text is a short hand-written usage string; error messages use Node's wording and JSON-style quoting instead of
+    Python's (`invalid JSON: Unexpected end of JSON input` replaces `Expecting value: line 1 column 1 (char 0)`, an OS error
+    reads `ENOENT: no such file or directory, open '<path>'`, a non-string tool name is shown as JSON).
+  - Hook stdin is strict UTF-8 and nothing else. `PYTHONUTF8`, `PYTHONIOENCODING`, `PYTHONCOERCECLOCALE` and the locale
+    variables no longer change how it is read, an invalid `PYTHONUTF8` no longer exits 1 with `Fatal Python error`, and the
+    `stdin encoding <codec> is not supported; set PYTHONUTF8=1` denial is gone. Stdin that is not valid UTF-8 (a stray byte,
+    a truncated sequence, an encoded surrogate) is now denied with `keel Codex guard: stdin is not valid UTF-8` before any
+    guard runs; the default Python decoding turned such a byte into a lone surrogate and the call went on to the guards.
+  - A payload, guard answer or state file holding the literal `NaN`, `Infinity` or `-Infinity` is refused as invalid JSON
+    (the hook denies, link and config exit 3); Python accepted them. An integer of more than 4300 digits is still refused.
+    Integers beyond 2^53 are rounded to the nearest double in the hook payload and relayed that way to the guards, as
+    `1e400` becomes `null` there; a registry or state file keeps its integers exact when `link` writes it back.
+  - A `cwd` that is not a string is refused (`keel Codex guard: cwd must be a string`) instead of being turned into a
+    directory name with Python's `str`; an empty, zero, `false`, `[]`, `{}` or missing `cwd` still means the process directory.
+  - A path holding a NUL character or an unpaired surrogate is refused, including the `\udc80`-`\udcff` escapes that Python read
+    as raw bytes. A symlink met while resolving a path is refused when its target is not valid UTF-8; Python read such a
+    target with surrogate escapes and kept resolving. A `..` still follows the physical directory after a symlink, and
+    resolution still stops after 40 links.
+  - `apply_patch` text and guard output are still split and trimmed with Python's `splitlines` and `strip` (`\r`, `\v`, `\f`,
+    U+001C-U+001E, U+0085, U+2028 and U+2029 break a line; U+00A0, U+1680, U+2000-U+200A, U+202F, U+205F and U+3000 are
+    space, U+FEFF is not) from `hooks/lib/hookkit/pycompat.ts`, which this change does not touch.
+  - Registry and state files: a key such as `"2"` inside the skill registry is written in ascending order before the other
+    keys; a `version` of `true` or `1.0` is still accepted.
+  - Command lines: option prefixes and stacked short options are no longer expanded (`--wr`, `--fil x`, `-hh` and `--he` exit
+    2); a lone `--` is accepted; `-h` is honoured wherever it appears (`link --write --check -h` prints help and exits 0, it
+    exited 2); a value that starts with `-` after `--home` or `--file` (`--home -5`) exits 2, it was read as a value when it
+    looked like a number.
+  - The files and tests that checked the Python emulation are replaced by comparisons with the recorded Python runs that
+    accept the listed changes: the hook corpus lists 71 payloads whose outcome changed and counts the denials worded
+    differently, the link and config scenarios skip the steps whose arguments changed, and
+    `codex/tests/boundary.test.ts` pins 802 input boundaries (line breaks, Unicode spaces, number forms, invalid UTF-8,
+    symlink chains, sort order, command lines) against the outcomes the old adapter gave and lists the 56 that differ.
+
 ### Removed
+- The Python-emulation modules `codex/lib/{argparse,pycodec_names,pycodecs,pyerrors,pyfs,pyjson,pyrepr,pystdin,pystr}.ts`
+  and the tests that compared them with Python (`codex/tests/{pycompat,stdin-decoding}.test.ts`, `pyref.ts`,
+  `stdin-policy.ts`, `locale-env.ts`). Their place is taken by `codex/lib/{json,paths,refusal}.ts`, `readText` and
+  `writeAtomic` in `codex/lib/files.ts`, the `node:path` calls and `parseCommandLine` from `measurekit/cli.ts`, and
+  `decodeUtf8` (new in `measurekit/files.ts`, shared with `readUtf8`). `tests/fuzz.ts` holds the seeded mutation helpers that
+  `pyref.ts` held.
 - The Python-emulation modules `measure/lib/measurekit/{pydate,pydict,pyerrno,pyerrors,pyio,pyjson,pypath,pyregex,
   pystr,pytextwrap,pyvalue}.ts` and the argparse clone `measure/lib/measurekit/{argparse,arghelp,argcolor}.ts`. Their
   place is taken by `measure/lib/measurekit/{json,files,dates}.ts`, `parseCommandLine` in `measurekit/cli.ts` and
@@ -61,6 +110,10 @@ All notable changes to keel are recorded here. The format follows
   outcome changed are tested with explicit expectations.
 
 ### Upgrading
+- Codex: run `codex/bin/link --check`. When it lists `hooks.json` or the state file, the old files hold a non-ASCII
+  character that Python wrote as a `\uXXXX` escape (a home or checkout path with an accented name); run
+  `codex/bin/link --write` once. An ASCII-only install is already identical. Open `/hooks` in a new Codex session if the
+  command line it shows changed.
 - No step is needed for a live `~/.claude` whose owned settings hold no floats. If one does, the first
   `bin/link --check` after the upgrade may report `<key> changed since the last --write`; when you have not edited
   it and the dry run (`bin/link`) lists no other problem that `--force` would act on, run `bin/link --write --force` once.

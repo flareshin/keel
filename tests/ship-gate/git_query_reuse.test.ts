@@ -10,6 +10,7 @@ import { covers } from '../../lib/evidence/verify.ts';
 import { LOGIC_WITH_TEST, Sandbox } from './helpers.ts';
 
 const FILES = ['a.ts', 'b.ts', 'c.md', 'docs/d.json', 'e.sh'];
+const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 
 function gitCalls(t: TestContext): string[][] {
   const calls: string[][] = [];
@@ -55,6 +56,32 @@ test('treeEntry_answersAsAPathQueryWould_forFilesDirectoriesAndMissingPaths', (t
     const expected = listed === '' ? null : [listed.split(' ')[0], listed.split(' ')[2]!.split('\t')[0]];
     assert.deepEqual(gitcmd.treeEntry(repo.path, headTree, path), expected, path);
   }
+});
+
+test('treeEntry_findsEachPathItself_forColonPrefixedAndNonUtf8Names', (t) => {
+  const repo = new Sandbox(t).clone('acme', 'app');
+  const blobs = ['colon', 'plain', 'latin1'].map((content) =>
+    spawnSync('git', ['-C', repo.path, 'hash-object', '-w', '--stdin'], { input: content, encoding: 'utf8' }).stdout.trim());
+  const names = [Buffer.from(':memo.ts'), Buffer.from('memo.ts'), Buffer.from([0xff, ...Buffer.from('.ts')])];
+  const listing = Buffer.concat(names.map((name, index) => Buffer.concat([Buffer.from(`100644 blob ${blobs[index]}\t`), name, Buffer.from([0])])));
+  const tree = spawnSync('git', ['-C', repo.path, 'mktree', '-z'], { input: listing, encoding: 'utf8' }).stdout.trim();
+  const entries = gitcmd.diffEntries(repo.path, EMPTY_TREE, tree);
+
+  assert.deepEqual(entries.map((entry) => gitcmd.treeEntry(repo.path, tree, entry.path)), blobs.map((blob) => ['100644', blob]));
+});
+
+test('treeEntry_listsAgain_whenTheTreeIsNamedByARef', (t) => {
+  const { repo } = setUp(t);
+  const calls = gitCalls(t);
+
+  const before = gitcmd.treeEntry(repo.path, 'HEAD', 'a.ts');
+  const expectedBefore = repo.git('rev-parse', 'HEAD:a.ts');
+  repo.commit({ 'a.ts': 'export const x = 4;\n' });
+  const after = gitcmd.treeEntry(repo.path, 'HEAD', 'a.ts');
+
+  assert.deepEqual([before, after], [['100644', expectedBefore], ['100644', repo.git('rev-parse', 'HEAD:a.ts')]]);
+  assert.notEqual(before![1], after![1]);
+  assert.equal(count(calls, 'ls-tree'), 2);
 });
 
 test('isAncestor_asksGitOncePerCommitPair_butEveryTimeForRefNames', (t) => {

@@ -69,7 +69,15 @@ function runCase(box: EvalSandbox, cliCase: CliCase): OutcomeSummary {
   const cwd = cliCase.cwd ? cliCase.cwd(box) : box.root
   const outcome = run(box, path.join(CHECKOUT, "measure", cliCase.tool), cliCase.args, cwd)
   const text = JSON.stringify(summarizeOutcome(outcome)).replaceAll(JSON.stringify(box.root).slice(1, -1), "{{ROOT}}")
-  return JSON.parse(text.replaceAll(JSON.stringify(TMPDIR).slice(1, -1), "<tmpdir>")) as OutcomeSummary
+  const tree = workingTree(box)
+  const masked = tree === null ? text : text.replaceAll(tree, "<keel-tree>")
+  return JSON.parse(masked.replaceAll(JSON.stringify(TMPDIR).slice(1, -1), "<tmpdir>")) as OutcomeSummary
+}
+
+function workingTree(box: EvalSandbox): string | null {
+  if (!fs.existsSync(path.join(box.keel, ".git"))) return null
+  box.git(box.keel, "add", "-A")
+  return box.git(box.keel, "write-tree").trim()
 }
 
 function ledgerBox(box: EvalSandbox, rows: ReturnType<typeof ledgerRow>[]): void {

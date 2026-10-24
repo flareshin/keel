@@ -4,22 +4,31 @@ import path from "node:path"
 
 const STRICT_UTF8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true })
 const LINE_BREAK = /\r\n|\r|\n/
+const WHITESPACE_RUN = /\s+/
 
 export class InvalidUtf8Error extends Error {}
 
-export function readUtf8(file: string): string {
-  const bytes = fs.readFileSync(file)
+export function decodeStrict(bytes: Uint8Array, source: string): string {
   try {
     return STRICT_UTF8.decode(bytes)
   } catch {
-    throw new InvalidUtf8Error(`${file} is not valid UTF-8`)
+    throw new InvalidUtf8Error(`${source} is not valid UTF-8`)
   }
+}
+
+export function readUtf8(file: string): string {
+  return decodeStrict(fs.readFileSync(file), file)
 }
 
 export function firstLine(file: string): string {
   const text = readUtf8(file)
   const end = text.indexOf("\n")
   return end < 0 ? text : text.slice(0, end)
+}
+
+export function words(text: string): string[] {
+  const trimmed = text.trim()
+  return trimmed === "" ? [] : trimmed.split(WHITESPACE_RUN)
 }
 
 export function splitLines(text: string): string[] {

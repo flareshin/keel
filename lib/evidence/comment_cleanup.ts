@@ -1,7 +1,6 @@
 import { posix } from 'node:path';
-import { InvalidUtf8Error } from '../../measure/lib/measurekit/files.ts';
+import { InvalidUtf8Error, decodeStrict } from '../../measure/lib/measurekit/files.ts';
 import * as gitcmd from './gitcmd.ts';
-import { decodeStrict } from './text.ts';
 
 const MAX_SOURCE_BYTES = 1024 * 1024;
 const PROSE = /^[\p{L}\p{N}_\s.,!?()'"-]+$/u;

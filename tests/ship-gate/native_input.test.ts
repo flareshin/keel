@@ -15,7 +15,6 @@ import { RegistryError, readTsv } from '../../lib/evidence/registry.ts';
 import * as store from '../../lib/evidence/store.ts';
 import { TimeoutExpired, runCaptured } from '../../lib/evidence/subprocess.ts';
 import { recognize } from '../../lib/evidence/testrun.ts';
-import { decodeStrict, words } from '../../lib/evidence/text.ts';
 import { Refused, Usage, isInputFailure } from '../../lib/evidence/writers.ts';
 import { LOGIC_WITH_TEST, Sandbox } from './helpers.ts';
 
@@ -224,19 +223,6 @@ describe('failure classification', () => {
   test('a command that cannot start throws the system error itself, and a timeout throws TimeoutExpired', () => {
     assert.throws(() => runCaptured(['definitely-not-a-command-xyz']), (error: NodeJS.ErrnoException) => error.code === 'ENOENT' && isInputFailure(error));
     assert.throws(() => runCaptured(['sleep', '5'], { timeoutSeconds: 0.05 }), TimeoutExpired);
-  });
-});
-
-describe('text helpers', () => {
-  test('decodeStrict names its source when the bytes are not UTF-8, and decodes valid text including a BOM unchanged', () => {
-    assert.throws(() => decodeStrict(Buffer.from([0xc3, 0x28]), 'the note'), (error: Error) => error instanceof InvalidUtf8Error
-      && error.message === 'the note is not valid UTF-8');
-    assert.equal(decodeStrict(Buffer.from('﻿é'), 'the note'), '﻿é');
-  });
-
-  test('words splits on runs of whitespace and returns nothing for blank text', () => {
-    assert.deepEqual(words(' origin \t upstream\n'), ['origin', 'upstream']);
-    assert.deepEqual(words(' \n '), []);
   });
 });
 

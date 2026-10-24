@@ -2,11 +2,10 @@ import { closeSync, openSync, unlinkSync, existsSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { isDir, resolveLinks, splitLines } from '../../measure/lib/measurekit/files.ts';
+import { decodeStrict, isDir, resolveLinks, splitLines, words } from '../../measure/lib/measurekit/files.ts';
 import { DELETED_MODE, GITLINK_MODE } from './env.ts';
 import { runCaptured } from './subprocess.ts';
 import type { Completed } from './subprocess.ts';
-import { decodeStrict, words } from './text.ts';
 
 export const GIT_TIMEOUT_SECONDS = 20;
 export const FETCH_TIMEOUT_SECONDS = 20;

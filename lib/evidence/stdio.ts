@@ -1,5 +1,5 @@
 import { readFileSync, writeSync } from 'node:fs';
-import { decodeStrict } from './text.ts';
+import { decodeStrict } from '../../measure/lib/measurekit/files.ts';
 
 const STDOUT_FD = 1;
 const STDERR_FD = 2;

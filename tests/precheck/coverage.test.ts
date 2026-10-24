@@ -178,13 +178,15 @@ describe("readCoverage", () => {
     assert.deepEqual(executed("src/nested.js"), [])
   })
 
-  it("readCoverage_treatsAMalformedKeelPrefixAsUnknown", () => {
-    write("src/nested.js", NESTED)
-    const url = `${pathToFileURL(path.join(repo, "src/nested.js")).href}#keel-prefix=-3`
-    writeCoverage(JSON.stringify({ result: [{ url, functions: [{ ranges: [{ startOffset: 0, endOffset: 10, count: 1 }] }] }] }))
+  for (const malformed of ["-3", "abc", "1.5", ""]) {
+    it(`readCoverage_treatsAMalformedKeelPrefixAsUnknown: "${malformed}"`, () => {
+      write("src/nested.js", NESTED)
+      const url = `${pathToFileURL(path.join(repo, "src/nested.js")).href}#keel-prefix=${malformed}`
+      writeCoverage(JSON.stringify({ result: [{ url, functions: [{ ranges: [{ startOffset: 0, endOffset: 10, count: 1 }] }] }] }))
 
-    assert.deepEqual([...readCoverage(coverageDir, repo).seen], [])
-  })
+      assert.deepEqual([...readCoverage(coverageDir, repo).seen], [])
+    })
+  }
 
   it("readCoverage_leavesAFileDeletedAfterItRanOutOfSeen_soItCountsAsUnknown", () => {
     write("src/gone.js", ["module.exports = 1"])

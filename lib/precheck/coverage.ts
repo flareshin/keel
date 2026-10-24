@@ -28,6 +28,7 @@ export class CoverageFormatError extends Error {}
 const COVERAGE_FILE = /^coverage-.*\.json$/u;
 const FILE_URL_PREFIX = 'file://';
 const SOURCE_PREFIX_PARAM = 'keel-prefix';
+const DECIMAL_DIGITS = /^[0-9]+$/u;
 const NOT_WHITESPACE = /\S/u;
 
 export function readCoverage(coverageDir: string, repoRoot: string): Coverage {
@@ -68,9 +69,9 @@ function scriptLocation(url: string, root: string): ScriptLocation | null {
   const parsed = new URL(url);
   const path = relative(root, fileURLToPath(parsed));
   if (path === '' || path.startsWith('..') || path.startsWith(sep)) return null;
-  const prefix = Number(new URLSearchParams(parsed.hash.slice(1)).get(SOURCE_PREFIX_PARAM) ?? 0);
-  if (!Number.isInteger(prefix) || prefix < 0) return null;
-  return { path: path.split(sep).join('/'), prefix };
+  const prefix = new URLSearchParams(parsed.hash.slice(1)).get(SOURCE_PREFIX_PARAM);
+  if (prefix !== null && !DECIMAL_DIGITS.test(prefix)) return null;
+  return { path: path.split(sep).join('/'), prefix: prefix === null ? 0 : Number(prefix) };
 }
 
 function shiftRange(range: Range, prefix: number): Range {

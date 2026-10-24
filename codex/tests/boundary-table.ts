@@ -188,6 +188,17 @@ function hookNumberProbes(sandbox: Sandbox): Probe[] {
   return probes;
 }
 
+function hookWorkingDirectoryProbes(sandbox: Sandbox): Probe[] {
+  const values: Record<string, string> = {
+    "an empty list": "[]", "an empty object": "{}", "false": "false", "true": "true", "zero": "0", "null": "null", "an empty string": '""',
+    "a string of zero": '"0"', "a list of zero": "[0]", "an object with a member": '{"a": 0}', "a number": "5",
+  };
+  return Object.entries(values).map(([label, literal]) => ({
+    label: `cwd ${label}`,
+    observe: () => hookObservation(sandbox, `{"tool_name": "Bash", "tool_input": {"command": "echo hi"}, "cwd": ${literal}}`),
+  }));
+}
+
 function hookByteProbes(sandbox: Sandbox): Probe[] {
   const head = Buffer.from('{"tool_name": "Bash", "tool_input": {"command": "echo ');
   const tail = Buffer.from(`"}, "cwd": ${JSON.stringify(sandbox.repo)}}`);
@@ -404,6 +415,7 @@ export function boundaries(): { boundaries: Boundary[]; close: () => void } {
   const list: Boundary[] = [
     { name: "hook stdin", probes: hookStdinProbes(sandbox) },
     { name: "hook numbers", probes: hookNumberProbes(sandbox) },
+    { name: "hook working directory", probes: hookWorkingDirectoryProbes(sandbox) },
     { name: "hook bytes", probes: hookByteProbes(sandbox) },
     { name: "apply_patch lines", probes: patchProbes(sandbox) },
     { name: "write targets", probes: writeProbes(sandbox) },

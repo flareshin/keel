@@ -9,7 +9,7 @@ const PASSED = "pass, guard calls 2";
 const PASSED_ONE_GUARD = "pass, guard calls 1";
 const NON_NUMBER_WORDS = "NaN|Infinity|-Infinity";
 const NON_STRING_CWD_LITERALS = "9007199254740991|9007199254740992|9007199254740993|-9007199254740993|12345678901234567890|1e400|-1e400|1E400|1\\.0|100\\.0|1e16|1x4300|1x4301\\.0|1x4301e0";
-const EXPECTED_CHANGES = 54;
+const EXPECTED_CHANGES = 58;
 
 interface Change {
   reason: string;
@@ -20,6 +20,7 @@ interface Change {
 
 const CHANGES: Change[] = [
   { reason: "a truthy cwd that is not a string is refused instead of becoming a directory name", keys: new RegExp(`^hook numbers/cwd (${NON_STRING_CWD_LITERALS})$`), was: PASSED, now: "deny" },
+  { reason: "a truthy cwd that is not a string is refused instead of becoming a directory name", keys: /^hook working directory\/cwd (true|a list of zero|an object with a member|a number)$/, was: PASSED, now: "deny" },
   { reason: "NaN, Infinity and -Infinity are not JSON: the hook payload is refused", keys: new RegExp(`^hook numbers/(extra field|list of|cwd) (${NON_NUMBER_WORDS})( beside a force push)?$`), was: PASSED, now: "deny" },
   { reason: "stdin that is not valid UTF-8 is refused instead of decoded with surrogateescape", keys: /^hook bytes\/invalid UTF-8 .* in a command$/, was: PASSED, now: "deny" },
   { reason: "a state file holding NaN, Infinity or -Infinity is refused", keys: new RegExp(`^state file/member (${NON_NUMBER_WORDS})$`), was: "accepted", now: "refused" },

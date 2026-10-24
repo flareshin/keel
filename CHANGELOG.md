@@ -88,8 +88,8 @@ All notable changes to keel are recorded here. The format follows
   - The files and tests that checked the Python emulation are replaced by comparisons with the recorded Python runs that
     accept the listed changes: the hook corpus lists 71 payloads whose outcome changed and counts the denials worded
     differently, the link and config scenarios skip the steps whose arguments changed, and
-    `codex/tests/boundary.test.ts` pins 812 input boundaries (line breaks, Unicode spaces, number forms, invalid UTF-8,
-    symlink chains, sort order, command lines) against the outcomes the old adapter gave and lists the 54 that differ.
+    `codex/tests/boundary.test.ts` pins 823 input boundaries (line breaks, Unicode spaces, number forms, invalid UTF-8,
+    symlink chains, sort order, command lines) against the outcomes the old adapter gave and lists the 58 that differ.
 
 ### Removed
 - The Python-emulation modules `codex/lib/{argparse,pycodec_names,pycodecs,pyerrors,pyfs,pyjson,pyrepr,pystdin,pystr}.ts`

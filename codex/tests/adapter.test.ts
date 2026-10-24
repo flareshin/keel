@@ -584,6 +584,24 @@ function isSymlink(path: string): boolean {
   }
 }
 
+describe("shared skill registry", () => {
+  it("test_registryRewrite_keepsAnotherToolsBigIntegersExact", () => {
+    const agents = temporaryDirectory();
+    try {
+      const registry = join(agents, "keel-codex-skills.json");
+      writeFileSync(registry, '{"version": 1, "skills": {"demo": {"target": "/t", "managed": false, "profiles": ["/p"], "stamp": [9007199254740993, 2.5]}}}');
+      const plan = planSkills(agents, "/q", new Map([[join(agents, "skills", "demo"), { kind: "link" as const, content: "/t" }]]));
+      assert.equal(plan.changed, true);
+      applySkillPlan(agents, plan);
+      const written = read(registry);
+      assert.match(written, /"stamp": \[\n\s+9007199254740993,\n\s+2\.5\n\s+\]/);
+      assert.deepEqual(JSON.parse(written).skills.demo.profiles, ["/p", "/q"]);
+    } finally {
+      rmSync(agents, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("ownership digests", () => {
   it("hash the kind, a NUL byte and the UTF-8 content, as the Python installer records them", () => {
     assert.equal(digest("file", "x"), "24e5fa83ea3d78ba97ff36665723f0df9e3d179e110965a34b679ad5ad27eaab");

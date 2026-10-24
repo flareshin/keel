@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, lstatSync, realpathSync } from 'node:fs';
 import { userInfo } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
+import { isBlankEitherWay } from './text.ts';
 import { decodeStrict, isSystemError, resolveLinks, splitLines } from '../../measure/lib/measurekit/files.ts';
 import { compareCodePoints, parseJsonKeepingIntegers } from '../../measure/lib/measurekit/json.ts';
 import * as codexLenses from './codex_lenses.ts';
@@ -219,7 +220,7 @@ export function validateFindings(findings: unknown): void {
 }
 
 export function nonblank(value: unknown): boolean {
-  return typeof value === 'string' && value.trim() !== '';
+  return typeof value === 'string' && !isBlankEitherWay(value);
 }
 
 export function digest(content: Uint8Array): string {

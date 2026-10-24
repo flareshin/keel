@@ -11,6 +11,7 @@ import * as registry from './registry.ts';
 import { printErrorLine, writeStdout } from './stdio.ts';
 import * as store from './store.ts';
 import { returnCode } from './subprocess.ts';
+import { SPACE_EITHER_WAY } from './text.ts';
 import { Usage } from './writers.ts';
 
 const NOT_WORD_AFTER = '(?![\\p{L}\\p{N}_])';
@@ -21,7 +22,7 @@ export const COUNT_PATTERNS: Array<[name: string, pattern: RegExp]> = [
   ['unittest', new RegExp(`${LINE_START}Ran ([0-9]+) tests?${NOT_WORD_AFTER}`, 'gu')],
   ['tap', new RegExp(`${LINE_START}# pass ([0-9]+)`, 'gu')],
   ['passed', new RegExp(
-    `${LINE_START}(?!\\s*Test (?:Files|Suites)${NOT_WORD_AFTER})[^\\n]*?${NOT_WORD_BEFORE}([0-9]+) passed${NOT_WORD_AFTER}`, 'gu')],
+    `${LINE_START}(?!${SPACE_EITHER_WAY}*Test (?:Files|Suites)${NOT_WORD_AFTER})[^\\n]*?${NOT_WORD_BEFORE}([0-9]+) passed${NOT_WORD_AFTER}`, 'gu')],
 ];
 const NO_TESTS_RECOGNIZED = 4;
 const COMMAND_NOT_FOUND = 2;

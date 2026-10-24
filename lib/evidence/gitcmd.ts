@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { decodeStrict, isDir, resolveLinks, splitLines, words } from '../../measure/lib/measurekit/files.ts';
 import { DELETED_MODE, GITLINK_MODE } from './env.ts';
 import { runCaptured } from './subprocess.ts';
+import { splitAtEveryLineBreak, stripEitherWay } from './text.ts';
 import type { Completed } from './subprocess.ts';
 
 export const GIT_TIMEOUT_SECONDS = 20;
@@ -55,19 +56,19 @@ export function run(repo: string, args: string[], options: GitOptions = {}): Com
   const completed = runCaptured(['git', '-C', repo, ...args],
     { env: options.env, timeoutSeconds: options.timeoutSeconds ?? GIT_TIMEOUT_SECONDS });
   if ((options.check ?? true) && completed.returncode !== 0) {
-    throw new GitError(`git ${args.join(' ')}: ${completed.stderr.toString().trim()}`);
+    throw new GitError(`git ${args.join(' ')}: ${stripEitherWay(completed.stderr.toString())}`);
   }
   return completed;
 }
 
 export function text(repo: string, args: string[], options: GitOptions = {}): string {
-  return run(repo, args, options).stdout.toString().trim();
+  return stripEitherWay(run(repo, args, options).stdout.toString());
 }
 
 function outputIfOk(repo: string, args: string[]): string | null {
   const completed = run(repo, args, { check: false });
   if (completed.returncode !== 0) return null;
-  return completed.stdout.toString().trim() || null;
+  return stripEitherWay(completed.stdout.toString()) || null;
 }
 
 export function toplevel(path: string): string | null {
@@ -84,7 +85,7 @@ export function remoteUrl(repo: string, remote: string): string | null {
 }
 
 export function pushUrls(repo: string, remote: string): string[] {
-  return splitLines(outputIfOk(repo, ['remote', 'get-url', '--push', '--all', remote]) ?? '');
+  return splitAtEveryLineBreak(outputIfOk(repo, ['remote', 'get-url', '--push', '--all', remote]) ?? '');
 }
 
 export function remotes(repo: string): string[] {

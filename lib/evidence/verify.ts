@@ -10,6 +10,7 @@ import type { GatedRepo } from './registry.ts';
 import { LIGHT, SMOKE_ONLY, classify, hasTestPath, logicPaths } from './risk.ts';
 import type { Risk } from './risk.ts';
 import * as store from './store.ts';
+import { isBlankEitherWay } from './text.ts';
 import type { Evidence } from './store.ts';
 import * as writers from './writers.ts';
 import { NO_TEST_REASON } from './writers.ts';
@@ -275,7 +276,8 @@ export function provenanceReasons(chain: Chain): Reason[] {
         throw error;
       }
     }
-    if (!(link.source || {})['agent_id']) {
+    const agentId = (link.source || {})['agent_id'];
+    if (typeof agentId !== 'string' || agentId === '') {
       return [{ ruleId: K1, text: `review ${link.evidence_id} has no agent provenance` }];
     }
   }
@@ -315,7 +317,8 @@ function sameRangeTestReasons(risk: Risk, waiver: string | null, unchangedLogic:
 }
 
 function noTestReason(chain: Chain | null): string | null {
-  return chain ? (chain.head[NO_TEST_REASON] ?? null) : null;
+  const reason = chain ? chain.head[NO_TEST_REASON] : null;
+  return typeof reason === 'string' && !isBlankEitherWay(reason) ? reason : null;
 }
 
 function coveredBy(kind: string, outgoing: Outgoing, entries: PathEntry[]): boolean {

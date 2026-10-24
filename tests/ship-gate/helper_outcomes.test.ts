@@ -81,8 +81,8 @@ describe('deliberate differences from the recorded helper outcomes', () => {
     assert.equal(env.isRunId('rv-ok_name.1'), true);
   });
 
-  test('a repo key is trimmed of the whitespace JavaScript trim removes, not of the C0 separators Python also removed', () => {
+  test('a repo key is stripped of the whitespace either reading removes, so a trailing BOM or U+0085 cannot hide a gated repo', () => {
     assert.equal(normalizeRepoKey('https://github.com/Acme/App﻿'), 'acme/app');
-    assert.equal(normalizeRepoKey('https://github.com/Acme/App\x85'), 'acme/app\x85');
+    assert.equal(normalizeRepoKey('https://github.com/Acme/App\x85'), 'acme/app');
   });
 });

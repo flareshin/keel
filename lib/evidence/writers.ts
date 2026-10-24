@@ -7,6 +7,7 @@ import * as codexReview from './codex_review.ts';
 import * as env from './env.ts';
 import * as gitcmd from './gitcmd.ts';
 import { isPinnedParseFailure } from './hook_pinned.ts';
+import { isBlankEitherWay } from './text.ts';
 import * as registry from './registry.ts';
 import * as store from './store.ts';
 import type { ReviewEvidence } from './store.ts';
@@ -72,7 +73,7 @@ export function writeSmoke(repoPath: string, runId: string | null): JsonObject {
   if (run === null) throw new Refused(`no smoke run ${runId || '(latest)'} in keel-smoke.jsonl`);
   if (run['ok'] !== true) throw new Refused(`smoke run ${run['run_id']} failed`);
   const tree = (run['trees'] || {})[repoKey];
-  if (!tree) throw new Refused(`smoke run ${run['run_id']} did not cover ${repoKey}`);
+  if (typeof tree !== 'string' || tree === '') throw new Refused(`smoke run ${run['run_id']} did not cover ${repoKey}`);
   const evidence = store.write('smoke', { repo: repoKey, repo_root: repoRoot, run_id: run['run_id'], tree }, repoKey);
   return { evidence_id: evidence.evidence_id, repo: repoKey, tree };
 }
@@ -120,7 +121,7 @@ function validatedClaim(claim: any): JsonObject {
     throw new Usage(`keel_evidence must have exactly the keys ${REVIEW_CLAIM_KEYS.join(', ')} (plus optional ${NO_TEST_REASON})`);
   }
   const reason = claim[NO_TEST_REASON];
-  if (reason !== undefined && reason !== null && !(typeof reason === 'string' && reason.trim())) {
+  if (reason !== undefined && reason !== null && !(typeof reason === 'string' && !isBlankEitherWay(reason))) {
     throw new Usage(`${NO_TEST_REASON} must be a non-empty string`);
   }
   if (claim['v'] !== 1) throw new Usage('keel_evidence.v must be 1');

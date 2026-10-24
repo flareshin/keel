@@ -234,15 +234,6 @@ describe('deliberate differences on odd input in the evidence helpers', () => {
     assert.equal(onlyCommentDeletions('a.ts', before, after), true);
     assert.equal(onlyCommentDeletions('a.ts', odd, after), false);
   });
-
-  test('a registry line of only U+001C is a row with too few columns, a line of only a BOM is blank', () => {
-    const header = ['origin', 'gate', 'integration_base', 'risk_rules', 'tests'];
-    const path = join(scratch, 'gated-repos.tsv');
-    writeFileSync(path, `${header.join('\t')}\n﻿\nacme/app\tcode\tmain\tacme\trequired\n`);
-    assert.deepEqual(readTsv(path, header).map((row) => row['origin']), ['acme/app']);
-    writeFileSync(path, `${header.join('\t')}\n\x1c\nacme/app\tcode\tmain\tacme\trequired\n`);
-    assert.throws(() => readTsv(path, header), (error: Error) => error instanceof RegistryError && error.message.includes('expected 5 columns'));
-  });
 });
 
 describe('Codex rollouts and runner output at their edges', () => {
@@ -272,20 +263,20 @@ describe('Codex rollouts and runner output at their edges', () => {
     assert.deepEqual(codexReview.completedReport(Buffer.from(lines.join('\r')), IDENTITY)[1], { a: 1 });
   });
 
-  test('a push url holding U+2028 is one url, and remotes are split at any whitespace', () => {
+  test('a push url holding U+2028 is two urls, so the gate sees the repo behind either, and remotes are split at any whitespace', () => {
     const repo = mkdtempSync(join(scratch, 'urls-'));
     const git = (...args: string[]) => assert.equal(spawnSync('git', ['-C', repo, ...args]).status, 0, args.join(' '));
     git('init', '-q');
     git('remote', 'add', 'origin', 'https://example.com/acme/app.git');
     git('config', 'remote.origin.pushurl', 'https://example.com/a\u2028b.git');
     git('remote', 'add', 'upstream', 'https://example.com/acme/other.git');
-    assert.deepEqual(gitcmd.pushUrls(repo, 'origin'), ['https://example.com/a\u2028b.git']);
+    assert.deepEqual(gitcmd.pushUrls(repo, 'origin'), ['https://example.com/a', 'b.git']);
     assert.deepEqual(gitcmd.remotes(repo), ['origin', 'upstream']);
   });
 
-  test('a runner count beyond 2^53 is the nearest double, and a line led by U+0085 or U+FEFF is judged by JavaScript whitespace', () => {
+  test('a runner count beyond 2^53 is the nearest double, and a Test Files line led by U+0085 or U+FEFF is not counted', () => {
     assert.deepEqual(recognize('Ran 12345678901234567890 tests'), [12345678901234567000, 'unittest']);
-    assert.deepEqual(recognize('\u0085Test Files  7 passed (7)\n'), [7, 'passed']);
+    assert.deepEqual(recognize('\u0085Test Files  7 passed (7)\n'), [0, null]);
     assert.deepEqual(recognize('\ufeffTest Files  7 passed (7)\n'), [0, null]);
   });
 });

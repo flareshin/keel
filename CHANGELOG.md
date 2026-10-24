@@ -77,12 +77,20 @@ hook run still pins them (see the last bullet of Changed).
 - Codex review evidence: a stored review whose `source.version` is spelled `2.0` (hand-edited; keel writes `2`) is no longer
   a version 2 record: `keel evidence compatibility` counts it as read-only and validation refuses it. A rollout counts
   as complete only when its turn id is the same non-empty string at start and completion (a number counted before).
-  Rollouts, the rule-checks output and git output are split into lines at `\r\n`, `\r` and `\n` only, and the rule-checks
-  summary is matched with `\S`; a push url holding U+2028 is one url.
-- Whitespace and line semantics follow JavaScript: strings are trimmed with `trim()` (U+0085 and U+001C to U+001F stay,
-  U+FEFF goes), a registry line of only U+001C is a row with too few columns, runner output `\s` is JavaScript's (a line led
-  by U+0085 before `Test Files` is counted, one led by U+FEFF is not), and a comment holding U+0085 is not prose, so
-  deleting it no longer keeps review evidence.
+  Rollouts and the rule-checks output are split into lines at `\r\n`, `\r` and `\n` only, and the rule-checks summary is
+  matched with `\S`. The push urls of a remote are still split at every line break Python knew (U+2028, U+0085, `\v`, `\f`,
+  U+001C to U+001E), so the gate sees the repo behind each piece.
+- Whitespace follows JavaScript only where that cannot accept what the base refused. Where a guard asks whether a text is blank
+  (`no_test_reason`, the lens, decision and finding texts of a Codex review, the stored waiver, a repo key's edges, git
+  output) the characters either reading strips count as blank: JavaScript's plus U+001C to U+001F and U+0085. A
+  `no_test_reason` of only those characters is refused with exit 2 (as before), and a repo key ending in U+0085 or U+FEFF is the
+  same key as without it. Where blank means "skip" (a registry line, the text around a comment) only characters both readings
+  call whitespace count, so a registry line of only U+001C or only a BOM is a row with too few columns, an error. Runner output
+  leaves out a `Test Files` or `Test Suites` line led by U+0085 or U+FEFF as well, and a comment holding U+0085 is not prose,
+  so deleting it no longer keeps review evidence.
+- Truthiness is strict where Python's let odd values through: a review link has agent provenance only with a non-empty
+  string `agent_id`, a stored `no_test_reason` waives K3 only as a non-blank string, and a smoke run covers a repo only with a
+  non-empty string tree.
 - Paths from git (`diff-tree`, `ls-tree`) must be valid UTF-8: a path that is not now stops the command with
   `a path in the git diff is not valid UTF-8` (exit 70) instead of being kept as lone surrogates, which already made the
   push judgment fail. `KEEL_DATA_DIR`, `KEEL_OVERLAY_DIR` and a review's transcript path expand `~` and `~/` only, not

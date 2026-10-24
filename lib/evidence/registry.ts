@@ -3,6 +3,7 @@ import { isFile, splitLines } from '../../measure/lib/measurekit/files.ts';
 import * as env from './env.ts';
 import * as gitcmd from './gitcmd.ts';
 import { quoted, readTsvText } from './hook_pinned.ts';
+import { isWhitespaceBothWays, stripEitherWay } from './text.ts';
 
 const GATED_HEADER = ['origin', 'gate', 'integration_base', 'risk_rules', 'tests'];
 const GATED_OPTIONAL = ['push_approval'];
@@ -40,7 +41,7 @@ export function pushNeedsApproval(row: GatedRepo): boolean {
 
 export function normalizeRepoKey(origin: string | null | undefined): string | null {
   if (!origin) return null;
-  const trimmed = origin.trim().replace(/\/+$/, '');
+  const trimmed = stripEitherWay(origin).replace(/\/+$/, '');
   const withoutSuffix = trimmed.endsWith('.git') ? trimmed.slice(0, -'.git'.length) : trimmed;
   const segments = withoutSuffix.replaceAll(':', '/').split('/').filter((segment) => segment);
   return segments.length >= 2 ? segments.slice(-2).join('/').toLowerCase() : null;
@@ -99,7 +100,7 @@ export function riskRules(ruleSet: string): RiskRule[] {
 
 export function readTsv(path: string, header: string[], optional: string[] = []): Array<Record<string, string>> {
   if (!isFile(path)) return [];
-  const content = splitLines(readTsvText(path)).filter((line) => line.trim() && !line.startsWith('#'));
+  const content = splitLines(readTsvText(path)).filter((line) => !isWhitespaceBothWays(line) && !line.startsWith('#'));
   if (content.length === 0) return [];
   const columns = content[0]!.split('\t');
   const expected = [header, [...header, ...optional]];

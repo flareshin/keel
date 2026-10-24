@@ -14,6 +14,13 @@ const TEMPORARY_NAME = /(\/\.[A-Za-z0-9._-]+?)\.[a-z0-9_]{8}'/g;
 const LOCK_ARTIFACT = /\.agents\/keel-codex-skills\.lock(?:\.d)?$/;
 const MISMATCHES_SHOWN = 400;
 const SHA256_HEX = /\b[0-9a-f]{64}\b/g;
+const SKILL_REGISTRY_FILE = ".agents/keel-codex-skills.json";
+const FOREIGN_FLOAT_SPELLINGS: Array<[python: string, native: string]> = [
+  ['"weight": 100.0', '"weight": 100'],
+  ['"tiny": 1e-07', '"tiny": 1e-7'],
+  ['"huge": 1e+16', '"huge": 10000000000000000'],
+  ['"neg": -0.0', '"neg": 0'],
+];
 
 interface Step {
   command: "link" | "config";
@@ -21,6 +28,7 @@ interface Step {
   env?: Record<string, string>;
   before?: (root: string) => void;
   changedByNativeParsing?: boolean;
+  rewritesForeignFloats?: boolean;
 }
 
 interface Scenario {
@@ -98,6 +106,10 @@ function changedByNativeParsing(step: Step): Step {
   return { ...step, changedByNativeParsing: true };
 }
 
+function rewritesForeignFloats(step: Step): Step {
+  return { ...step, rewritesForeignFloats: true };
+}
+
 function config(...args: string[]): Step {
   return { command: "config", args };
 }
@@ -146,7 +158,14 @@ const SCENARIOS: Scenario[] = [
   { name: "registry empty profiles", steps: [withFiles(link("--check"), { ".agents/keel-codex-skills.json": '{"version": 1, "skills": {"a": {"target": "/t", "managed": true, "profiles": []}}}' })] },
   { name: "registry relative profile", steps: [withFiles(link("--check"), { ".agents/keel-codex-skills.json": '{"version": 1, "skills": {"a": {"target": "/t", "managed": true, "profiles": ["p"]}}}' })] },
   { name: "registry keeps extra fields", steps: [withFiles(WRITE, { ".agents/keel-codex-skills.json": '{"version": 1, "extra": [1, 2], "skills": {"zz": {"target": "/t", "managed": false, "profiles": ["/p"], "note": "\\u00e9"}}}' }), link("--write")] },
-  { name: "registry with float version and float extras", steps: [withFiles(WRITE, { ".agents/keel-codex-skills.json": '{"version": 1.0, "ratio": 1.0, "skills": {"zz": {"target": "/t", "managed": false, "profiles": ["/p"], "weight": 100.0, "tiny": 1e-7, "huge": 1e16, "neg": -0.0}}}' }), link("--write"), link("--check")] },
+  {
+    name: "registry with float version and float extras",
+    steps: [
+      rewritesForeignFloats(withFiles(WRITE, { [SKILL_REGISTRY_FILE]: '{"version": 1.0, "ratio": 1.0, "skills": {"zz": {"target": "/t", "managed": false, "profiles": ["/p"], "weight": 100.0, "tiny": 1e-7, "huge": 1e16, "neg": -0.0}}}' })),
+      rewritesForeignFloats(link("--write")),
+      rewritesForeignFloats(link("--check")),
+    ],
+  },
   { name: "registry with float version two", steps: [withFiles(link("--check"), { ".agents/keel-codex-skills.json": '{"version": 2.0, "skills": {}}' })] },
   { name: "registry skills is a float", steps: [withFiles(link("--check"), { ".agents/keel-codex-skills.json": '{"version": 1, "skills": 1.0}' })] },
   { name: "state owned is a float", steps: [withFiles(link("--check"), { ".codex/keel-codex-state.json": '{"owned": 1.0}' })] },
@@ -229,6 +248,7 @@ function prepared(scenario: Scenario, root: string): Scenario {
       env: step.env === undefined ? undefined : Object.fromEntries(Object.entries(step.env).map(([name, value]) => [name, expand(value)])),
       before: step.before,
       changedByNativeParsing: step.changedByNativeParsing,
+      rewritesForeignFloats: step.rewritesForeignFloats,
     })),
   };
 }
@@ -263,14 +283,20 @@ function sameFile(name: string, recorded: string | undefined, now: string | unde
   return recordedMode === nowMode && (recordedJson === null ? recorded === now : recordedJson === nowJson);
 }
 
-function compare(scenario: string, index: number, python: Observation, typescript: Observation): string[] {
+function withNativeFloatSpellings(recorded: string | undefined): string | undefined {
+  return FOREIGN_FLOAT_SPELLINGS.reduce((text, [python, native]) => text?.replace(python, native), recorded);
+}
+
+function compare(scenario: string, index: number, python: Observation, typescript: Observation, rewritesFloats: boolean): string[] {
   const found: string[] = [];
   const label = `${scenario} step ${index + 1}`;
   if (python.status !== typescript.status) found.push(`${label}: exit ${python.status} vs ${typescript.status}`);
   if (!sameStdout(python.stdout, typescript.stdout)) found.push(`${label}: stdout\n  py: ${JSON.stringify(python.stdout)}\n  ts: ${JSON.stringify(typescript.stdout)}`);
   if (!sameStderr(python.stderr, typescript.stderr)) found.push(`${label}: stderr\n  py: ${JSON.stringify(python.stderr)}\n  ts: ${JSON.stringify(typescript.stderr)}`);
   for (const key of new Set([...Object.keys(python.files), ...Object.keys(typescript.files)])) {
-    if (!sameFile(key, python.files[key], typescript.files[key])) found.push(`${label}: file ${key}\n  py: ${python.files[key]?.slice(0, 200)}\n  ts: ${typescript.files[key]?.slice(0, 200)}`);
+    const registryBytes = rewritesFloats && key === SKILL_REGISTRY_FILE;
+    const same = registryBytes ? withNativeFloatSpellings(python.files[key]) === typescript.files[key] : sameFile(key, python.files[key], typescript.files[key]);
+    if (!same) found.push(`${label}: file ${key}\n  py: ${python.files[key]?.slice(0, 200)}\n  ts: ${typescript.files[key]?.slice(0, 200)}`);
   }
   return found;
 }
@@ -288,7 +314,7 @@ describe("link and config parity with the recorded Python entries", () => {
         invocations += scenario.steps.filter((step) => !step.changedByNativeParsing).length;
         scenario.steps.forEach((_step, index) => {
           const observed = typescript[index];
-          if (observed !== null && observed !== undefined) mismatches.push(...compare(scenario.name, index, python[index] as Observation, observed));
+          if (observed !== null && observed !== undefined) mismatches.push(...compare(scenario.name, index, python[index] as Observation, observed, scenario.steps[index]?.rewritesForeignFloats === true));
         });
       }
     } finally {

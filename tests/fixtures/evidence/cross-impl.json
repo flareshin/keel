@@ -1,0 +1,1645 @@
+{
+ "pipeline": {
+  "outputs": [
+   "snapshot\n{\"repo_root\":\"{{ROOT}}/repos/app\",\"tree\":\"6f42876c1f1b0d32b43cb9d9bd54ffb5f06d813d\"}\n0",
+   "write-review root\n{\"evidence_id\":\"<EVIDENCE_ID>\",\"paths\":3,\"repo\":\"acme/app\"}\n0",
+   "write-review delta\n{\"evidence_id\":\"<EVIDENCE_ID>\",\"paths\":1,\"repo\":\"acme/app\"}\n0",
+   "test\nRan 3 tests\nOK\n0",
+   "write-smoke\n{\"evidence_id\":\"<EVIDENCE_ID>\",\"repo\":\"acme/app\",\"tree\":\"98731e2cb1e03db51c293866b69550a35afea73b\"}\n0",
+   "ack\n{\"evidence_id\":\"<EVIDENCE_ID>\",\"heads\":{\"acme/app\":\"<EVIDENCE_ID>\"},\"kind\":\"ack\",\"root_run_id\":\"rv-root-0001\"}\n0",
+   "approve\n{\"evidence_id\":\"<EVIDENCE_ID>\",\"heads\":{\"acme/app\":\"<EVIDENCE_ID>\"},\"kind\":\"approval\",\"root_run_id\":\"rv-root-0001\"}\n0"
+  ],
+  "state": [
+   [
+    "state/keel/evidence/ack/<EVIDENCE_ID>.json",
+    "{\"commits\":{\"acme/app\":\"60f4f4e89645a3ba2743406597e88219ac572f37\"},\"created_at\":\"<TIME>\",\"evidence_id\":\"<EVIDENCE_ID>\",\"expires_at\":\"<TIME>\",\"heads\":{\"acme/app\":\"<EVIDENCE_ID>\"},\"kind\":\"ack\",\"root_run_id\":\"rv-root-0001\",\"schema\":1,\"session_id\":null,\"source\":\"cli\"}\n"
+   ],
+   [
+    "state/keel/evidence/approval/<EVIDENCE_ID>.json",
+    "{\"commits\":{\"acme/app\":\"60f4f4e89645a3ba2743406597e88219ac572f37\"},\"created_at\":\"<TIME>\",\"evidence_id\":\"<EVIDENCE_ID>\",\"expires_at\":\"<TIME>\",\"heads\":{\"acme/app\":\"<EVIDENCE_ID>\"},\"kind\":\"approval\",\"root_run_id\":\"rv-root-0001\",\"schema\":1,\"session_id\":null,\"source\":\"cli\"}\n"
+   ],
+   [
+    "state/keel/evidence/review/acme__app/<EVIDENCE_ID>.json",
+    "{\"created_at\":\"<TIME>\",\"evidence_id\":\"<EVIDENCE_ID>\",\"expires_at\":\"<TIME>\",\"head\":null,\"kind\":\"review\",\"no_test_reason\":null,\"paths\":[{\"blob\":\"b917a726c93f902e43291d9009d6488385133b67\",\"mode\":\"100644\",\"path\":\"src/plain.py\"},{\"blob\":\"41c9c93bbbe8c6b5adbff87793908b3111db810c\",\"mode\":\"100644\",\"path\":\"src/é😀 \\\"q\\\".py\"},{\"blob\":\"c8e955322e426bb8cf50115eb5f7db4619cc2cc0\",\"mode\":\"100644\",\"path\":\"tests/test_plain.py\"}],\"repo\":\"acme/app\",\"repo_root\":\"{{ROOT}}/repos/app\",\"review_base\":\"3708b6fbb3005500b36de014b71118fd2783b827\",\"review_kind\":\"lens-review\",\"reviewed_tree\":\"6f42876c1f1b0d32b43cb9d9bd54ffb5f06d813d\",\"root_run_id\":\"rv-root-0001\",\"run_id\":\"rv-root-0001\",\"schema\":1,\"since\":null,\"since_tree\":null,\"snapshot_tree\":\"6f42876c1f1b0d32b43cb9d9bd54ffb5f06d813d\",\"source\":{\"agent_id\":\"ag1\",\"agent_transcript_path\":\"<DATA>/projects/proj/s1/subagents/agent-ag1.jsonl\",\"agent_type\":\"general-purpose\",\"session_id\":\"s1\",\"transcript_path\":\"<DATA>/projects/proj/s1.jsonl\",\"via\":\"SubagentHandback\"},\"verdict\":\"PASS\"}\n"
+   ],
+   [
+    "state/keel/evidence/review/acme__app/<EVIDENCE_ID>.json",
+    "{\"created_at\":\"<TIME>\",\"evidence_id\":\"<EVIDENCE_ID>\",\"expires_at\":\"<TIME>\",\"head\":null,\"kind\":\"review\",\"no_test_reason\":null,\"paths\":[{\"blob\":\"d0e0fd661801c4c3bce1ec217d272b788e2a4955\",\"mode\":\"100644\",\"path\":\"src/extra.py\"}],\"repo\":\"acme/app\",\"repo_root\":\"{{ROOT}}/repos/app\",\"review_base\":\"3708b6fbb3005500b36de014b71118fd2783b827\",\"review_kind\":\"lens-review\",\"reviewed_tree\":\"98731e2cb1e03db51c293866b69550a35afea73b\",\"root_run_id\":\"rv-root-0001\",\"run_id\":\"rv-delta-0002\",\"schema\":1,\"since\":\"<EVIDENCE_ID>\",\"since_tree\":\"6f42876c1f1b0d32b43cb9d9bd54ffb5f06d813d\",\"snapshot_tree\":\"98731e2cb1e03db51c293866b69550a35afea73b\",\"source\":{\"agent_id\":\"ag1\",\"agent_transcript_path\":\"<DATA>/projects/proj/s1/subagents/agent-ag1.jsonl\",\"agent_type\":\"general-purpose\",\"session_id\":\"s1\",\"transcript_path\":\"<DATA>/projects/proj/s1.jsonl\",\"via\":\"SubagentHandback\"},\"verdict\":\"PASS\"}\n"
+   ],
+   [
+    "state/keel/evidence/smoke/acme__app/<EVIDENCE_ID>.json",
+    "{\"created_at\":\"<TIME>\",\"evidence_id\":\"<EVIDENCE_ID>\",\"expires_at\":\"<TIME>\",\"kind\":\"smoke\",\"repo\":\"acme/app\",\"repo_root\":\"{{ROOT}}/repos/app\",\"run_id\":\"sm-0001\",\"schema\":1,\"tree\":\"98731e2cb1e03db51c293866b69550a35afea73b\"}\n"
+   ],
+   [
+    "state/keel/evidence/tests/acme__app/<EVIDENCE_ID>.json",
+    "{\"cmd\":[\"bash\",\"-c\",\"echo 'Ran 3 tests'; echo OK\"],\"count\":3,\"created_at\":\"<TIME>\",\"evidence_id\":\"<EVIDENCE_ID>\",\"exit\":0,\"expires_at\":\"<TIME>\",\"framework\":\"unittest\",\"head\":\"60f4f4e89645a3ba2743406597e88219ac572f37\",\"kind\":\"tests\",\"repo\":\"acme/app\",\"repo_root\":\"{{ROOT}}/repos/app\",\"run_id\":\"<RUN_ID>\",\"schema\":1,\"tree\":\"98731e2cb1e03db51c293866b69550a35afea73b\"}\n"
+   ]
+  ],
+  "logs": [
+   [
+    "logs/keel-smoke.jsonl",
+    "{\"count\":1,\"failed\":[],\"ok\":true,\"run_id\":\"sm-0001\",\"trees\":{\"acme/app\":\"98731e2cb1e03db51c293866b69550a35afea73b\"},\"ts\":\"<TIME>\"}\n"
+   ],
+   [
+    "logs/keel-tests.jsonl",
+    "{\"cmd\":[\"bash\",\"-c\",\"echo 'Ran 3 tests'; echo OK\"],\"count\":3,\"evidence_id\":\"<EVIDENCE_ID>\",\"exit\":0,\"framework\":\"unittest\",\"repo\":\"acme/app\",\"repo_root\":\"{{ROOT}}/repos/app\",\"run_id\":\"<RUN_ID>\",\"submodule_evidence\":{},\"tree\":\"98731e2cb1e03db51c293866b69550a35afea73b\",\"ts\":\"<TIME>\"}\n"
+   ]
+  ]
+ },
+ "pythonWrittenStore": {
+  "store": {
+   "blobs": {
+    "5e43aa9a9053b979": "t{\"ts\":\"2026-10-11T00:00:00Z\",\"run_id\":\"sm-0001\",\"ok\":true,\"count\":1,\"failed\":[],\"trees\":{\"acme/app\":\"98731e2cb1e03db51c293866b69550a35afea73b\"}}\n",
+    "2c53c3ff2fa3bb17": "t{\"cmd\": [\"bash\", \"-c\", \"echo 'Ran 3 tests'; echo OK\"], \"count\": 3, \"evidence_id\": \"tests-20261023T065644Z-022d9ffa\", \"exit\": 0, \"framework\": \"unittest\", \"repo\": \"acme/app\", \"repo_root\": \"{{ROOT}}/repos/app\", \"run_id\": \"tr-20261023T065644Z-ebc82d\", \"submodule_evidence\": {}, \"tree\": \"98731e2cb1e03db51c293866b69550a35afea73b\", \"ts\": \"2026-10-23T06:56:44Z\"}\n",
+    "8efd86fb78a56a51": "t",
+    "bde06aec3c288fed": "t{\"commits\": {\"acme/app\": \"60f4f4e89645a3ba2743406597e88219ac572f37\"}, \"created_at\": \"2026-10-23T06:56:44Z\", \"evidence_id\": \"ack-20261023T065644Z-6891fcd4\", \"expires_at\": \"2026-11-06T06:56:44Z\", \"heads\": {\"acme/app\": \"review-20261023T065644Z-8e9a203e\"}, \"kind\": \"ack\", \"root_run_id\": \"rv-root-0001\", \"schema\": 1, \"session_id\": null, \"source\": \"cli\"}\n",
+    "a21ed0e7f0b5041e": "t{\"commits\": {\"acme/app\": \"60f4f4e89645a3ba2743406597e88219ac572f37\"}, \"created_at\": \"2026-10-23T06:56:44Z\", \"evidence_id\": \"approval-20261023T065644Z-acd44f88\", \"expires_at\": \"2026-11-06T06:56:44Z\", \"heads\": {\"acme/app\": \"review-20261023T065644Z-8e9a203e\"}, \"kind\": \"approval\", \"root_run_id\": \"rv-root-0001\", \"schema\": 1, \"session_id\": null, \"source\": \"cli\"}\n",
+    "3ee422a215f6a96a": "t{\"created_at\": \"2026-10-23T06:56:43Z\", \"evidence_id\": \"review-20261023T065643Z-bd71876d\", \"expires_at\": \"2026-11-06T06:56:43Z\", \"head\": null, \"kind\": \"review\", \"no_test_reason\": null, \"paths\": [{\"blob\": \"b917a726c93f902e43291d9009d6488385133b67\", \"mode\": \"100644\", \"path\": \"src/plain.py\"}, {\"blob\": \"41c9c93bbbe8c6b5adbff87793908b3111db810c\", \"mode\": \"100644\", \"path\": \"src/\\u00e9\\ud83d\\ude00 \\\"q\\\".py\"}, {\"blob\": \"c8e955322e426bb8cf50115eb5f7db4619cc2cc0\", \"mode\": \"100644\", \"path\": \"tests/test_plain.py\"}], \"repo\": \"acme/app\", \"repo_root\": \"{{ROOT}}/repos/app\", \"review_base\": \"3708b6fbb3005500b36de014b71118fd2783b827\", \"review_kind\": \"lens-review\", \"reviewed_tree\": \"6f42876c1f1b0d32b43cb9d9bd54ffb5f06d813d\", \"root_run_id\": \"rv-root-0001\", \"run_id\": \"rv-root-0001\", \"schema\": 1, \"since\": null, \"since_tree\": null, \"snapshot_tree\": \"6f42876c1f1b0d32b43cb9d9bd54ffb5f06d813d\", \"source\": {\"agent_id\": \"ag1\", \"agent_transcript_path\": \"{{ROOT}}/data-mixed/projects/proj/s1/subagents/agent-ag1.jsonl\", \"agent_type\": \"general-purpose\", \"session_id\": \"s1\", \"transcript_path\": \"{{ROOT}}/data-mixed/projects/proj/s1.jsonl\", \"via\": \"SubagentHandback\"}, \"verdict\": \"PASS\"}\n",
+    "8dde6d8bb59426e8": "t{\"created_at\": \"2026-10-23T06:56:44Z\", \"evidence_id\": \"review-20261023T065644Z-8e9a203e\", \"expires_at\": \"2026-11-06T06:56:44Z\", \"head\": null, \"kind\": \"review\", \"no_test_reason\": null, \"paths\": [{\"blob\": \"d0e0fd661801c4c3bce1ec217d272b788e2a4955\", \"mode\": \"100644\", \"path\": \"src/extra.py\"}], \"repo\": \"acme/app\", \"repo_root\": \"{{ROOT}}/repos/app\", \"review_base\": \"3708b6fbb3005500b36de014b71118fd2783b827\", \"review_kind\": \"lens-review\", \"reviewed_tree\": \"98731e2cb1e03db51c293866b69550a35afea73b\", \"root_run_id\": \"rv-root-0001\", \"run_id\": \"rv-delta-0002\", \"schema\": 1, \"since\": \"review-20261023T065643Z-bd71876d\", \"since_tree\": \"6f42876c1f1b0d32b43cb9d9bd54ffb5f06d813d\", \"snapshot_tree\": \"98731e2cb1e03db51c293866b69550a35afea73b\", \"source\": {\"agent_id\": \"ag1\", \"agent_transcript_path\": \"{{ROOT}}/data-mixed/projects/proj/s1/subagents/agent-ag1.jsonl\", \"agent_type\": \"general-purpose\", \"session_id\": \"s1\", \"transcript_path\": \"{{ROOT}}/data-mixed/projects/proj/s1.jsonl\", \"via\": \"SubagentHandback\"}, \"verdict\": \"PASS\"}\n",
+    "cefddb729c1e277e": "t{\"created_at\": \"2026-10-23T06:56:44Z\", \"evidence_id\": \"smoke-20261023T065644Z-953d1f55\", \"expires_at\": \"2026-11-06T06:56:44Z\", \"kind\": \"smoke\", \"repo\": \"acme/app\", \"repo_root\": \"{{ROOT}}/repos/app\", \"run_id\": \"sm-0001\", \"schema\": 1, \"tree\": \"98731e2cb1e03db51c293866b69550a35afea73b\"}\n",
+    "316b9231ffe3a956": "t{\"cmd\": [\"bash\", \"-c\", \"echo 'Ran 3 tests'; echo OK\"], \"count\": 3, \"created_at\": \"2026-10-23T06:56:44Z\", \"evidence_id\": \"tests-20261023T065644Z-022d9ffa\", \"exit\": 0, \"expires_at\": \"2026-11-06T06:56:44Z\", \"framework\": \"unittest\", \"head\": \"60f4f4e89645a3ba2743406597e88219ac572f37\", \"kind\": \"tests\", \"repo\": \"acme/app\", \"repo_root\": \"{{ROOT}}/repos/app\", \"run_id\": \"tr-20261023T065644Z-ebc82d\", \"schema\": 1, \"tree\": \"98731e2cb1e03db51c293866b69550a35afea73b\"}\n",
+    "a20d4bb0828dbba4": "t#!/bin/bash\nprintf '%s\\n' \"${GH_REPO:+GH_REPO=$GH_REPO }$*\" >> \"$KEEL_TEST_GH_LOG\"\ncat \"$KEEL_TEST_GH_RESPONSE\"\n",
+    "b135db80be7af271": "t[user]\n\tname = Keel Test\n\temail = keel-test@example.com\n[init]\n\tdefaultBranch = main\n[protocol \"file\"]\n\tallow = always\n",
+    "edc9153670fe5ef5": "torigin\tgate\tintegration_base\trisk_rules\ttests\nacme/app\tcode\tmain\tacme\trequired\n",
+    "106795d2888474f9": "tset\tpath_glob\tclass\nacme\tsrc/*/billing/*\theavy\nacme\tdocs/*\tlight\nacme\t*.md\tlight\noverlay\tsettings/*\tsmoke-only\noverlay\tledger.tsv\tsmoke-only\n",
+    "ba11eba4a5c422da": "tref: refs/heads/main\n",
+    "fbce0f17c38709b4": "t[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = true\n\tignorecase = true\n\tprecomposeunicode = true\n",
+    "06cd43a52d544bac": "tUnnamed repository; edit this file 'description' to name the repository.\n",
+    "2c5140e43736cc16": "t# git ls-files --others --exclude-from=.git/info/exclude\n# Lines that start with '#' are comments.\n# For a project mostly in C, the following would be a good set of\n# exclude patterns (uncomment them if you want to use them):\n# *.[oa]\n# *~\n",
+    "33997b79aa12b003": "beAGdjUsKAjEQRF3nFNmL0j35LkTcu/UCbVKiOCHDTAse35zBWj0KXlXprb3UcuKdroDNQt75mAplzxUhCcQJZwgiE7N7VAr3AiMfffbVXoHZ3rCpPb0HHnTgBV9py4xj6e08pmOaphCJ7J5GzGjHpeIv2WxANT/nLzb5",
+    "a320d5498add0466": "beAErKUpNVTA2YTA0MDAzMVFILCjQK6hk+P7pebpBmDvXFbmPb73stypNllt+GgAtlBBA",
+    "34aaf4c541952016": "beAErKUpNVTAzZzA0MDAzMVEIcnV08XXVy01heCz78PMi079x/dMVqvucz2otyEoRNzEAAoXiomSGoPobl4qnHjAXOrXdY/b2w/zGoj2GANtQHCg=",
+    "a6af0eb9b83bf9c0": "beAFLyslPUjBlKE5NTeECABlXA6A=",
+    "4c860b84935f8160": "beAFLyslPUjA0YSgoyswr0VAvTk1NUdfkAgBQpgac",
+    "a65a1d63a7f56fe1": "t3708b6fbb3005500b36de014b71118fd2783b827\n",
+    "a2faea5b751239b1": "tsecond\n",
+    "cc4792d274b217a9": "t3708b6fbb3005500b36de014b71118fd2783b827\t\tbranch 'main' of {{ROOT}}/remotes/acme/app\n",
+    "2c35180749c1936f": "tref: refs/heads/feature\n",
+    "ba62c313a0f468a3": "t[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n\tignorecase = true\n\tprecomposeunicode = true\n[remote \"origin\"]\n\turl = {{ROOT}}/remotes/acme/app.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch \"main\"]\n\tremote = origin\n\tmerge = refs/heads/main\n",
+    "a0ccf4dd8f70bfd6": "bRElSQwAAAAIAAAAGatsFKxSgNjpq2wUrFKA2OgEAAA87UgLwAACBpBfXaZ1cyDnJAAAABeMd4fOiNf1ej5cge45DzSqgamQXAAlSRUFETUUubWQAatsFKxSibCVq2wUrFKJsJQEAAA87UgLyAACBpBfXaZ1cyDnJAAAADvfy52cwVkcK1B7x7Uo/tSKTHqfLAApzcmMvYXBwLnB5AAAAAAAAAABq2wUrMPmY02rbBSsw+ZjTAQAADztSA6AAAIGkF9dpnVzIOckAAAAJ0OD9ZhgBxMO84ewhfScreI4qSVUADHNyYy9leHRyYS5weQAAAAAAAGrbBSsc2xCqatsFKxzbEKoBAAAPO1IDVwAAgaQX12mdXMg5yQAAAAm5F6cmyT+QLkMpHZAJ1kiDhRM7ZwAMc3JjL3BsYWluLnB5AAAAAAAAatsFKxzZKtJq2wUrHNkq0gEAAA87UgNWAACBpBfXaZ1cyDnJAAAADEHJyTu76Ma1rb/4d5OQizER24EMABFzcmMvw6nwn5iAICJxIi5weQBq2wUrHN1gI2rbBSsc3WAjAQAADztSA1kAAIGkF9dpnVzIOckAAAAeyOlVMi5Ca7jPUBFetffbRhnMLMAAE3Rlc3RzL3Rlc3RfcGxhaW4ucHkAAAAAAAAAVFJFRQAAAFMANiAyCphzHiyx4D21HCk4ZraVUKNa/qc7c3JjADQgMAprnZEcDkIRQ7yT2/oAtstNef/wzHRlc3RzADEgMAoxH9kydk7ADJWo5WDj4MFjy3XXKCTpfC+SIsUPlKW8Pi15mWavzByA",
+    "78f3d32c2107312b": "t0000000000000000000000000000000000000000 3708b6fbb3005500b36de014b71118fd2783b827 Keel Test <keel-test@example.com> 1767225600 +0000\tcommit (initial): seed\n3708b6fbb3005500b36de014b71118fd2783b827 3708b6fbb3005500b36de014b71118fd2783b827 Keel Test <keel-test@example.com> 1767225600 +0000\tcheckout: moving from main to feature\n3708b6fbb3005500b36de014b71118fd2783b827 e0237ec3834b262b4b5f99e2a7cdbd73fb047c3d Keel Test <keel-test@example.com> 1767225600 +0000\tcommit: first\ne0237ec3834b262b4b5f99e2a7cdbd73fb047c3d 60f4f4e89645a3ba2743406597e88219ac572f37 Keel Test <keel-test@example.com> 1767225600 +0000\tcommit: second\n",
+    "5bd5ee5779d6a75a": "t0000000000000000000000000000000000000000 3708b6fbb3005500b36de014b71118fd2783b827 Keel Test <keel-test@example.com> 1767225600 +0000\tbranch: Created from HEAD\n3708b6fbb3005500b36de014b71118fd2783b827 e0237ec3834b262b4b5f99e2a7cdbd73fb047c3d Keel Test <keel-test@example.com> 1767225600 +0000\tcommit: first\ne0237ec3834b262b4b5f99e2a7cdbd73fb047c3d 60f4f4e89645a3ba2743406597e88219ac572f37 Keel Test <keel-test@example.com> 1767225600 +0000\tcommit: second\n",
+    "6000838f13d41994": "t0000000000000000000000000000000000000000 3708b6fbb3005500b36de014b71118fd2783b827 Keel Test <keel-test@example.com> 1767225600 +0000\tcommit (initial): seed\n",
+    "c0d9ffc7e3ecbc67": "t0000000000000000000000000000000000000000 3708b6fbb3005500b36de014b71118fd2783b827 Keel Test <keel-test@example.com> 1767225600 +0000\tfetch\n",
+    "448c317b278d0387": "t0000000000000000000000000000000000000000 3708b6fbb3005500b36de014b71118fd2783b827 Keel Test <keel-test@example.com> 1767225600 +0000\tupdate by push\n",
+    "a794d00b462d570e": "beAErKUpNVTAxZDA0MDAzMVEoSS0uiS/ISczM0yuoZDjxMtRIzyl7x/kAwbit32+7SZ7ROQAAliESxg==",
+    "3b057df45fbbacab": "beAFLyslPUjA0Yigoyswr0VA6vFJJkwsARIIGWw==",
+    "54c7f262cc9f44f1": "beAGdjkEKwjAQRV3nFLMXJZlpkgZE3Lv1AplkimLTlDaCxzdn8K0eDz78VEt5NUA0h7aJQBg9GcHERjRltiZhoNE5dsFaHcnGSaInVmvcZGkgGslLopEGRoc8sJ1CEIw+Zc6eJtaDT5RV/LRn3eAuMsND9gaXd9dT63qTbyzrLOdUyxWMdx7ROq3hqDuq136xyV9jtUuqS1Y/fjNFiA==",
+    "36de102badf4a4fa": "beAErKUpNVTA0MWcwNDAwMzFRSCwo0CuoZPj+6Xm6QZg71xW5j2+97LcqTZZbfhqqIrWipCgRpObCg79pEoxHDu95+EaxVl27ok/LMxSqpiAnMTMPpGan+HK1k/YT9Jw1ZSdwXvNobhW2ToeqObzyw/wZDQpKhUoghY4nT1rvfnFs69r9P8onT+g2FLzdyAMA54o9gA==",
+    "6f7abe024c834ff5": "beAErKUpNVbC0ZDA0MDAzMVEIcnV08XXVy01heCz78PMi079x/dMVqvucz2otyEoRNzEAAoXiomSGF3y7NHYb1jyL2a93am5Jmu56bp4SiGxJanFJMYOh/E2jMr8DPFNXPE14/OBg8unS6xoACHYpoA==",
+    "f914fc34e76bfc3b": "beAErKUpNVbC0ZDA0MDAzMVEIcnV08XXVy01heCz78PMi079x/dMVqvucz2otyEoRNzEAAoXiomSG7LkTZficBJ33TL79i2Hbad/K/x/OQGRLUotLihkM5W8alfkd4Jm64mnC4wcHk0+XXtcAACnFKwg=",
+    "2fa65ca7e3bbde72": "beAFLyslPUrBkKCjKzCvRMNTkAgAsSQSy",
+    "8f6ab662894878a7": "beAFLyslPUjA2YEhJTVMoSS0uiU/U0LTiUgCCxOLi1KIShZCi0lQuAN2YC2M=",
+    "de84be8405fb6152": "beAFLyslPUrBkKCjKzCvRMNLkAgAsTASz",
+    "5293233625377eca": "beAGdjk0KwjAQRl3nFNmLMpP/goh7t16g00yw2NiSjuDxzRl8q8eDD75prXUWbQwcpDHrUJxJMUxYkCBbQ85ONOSBsnelkC8QckKb1TY2fou2ERKFQmQBvAcgGzIDOoqImEo2MVlKJqrxI8+16Tvzoh+8i768up6k642/Y90WPk9rvWqMIRrjA4A+Qkf12i8K/zVWZW67qB8C3USX",
+    "99bc5fcf6bf7fd29": "beAErKUpNVTA0NGQwNDAwMzFRSCwo0CuoZPj+6Xm6QZg71xW5j2+97LcqTZZbfhqqoiAnMTMPpGan+HK1k/YT9Jw1ZSdwXvNobhW2ToeqObzyw/wZDQpKhUoghY4nT1rvfnFs69r9P8onT+g2FLzdyAMAPp0u8w==",
+    "0f2d7b13e099fa9a": "t60f4f4e89645a3ba2743406597e88219ac572f37\n",
+    "a17d3f5e9dc039de": "tref: refs/remotes/origin/main\n",
+    "43a6345c4652f23d": "tseed\n",
+    "044497e043e20811": "tprint('seed')\n",
+    "9d66e962ae7f74f0": "tprint(2)\n",
+    "9a5c18c6d1afbad5": "tprint(1)\n",
+    "c3316531b28f0412": "tprint(\"é\")\n",
+    "24ef236449b9dbcc": "tdef test_a():\n    assert True\n"
+   },
+   "trees": {
+    "01fdc623b3b7": [
+     [
+      "data",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "data-mixed",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "data-mixed/logs",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "data-mixed/logs/keel-smoke.jsonl",
+      "f",
+      420,
+      "5e43aa9a9053b979"
+     ],
+     [
+      "data-mixed/logs/keel-tests.jsonl",
+      "f",
+      420,
+      "2c53c3ff2fa3bb17"
+     ],
+     [
+      "data-mixed/projects",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "data-mixed/projects/proj",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "data-mixed/projects/proj/s1",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "data-mixed/projects/proj/s1/subagents",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "data-mixed/projects/proj/s1/subagents/agent-ag1.jsonl",
+      "f",
+      420,
+      "8efd86fb78a56a51"
+     ],
+     [
+      "data-mixed/projects/proj/s1.jsonl",
+      "f",
+      420,
+      "8efd86fb78a56a51"
+     ],
+     [
+      "data-mixed/state",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "data-mixed/state/keel",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "data-mixed/state/keel/evidence",
+      "d",
+      448,
+      ""
+     ],
+     [
+      "data-mixed/state/keel/evidence/ack",
+      "d",
+      448,
+      ""
+     ],
+     [
+      "data-mixed/state/keel/evidence/ack/ack-20261023T065644Z-6891fcd4.json",
+      "f",
+      384,
+      "bde06aec3c288fed"
+     ],
+     [
+      "data-mixed/state/keel/evidence/approval",
+      "d",
+      448,
+      ""
+     ],
+     [
+      "data-mixed/state/keel/evidence/approval/approval-20261023T065644Z-acd44f88.json",
+      "f",
+      384,
+      "a21ed0e7f0b5041e"
+     ],
+     [
+      "data-mixed/state/keel/evidence/review",
+      "d",
+      448,
+      ""
+     ],
+     [
+      "data-mixed/state/keel/evidence/review/acme__app",
+      "d",
+      448,
+      ""
+     ],
+     [
+      "data-mixed/state/keel/evidence/review/acme__app/review-20261023T065643Z-bd71876d.json",
+      "f",
+      384,
+      "3ee422a215f6a96a"
+     ],
+     [
+      "data-mixed/state/keel/evidence/review/acme__app/review-20261023T065644Z-8e9a203e.json",
+      "f",
+      384,
+      "8dde6d8bb59426e8"
+     ],
+     [
+      "data-mixed/state/keel/evidence/smoke",
+      "d",
+      448,
+      ""
+     ],
+     [
+      "data-mixed/state/keel/evidence/smoke/acme__app",
+      "d",
+      448,
+      ""
+     ],
+     [
+      "data-mixed/state/keel/evidence/smoke/acme__app/smoke-20261023T065644Z-953d1f55.json",
+      "f",
+      384,
+      "cefddb729c1e277e"
+     ],
+     [
+      "data-mixed/state/keel/evidence/tests",
+      "d",
+      448,
+      ""
+     ],
+     [
+      "data-mixed/state/keel/evidence/tests/acme__app",
+      "d",
+      448,
+      ""
+     ],
+     [
+      "data-mixed/state/keel/evidence/tests/acme__app/tests-20261023T065644Z-022d9ffa.json",
+      "f",
+      384,
+      "316b9231ffe3a956"
+     ],
+     [
+      "gh",
+      "f",
+      493,
+      "a20d4bb0828dbba4"
+     ],
+     [
+      "gitconfig",
+      "f",
+      420,
+      "b135db80be7af271"
+     ],
+     [
+      "home",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "overlay",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "overlay/gated-repos.tsv",
+      "f",
+      420,
+      "edc9153670fe5ef5"
+     ],
+     [
+      "overlay/risk-rules.tsv",
+      "f",
+      420,
+      "106795d2888474f9"
+     ],
+     [
+      "remotes",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "remotes/acme",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "remotes/acme/app.git",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "remotes/acme/app.git/HEAD",
+      "f",
+      420,
+      "ba11eba4a5c422da"
+     ],
+     [
+      "remotes/acme/app.git/config",
+      "f",
+      420,
+      "fbce0f17c38709b4"
+     ],
+     [
+      "remotes/acme/app.git/description",
+      "f",
+      420,
+      "06cd43a52d544bac"
+     ],
+     [
+      "remotes/acme/app.git/hooks",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "remotes/acme/app.git/info",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "remotes/acme/app.git/info/exclude",
+      "f",
+      420,
+      "2c5140e43736cc16"
+     ],
+     [
+      "remotes/acme/app.git/objects",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "remotes/acme/app.git/objects/37",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "remotes/acme/app.git/objects/37/08b6fbb3005500b36de014b71118fd2783b827",
+      "f",
+      292,
+      "33997b79aa12b003"
+     ],
+     [
+      "remotes/acme/app.git/objects/52",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "remotes/acme/app.git/objects/52/7fd8d27395c03712cab7489bb7c30f33158c31",
+      "f",
+      292,
+      "a320d5498add0466"
+     ],
+     [
+      "remotes/acme/app.git/objects/8a",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "remotes/acme/app.git/objects/8a/043467c0841de57aea3a18eae610113fd05bce",
+      "f",
+      292,
+      "34aaf4c541952016"
+     ],
+     [
+      "remotes/acme/app.git/objects/e3",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "remotes/acme/app.git/objects/e3/1de1f3a235fd5e8f97207b8e43cd2aa06a6417",
+      "f",
+      292,
+      "a6af0eb9b83bf9c0"
+     ],
+     [
+      "remotes/acme/app.git/objects/f7",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "remotes/acme/app.git/objects/f7/f2e7673056470ad41ef1ed4a3fb522931ea7cb",
+      "f",
+      292,
+      "4c860b84935f8160"
+     ],
+     [
+      "remotes/acme/app.git/objects/info",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "remotes/acme/app.git/objects/pack",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "remotes/acme/app.git/refs",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "remotes/acme/app.git/refs/heads",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "remotes/acme/app.git/refs/heads/main",
+      "f",
+      420,
+      "a65a1d63a7f56fe1"
+     ],
+     [
+      "remotes/acme/app.git/refs/tags",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/COMMIT_EDITMSG",
+      "f",
+      420,
+      "a2faea5b751239b1"
+     ],
+     [
+      "repos/app/.git/FETCH_HEAD",
+      "f",
+      420,
+      "cc4792d274b217a9"
+     ],
+     [
+      "repos/app/.git/HEAD",
+      "f",
+      420,
+      "2c35180749c1936f"
+     ],
+     [
+      "repos/app/.git/config",
+      "f",
+      420,
+      "ba62c313a0f468a3"
+     ],
+     [
+      "repos/app/.git/description",
+      "f",
+      420,
+      "06cd43a52d544bac"
+     ],
+     [
+      "repos/app/.git/hooks",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/index",
+      "f",
+      420,
+      "a0ccf4dd8f70bfd6"
+     ],
+     [
+      "repos/app/.git/info",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/info/exclude",
+      "f",
+      420,
+      "2c5140e43736cc16"
+     ],
+     [
+      "repos/app/.git/logs",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/logs/HEAD",
+      "f",
+      420,
+      "78f3d32c2107312b"
+     ],
+     [
+      "repos/app/.git/logs/refs",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/logs/refs/heads",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/logs/refs/heads/feature",
+      "f",
+      420,
+      "5bd5ee5779d6a75a"
+     ],
+     [
+      "repos/app/.git/logs/refs/heads/main",
+      "f",
+      420,
+      "6000838f13d41994"
+     ],
+     [
+      "repos/app/.git/logs/refs/remotes",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/logs/refs/remotes/origin",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/logs/refs/remotes/origin/HEAD",
+      "f",
+      420,
+      "c0d9ffc7e3ecbc67"
+     ],
+     [
+      "repos/app/.git/logs/refs/remotes/origin/main",
+      "f",
+      420,
+      "448c317b278d0387"
+     ],
+     [
+      "repos/app/.git/objects",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/objects/31",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/objects/31/1fd932764ec00c95a8e560e3e0c163cb75d728",
+      "f",
+      292,
+      "a794d00b462d570e"
+     ],
+     [
+      "repos/app/.git/objects/37",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/objects/37/08b6fbb3005500b36de014b71118fd2783b827",
+      "f",
+      292,
+      "33997b79aa12b003"
+     ],
+     [
+      "repos/app/.git/objects/41",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/objects/41/c9c93bbbe8c6b5adbff87793908b3111db810c",
+      "f",
+      292,
+      "3b057df45fbbacab"
+     ],
+     [
+      "repos/app/.git/objects/52",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/objects/52/7fd8d27395c03712cab7489bb7c30f33158c31",
+      "f",
+      292,
+      "a320d5498add0466"
+     ],
+     [
+      "repos/app/.git/objects/60",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/objects/60/f4f4e89645a3ba2743406597e88219ac572f37",
+      "f",
+      292,
+      "54c7f262cc9f44f1"
+     ],
+     [
+      "repos/app/.git/objects/6b",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/objects/6b/9d911c0e421143bc93dbfa00b6cb4d79fff0cc",
+      "f",
+      292,
+      "36de102badf4a4fa"
+     ],
+     [
+      "repos/app/.git/objects/6f",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/objects/6f/42876c1f1b0d32b43cb9d9bd54ffb5f06d813d",
+      "f",
+      292,
+      "6f7abe024c834ff5"
+     ],
+     [
+      "repos/app/.git/objects/8a",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/objects/8a/043467c0841de57aea3a18eae610113fd05bce",
+      "f",
+      292,
+      "34aaf4c541952016"
+     ],
+     [
+      "repos/app/.git/objects/98",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/objects/98/731e2cb1e03db51c293866b69550a35afea73b",
+      "f",
+      292,
+      "f914fc34e76bfc3b"
+     ],
+     [
+      "repos/app/.git/objects/b9",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/objects/b9/17a726c93f902e43291d9009d6488385133b67",
+      "f",
+      292,
+      "2fa65ca7e3bbde72"
+     ],
+     [
+      "repos/app/.git/objects/c8",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/objects/c8/e955322e426bb8cf50115eb5f7db4619cc2cc0",
+      "f",
+      292,
+      "8f6ab662894878a7"
+     ],
+     [
+      "repos/app/.git/objects/d0",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/objects/d0/e0fd661801c4c3bce1ec217d272b788e2a4955",
+      "f",
+      292,
+      "de84be8405fb6152"
+     ],
+     [
+      "repos/app/.git/objects/e0",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/objects/e0/237ec3834b262b4b5f99e2a7cdbd73fb047c3d",
+      "f",
+      292,
+      "5293233625377eca"
+     ],
+     [
+      "repos/app/.git/objects/e3",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/objects/e3/1de1f3a235fd5e8f97207b8e43cd2aa06a6417",
+      "f",
+      292,
+      "a6af0eb9b83bf9c0"
+     ],
+     [
+      "repos/app/.git/objects/e8",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/objects/e8/0eba28bb317ce65cbf2eca9d74662daf0b0c74",
+      "f",
+      292,
+      "99bc5fcf6bf7fd29"
+     ],
+     [
+      "repos/app/.git/objects/f7",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/objects/f7/f2e7673056470ad41ef1ed4a3fb522931ea7cb",
+      "f",
+      292,
+      "4c860b84935f8160"
+     ],
+     [
+      "repos/app/.git/objects/info",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/objects/pack",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/refs",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/refs/heads",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/refs/heads/feature",
+      "f",
+      420,
+      "0f2d7b13e099fa9a"
+     ],
+     [
+      "repos/app/.git/refs/heads/main",
+      "f",
+      420,
+      "a65a1d63a7f56fe1"
+     ],
+     [
+      "repos/app/.git/refs/remotes",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/refs/remotes/origin",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/.git/refs/remotes/origin/HEAD",
+      "f",
+      420,
+      "a17d3f5e9dc039de"
+     ],
+     [
+      "repos/app/.git/refs/remotes/origin/main",
+      "f",
+      420,
+      "a65a1d63a7f56fe1"
+     ],
+     [
+      "repos/app/.git/refs/tags",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/README.md",
+      "f",
+      420,
+      "43a6345c4652f23d"
+     ],
+     [
+      "repos/app/src",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/src/app.py",
+      "f",
+      420,
+      "044497e043e20811"
+     ],
+     [
+      "repos/app/src/extra.py",
+      "f",
+      420,
+      "9d66e962ae7f74f0"
+     ],
+     [
+      "repos/app/src/plain.py",
+      "f",
+      420,
+      "9a5c18c6d1afbad5"
+     ],
+     [
+      "repos/app/src/é😀 \"q\".py",
+      "f",
+      420,
+      "c3316531b28f0412"
+     ],
+     [
+      "repos/app/tests",
+      "d",
+      493,
+      ""
+     ],
+     [
+      "repos/app/tests/test_plain.py",
+      "f",
+      420,
+      "24ef236449b9dbcc"
+     ]
+    ]
+   }
+  },
+  "snapshot": "01fdc623b3b7",
+  "judged": [
+   "{\"files\":4,\"k3_waiver\":null,\"lines\":5,\"ok\":true,\"reasons\":[],\"risk_class\":\"standard\",\"root_run_id\":\"rv-root-0001\",\"root_run_ids\":[\"rv-root-0001\"]}",
+   "{\"files\":4,\"k3_waiver\":null,\"lines\":5,\"ok\":true,\"reasons\":[],\"risk_class\":\"standard\",\"root_run_id\":\"rv-root-0001\",\"root_run_ids\":[\"rv-root-0001\"]}",
+   "{\"files\":5,\"k3_waiver\":null,\"lines\":6,\"ok\":false,\"reasons\":[[\"K1\",\"chain rv-root-0001 does not cover: src/unreviewed.py (not in any reviewed diff)\"],[\"K3\",\"no tests evidence covers this exact content: run `keel test -- <test command>`\"]],\"risk_class\":\"standard\",\"root_run_id\":\"rv-root-0001\",\"root_run_ids\":[]}",
+   "{\"files\":0,\"k3_waiver\":null,\"lines\":0,\"ok\":true,\"reasons\":[],\"risk_class\":null,\"root_run_id\":null,\"root_run_ids\":[]}"
+  ],
+  "cli": [
+   [
+    0,
+    "{\"chains\":[{\"acked\":true,\"approved\":true,\"head_evidence_id\":\"review-20261023T065644Z-8e9a203e\",\"paths\":4,\"review_kind\":\"lens-review\",\"root_run_id\":\"rv-root-0001\",\"verdict\":\"PASS\"}],\"repo\":\"acme/app\",\"smoke\":[\"smoke-20261023T065644Z-953d1f55\"],\"tests\":[\"tests-20261023T065644Z-022d9ffa\"]}\n"
+   ],
+   [
+    0,
+    "{\"chain_roots\":[],\"read_only_records\":0,\"reader_removable\":true}\n"
+   ],
+   [
+    0,
+    "{\"deleted\":0}\n"
+   ],
+   [
+    0,
+    "{\"repo_root\":\"{{ROOT}}/repos/app\",\"tree\":\"0d2dd1eb264bb49cf931bc8dea5a8e2e16e86567\"}\n"
+   ]
+  ]
+ },
+ "judge": {
+  "series approved": "{\"files\":4,\"k3_waiver\":null,\"lines\":5,\"ok\":true,\"reasons\":[],\"risk_class\":\"standard\",\"root_run_id\":null,\"root_run_ids\":[\"rv-series-0001\",\"rv-series-0002\"]}",
+  "series without approval requirement": "{\"files\":4,\"k3_waiver\":null,\"lines\":5,\"ok\":true,\"reasons\":[],\"risk_class\":\"standard\",\"root_run_id\":null,\"root_run_ids\":[\"rv-series-0001\",\"rv-series-0002\"]}",
+  "first review not approved": "{\"files\":4,\"k3_waiver\":null,\"lines\":5,\"ok\":false,\"reasons\":[[\"K1\",\"chain rv-series-0001 does not cover: src/a.py (content or mode changed after review), src/second.py (not in any reviewed diff)\"],[\"K1\",\"no approval bound to chain head review-20261023T065650Z-53ec7736: run `keel approve rv-series-0001`\"]],\"risk_class\":\"standard\",\"root_run_id\":\"rv-series-0001\",\"root_run_ids\":[]}",
+  "gap between reviews": "{\"files\":5,\"k3_waiver\":null,\"lines\":6,\"ok\":false,\"reasons\":[[\"K1\",\"chain rv-series-0002 reviewed from 186503e6e7, not from the merge base 3708b6fbb3 or an ancestor of it\"],[\"K1\",\"chain rv-series-0002 does not cover: src/first.py (not in any reviewed diff), src/gap.py (not in any reviewed diff), tests/test_a.py (not in any reviewed diff)\"]],\"risk_class\":\"standard\",\"root_run_id\":\"rv-series-0002\",\"root_run_ids\":[]}",
+  "stacked chains": "{\"files\":4,\"k3_waiver\":null,\"lines\":5,\"ok\":true,\"reasons\":[],\"risk_class\":\"standard\",\"root_run_id\":null,\"root_run_ids\":[\"rv-stack-0001\",\"rv-stack-0002\"]}",
+  "overlapping stacked chains": "{\"files\":3,\"k3_waiver\":null,\"lines\":7,\"ok\":false,\"reasons\":[[\"K1\",\"chain rv-stack-0001 does not cover: README.md (content or mode changed after review)\"],[\"K1\",\"README.md: chains rv-stack-0001, rv-stack-0002 each reviewed it, but no review saw the stacked content; review commit 2f66df9d24 from its parent 80bd175d68, then approve that review\"]],\"risk_class\":\"standard\",\"root_run_id\":\"rv-stack-0001\",\"root_run_ids\":[]}",
+  "smoke missing": "{\"files\":1,\"k3_waiver\":null,\"lines\":1,\"ok\":false,\"reasons\":[[\"risk\",\"no smoke evidence covers this exact content: run measure/smoke, then `keel evidence write-smoke`\"]],\"risk_class\":\"standard\",\"root_run_id\":null,\"root_run_ids\":[]}",
+  "smoke present": "{\"files\":1,\"k3_waiver\":null,\"lines\":1,\"ok\":true,\"reasons\":[],\"risk_class\":\"standard\",\"root_run_id\":null,\"root_run_ids\":[]}",
+  "tests=none standard": "{\"files\":2,\"k3_waiver\":null,\"lines\":3,\"ok\":false,\"reasons\":[[\"K3\",\"add test infrastructure first: acme/app has tests=none and the change is standard\"]],\"risk_class\":\"standard\",\"root_run_id\":\"rv-root-0001\",\"root_run_ids\":[\"rv-root-0001\"]}",
+  "tests=none light": "{\"files\":1,\"k3_waiver\":null,\"lines\":1,\"ok\":true,\"reasons\":[],\"risk_class\":\"light\",\"root_run_id\":\"rv-root-0001\",\"root_run_ids\":[\"rv-root-0001\"]}",
+  "K3 same range": "{\"files\":1,\"k3_waiver\":null,\"lines\":1,\"ok\":false,\"reasons\":[[\"K3\",\"logic changed with no test in the same range: src/a.py; add a test, or have the reviewer state no_test_reason in KEEL-EVIDENCE\"]],\"risk_class\":\"standard\",\"root_run_id\":\"rv-root-0001\",\"root_run_ids\":[\"rv-root-0001\"]}",
+  "K3 waiver": "{\"files\":1,\"k3_waiver\":\"covered by the integration suite\",\"lines\":1,\"ok\":true,\"reasons\":[],\"risk_class\":\"standard\",\"root_run_id\":\"rv-root-0001\",\"root_run_ids\":[\"rv-root-0001\"]}",
+  "single-lens": "{\"files\":1,\"k3_waiver\":null,\"lines\":1,\"ok\":false,\"reasons\":[[\"risk\",\"every change needs a lens-review chain; chain rv-root-0001 has a single-lens link\"]],\"risk_class\":\"light\",\"root_run_id\":\"rv-root-0001\",\"root_run_ids\":[]}"
+ },
+ "backgroundHolders": {
+  "runs": [
+   [
+    0,
+    "Ran 3 tests\n",
+    "KEEL-TEST {\"count\":3,\"evidence_id\":\"<EVIDENCE_ID>\",\"exit\":0,\"run_id\":\"<RUN_ID>\",\"submodule_evidence\":{}}\n"
+   ],
+   [
+    3,
+    "Ran 3 tests\n",
+    "KEEL-TEST {\"count\":3,\"evidence_id\":null,\"exit\":3,\"run_id\":\"<RUN_ID>\",\"submodule_evidence\":{}}\n"
+   ],
+   [
+    0,
+    "foreground\nRan 3 tests\n",
+    "KEEL-TEST {\"count\":3,\"evidence_id\":\"<EVIDENCE_ID>\",\"exit\":0,\"run_id\":\"<RUN_ID>\",\"submodule_evidence\":{}}\n"
+   ]
+  ],
+  "state": [
+   [
+    "state/keel/evidence/tests/acme__app/<EVIDENCE_ID>.json",
+    "{\"cmd\":[\"bash\",\"-c\",\"(sleep 1; echo 'Ran 3 tests' >&2) & echo foreground; exit 0\"],\"count\":3,\"created_at\":\"<TIME>\",\"evidence_id\":\"<EVIDENCE_ID>\",\"exit\":0,\"expires_at\":\"<TIME>\",\"framework\":\"unittest\",\"head\":\"e0237ec3834b262b4b5f99e2a7cdbd73fb047c3d\",\"kind\":\"tests\",\"repo\":\"acme/app\",\"repo_root\":\"{{ROOT}}/repos/app\",\"run_id\":\"<RUN_ID>\",\"schema\":1,\"tree\":\"6f42876c1f1b0d32b43cb9d9bd54ffb5f06d813d\"}\n"
+   ],
+   [
+    "state/keel/evidence/tests/acme__app/<EVIDENCE_ID>.json",
+    "{\"cmd\":[\"bash\",\"-c\",\"(sleep 1; echo 'Ran 3 tests') &\"],\"count\":3,\"created_at\":\"<TIME>\",\"evidence_id\":\"<EVIDENCE_ID>\",\"exit\":0,\"expires_at\":\"<TIME>\",\"framework\":\"unittest\",\"head\":\"e0237ec3834b262b4b5f99e2a7cdbd73fb047c3d\",\"kind\":\"tests\",\"repo\":\"acme/app\",\"repo_root\":\"{{ROOT}}/repos/app\",\"run_id\":\"<RUN_ID>\",\"schema\":1,\"tree\":\"6f42876c1f1b0d32b43cb9d9bd54ffb5f06d813d\"}\n"
+   ]
+  ],
+  "logs": [
+   [
+    "logs/keel-tests.jsonl",
+    "{\"cmd\":[\"bash\",\"-c\",\"(sleep 1; echo 'Ran 3 tests') &\"],\"count\":3,\"evidence_id\":\"<EVIDENCE_ID>\",\"exit\":0,\"framework\":\"unittest\",\"repo\":\"acme/app\",\"repo_root\":\"{{ROOT}}/repos/app\",\"run_id\":\"<RUN_ID>\",\"submodule_evidence\":{},\"tree\":\"6f42876c1f1b0d32b43cb9d9bd54ffb5f06d813d\",\"ts\":\"<TIME>\"}\n{\"cmd\":[\"bash\",\"-c\",\"(sleep 1; echo 'Ran 3 tests') & exit 3\"],\"count\":3,\"evidence_id\":null,\"exit\":3,\"framework\":\"unittest\",\"repo\":\"acme/app\",\"repo_root\":\"{{ROOT}}/repos/app\",\"run_id\":\"<RUN_ID>\",\"submodule_evidence\":{},\"tree\":\"6f42876c1f1b0d32b43cb9d9bd54ffb5f06d813d\",\"ts\":\"<TIME>\"}\n{\"cmd\":[\"bash\",\"-c\",\"(sleep 1; echo 'Ran 3 tests' >&2) & echo foreground; exit 0\"],\"count\":3,\"evidence_id\":\"<EVIDENCE_ID>\",\"exit\":0,\"framework\":\"unittest\",\"repo\":\"acme/app\",\"repo_root\":\"{{ROOT}}/repos/app\",\"run_id\":\"<RUN_ID>\",\"submodule_evidence\":{},\"tree\":\"6f42876c1f1b0d32b43cb9d9bd54ffb5f06d813d\",\"ts\":\"<TIME>\"}\n"
+   ]
+  ]
+ },
+ "noMkfifo": {
+  "run": [
+   0,
+   "Ran 1 test\n",
+   "KEEL-TEST {\"count\":1,\"evidence_id\":\"<EVIDENCE_ID>\",\"exit\":0,\"run_id\":\"<RUN_ID>\",\"submodule_evidence\":{}}\n"
+  ],
+  "recorded": 1
+ },
+ "cliOutcomes": [
+  {
+   "args": [],
+   "stdin": null,
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: missing command\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "bogus"
+   ],
+   "stdin": null,
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: unknown command bogus\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "test",
+    "x"
+   ],
+   "stdin": null,
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: keel test -- <command…>\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "test",
+    "--"
+   ],
+   "stdin": null,
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: keel test -- <command…>\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "approve"
+   ],
+   "stdin": null,
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: keel approve <root_run_id> [--read]\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "approve",
+    "x"
+   ],
+   "stdin": null,
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: root_run_id must match ^[A-Za-z0-9._-]{8,64}$\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "approve",
+    "rv-none-0001"
+   ],
+   "stdin": null,
+   "rc": 3,
+   "stdout": "",
+   "stderr": "keel: refused: no review chain with root rv-none-0001\n"
+  },
+  {
+   "args": [
+    "approve",
+    "rv-none-0001",
+    "--bogus"
+   ],
+   "stdin": null,
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: keel approve <root_run_id> [--read]\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "snapshot"
+   ],
+   "stdin": null,
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: keel snapshot <repo>\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "snapshot",
+    "{{ROOT}}/home"
+   ],
+   "stdin": null,
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: {{ROOT}}/home is not inside a git repository\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "evidence"
+   ],
+   "stdin": null,
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: keel evidence <write-review|write-smoke|show|gc>\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "evidence",
+    "bogus"
+   ],
+   "stdin": null,
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: unknown evidence subcommand bogus\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "evidence",
+    "show",
+    "--bogus"
+   ],
+   "stdin": null,
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: unexpected argument --bogus\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "evidence",
+    "show",
+    "--repo"
+   ],
+   "stdin": null,
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: --repo needs a value\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "evidence",
+    "show",
+    "--repo",
+    "{{ROOT}}/home"
+   ],
+   "stdin": null,
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: {{ROOT}}/home is not a git repository with an origin remote\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "evidence",
+    "compatibility",
+    "--repo",
+    "{{ROOT}}/repos/app"
+   ],
+   "stdin": null,
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: compatibility inventories all repositories; it takes no options\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "evidence",
+    "record-codex"
+   ],
+   "stdin": null,
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: registration requires --repo, --audits and optional --verifiers\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "evidence",
+    "record-codex",
+    "--repo",
+    "{{ROOT}}/repos/app"
+   ],
+   "stdin": null,
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: registration requires --repo, --audits and optional --verifiers\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "evidence",
+    "record-codex",
+    "--repo",
+    "{{ROOT}}/repos/app",
+    "--audits",
+    "not-a-uuid"
+   ],
+   "stdin": null,
+   "rc": 3,
+   "stdout": "",
+   "stderr": "keel: refused: Codex session id must be a canonical UUID\n"
+  },
+  {
+   "args": [
+    "evidence",
+    "write-review"
+   ],
+   "stdin": "",
+   "rc": 2,
+   "stdout": "",
+   "stderr": "usage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n",
+   "stdinNotJson": true
+  },
+  {
+   "args": [
+    "evidence",
+    "write-review"
+   ],
+   "stdin": "{\"a\":",
+   "rc": 2,
+   "stdout": "",
+   "stderr": "usage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n",
+   "stdinNotJson": true
+  },
+  {
+   "args": [
+    "evidence",
+    "write-review"
+   ],
+   "stdin": "[1]",
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: stdin must be a JSON object\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "evidence",
+    "write-review"
+   ],
+   "stdin": "1.0",
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: stdin must be a JSON object\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "evidence",
+    "write-review"
+   ],
+   "stdin": "[1.0, 2.5]",
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: stdin must be a JSON object\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "evidence",
+    "write-review"
+   ],
+   "stdin": "-0.0",
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: stdin must be a JSON object\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "evidence",
+    "write-review"
+   ],
+   "stdin": "1e400",
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: stdin must be a JSON object\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "evidence",
+    "write-review"
+   ],
+   "stdin": "{\"keel_evidence\": 1.0, \"verdict\": \"PASS\"}",
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: keel_evidence must have exactly the keys v, repo_root, review_base, head, snapshot_tree, since, run_id, root_run_id, review_kind (plus optional no_test_reason)\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "evidence",
+    "write-review"
+   ],
+   "stdin": "{\"diffs\": [{\"repo\": 1.0}]}",
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: keel_evidence must have exactly the keys v, repo_root, review_base, head, snapshot_tree, since, run_id, root_run_id, review_kind (plus optional no_test_reason)\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "evidence",
+    "write-review"
+   ],
+   "stdin": "{\"a\":1}\r\n,",
+   "rc": 2,
+   "stdout": "",
+   "stderr": "usage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n",
+   "stdinNotJson": true
+  },
+  {
+   "args": [
+    "evidence",
+    "write-review"
+   ],
+   "stdin": "{\"keel_evidence\": {}}",
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: keel_evidence must have exactly the keys v, repo_root, review_base, head, snapshot_tree, since, run_id, root_run_id, review_kind (plus optional no_test_reason)\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "evidence",
+    "write-review"
+   ],
+   "stdin": "{\"keel_evidence\": 1, \"verdict\": \"PASS\"}",
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: keel_evidence must have exactly the keys v, repo_root, review_base, head, snapshot_tree, since, run_id, root_run_id, review_kind (plus optional no_test_reason)\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "evidence",
+    "write-smoke",
+    "--repo",
+    "{{ROOT}}/repos/app"
+   ],
+   "stdin": null,
+   "rc": 3,
+   "stdout": "",
+   "stderr": "keel: refused: no smoke run (latest) in keel-smoke.jsonl\n"
+  },
+  {
+   "args": [
+    "evidence",
+    "write-smoke",
+    "--repo",
+    "{{ROOT}}/repos/app",
+    "--run",
+    "nope"
+   ],
+   "stdin": null,
+   "rc": 3,
+   "stdout": "",
+   "stderr": "keel: refused: no smoke run nope in keel-smoke.jsonl\n"
+  },
+  {
+   "args": [
+    "review"
+   ],
+   "stdin": null,
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: keel review prepare reads workflow args from stdin\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "review",
+    "prepare"
+   ],
+   "stdin": "{}",
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: review prepare needs a nonempty diffs list\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "review",
+    "prepare"
+   ],
+   "stdin": "{\"diffs\": [{\"repo\": \"/nonexistent\", \"base\": \"main\"}], \"lenses\": []}",
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: target needs a repository and base ref\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "review",
+    "prepare"
+   ],
+   "stdin": "{\"diffs\": [{\"repo\": \"x\", \"extra\": 1}], \"lenses\": []}",
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: invalid review target\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "test",
+    "--",
+    "definitely-not-a-command-xyz"
+   ],
+   "stdin": null,
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel test: command not found: definitely-not-a-command-xyz\nKEEL-TEST {\"count\":0,\"evidence_id\":null,\"exit\":2,\"run_id\":\"<RUN_ID>\",\"submodule_evidence\":{}}\n"
+  },
+  {
+   "args": [
+    "test",
+    "--",
+    "bash",
+    "-c",
+    "exit 7"
+   ],
+   "stdin": null,
+   "rc": 7,
+   "stdout": "",
+   "stderr": "KEEL-TEST {\"count\":0,\"evidence_id\":null,\"exit\":7,\"run_id\":\"<RUN_ID>\",\"submodule_evidence\":{}}\n"
+  },
+  {
+   "args": [
+    "test",
+    "--",
+    "bash",
+    "-c",
+    "echo out; echo err >&2; echo 'Ran 2 tests'; echo more >&2"
+   ],
+   "stdin": null,
+   "rc": 0,
+   "stdout": "out\nerr\nRan 2 tests\nmore\n",
+   "stderr": "KEEL-TEST {\"count\":2,\"evidence_id\":\"<EVIDENCE_ID>\",\"exit\":0,\"run_id\":\"<RUN_ID>\",\"submodule_evidence\":{}}\n"
+  },
+  {
+   "args": [
+    "test",
+    "--",
+    "bash",
+    "-c",
+    "echo partial; kill -TERM $$"
+   ],
+   "stdin": null,
+   "rc": 241,
+   "stdout": "partial\n",
+   "stderr": "KEEL-TEST {\"count\":0,\"evidence_id\":null,\"exit\":-15,\"run_id\":\"<RUN_ID>\",\"submodule_evidence\":{}}\n"
+  },
+  {
+   "args": [
+    "test",
+    "--",
+    "bash",
+    "-c",
+    "printf 'no newline Ran 4 tests'"
+   ],
+   "stdin": null,
+   "rc": 4,
+   "stdout": "no newline Ran 4 tests",
+   "stderr": "KEEL-TEST {\"count\":0,\"evidence_id\":null,\"exit\":0,\"run_id\":\"<RUN_ID>\",\"submodule_evidence\":{}}\n"
+  },
+  {
+   "args": [
+    "test",
+    "--",
+    "true"
+   ],
+   "stdin": null,
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel: keel test must run inside a git repository\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+  },
+  {
+   "args": [
+    "test",
+    "--",
+    "./no-shebang.sh"
+   ],
+   "stdin": null,
+   "rc": 70,
+   "stdout": "",
+   "errorCode": "ENOEXEC"
+  },
+  {
+   "args": [
+    "test",
+    "--",
+    "./empty.sh"
+   ],
+   "stdin": null,
+   "rc": 70,
+   "stdout": "",
+   "errorCode": "ENOEXEC"
+  },
+  {
+   "args": [
+    "test",
+    "--",
+    "./not-executable.sh"
+   ],
+   "stdin": null,
+   "rc": 70,
+   "stdout": "",
+   "errorCode": "EACCES"
+  },
+  {
+   "args": [
+    "test",
+    "--",
+    "./missing-interpreter.sh"
+   ],
+   "stdin": null,
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel test: command not found: ./missing-interpreter.sh\nKEEL-TEST {\"count\":0,\"evidence_id\":null,\"exit\":2,\"run_id\":\"<RUN_ID>\",\"submodule_evidence\":{}}\n"
+  },
+  {
+   "args": [
+    "test",
+    "--",
+    "{{ROOT}}/execute-only"
+   ],
+   "stdin": null,
+   "rc": 0,
+   "stdout": "Ran 2 tests\n",
+   "stderr": "KEEL-TEST {\"count\":2,\"evidence_id\":\"<EVIDENCE_ID>\",\"exit\":0,\"run_id\":\"<RUN_ID>\",\"submodule_evidence\":{}}\n"
+  },
+  {
+   "args": [
+    "test",
+    "--",
+    "./empty-interpreter.sh"
+   ],
+   "stdin": null,
+   "rc": 70,
+   "stdout": "",
+   "errorCode": "ENOEXEC"
+  },
+  {
+   "args": [
+    "test",
+    "--",
+    "./crlf.sh"
+   ],
+   "stdin": null,
+   "rc": 2,
+   "stdout": "",
+   "stderr": "keel test: command not found: ./crlf.sh\nKEEL-TEST {\"count\":0,\"evidence_id\":null,\"exit\":2,\"run_id\":\"<RUN_ID>\",\"submodule_evidence\":{}}\n"
+  },
+  {
+   "args": [
+    "test",
+    "--",
+    "./data-interpreter.sh"
+   ],
+   "stdin": null,
+   "rc": 70,
+   "stdout": "",
+   "errorCode": "EACCES"
+  },
+  {
+   "args": [
+    "test",
+    "--",
+    "./ok-interpreter.sh"
+   ],
+   "stdin": null,
+   "rc": 0,
+   "stdout": "Ran 3 tests\n",
+   "stderr": "KEEL-TEST {\"count\":3,\"evidence_id\":\"<EVIDENCE_ID>\",\"exit\":0,\"run_id\":\"<RUN_ID>\",\"submodule_evidence\":{}}\n"
+  },
+  {
+   "args": [
+    "test",
+    "--",
+    "./padded-interpreter.sh"
+   ],
+   "stdin": null,
+   "rc": 0,
+   "stdout": "Ran 3 tests\n",
+   "stderr": "KEEL-TEST {\"count\":3,\"evidence_id\":\"<EVIDENCE_ID>\",\"exit\":0,\"run_id\":\"<RUN_ID>\",\"submodule_evidence\":{}}\n"
+  },
+  {
+   "args": [
+    "test",
+    "--",
+    "./no-shebang.sh/x"
+   ],
+   "stdin": null,
+   "rc": 70,
+   "stdout": "",
+   "errorCode": "ENOTDIR"
+  },
+  {
+   "args": [
+    "test",
+    "--",
+    "."
+   ],
+   "stdin": null,
+   "rc": 70,
+   "stdout": "",
+   "errorCode": "EACCES"
+  },
+  {
+   "args": [
+    "test",
+    "--",
+    "./loop-a.sh"
+   ],
+   "stdin": null,
+   "rc": 70,
+   "stdout": "",
+   "errorCode": "ELOOP"
+  },
+  {
+   "args": [
+    "test",
+    "--",
+    "./nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn"
+   ],
+   "stdin": null,
+   "rc": 70,
+   "stdout": "",
+   "errorCode": "ENAMETOOLONG"
+  },
+  {
+   "args": [
+    "test",
+    "--",
+    "both"
+   ],
+   "stdin": null,
+   "rc": 70,
+   "stdout": "",
+   "errorCode": "EACCES"
+  },
+  {
+   "args": [
+    "test",
+    "--",
+    "later"
+   ],
+   "stdin": null,
+   "rc": 0,
+   "stdout": "Ran 3 tests\n",
+   "stderr": "KEEL-TEST {\"count\":3,\"evidence_id\":\"<EVIDENCE_ID>\",\"exit\":0,\"run_id\":\"<RUN_ID>\",\"submodule_evidence\":{}}\n"
+  },
+  {
+   "args": [
+    "test",
+    "--",
+    ""
+   ],
+   "stdin": null,
+   "rc": 70,
+   "stdout": "",
+   "errorCode": "EACCES"
+  }
+ ]
+}

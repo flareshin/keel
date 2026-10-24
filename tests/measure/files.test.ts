@@ -4,7 +4,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
-import { decodeUtf8, expandHome, firstLine, InvalidUtf8Error, readUtf8, resolveLinks, splitLines, walkEntries } from "../../measure/lib/measurekit/files.ts"
+import { decodeStrict, expandHome, firstLine, InvalidUtf8Error, readUtf8, resolveLinks, splitLines, walkEntries, words } from "../../measure/lib/measurekit/files.ts"
 
 describe("files", () => {
   let root: string
@@ -21,6 +21,17 @@ describe("files", () => {
 
   const at = (name: string): string => path.join(root, name)
 
+  it("decodeStrict_namesItsSource_whenBytesAreNotUtf8_andKeepsAByteOrderMark", () => {
+    assert.throws(() => decodeStrict(Buffer.from([0xc3, 0x28]), "the note"), (error: Error) => error instanceof InvalidUtf8Error
+      && error.message === "the note is not valid UTF-8")
+    assert.equal(decodeStrict(Buffer.from("\ufeff\u00e9"), "the note"), "\ufeff\u00e9")
+  })
+
+  it("words_splitsOnRunsOfWhitespace_andReturnsNothingForBlankText", () => {
+    assert.deepEqual(words(" origin \t upstream\n"), ["origin", "upstream"])
+    assert.deepEqual(words(" \n "), [])
+  })
+
   it("readUtf8_keepsCrlfAndAByteOrderMark_andRejectsInvalidBytesAnywhere", () => {
     fs.writeFileSync(at("crlf"), "\ufeffa\r\nb")
     assert.equal(readUtf8(at("crlf")), "\ufeffa\r\nb")
@@ -28,10 +39,10 @@ describe("files", () => {
     assert.throws(() => readUtf8(at("bad")), (error) => error instanceof InvalidUtf8Error && error.message === `${at("bad")} is not valid UTF-8`)
   })
 
-  it("decodeUtf8_keepsAByteOrderMark_andRejectsEveryInvalidSequenceNamingItsSource", () => {
-    assert.equal(decodeUtf8(Buffer.from([0xef, 0xbb, 0xbf, 0x61]), "stdin"), "\ufeffa")
+  it("decodeStrict_keepsAByteOrderMark_andRejectsEveryInvalidSequenceNamingItsSource", () => {
+    assert.equal(decodeStrict(Buffer.from([0xef, 0xbb, 0xbf, 0x61]), "stdin"), "\ufeffa")
     for (const bytes of [[0xff], [0xe2, 0x82], [0xc0, 0xaf], [0xed, 0xa0, 0x80], [0xc3, 0x28], [0xf4, 0x90, 0x80, 0x80]]) {
-      assert.throws(() => decodeUtf8(Buffer.from(bytes), "stdin"), (error) => error instanceof InvalidUtf8Error && error.message === "stdin is not valid UTF-8", `${bytes}`)
+      assert.throws(() => decodeStrict(Buffer.from(bytes), "stdin"), (error) => error instanceof InvalidUtf8Error && error.message === "stdin is not valid UTF-8", `${bytes}`)
     }
   })
 

@@ -1,8 +1,3 @@
-import { spawnSync } from 'node:child_process';
-import { readFileSync, realpathSync, statSync } from 'node:fs';
-import type { Stats } from 'node:fs';
-import { userInfo } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
 import { getSystemErrorMap } from 'node:util';
 
 export class PyFloat {
@@ -13,11 +8,9 @@ export class PyFloat {
 }
 
 export type JsonValue = null | boolean | number | bigint | string | PyFloat | JsonValue[] | { [key: string]: JsonValue };
-export type PyInt = number | bigint | boolean;
 
 const PYTHON_SPACE = '\\t\\n\\v\\f\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000';
 const PYTHON_SPACE_CLASS = `[${PYTHON_SPACE}]`;
-const LINE_BOUNDARY = /\r\n|[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]/;
 const NON_PRINTABLE = /[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Zl}\p{Zp}\p{Zs}]/u;
 const INTEGER_DIGIT_LIMIT = 4300;
 const MAX_JSON_DEPTH = 10000;
@@ -29,8 +22,6 @@ const JSON_CONSTANTS: Array<[string, JsonValue]> = [
   ['null', null], ['true', true], ['false', false],
   ['NaN', new PyFloat(NaN)], ['Infinity', new PyFloat(Infinity)], ['-Infinity', new PyFloat(-Infinity)],
 ];
-
-export const PYTHON_SPACE_PATTERN = PYTHON_SPACE_CLASS;
 
 export class ValueError extends Error {}
 
@@ -46,7 +37,7 @@ export class JSONDecodeError extends ValueError {
   }
 }
 
-export function compareCodePoints(left: string, right: string): number {
+function compareCodePoints(left: string, right: string): number {
   const leftPoints = Array.from(left);
   const rightPoints = Array.from(right);
   const shared = Math.min(leftPoints.length, rightPoints.length);
@@ -63,20 +54,6 @@ export function sortedStrings(values: Iterable<string>): string[] {
 
 export function pyStrip(value: string): string {
   return value.replace(new RegExp(`^${PYTHON_SPACE_CLASS}+|${PYTHON_SPACE_CLASS}+$`, 'g'), '');
-}
-
-export function pySplitWhitespace(value: string): string[] {
-  return pyStrip(value) === '' ? [] : pyStrip(value).split(new RegExp(`${PYTHON_SPACE_CLASS}+`));
-}
-
-export function pySplitLines(value: string): string[] {
-  const lines = value.split(LINE_BOUNDARY);
-  if (lines.at(-1) === '') lines.pop();
-  return lines;
-}
-
-export function decodeReplacing(bytes: Uint8Array): string {
-  return new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes);
 }
 
 export class UnicodeDecodeError extends Error {}
@@ -113,41 +90,6 @@ function utf8Failure(bytes: Uint8Array, start: number, end: number, reason: stri
     return `'utf-8' codec can't decode byte 0x${bytes[start]!.toString(16).padStart(2, '0')} in position ${start}: ${reason}`;
   }
   return `'utf-8' codec can't decode bytes in position ${start}-${end - 1}: ${reason}`;
-}
-
-export function decodeSurrogateEscape(bytes: Uint8Array): string {
-  let decoded = '';
-  let index = 0;
-  while (index < bytes.length) {
-    const length = validSequenceLength(bytes, index);
-    if (length === 0) {
-      decoded += String.fromCharCode(0xdc00 + bytes[index]!);
-      index++;
-    } else {
-      decoded += decodeReplacing(bytes.subarray(index, index + length));
-      index += length;
-    }
-  }
-  return decoded;
-}
-
-function validSequenceLength(bytes: Uint8Array, index: number): number {
-  const lead = bytes[index]!;
-  const continuation = (offset: number, low = 0x80, high = 0xbf) => {
-    const byte = bytes[index + offset];
-    return byte !== undefined && byte >= low && byte <= high;
-  };
-  if (lead < 0x80) return 1;
-  if (lead >= 0xc2 && lead <= 0xdf) return continuation(1) ? 2 : 0;
-  if (lead >= 0xe0 && lead <= 0xef) {
-    const second = lead === 0xe0 ? continuation(1, 0xa0) : lead === 0xed ? continuation(1, 0x80, 0x9f) : continuation(1);
-    return second && continuation(2) ? 3 : 0;
-  }
-  if (lead >= 0xf0 && lead <= 0xf4) {
-    const second = lead === 0xf0 ? continuation(1, 0x90) : lead === 0xf4 ? continuation(1, 0x80, 0x8f) : continuation(1);
-    return second && continuation(2) && continuation(3) ? 4 : 0;
-  }
-  return 0;
 }
 
 export function universalNewlines(text: string): string {
@@ -202,76 +144,12 @@ function osWording(code: string | undefined, libuvDescription: string): string {
   return wording ?? libuvDescription.charAt(0).toUpperCase() + libuvDescription.slice(1);
 }
 
-export function pyOsErrorMessage(error: NodeJS.ErrnoException): string {
+function pyOsErrorMessage(error: NodeJS.ErrnoException): string {
   const description = typeof error.errno === 'number' ? getSystemErrorMap().get(error.errno)?.[1] : undefined;
   if (description === undefined) return error.message;
   const text = osWording(error.code, description);
   const where = error.path === undefined ? '' : `: ${pyRepr(error.path)}`;
   return `[Errno ${-error.errno!}] ${text}${where}`;
-}
-
-const DIRECTORY_LOOKUP_TIMEOUT_MS = 3000;
-const FIRST_DIRECTORY_HOME = /<key>dsAttrTypeStandard:NFSHomeDirectory<\/key>\s*<array>\s*<string>([^<]*)<\/string>/;
-const XML_ENTITIES: Record<string, string> = { '&lt;': '<', '&gt;': '>', '&quot;': '"', '&apos;': "'", '&amp;': '&' };
-const PASSWD_FILE = '/etc/passwd';
-const PASSWD_HOME_FIELD = 5;
-const accountHomes = new Map<string, string | null>();
-
-export function expandUser(path: string): string {
-  if (!path.startsWith('~')) return path;
-  const slash = path.indexOf('/', 1);
-  const end = slash < 0 ? path.length : slash;
-  const home = end === 1 ? currentHome() : accountHome(path.slice(1, end));
-  if (home === null) return path;
-  return home.replace(/\/+$/, '') + path.slice(end) || '/';
-}
-
-function currentHome(): string | null {
-  return process.env['HOME'] ?? currentUser()?.homedir ?? null;
-}
-
-function currentUser(): { username: string; homedir: string } | null {
-  try {
-    return userInfo();
-  } catch (error) {
-    if (isSystemError(error)) return null;
-    throw error;
-  }
-}
-
-function accountHome(name: string): string | null {
-  if (!accountHomes.has(name)) accountHomes.set(name, lookupAccountHome(name));
-  return accountHomes.get(name) ?? null;
-}
-
-function lookupAccountHome(name: string): string | null {
-  const current = currentUser();
-  if (current?.username === name) return current.homedir;
-  return directoryServicesHome(name) ?? passwdFileHome(name);
-}
-
-function directoryServicesHome(name: string): string | null {
-  if (process.platform !== 'darwin') return null;
-  const answer = spawnSync('dscl', ['-plist', '.', '-read', `/Users/${name}`, 'NFSHomeDirectory'],
-    { encoding: 'utf8', timeout: DIRECTORY_LOOKUP_TIMEOUT_MS });
-  if (answer.error || answer.status !== 0) return null;
-  const home = FIRST_DIRECTORY_HOME.exec(answer.stdout)?.[1];
-  return home === undefined ? null : home.replace(/&(?:lt|gt|quot|apos|amp);/g, (entity) => XML_ENTITIES[entity] ?? entity);
-}
-
-function passwdFileHome(name: string): string | null {
-  let passwd: string;
-  try {
-    passwd = readFileSync(PASSWD_FILE, 'utf8');
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === undefined) throw error;
-    return null;
-  }
-  for (const line of passwd.split('\n')) {
-    const fields = line.split(':');
-    if (fields[0] === name && fields.length > PASSWD_HOME_FIELD) return fields[PASSWD_HOME_FIELD] ?? null;
-  }
-  return null;
 }
 
 interface OpenDump {
@@ -347,7 +225,7 @@ const EXPONENT_FORM = /^(-?)(\d)(?:\.(\d+))?e([+-]\d+)$/;
 const FIRST_EXPONENT_FORM_DECIMAL_POINT = -4;
 const LAST_PLAIN_DECIMAL_POINT = 16;
 
-export function pyFloatRepr(value: number): string {
+function pyFloatRepr(value: number): string {
   if (Number.isNaN(value)) return 'nan';
   if (!Number.isFinite(value)) return value < 0 ? '-inf' : 'inf';
   if (value === 0) return Object.is(value, -0) ? '-0.0' : '0.0';
@@ -366,7 +244,7 @@ export function pyFloatRepr(value: number): string {
   return `${sign}${digits.slice(0, decimalPoint)}.${digits.slice(decimalPoint)}`;
 }
 
-export function jsonNumber(source: string): number | bigint | PyFloat {
+function jsonNumber(source: string): number | bigint | PyFloat {
   if (/[.eE]/.test(source)) return new PyFloat(Number(source));
   const digits = source.length - (source.startsWith('-') ? 1 : 0);
   if (digits > INTEGER_DIGIT_LIMIT) {
@@ -596,171 +474,12 @@ export function pyStr(value: unknown): string {
   return '[unrepresentable]';
 }
 
-function pyNumeric(value: unknown): bigint | number | undefined {
-  if (typeof value === 'boolean') return BigInt(value);
-  if (typeof value === 'bigint') return value;
-  if (typeof value === 'number') return Number.isInteger(value) ? BigInt(value) : value;
-  if (value instanceof PyFloat) return value.value;
-  return undefined;
-}
-
-function numericEquals(left: bigint | number, right: bigint | number): boolean {
-  if (typeof left === typeof right) return left === right;
-  const [exact, inexact] = typeof left === 'bigint' ? [left, right as number] : [right as bigint, left as number];
-  return Number.isInteger(inexact) && BigInt(inexact) === exact;
-}
-
-export function pyEquals(left: unknown, right: unknown): boolean {
-  const pending: Array<[unknown, unknown]> = [[left, right]];
-  for (let pair = pending.pop(); pair !== undefined; pair = pending.pop()) {
-    if (!sameAtThisLevel(pair[0], pair[1], pending)) return false;
-  }
-  return true;
-}
-
-function sameAtThisLevel(left: unknown, right: unknown, pending: Array<[unknown, unknown]>): boolean {
-  const leftNumber = pyNumeric(left);
-  const rightNumber = pyNumeric(right);
-  if (leftNumber !== undefined || rightNumber !== undefined) {
-    return leftNumber !== undefined && rightNumber !== undefined && numericEquals(leftNumber, rightNumber);
-  }
-  if (Array.isArray(left)) {
-    if (!Array.isArray(right) || left.length !== right.length) return false;
-    left.forEach((item, index) => pushMember(pending, item, right[index]));
-    return true;
-  }
-  if (isJsonObject(left)) {
-    if (!isJsonObject(right)) return false;
-    const keys = Object.keys(left);
-    if (keys.length !== Object.keys(right).length || !keys.every((key) => Object.hasOwn(right, key))) return false;
-    keys.forEach((key) => pushMember(pending, left[key], right[key]));
-    return true;
-  }
-  return left === right;
-}
-
-function pushMember(pending: Array<[unknown, unknown]>, left: unknown, right: unknown): void {
-  const sameObject = left === right && typeof left === 'object' && left !== null;
-  if (!sameObject) pending.push([left, right]);
-}
-
-const FNMATCH_SPECIALS = new Set('\\^$.*+?()[]{}|/'.split(''));
-
-export function fnmatchCase(name: string, pattern: string): boolean {
-  return new RegExp(`^(?:${fnmatchRegex(pattern)})$`, 'su').test(name);
-}
-
-function fnmatchRegex(pattern: string): string {
-  const chars = Array.from(pattern);
-  let regexSource = '';
-  let index = 0;
-  while (index < chars.length) {
-    const char = chars[index++]!;
-    if (char === '*') {
-      regexSource += '.*';
-      while (chars[index] === '*') index++;
-    } else if (char === '?') {
-      regexSource += '.';
-    } else if (char === '[') {
-      const [piece, next] = bracketExpression(chars, index);
-      regexSource += piece;
-      index = next;
-    } else {
-      regexSource += FNMATCH_SPECIALS.has(char) ? '\\' + char : char;
-    }
-  }
-  return regexSource;
-}
-
-function bracketExpression(chars: string[], start: number): [string, number] {
-  let close = start;
-  if (chars[close] === '!') close++;
-  if (chars[close] === ']') close++;
-  while (close < chars.length && chars[close] !== ']') close++;
-  if (close >= chars.length) return ['\\[', start];
-  const negated = chars[start] === '!';
-  const members = classMembers(chars.slice(start + (negated ? 1 : 0), close));
-  const next = close + 1;
-  if (members === '') return [negated ? '.' : '(?!)', next];
-  return [`[${negated ? '^' : ''}${members}]`, next];
-}
-
-function classMembers(chars: string[]): string {
-  const chunks: string[][] = [];
-  let from = 0;
-  let searchFrom = 1;
-  for (;;) {
-    const hyphen = chars.indexOf('-', searchFrom);
-    if (hyphen < 0) break;
-    chunks.push(chars.slice(from, hyphen));
-    from = hyphen + 1;
-    searchFrom = hyphen + 3;
-  }
-  const last = chars.slice(from);
-  if (last.length > 0) chunks.push(last);
-  else if (chunks.length > 0) chunks[chunks.length - 1]!.push('-');
-  else return '';
-  for (let index = chunks.length - 1; index > 0; index--) {
-    const before = chunks[index - 1]!;
-    const after = chunks[index]!;
-    if (compareCodePoints(before.at(-1)!, after[0]!) > 0) {
-      chunks[index - 1] = [...before.slice(0, -1), ...after.slice(1)];
-      chunks.splice(index, 1);
-    }
-  }
-  return chunks.map((chunk) => chunk.map(escapeClassChar).join('')).join('-');
-}
-
-function escapeClassChar(char: string): string {
-  return '\\^]-['.includes(char) ? '\\' + char : char;
-}
-
-export function isSystemError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && typeof (error as NodeJS.ErrnoException).errno === 'number';
-}
-
-const EMBEDDED_NUL_CODE = 'ERR_INVALID_ARG_VALUE';
-
-function statKind(path: string, test: (stats: Stats) => boolean): boolean {
-  try {
-    return test(statSync(path));
-  } catch (error) {
-    if (isSystemError(error) || (error as NodeJS.ErrnoException).code === EMBEDDED_NUL_CODE) return false;
-    throw error;
-  }
-}
-
-export function isDirectory(path: string): boolean {
-  return statKind(path, (stats) => stats.isDirectory());
-}
-
-export function isFile(path: string): boolean {
-  return statKind(path, (stats) => stats.isFile());
-}
-
-export function pyRealpath(path: string): string {
-  const absolute = resolve(path);
-  let existing = absolute;
-  const missing: string[] = [];
-  for (;;) {
-    try {
-      return join(realpathSync.native(existing), ...missing);
-    } catch (error) {
-      if (!isSystemError(error)) throw error;
-      const parent = dirname(existing);
-      if (parent === existing) return absolute;
-      missing.unshift(basename(existing));
-      existing = parent;
-    }
-  }
-}
-
 const ERRNO_EXCEPTION_NAMES: Record<string, string> = {
   ENOENT: 'FileNotFoundError', EACCES: 'PermissionError', EPERM: 'PermissionError', EEXIST: 'FileExistsError',
   EISDIR: 'IsADirectoryError', ENOTDIR: 'NotADirectoryError', ETIMEDOUT: 'TimeoutError',
 };
 
-export function pythonErrnoName(code: string | undefined): string {
+function pythonErrnoName(code: string | undefined): string {
   return (code !== undefined && ERRNO_EXCEPTION_NAMES[code]) || 'OSError';
 }
 

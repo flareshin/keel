@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { describe, test } from 'node:test';
 import type { TestContext } from 'node:test';
 import * as gitcmd from '../../lib/evidence/gitcmd.ts';
-import { KEEL, Sandbox, readJson } from './helpers.ts';
+import { KEEL, Sandbox, expireEvidence, readJson } from './helpers.ts';
 import type { Repo, Run } from './helpers.ts';
 
 function summaryOf(run: Run): any {
@@ -286,11 +286,11 @@ describe('WriteReviewTest', () => {
     assert.equal(sandbox.keel(['evidence', 'write-review'], { stdin: JSON.stringify(longReason) }).rc, 0);
   });
 
-  test('reviewPrepare_reportsAnInternalError_whenStdinNestsPastTheBound', (t) => {
+  test('reviewPrepare_reportsAnInternalError_whenStdinNestsPastWhatTheParserHolds', (t) => {
     const sandbox = new Sandbox(t);
     const run = sandbox.keel(['review', 'prepare'], { stdin: '['.repeat(200_000) + ']'.repeat(200_000) });
     assert.equal(run.rc, 70, run.stderr);
-    assert.ok(run.stderr.includes('keel: internal error: RecursionError'), run.stderr.slice(0, 300));
+    assert.ok(run.stderr.includes('keel: internal error: RangeError'), run.stderr.slice(0, 300));
     assert.ok(!run.stderr.includes('stdin is not JSON'), run.stderr.slice(0, 300));
   });
 
@@ -417,7 +417,7 @@ describe('SmokeShowGcTest', () => {
     sandbox.testsEvidence(repo);
     sandbox.approve('rv-root-0001');
     const expired = sandbox.evidenceFiles('approval')[0]!;
-    writeFileSync(expired, readFileSync(expired, 'utf8').replace('"expires_at": "20', '"expires_at": "19'));
+    expireEvidence(expired);
     repo.commit({ 'src/live.py': 'live\n' });
     sandbox.review(repo, { runId: 'rv-root-0002' });
     repo.git('push', '-q', 'origin', 'feature:main');
@@ -462,11 +462,11 @@ describe('KeelEntryPointTest', () => {
 
 describe('EchoedNumberTest', () => {
   const NUMBER_TOKENS: Array<[token: string, persisted: string]> = [
-    ['1.0', '1.0'], ['-0.0', '-0.0'], ['1e16', '1e+16'], ['9007199254740993', '9007199254740993'], ['1E2', '100.0'],
+    ['1.0', '1'], ['-0.0', '0'], ['1e16', '10000000000000000'], ['9007199254740993', '9007199254740993'], ['1E2', '100'],
   ];
 
   for (const [token, persisted] of NUMBER_TOKENS) {
-    test(`writeReview_persistsPythonSpelling_whenAgentTypeIsTheNumberToken ${token}`, (t) => {
+    test(`writeReview_persistsTheNumberTheTokenDenotes_whenAgentTypeIsTheNumberToken ${token}`, (t) => {
       const sandbox = new Sandbox(t);
       const repo = sandbox.clone('acme', 'app');
       repo.branch('feature');
@@ -476,7 +476,7 @@ describe('EchoedNumberTest', () => {
       const written = sandbox.keel(['evidence', 'write-review'], { stdin });
       assert.equal(written.rc, 0, written.stderr);
       const file = sandbox.evidenceFiles('review').at(-1)!;
-      assert.equal(/"agent_type": ([^,]*),/.exec(readFileSync(file, 'utf8'))![1], persisted);
+      assert.equal(/"agent_type":([^,]*),/.exec(readFileSync(file, 'utf8'))![1], persisted);
       rmSync(file);
     });
   }

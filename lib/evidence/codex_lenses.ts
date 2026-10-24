@@ -1,9 +1,11 @@
+import { isDeepStrictEqual } from 'node:util';
+import { compareCodePoints } from '../../measure/lib/measurekit/json.ts';
 import * as codexReview from './codex_review.ts';
 import * as env from './env.ts';
 import * as gitcmd from './gitcmd.ts';
-import { compareCodePoints, isJsonObject, pyEquals } from './pycompat.ts';
 import * as store from './store.ts';
 import * as writers from './writers.ts';
+import { isJsonRecord } from './writers.ts';
 import type { JsonObject } from './writers.ts';
 
 const SOURCE_KEYS = new Set(['version', 'via', 'session_id', 'agent_id', 'reviewers']);
@@ -55,7 +57,7 @@ export function register(repoPath: string, auditIds: string[], verifierIds: stri
   const body = buildBody(repo, key, bundle, reviews);
   let evidence: JsonObject;
   if (existing) {
-    if (Object.entries(body).some(([name, value]) => !pyEquals(existing[name] ?? null, value))) {
+    if (Object.entries(body).some(([name, value]) => !isDeepStrictEqual(existing[name] ?? null, value))) {
       throw new writers.Refused('existing review differs from the requested completed children');
     }
     evidence = existing;
@@ -131,7 +133,7 @@ export function sharedAuthor(reviews: Review[]): string {
 
 export function validateReport(report: JsonObject, repo: string, target: Target): void {
   const expectedKeys = reportKeys();
-  if (!codexReview.hasExactKeys(report, expectedKeys) || !pyEquals(report['version'], 2) || !['audit', 'verify'].includes(report['role'])) {
+  if (!codexReview.hasExactKeys(report, expectedKeys) || report['version'] !== 2 || !['audit', 'verify'].includes(report['role'])) {
     throw new writers.Refused('invalid lens review schema or role');
   }
   if (report['repo'] !== repo || TARGET_FIELDS.some((name, index) => report[name] !== target[index])) {
@@ -148,7 +150,7 @@ export function validateReport(report: JsonObject, repo: string, target: Target)
   const root = report['root_run_id'];
   if (root !== null && !env.isRunId(root)) throw new writers.Refused('invalid delta root run id');
   const lenses = report['lenses'];
-  if (!isJsonObject(lenses)) throw new writers.Refused('lenses must be an object');
+  if (!isJsonRecord(lenses)) throw new writers.Refused('lenses must be an object');
   const lensNames = Object.keys(lenses);
   if (report['role'] === 'audit') {
     const coversAll = sameMembers(lensNames, codexReview.LENSES);
@@ -156,7 +158,7 @@ export function validateReport(report: JsonObject, repo: string, target: Target)
       throw new writers.Refused('an auditor covers one lens or the complete required set');
     }
     for (const item of Object.values(lenses)) {
-      if (!isJsonObject(item) || !codexReview.hasExactKeys(item, new Set(['status', 'evidence']))
+      if (!isJsonRecord(item) || !codexReview.hasExactKeys(item, new Set(['status', 'evidence']))
         || item['status'] !== 'complete' || !codexReview.nonblank(item['evidence'])) {
         throw new writers.Refused('incomplete or unproven review lens');
       }
@@ -189,7 +191,7 @@ export function priorReview(key: string, base: string, sinceTree: string | null,
   if (!previous || previous.root_run_id !== root || previous.reviewed_tree !== sinceTree || previous.review_base !== base) {
     throw new writers.Refused('delta must follow the exact previous review with the same base');
   }
-  if (!pyEquals((previous['source'] ?? {})['version'], 2)) throw new writers.Refused('lens delta requires an existing version 2 review chain');
+  if ((previous['source'] ?? {})['version'] !== 2) throw new writers.Refused('lens delta requires an existing version 2 review chain');
   return [previous, validateEvidence(previous, trail).findings];
 }
 
@@ -270,7 +272,7 @@ export function validateEvidence(evidence: JsonObject, trail: Set<string> | null
   if (seen.has(identity)) throw new writers.Refused('cyclic native review chain');
   seen.add(identity);
   const source = evidence['source'] || {};
-  if (!codexReview.hasExactKeys(source, SOURCE_KEYS) || !pyEquals(source['version'], 2) || source['via'] !== codexReview.VIA) {
+  if (!codexReview.hasExactKeys(source, SOURCE_KEYS) || source['version'] !== 2 || source['via'] !== codexReview.VIA) {
     throw new writers.Refused('invalid lens review provenance');
   }
   const recorded = source['reviewers'];
@@ -280,7 +282,7 @@ export function validateEvidence(evidence: JsonObject, trail: Set<string> | null
   const reviews = loadReviews(recorded.map((item) => item['session_id']));
   const bundle = analyze(evidence['repo_root'], evidence['repo'], reviews, seen, evidence['since'] ?? null);
   const expected = buildBody(evidence['repo_root'], evidence['repo'], bundle, reviews);
-  if (Object.entries(expected).some(([name, value]) => !pyEquals(evidence[name] ?? null, value))) {
+  if (Object.entries(expected).some(([name, value]) => !isDeepStrictEqual(evidence[name] ?? null, value))) {
     throw new writers.Refused('native lens evidence differs from its completed reviews or Git target');
   }
   return bundle;

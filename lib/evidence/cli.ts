@@ -1,11 +1,12 @@
+import { InvalidUtf8Error } from '../../measure/lib/measurekit/files.ts';
+import { compareCodePoints, isJsonObject, parseJsonKeepingIntegers, stringifySorted } from '../../measure/lib/measurekit/json.ts';
+import type { JsonValue } from '../../measure/lib/measurekit/json.ts';
 import { buildChains } from './chain.ts';
 import * as codexLenses from './codex_lenses.ts';
 import * as codexReview from './codex_review.ts';
 import * as gc from './gc.ts';
 import * as gitcmd from './gitcmd.ts';
 import * as prepare from './prepare.ts';
-import { errorText, UnicodeDecodeError, ValueError, isJsonObject, pyEquals, pythonJsonDumps, pythonJsonLoads, pythonTypeName, sortedStrings } from './pycompat.ts';
-import type { JsonValue } from './pycompat.ts';
 import * as registry from './registry.ts';
 import { printErrorLine, printLine, readStdinText } from './stdio.ts';
 import * as store from './store.ts';
@@ -45,7 +46,7 @@ export async function main(argv: string[]): Promise<number> {
       printErrorLine(`keel: refused: ${error.message}`);
       return EXIT_REFUSED;
     }
-    printErrorLine(`keel: internal error: ${pythonTypeName(error)}: ${errorText(error)}`);
+    printErrorLine(`keel: internal error: ${error instanceof Error ? error.constructor.name : typeof error}: ${error instanceof Error ? error.message : String(error)}`);
     return EXIT_INTERNAL;
   }
 }
@@ -145,12 +146,12 @@ export function compatibility(): JsonObject {
   for (const key of store.repoKeys('review')) {
     const reviews = store.loadReviews(key);
     const old = new Set(reviews
-      .filter((item) => item.review_kind === codexReview.KIND && !pyEquals((item.source || {})['version'], 2))
+      .filter((item) => item.review_kind === codexReview.KIND && (item.source || {})['version'] !== 2)
       .map((item) => item.evidence_id));
     count += old.size;
     roots.push(...buildChains(reviews).filter((chain) => chain.links.some((link) => old.has(link.evidence_id))).map((chain) => chain.rootRunId));
   }
-  return { read_only_records: count, chain_roots: sortedStrings(new Set(roots)), reader_removable: count === 0 && roots.length === 0 };
+  return { read_only_records: count, chain_roots: [...new Set(roots)].sort(compareCodePoints), reader_removable: count === 0 && roots.length === 0 };
 }
 
 function parseOptions(args: string[], allowed: Set<string>): Record<string, string> {
@@ -169,9 +170,9 @@ function parseOptions(args: string[], allowed: Set<string>): Record<string, stri
 function stdinJson(): JsonObject {
   let request: JsonValue;
   try {
-    request = pythonJsonLoads(readStdinText());
+    request = parseJsonKeepingIntegers(readStdinText());
   } catch (error) {
-    if (error instanceof ValueError || error instanceof UnicodeDecodeError) {
+    if (error instanceof SyntaxError || error instanceof InvalidUtf8Error) {
       throw new writers.Usage(`stdin is not JSON: ${(error as Error).message}`);
     }
     throw error;
@@ -181,5 +182,5 @@ function stdinJson(): JsonObject {
 }
 
 function printResult(payload: JsonObject): void {
-  printLine(pythonJsonDumps(payload, { sortKeys: true }));
+  printLine(stringifySorted(payload));
 }

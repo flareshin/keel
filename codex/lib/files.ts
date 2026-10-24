@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
-import { decodeUtf8 } from "../../measure/lib/measurekit/files.ts";
+import { decodeStrict } from "../../measure/lib/measurekit/files.ts";
 import { isJsonObject, parseStateJson } from "./json.ts";
 import type { JsonObject } from "./json.ts";
 import { isFile, isSymlink, pathExists, requireUsableFileName, resolvePath } from "./paths.ts";
@@ -19,7 +19,7 @@ export interface ManagedFile {
 }
 
 export function readText(path: string): string {
-  return decodeUtf8(readFileSync(requireUsableFileName(path)), path).replace(NEWLINES, "\n");
+  return decodeStrict(readFileSync(requireUsableFileName(path)), path).replace(NEWLINES, "\n");
 }
 
 export function fingerprint(path: string): string | null {

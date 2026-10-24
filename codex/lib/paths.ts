@@ -2,7 +2,7 @@ import { lstatSync, readlinkSync, statSync } from "node:fs";
 import type { Stats } from "node:fs";
 import { dirname } from "node:path";
 import { isSystemError } from "../../hooks/lib/hookkit/pycompat.ts";
-import { decodeUtf8 } from "../../measure/lib/measurekit/files.ts";
+import { decodeStrict } from "../../measure/lib/measurekit/files.ts";
 import { Refusal } from "./refusal.ts";
 
 const ROOT = "/";
@@ -93,7 +93,7 @@ function componentsOf(path: string): string[] {
 function linkTarget(path: string): string | null {
   try {
     if (!lstatSync(path).isSymbolicLink()) return null;
-    return decodeUtf8(readlinkSync(path, { encoding: "buffer" }), `the target of the symlink ${path}`);
+    return decodeStrict(readlinkSync(path, { encoding: "buffer" }), `the target of the symlink ${path}`);
   } catch (error) {
     if (isSystemError(error)) return null;
     throw error;

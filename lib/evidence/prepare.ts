@@ -1,11 +1,12 @@
-import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { readUtf8 } from '../../measure/lib/measurekit/files.ts';
+import { parseJsonKeepingIntegers } from '../../measure/lib/measurekit/json.ts';
 import * as env from './env.ts';
 import * as gitcmd from './gitcmd.ts';
-import { decodeStrict, isJsonObject, pythonJsonDumps, pythonJsonLoads, universalNewlines } from './pycompat.ts';
 import * as registry from './registry.ts';
 import * as risk from './risk.ts';
 import * as writers from './writers.ts';
+import { isJsonRecord } from './writers.ts';
 import type { JsonObject } from './writers.ts';
 
 const TARGET_KEYS = new Set(['repo', 'base', 'head', 'since']);
@@ -15,9 +16,9 @@ export function review(request: JsonObject): JsonObject {
   if (!Array.isArray(diffs) || diffs.length === 0) throw new writers.Usage('review prepare needs a nonempty diffs list');
   const targets = diffs.map(prepareTarget);
   const lensesPath = join(env.dataDir(), 'workflows/review-lenses.json');
-  const lenses: JsonObject = 'lenses' in request ? {} : pythonJsonLoads(universalNewlines(decodeStrict(readFileSync(lensesPath)))) as JsonObject;
+  const lenses: JsonObject = 'lenses' in request ? {} : parseJsonKeepingIntegers(readUtf8(lensesPath)) as JsonObject;
   return {
-    diff_outputs: targets.map((target) => pythonJsonDumps(target)),
+    diff_outputs: targets.map((target) => JSON.stringify(target)),
     run_id_output: env.newId('rv', env.utcNow(), env.RUN_ID_RANDOM_BYTES),
     lenses_output: { lenses: lenses['lenses'] ?? [], guardrails: lenses['guardrails'] ?? '' },
     needs_fixes_rounds: countNeedsFixesRounds(request['rootRunId']),
@@ -33,7 +34,7 @@ export function countNeedsFixesRounds(rootRunId: unknown): number {
 }
 
 export function prepareTarget(target: JsonObject): JsonObject {
-  if (!isJsonObject(target) || Object.keys(target).some((key) => !TARGET_KEYS.has(key))) {
+  if (!isJsonRecord(target) || Object.keys(target).some((key) => !TARGET_KEYS.has(key))) {
     throw new writers.Usage('invalid review target');
   }
   if (typeof target['repo'] !== 'string') throw new writers.Usage('target repository must be a path');
@@ -50,7 +51,7 @@ export function prepareTarget(target: JsonObject): JsonObject {
   if (since !== null && (!env.isSha(since) || gitcmd.objectType(repo, since) !== 'tree')) {
     throw new writers.Refused('since must be a recorded snapshot tree');
   }
-  const stat = gitcmd.text(repo, ['diff', '--shortstat', since || start, end]);
+  const stat = gitcmd.text(repo, ['diff', '--shortstat', since || start, end]).trim();
   return { repo_root: repo, review_base: start, head: head ? end : null, snapshot_tree: head ? null : end, diff_stat: stat };
 }
 

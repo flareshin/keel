@@ -1,8 +1,9 @@
-import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { isFile, splitLines } from '../../measure/lib/measurekit/files.ts';
 import * as env from './env.ts';
 import * as gitcmd from './gitcmd.ts';
-import { decodeStrict, isFile, pyRepr, pyStrip, universalNewlines } from './pycompat.ts';
+import { quoted, readTsvText } from './hook_pinned.ts';
+import { isWhitespaceBothWays, stripEitherWay } from './text.ts';
 
 const GATED_HEADER = ['origin', 'gate', 'integration_base', 'risk_rules', 'tests'];
 const GATED_OPTIONAL = ['push_approval'];
@@ -40,7 +41,7 @@ export function pushNeedsApproval(row: GatedRepo): boolean {
 
 export function normalizeRepoKey(origin: string | null | undefined): string | null {
   if (!origin) return null;
-  const trimmed = pyStrip(origin).replace(/\/+$/, '');
+  const trimmed = stripEitherWay(origin).replace(/\/+$/, '');
   const withoutSuffix = trimmed.endsWith('.git') ? trimmed.slice(0, -'.git'.length) : trimmed;
   const segments = withoutSuffix.replaceAll(':', '/').split('/').filter((segment) => segment);
   return segments.length >= 2 ? segments.slice(-2).join('/').toLowerCase() : null;
@@ -58,7 +59,7 @@ export function gatedRepos(): Map<string, GatedRepo> {
   const repos = new Map<string, GatedRepo>();
   for (const row of readTsv(registryPath(), GATED_HEADER, GATED_OPTIONAL)) {
     if (!GATE_VALUES.includes(row['gate']!)) {
-      throw new RegistryError(`gated-repos.tsv: unknown gate ${pyRepr(row['gate']!)} for ${row['origin']}`);
+      throw new RegistryError(`gated-repos.tsv: unknown gate ${quoted(row['gate']!)} for ${row['origin']}`);
     }
     if (!FLAG_VALUES.includes(row['push_approval'] ?? 'false')) {
       throw new RegistryError(`gated-repos.tsv: push_approval must be true or false for ${row['origin']}`);
@@ -90,7 +91,7 @@ export function riskRules(ruleSet: string): RiskRule[] {
   for (const row of readTsv(join(env.overlayDir(), 'risk-rules.tsv'), RISK_HEADER)) {
     if (row['set'] !== ruleSet) continue;
     if (!RISK_CLASSES.includes(row['class']!)) {
-      throw new RegistryError(`risk-rules.tsv: unknown class ${pyRepr(row['class']!)}`);
+      throw new RegistryError(`risk-rules.tsv: unknown class ${quoted(row['class']!)}`);
     }
     rules.push({ ruleSet: row['set']!, pathGlob: row['path_glob']!, riskClass: row['class']! });
   }
@@ -99,8 +100,7 @@ export function riskRules(ruleSet: string): RiskRule[] {
 
 export function readTsv(path: string, header: string[], optional: string[] = []): Array<Record<string, string>> {
   if (!isFile(path)) return [];
-  const content = universalNewlines(decodeStrict(readFileSync(path))).split('\n')
-    .filter((line) => pyStrip(line) && !line.startsWith('#'));
+  const content = splitLines(readTsvText(path)).filter((line) => !isWhitespaceBothWays(line) && !line.startsWith('#'));
   if (content.length === 0) return [];
   const columns = content[0]!.split('\t');
   const expected = [header, [...header, ...optional]];
@@ -110,7 +110,7 @@ export function readTsv(path: string, header: string[], optional: string[] = [])
   return content.slice(1).map((line) => {
     const values = line.split('\t');
     if (values.length !== columns.length) {
-      throw new RegistryError(`${path}: expected ${columns.length} columns: ${pyRepr(line)}`);
+      throw new RegistryError(`${path}: expected ${columns.length} columns: ${quoted(line)}`);
     }
     return Object.fromEntries(columns.map((column, index) => [column, values[index]!]));
   });

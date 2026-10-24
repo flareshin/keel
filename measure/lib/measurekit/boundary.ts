@@ -3,7 +3,7 @@ import path from "node:path"
 
 import { dataLines, readTsvRecords, TsvError } from "./datafiles.ts"
 import { CHECKOUT_ROOT } from "./env.ts"
-import { InvalidUtf8Error, isDir, isFile, isSymlink, isSystemError, splitLines, walkEntries } from "./files.ts"
+import { InvalidUtf8Error, isDir, isFile, isSymlink, isSystemError, splitLines, walkEntries, words } from "./files.ts"
 import { GitError, runGit } from "./gitutil.ts"
 
 const GENERIC_RULES_PATH = path.join(CHECKOUT_ROOT, "measure", "boundary-generic.tsv")
@@ -13,7 +13,6 @@ const DIFF_ARGS = ["-c", "core.quotePath=false", "diff", "-U0", "--no-color", "-
 const CHANGED_NAMES_ARGS = ["diff", "--name-only", "-z", "--no-renames", "--diff-filter=d"]
 const PATH_NAME_LINE = 0
 const IGNORE_CASE_PREFIX = "(?i)"
-const WHITESPACE_RUN = /\s+/
 
 export type ScanLine = [string, number, string]
 
@@ -161,11 +160,6 @@ function commitsInRange(repo: string, commitRange: string): string[] {
 function firstParent(repo: string, commit: string): string {
   const parents = words(runGit(repo, ["rev-list", "--parents", "-n", "1", commit])).slice(1)
   return parents[0] ?? runGit(repo, ["hash-object", "-t", "tree", "--stdin"], {}, "").trim()
-}
-
-function words(text: string): string[] {
-  const trimmed = text.trim()
-  return trimmed === "" ? [] : trimmed.split(WHITESPACE_RUN)
 }
 
 export function* addedLines(diffText: string, labelPrefix: string): Generator<ScanLine> {

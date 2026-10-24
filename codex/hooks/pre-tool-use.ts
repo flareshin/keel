@@ -5,7 +5,7 @@ import { expandUser, glob, isTruthy, splitlines, strip } from "../../hooks/lib/h
 import { resolveDirectory, steps, writeTargets } from "../../hooks/lib/hookkit/shell.ts";
 import { run } from "../../hooks/lib/hookkit/subprocess.ts";
 import type { CompletedProcess } from "../../hooks/lib/hookkit/subprocess.ts";
-import { decodeUtf8 } from "../../measure/lib/measurekit/files.ts";
+import { decodeStrict } from "../../measure/lib/measurekit/files.ts";
 import { emit } from "../lib/command.ts";
 import type { CommandResult } from "../lib/command.ts";
 import { completeEdit, HOOK_CALLER_FRAMES, validateUpdate } from "../lib/config_policy.ts";
@@ -34,7 +34,7 @@ export type GuardRunner = (command: readonly string[], input: string) => Complet
 
 export function main(readInput: () => Buffer, runner: GuardRunner = spawnGuard): CommandResult {
   try {
-    const calls = normalize(parseHookJson(decodeUtf8(readInput(), "stdin")));
+    const calls = normalize(parseHookJson(decodeStrict(readInput(), "stdin")));
     const contexts: string[] = [];
     for (const call of calls) {
       protectAdapter(call);

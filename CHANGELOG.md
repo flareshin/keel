@@ -6,8 +6,10 @@ All notable changes to keel are recorded here. The format follows
 
 ## [Unreleased]
 
-`measure`, `bin/link` and the Codex adapter (`codex/`) drop their Python emulation and run on plain Node behavior:
-`JSON.parse` and `JSON.stringify`, `node:path`, `node:fs`, `RegExp`, a fatal `TextDecoder` and `node:util` `parseArgs`.
+`measure`, `bin/link`, `lib/evidence` (the `keel` command, the evidence store and the verdict the ship-gate reads) and the
+Codex adapter (`codex/`) drop their Python emulation and run on plain Node behavior: `JSON.parse` and `JSON.stringify`,
+`node:path`, `node:fs`, `RegExp`, a fatal `TextDecoder` and `node:util` `parseArgs`. A few spellings in `lib/evidence` stay
+Python-shaped for now because the recorded ship-gate hook run still pins them (see the last bullet of Changed).
 
 ### Changed
 - What stays the same: exit codes for every documented outcome, the field names and values of every JSON and JSONL
@@ -94,13 +96,73 @@ All notable changes to keel are recorded here. The format follows
     differently, the link and config scenarios skip the steps whose arguments changed, and
     `codex/tests/boundary.test.ts` pins 823 input boundaries (line breaks, Unicode spaces, number forms, invalid UTF-8,
     symlink chains, sort order, command lines) against the outcomes the old adapter gave and lists the 58 that differ.
+- `keel` (`bin/keel`, `lib/evidence`), what stays the same: the exit codes (0, 2 usage, 3 refused, 4 for a green run
+  with no recognized tests, 70 internal error, otherwise the test command's own code), the `keel` subcommands and flags,
+  the field names and values of every evidence record under `state/keel/evidence`, of `keel-tests.jsonl`, of the
+  `KEEL-TEST` line and of the JSON the subcommands print, the evidence ids, the tree ids and the digests (the Codex
+  review digests hash raw rollout bytes), the usage and refusal text, and the `[ID]` rule ids and reason text of the verdict.
+- `keel`, what may differ and does: JSON is compact `JSON.stringify` text with non-ASCII written as is. Evidence files,
+  `keel-tests.jsonl` and the JSON the subcommands print keep their keys sorted by code point; the `KEEL-TEST` line and the
+  `diff_outputs` of `review prepare` keep the order they were built in. Error wording uses Node's: an unreadable
+  evidence file in `keel evidence gc` reads `EISDIR: illegal operation on a directory, read` where it read
+  `[Errno 21] Is a directory: '<path>'`, a stdin that is not JSON carries V8's message, and a test command that cannot
+  start reports `keel: internal error: Error: cannot run ./x.sh: spawn ENOEXEC` (it was `OSError: [Errno 8] Exec format
+  error: './x.sh'`; the exit code is still 70).
+- `keel`, numbers: the JSON that `keel` re-emits (`review-lenses.json`, the `source` of a review) prints numbers as
+  JavaScript does (`1.0` is `1`, `-0.0` is `0`, `1e16` is `10000000000000000`); integers beyond 2^53 stay exact. A runner
+  count beyond 2^53 (`Ran 12345678901234567890 tests`) is recorded as the nearest double.
+- `keel`, stdin (`evidence write-review`, `review prepare`): standard JSON only. `NaN`, `Infinity` and `-Infinity` exit 2 as
+  `stdin is not JSON` (they parsed before); bytes that are not UTF-8 exit 2 as `stdin is not valid UTF-8`; nesting beyond
+  about two thousand levels exits 70 with a `RangeError` (the old limit was 10,000 levels, then exit 70 with a
+  `RecursionError`). An evidence file on disk is still read by the old reader, so its 10,000 level bound is unchanged.
+- `keel evidence write-review`: `keel_evidence.v` must be the JSON number 1 in any spelling (`1.0`, `1e0`, `10e-1`); `true`
+  is now refused with exit 2 (it was accepted). `run_id`, `root_run_id`, `review_base`, `head`, `snapshot_tree` and `since` must be JSON
+  strings (a number whose digits read like an id was accepted), and an id followed by a newline is refused with exit 2
+  (the `$` of the old pattern let it through), as is `keel approve '<id>\n'`. `write-smoke` counts a smoke run as passed only
+  when its `ok` is JSON `true` (exit 3 otherwise; `1`, `"yes"`, `[]` and `{}` counted before).
+- Numbers read back from a stored evidence file are plain JSON numbers: `keel evidence show` prints a stored `1.5` as `1.5` and
+  a stored integer beyond 2^53 exactly, and a `"version": 2.0` still counts as version 2. Codex review evidence: a rollout counts
+  as complete only when its turn id is the same non-empty string at start and completion (a number counted before).
+  Rollouts and the rule-checks output are split into lines at `\r\n`, `\r` and `\n` only, and the rule-checks summary is
+  matched with `\S`.
+- Whitespace follows JavaScript only where that cannot accept what the base refused. Where a guard asks whether a text is blank
+  (`no_test_reason`, the lens, decision and finding texts of a Codex review, the stored waiver, a repo key's edges)
+  the characters either reading strips count as blank: JavaScript's plus U+001C to U+001F and U+0085. A
+  `no_test_reason` of only those characters is refused with exit 2 (as before), and a repo key ending in U+0085 or U+FEFF is the
+  same key as without it. Where blank means "skip" (a registry line, the text around a comment) only characters both readings
+  call whitespace count, so a registry line of only U+001C or only a BOM is a row with too few columns, an error. Runner output
+  leaves out a `Test Files` or `Test Suites` line led by U+0085 or U+FEFF as well, and a comment holding U+0085 is not prose,
+  so deleting it no longer keeps review evidence.
+- Git output is data: only its final newline is removed, nothing is trimmed. A toplevel path and a config value read through the
+  plain reader keep a trailing U+0085, U+001C, U+FEFF or no-break space, and a repo key is stripped only when it is normalized. The
+  `diff_stat` of `review prepare` is the one value trimmed, as before.
+- Git output holding a line break other than `\n` refuses. Every git output that feeds a gate decision (remote names, the gh
+  default repo, the push urls and origin url of a remote, branch and commit ids, the submodule roots, the first-parent
+  ancestors) is split at `\n` only after its single final newline, and a piece holding `\r`, `\v`, `\f`, U+001C to U+001E, U+0085,
+  U+2028 or U+2029, or an empty piece anywhere in the output, raises a `GitError` that the gate reports as a refusal. Nothing is
+  dropped and no reading is guessed. A name or url with a trailing U+FEFF or no-break space is read exactly.
+- Truthiness is strict where Python's let odd values through: a review link has agent provenance only with a non-empty
+  string `agent_id`, a stored `no_test_reason` waives K3 only as a non-blank string, and a smoke run covers a repo only with a
+  non-empty string tree.
+- Paths from `git diff-tree` must be valid UTF-8: a path that is not now stops the command with
+  `a path in the git diff is not valid UTF-8` (exit 70) instead of being kept as lone surrogates, which already made the
+  push judgment fail. A tree listing leaves out names that are not UTF-8, since no checked path can match one. `KEEL_DATA_DIR`, `KEEL_OVERLAY_DIR` and a review's transcript path expand `~` and `~/` only, not
+  `~user`.
+- `risk-rules.tsv` globs are `*`, `?`, `[...]` and `[!...]` with the star crossing slashes, as before. A character range
+  written backwards (`[z-a]`) is now an error that blocks the gate; it used to match nothing.
+- What `lib/evidence` still spells the Python way, in `lib/evidence/hook_pinned.ts` and the `UnicodeEncodeError` and
+  `TimeoutExpired` messages of `subprocess.ts`, because `tests/ship-gate/ship-gate-parity.test.ts` replays 1,757 recorded
+  hook runs byte for byte: the `keel-fires.jsonl` lines the ship-gate writes (`json.dumps` spacing and escapes); the reader of
+  evidence files (Python `json.loads` messages, `NaN`, the 10,000 level bound); the `RegistryError` text with Python
+  `repr` quoting and the UTF-8 message of the registry reader; the `TimeoutExpired` text with a Python list repr; and
+  `UnicodeEncodeError` for a command word holding a lone surrogate. They go with the parity re-recording in the hooks kit.
 
 ### Removed
 - The Python-emulation modules `codex/lib/{argparse,pycodec_names,pycodecs,pyerrors,pyfs,pyjson,pyrepr,pystdin,pystr}.ts`
   and the tests that compared them with Python (`codex/tests/{pycompat,stdin-decoding}.test.ts`, `pyref.ts`,
   `stdin-policy.ts`, `locale-env.ts`). Their place is taken by `codex/lib/{json,paths,refusal}.ts`, `readText` and
   `writeAtomic` in `codex/lib/files.ts`, the `node:path` calls and `parseCommandLine` from `measurekit/cli.ts`, and
-  `decodeUtf8` (new in `measurekit/files.ts`, shared with `readUtf8`). `tests/fuzz.ts` holds the seeded mutation helpers that
+  `decodeStrict` from `measurekit/files.ts` (the strict decoder `readUtf8` and `lib/evidence` use). `tests/fuzz.ts` holds the seeded mutation helpers that
   `pyref.ts` held.
 - The Python-emulation modules `measure/lib/measurekit/{pydate,pydict,pyerrno,pyerrors,pyio,pyjson,pypath,pyregex,
   pystr,pytextwrap,pyvalue}.ts` and the argparse clone `measure/lib/measurekit/{argparse,arghelp,argcolor}.ts`. Their
@@ -112,6 +174,16 @@ All notable changes to keel are recorded here. The format follows
   recorded live on in `tests/fixtures/measure` and `tests/fixtures/link` and in `tests/measure/cli_outcomes.test.ts`,
   `tests/link/{failure_paths,cross_impl,settings_functions}.test.ts` and new tests for each kept helper; the cases whose
   outcome changed are tested with explicit expectations.
+- The `lib/evidence/pycompat.ts` exports that no hook, Codex or evidence module imports any more: `compareCodePoints`,
+  `pySplitWhitespace`, `pySplitLines`, `decodeReplacing`, `decodeSurrogateEscape`, `expandUser`, `pyEquals`, `fnmatchCase`,
+  `isSystemError`, `isDirectory`, `isFile`, `pyRealpath`, `PYTHON_SPACE_PATTERN` and `pyOsErrorMessage`, `pythonErrnoName`,
+  `jsonNumber` and `pyFloatRepr` as exports, and the `OSError` class of `subprocess.ts`. What the ship-gate hook still
+  imports stays in `pycompat.ts` until the hooks kit. `lib/evidence` now uses `measure/lib/measurekit/{json,files}.ts` and the
+  new `lib/evidence/{glob,text}.ts`.
+- The byte-for-byte Python recordings of the evidence code (`tests/fixtures/python/ship-gate-{cross-impl,cross-impl-codex,parity}.json`)
+  and `tests/ship-gate/parity.test.ts`. The outcomes they recorded live on in `tests/fixtures/evidence/{cross-impl,helper-outcomes}.json`
+  and in `tests/ship-gate/{cross_impl,cross_impl_codex,helper_outcomes,native_input}.test.ts`; the cases whose outcome changed are
+  tested with explicit expectations. `ship-gate-strerror.json` stays for the errno wording the hook still prints.
 
 ### Upgrading
 - Codex: run `codex/bin/link --check`. When it lists `hooks.json` or the state file, the old files hold a non-ASCII
@@ -121,6 +193,8 @@ All notable changes to keel are recorded here. The format follows
 - No step is needed for a live `~/.claude` whose owned settings hold no floats. If one does, the first
   `bin/link --check` after the upgrade may report `<key> changed since the last --write`; when you have not edited
   it and the dry run (`bin/link`) lists no other problem that `--force` would act on, run `bin/link --write --force` once.
+- No step is needed for the evidence store: files written by earlier versions, including the ones the Python wrote, are read as
+  before. `keel-tests.jsonl` lines are now compact JSON; readers that parse each line are unaffected.
 - Check an overlay `boundary/regex.txt` written for Python `re` with `measure/boundary --paths <any file>`: exit 2 names
   the line that no longer compiles.
 

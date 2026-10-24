@@ -1,9 +1,10 @@
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { dirname, join } from 'node:path';
+import { isDir } from '../../measure/lib/measurekit/files.ts';
+import { compareCodePoints, isJsonObject, stringifySorted } from '../../measure/lib/measurekit/json.ts';
 import * as env from './env.ts';
-import { RecursionError, compareCodePoints, decodeStrict, isDirectory, isJsonObject, pyOsErrorMessage, pythonJsonDumps, pythonJsonLoads, sortedStrings, universalNewlines } from './pycompat.ts';
-import type { JsonValue } from './pycompat.ts';
+import { isStoredJsonTooDeep, parseStoredJson } from './hook_pinned.ts';
 
 export const REPO_SCOPED_KINDS = ['review', 'tests', 'smoke'];
 export const GLOBAL_KINDS = ['approval', 'ack'];
@@ -56,7 +57,7 @@ export function kindDir(kind: string, repoKey: string | null = null): string {
   return join(evidenceRoot(), kind, repoKey.replaceAll('/', '__'));
 }
 
-export function write(kind: string, body: { [key: string]: JsonValue }, repoKey: string | null = null): Evidence {
+export function write(kind: string, body: { [key: string]: unknown }, repoKey: string | null = null): Evidence {
   const now = env.utcNow();
   const evidence: Evidence = {
     schema: SCHEMA,
@@ -71,7 +72,7 @@ export function write(kind: string, body: { [key: string]: JsonValue }, repoKey:
   const final = join(directory, evidence.evidence_id + '.json');
   const tempPath = join(directory, '.tmp-' + randomBytes(TEMP_FILE_RANDOM_BYTES).toString('hex'));
   try {
-    writeFileSync(tempPath, pythonJsonDumps(evidence, { sortKeys: true }) + '\n', { flag: 'wx', mode: FILE_MODE });
+    writeFileSync(tempPath, stringifySorted(evidence) + '\n', { flag: 'wx', mode: FILE_MODE });
     chmodSync(tempPath, FILE_MODE);
     renameSync(tempPath, final);
   } catch (error) {
@@ -94,36 +95,31 @@ export function loadReviews(repoKey: string): ReviewEvidence[] {
 
 export function listFiles(kind: string, repoKey: string | null = null): string[] {
   const directory = kindDir(kind, repoKey);
-  if (!isDirectory(directory)) return [];
-  return sortedStrings(readdirSync(directory))
+  if (!isDir(directory)) return [];
+  return readdirSync(directory).sort(compareCodePoints)
     .filter((name) => name.endsWith('.json') && !name.startsWith('.'))
     .map((name) => join(directory, name));
 }
 
 export function repoKeys(kind: string): string[] {
   const directory = join(evidenceRoot(), kind);
-  if (!isDirectory(directory)) return [];
-  return sortedStrings(readdirSync(directory).filter((name) => isDirectory(join(directory, name)))
-    .map((name) => name.replace('__', '/')));
+  if (!isDir(directory)) return [];
+  return readdirSync(directory).filter((name) => isDir(join(directory, name)))
+    .map((name) => name.replace('__', '/')).sort(compareCodePoints);
 }
 
 export function readFile(path: string): Evidence {
   let evidence: unknown;
   try {
-    evidence = pythonJsonLoads(universalNewlines(decodeStrict(readFileSync(path))));
+    evidence = parseStoredJson(readFileSync(path));
   } catch (error) {
-    if (error instanceof RecursionError) throw error;
-    throw new EvidenceError(`unreadable evidence ${path}: ${readFailure(error, path)}`);
+    if (isStoredJsonTooDeep(error)) throw error;
+    throw new EvidenceError(`unreadable evidence ${path}: ${error instanceof Error ? error.message : String(error)}`);
   }
   if (!isJsonObject(evidence) || typeof evidence['expires_at'] !== 'string') {
     throw new EvidenceError('not an evidence object: ' + path);
   }
   return evidence as Evidence;
-}
-
-function readFailure(error: unknown, path: string): string {
-  if (error instanceof Error && 'errno' in error) return pyOsErrorMessage({ ...error, path } as NodeJS.ErrnoException);
-  return error instanceof Error ? error.message : String(error);
 }
 
 function ensurePrivateDirs(directory: string): void {
@@ -132,7 +128,7 @@ function ensurePrivateDirs(directory: string): void {
   try {
     mkdirSync(directory, { mode: DIRECTORY_MODE });
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST' || !isDirectory(directory)) throw error;
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST' || !isDir(directory)) throw error;
   }
   let current = directory;
   for (;;) {

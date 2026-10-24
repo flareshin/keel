@@ -58,17 +58,33 @@ test('treeEntry_answersAsAPathQueryWould_forFilesDirectoriesAndMissingPaths', (t
   }
 });
 
-test('treeEntry_findsEachPathItself_forColonPrefixedNfdAndNonUtf8Names', (t) => {
-  const repo = new Sandbox(t).clone('acme', 'app');
-  repo.git('config', 'core.precomposeunicode', 'true');
-  const blobs = ['colon', 'decomposed', 'plain', 'latin1'].map((content) =>
-    spawnSync('git', ['-C', repo.path, 'hash-object', '-w', '--stdin'], { input: content, encoding: 'utf8' }).stdout.trim());
-  const names = [Buffer.from(':memo.ts'), Buffer.from('cafe\u0301.ts'), Buffer.from('memo.ts'), Buffer.from([0xff, ...Buffer.from('.ts')])];
+const UTF8_NAMES = [':memo.ts', 'cafe\u0301.ts', 'memo.ts'];
+const NOT_UTF8_NAME = Buffer.from([0xff, ...Buffer.from('.ts')]);
+
+function treeOf(repo: { path: string }, names: Buffer[]): { tree: string; blobs: string[] } {
+  const blobs = names.map((_, index) =>
+    spawnSync('git', ['-C', repo.path, 'hash-object', '-w', '--stdin'], { input: 'content ' + index, encoding: 'utf8' }).stdout.trim());
   const listing = Buffer.concat(names.map((name, index) => Buffer.concat([Buffer.from(`100644 blob ${blobs[index]}\t`), name, Buffer.from([0])])));
   const tree = spawnSync('git', ['-C', repo.path, 'mktree', '-z'], { input: listing, encoding: 'utf8' }).stdout.trim();
+  return { tree, blobs };
+}
+
+test('treeEntry_findsEachPathItself_forColonPrefixedAndNfdNames', (t) => {
+  const repo = new Sandbox(t).clone('acme', 'app');
+  repo.git('config', 'core.precomposeunicode', 'true');
+  const { tree, blobs } = treeOf(repo, UTF8_NAMES.map((name) => Buffer.from(name)));
   const entries = gitcmd.diffEntries(repo.path, EMPTY_TREE, tree);
 
   assert.deepEqual(entries.map((entry) => gitcmd.treeEntry(repo.path, tree, entry.path)), blobs.map((blob) => ['100644', blob]));
+});
+
+test('treeEntry_stillFindsUtf8Paths_whenTheTreeAlsoHoldsANameThatIsNotUtf8', (t) => {
+  const repo = new Sandbox(t).clone('acme', 'app');
+  const { tree, blobs } = treeOf(repo, [...UTF8_NAMES.map((name) => Buffer.from(name)), NOT_UTF8_NAME]);
+
+  assert.throws(() => gitcmd.diffEntries(repo.path, EMPTY_TREE, tree), /a path in the git diff is not valid UTF-8/);
+  assert.deepEqual(UTF8_NAMES.map((name) => gitcmd.treeEntry(repo.path, tree, name)), blobs.slice(0, UTF8_NAMES.length).map((blob) => ['100644', blob]));
+  assert.equal(gitcmd.treeEntry(repo.path, tree, '\ufffd.ts'), null);
 });
 
 test('treeEntry_listsAgain_whenTheTreeIsNamedByARef', (t) => {

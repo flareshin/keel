@@ -66,7 +66,7 @@ interface RepoFiles {
 function scanRepo(root: string): RepoFiles {
   const glob = (patterns: string | string[]): string[] =>
     globSync(patterns, { cwd: root, exclude: (entry) => SKIPPED_DIRECTORIES.has(basename(entry)) })
-      .filter((file) => statSync(join(root, file)).isFile());
+      .filter((file) => statSync(join(root, file), { throwIfNoEntry: false })?.isFile() ?? false);
   const support = new Set(glob(SUPPORT_GLOBS));
   const texts = new Map<string, string>();
   const imports = new Map<string, string[]>();

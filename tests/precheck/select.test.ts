@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { after, describe, it } from "node:test"
@@ -91,10 +91,22 @@ describe("candidateTests", () => {
       "measure/smoke": "#!/bin/bash\nexec node \"$(dirname \"$0\")/smoke.ts\" \"$@\"",
       "measure/notes": "smoke.ts runs the smoke stage",
       "tests/smoke.test.ts": "const SMOKE = join(HOME, 'measure', 'smoke')",
+      "tests/path.test.ts": "execFileSync('measure/smoke')",
       "tests/prose.test.ts": "it('smoke stage runs', () => readFileSync(join(HOME, 'measure', 'notes')))",
     })
 
-    assert.deepEqual(candidateTests(root, ["lib/a.ts"]), ["tests/smoke.test.ts"])
+    assert.deepEqual(candidateTests(root, ["lib/a.ts"]), ["tests/path.test.ts", "tests/smoke.test.ts"])
+  })
+
+  it("candidateTests_skipsADanglingLinkOutsideTheTestDirectories", () => {
+    const root = repo({
+      "lib/a.ts": "export const a = 1",
+      "tests/a.test.ts": "import '../lib/a.ts'",
+    })
+    mkdirSync(join(root, "docs"))
+    symlinkSync(join(root, "missing"), join(root, "docs", "latest"))
+
+    assert.deepEqual(candidateTests(root, ["lib/a.ts"]), ["tests/a.test.ts"])
   })
 
   it("candidateTests_ignoresANameInsideALongerName_andAMentionOutsideTheTestDirectories", () => {

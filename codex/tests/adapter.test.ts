@@ -788,6 +788,15 @@ describe("guard", () => {
     assert.deepEqual(runGuard("ship-gate", {}, () => passed), ["warning"]);
   });
 
+  it("test_guardWithEmptyOrMissingContext_addsNoContext", () => {
+    for (const hookSpecificOutput of [{ additionalContext: "" }, {}, { additionalContext: null }]) {
+      const passed: CompletedProcess = { returncode: 0, stdout: JSON.stringify({ hookSpecificOutput }), stderr: "" };
+      assert.deepEqual(runGuard("ship-gate", {}, () => passed), [], JSON.stringify(hookSpecificOutput));
+    }
+    const noOutput: CompletedProcess = { returncode: 0, stdout: "{}", stderr: "" };
+    assert.deepEqual(runGuard("ship-gate", {}, () => noOutput), []);
+  });
+
   it("test_guardInput_isCompactJsonWithEveryNonAsciiCharacterEscaped", () => {
     const seen: string[] = [];
     runGuard("git-guard", { tool_name: "Bash", note: "\u00e9\u{1f600}\u007f\ud800" }, (_command, input) => {

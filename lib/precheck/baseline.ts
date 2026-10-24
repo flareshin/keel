@@ -1,9 +1,9 @@
-import { existsSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { checkoutTree } from '../evidence/gitcmd.ts';
-import { runCaptured, TimeoutExpired } from '../evidence/subprocess.ts';
+import { checkoutSnapshot } from '../evidence/gitcmd.ts';
+import { runProcessGroup, TimeoutExpired } from '../evidence/subprocess.ts';
 import { readCoverage } from './coverage.ts';
 import type { Coverage } from './coverage.ts';
 
@@ -22,21 +22,33 @@ export type Baseline =
 type FileRun = { outcome: 'ran'; file: BaselineFile } | { outcome: 'red' | 'timeout'; test: string; output: string };
 
 const DEPENDENCY_DIRECTORY = 'node_modules';
+const LOCAL_EXCLUDE = join('.git', 'info', 'exclude');
 const PARENT_TEST_RUNNER = 'NODE_TEST_CONTEXT';
 const TAP_PASS_COUNT = /^# pass ([0-9]+)$/mu;
 
 export function materializeTree(repo: string, tree: string): string {
   const directory = mkdtempSync(join(tmpdir(), 'keel-precheck-'));
-  checkoutTree(repo, tree, directory);
-  const dependencies = join(repo, DEPENDENCY_DIRECTORY);
-  if (existsSync(dependencies)) symlinkSync(dependencies, join(directory, DEPENDENCY_DIRECTORY));
-  return directory;
+  try {
+    checkoutSnapshot(repo, tree, directory);
+    linkDependencies(repo, directory);
+    return directory;
+  } catch (error) {
+    rmSync(directory, { recursive: true, force: true });
+    throw error;
+  }
 }
 
-export function runBaseline(directory: string, tests: string[], timeoutSeconds: number): Baseline {
+function linkDependencies(repo: string, directory: string): void {
+  const dependencies = join(repo, DEPENDENCY_DIRECTORY);
+  if (!existsSync(dependencies)) return;
+  symlinkSync(dependencies, join(directory, DEPENDENCY_DIRECTORY));
+  appendFileSync(join(directory, LOCAL_EXCLUDE), `/${DEPENDENCY_DIRECTORY}\n`);
+}
+
+export async function runBaseline(directory: string, tests: string[], timeoutSeconds: number): Promise<Baseline> {
   const files: BaselineFile[] = [];
   for (const test of tests) {
-    const run = runTestFile(directory, test, timeoutSeconds);
+    const run = await runTestFile(directory, test, timeoutSeconds);
     if (run.outcome !== 'ran') return run;
     files.push(run.file);
   }
@@ -45,11 +57,11 @@ export function runBaseline(directory: string, tests: string[], timeoutSeconds: 
   return { outcome: 'green', files: withPasses, withoutPasses: files.filter((file) => file.passed === 0).map((file) => file.test) };
 }
 
-function runTestFile(directory: string, test: string, timeoutSeconds: number): FileRun {
+async function runTestFile(directory: string, test: string, timeoutSeconds: number): Promise<FileRun> {
   const coverageDirectory = mkdtempSync(join(tmpdir(), 'keel-precheck-coverage-'));
   try {
     const started = performance.now();
-    const completed = runCaptured([process.execPath, '--test', '--test-reporter=tap', test], {
+    const completed = await runProcessGroup([process.execPath, '--test', '--test-reporter=tap', test], {
       cwd: directory,
       env: { ...withoutParentTestRunner(process.env), NODE_V8_COVERAGE: coverageDirectory },
       timeoutSeconds,

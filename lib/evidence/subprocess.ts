@@ -52,6 +52,44 @@ export function runCaptured(command: string[], options: RunOptions = {}): Comple
   return { returncode: returnCode(completed.status, completed.signal), stdout: completed.stdout, stderr: completed.stderr };
 }
 
+export function runProcessGroup(command: string[], options: Omit<RunOptions, 'input'> = {}): Promise<Completed> {
+  rejectUnencodable(command);
+  const [program, ...args] = command;
+  return new Promise((resolve, reject) => {
+    const child = childProcess.spawn(program!, args, { env: options.env, cwd: options.cwd, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
+    child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
+    let timedOut = false;
+    const timer = options.timeoutSeconds === undefined ? undefined : setTimeout(() => {
+      timedOut = true;
+      try {
+        killGroup(child.pid!);
+      } catch (error) {
+        reject(error);
+      }
+    }, options.timeoutSeconds * 1000);
+    child.on('error', (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.on('close', (status, signal) => {
+      clearTimeout(timer);
+      if (timedOut) reject(new TimeoutExpired(command, options.timeoutSeconds ?? 0));
+      else resolve({ returncode: returnCode(status, signal), stdout: Buffer.concat(stdout), stderr: Buffer.concat(stderr) });
+    });
+  });
+}
+
+function killGroup(leader: number): void {
+  try {
+    process.kill(-leader, 'SIGKILL');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+  }
+}
+
 function spawnFailure(error: NodeJS.ErrnoException, command: string[], timeoutSeconds: number | undefined): Error {
   return error.code === 'ETIMEDOUT' ? new TimeoutExpired(command, timeoutSeconds ?? 0) : error;
 }

@@ -1,4 +1,4 @@
-import { closeSync, openSync, unlinkSync, existsSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, unlinkSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -19,6 +19,13 @@ const REMOTE_PREFIX = 'remote.';
 const TEMP_INDEX_RANDOM_BYTES = 6;
 const OTHER_LINE_BREAK = /[\r\v\f\x1c-\x1e\x85\u2028\u2029]/;
 const OBJECT_ID = /^[0-9a-f]{40}$/;
+const SNAPSHOT_COMMIT_MESSAGE = 'keel precheck snapshot';
+const SNAPSHOT_IDENTITY = {
+  GIT_AUTHOR_NAME: 'keel precheck',
+  GIT_AUTHOR_EMAIL: 'precheck@keel.invalid',
+  GIT_COMMITTER_NAME: 'keel precheck',
+  GIT_COMMITTER_EMAIL: 'precheck@keel.invalid',
+};
 
 type TreeEntry = [mode: string, object: string];
 
@@ -272,29 +279,29 @@ export function submoduleRoots(repo: string): string[] {
 }
 
 export function snapshotTree(repo: string): string {
-  return withTemporaryIndex((options) => {
-    run(repo, ['--work-tree', repo, 'read-tree', 'HEAD'], options);
-    run(repo, ['--work-tree', repo, 'add', '-A'], options);
-    return text(repo, ['--work-tree', repo, 'write-tree'], options);
-  });
-}
-
-export function checkoutTree(repo: string, tree: string, directory: string): void {
-  withTemporaryIndex((options) => {
-    run(repo, ['read-tree', tree], options);
-    run(repo, ['checkout-index', '--all', '--prefix=' + join(directory, '/')], options);
-  });
-}
-
-function withTemporaryIndex<T>(work: (options: GitOptions) => T): T {
   const index = join(tmpdir(), 'keel-index-' + randomBytes(TEMP_INDEX_RANDOM_BYTES).toString('hex'));
   closeSync(openSync(index, 'wx'));
   unlinkSync(index);
+  const env = { ...process.env, GIT_INDEX_FILE: index };
+  const options = { env, timeoutSeconds: SNAPSHOT_TIMEOUT_SECONDS };
   try {
-    return work({ env: { ...process.env, GIT_INDEX_FILE: index }, timeoutSeconds: SNAPSHOT_TIMEOUT_SECONDS });
+    run(repo, ['--work-tree', repo, 'read-tree', 'HEAD'], options);
+    run(repo, ['--work-tree', repo, 'add', '-A'], options);
+    return text(repo, ['--work-tree', repo, 'write-tree'], options);
   } finally {
     if (existsSync(index)) unlinkSync(index);
   }
+}
+
+export function checkoutSnapshot(repo: string, tree: string, directory: string): void {
+  run(directory, ['init', '-q']);
+  const objects = text(repo, ['rev-parse', '--path-format=absolute', '--git-path', 'objects']);
+  mkdirSync(join(directory, '.git', 'objects', 'info'), { recursive: true });
+  writeFileSync(join(directory, '.git', 'objects', 'info', 'alternates'), objects + '\n');
+  const parent = text(repo, ['rev-parse', 'HEAD']);
+  const commit = text(directory, ['commit-tree', '--no-gpg-sign', tree, '-p', parent, '-m', SNAPSHOT_COMMIT_MESSAGE],
+    { env: { ...process.env, ...SNAPSHOT_IDENTITY } });
+  run(directory, ['reset', '-q', '--hard', commit], { timeoutSeconds: SNAPSHOT_TIMEOUT_SECONDS });
 }
 
 function splitOnNul(bytes: Buffer): Buffer[] {

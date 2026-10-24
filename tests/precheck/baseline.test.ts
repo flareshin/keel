@@ -1,0 +1,161 @@
+import assert from "node:assert/strict"
+import { execFileSync } from "node:child_process"
+import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { dirname, join } from "node:path"
+import { after, describe, it } from "node:test"
+import { snapshotTree } from "../../lib/evidence/gitcmd.ts"
+import { materializeTree, runBaseline } from "../../lib/precheck/baseline.ts"
+
+const EXECUTABLE_BITS = 0o111
+const TIMEOUT_SECONDS = 60
+
+describe("precheck baseline", () => {
+  const directories: string[] = []
+  after(() => directories.forEach((directory) => rmSync(directory, { recursive: true, force: true })))
+  const write = (root: string, files: Record<string, string>): void => {
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(dirname(join(root, path)), { recursive: true })
+      writeFileSync(join(root, path), text)
+    }
+  }
+  const repo = (committed: Record<string, string>): string => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "precheck-baseline-")))
+    directories.push(root)
+    execFileSync("git", ["init", "-q", root])
+    write(root, committed)
+    execFileSync("git", ["-C", root, "add", "-A"])
+    execFileSync("git", ["-C", root, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "fixture"])
+    return root
+  }
+  const materialized = (files: Record<string, string>): string => {
+    const root = repo(files)
+    const directory = materializeTree(root, snapshotTree(root))
+    directories.push(directory)
+    return directory
+  }
+  const passing = (name: string, body = "") => `import { it } from "node:test"\n${body}\nit("${name}", () => {})\n`
+
+  it("materializeTree_checksOutTheSnapshotWithUncommittedEdits_andKeepsTheExecutableBit", () => {
+    const root = repo({ "lib/a.ts": "export const a = 1\n", "bin/run": "#!/bin/bash\necho run\n" })
+    chmodSync(join(root, "bin", "run"), 0o755)
+    write(root, { "lib/a.ts": "export const a = 2\n", "lib/new.ts": "export const fresh = true\n" })
+    const statusBefore = execFileSync("git", ["-C", root, "status", "--porcelain"]).toString()
+
+    const directory = materializeTree(root, snapshotTree(root))
+    directories.push(directory)
+
+    assert.equal(readFileSync(join(directory, "lib", "a.ts"), "utf8"), "export const a = 2\n")
+    assert.equal(readFileSync(join(directory, "lib", "new.ts"), "utf8"), "export const fresh = true\n")
+    assert.notEqual(statSync(join(directory, "bin", "run")).mode & EXECUTABLE_BITS, 0)
+    assert.equal(execFileSync("git", ["-C", root, "status", "--porcelain"]).toString(), statusBefore)
+  })
+
+  it("materializeTree_linksTheRepoDependencies_onlyWhenTheRepoHasThem", () => {
+    const withDependencies = repo({ ".gitignore": "node_modules/\n", "node_modules/pkg/index.js": "export default 1\n" })
+    const withoutDependencies = repo({ "lib/a.ts": "export const a = 1\n" })
+
+    const linked = materializeTree(withDependencies, snapshotTree(withDependencies))
+    const bare = materializeTree(withoutDependencies, snapshotTree(withoutDependencies))
+    directories.push(linked, bare)
+
+    assert.ok(lstatSync(join(linked, "node_modules")).isSymbolicLink())
+    assert.equal(readlinkSync(join(linked, "node_modules")), join(withDependencies, "node_modules"))
+    assert.equal(readdirSync(bare).includes("node_modules"), false)
+  })
+
+  it("runBaseline_recordsPassesDurationAndTheLinesEachTestFileRan", () => {
+    const directory = materialized({
+      "lib/a.ts": "export function pick(flag: boolean): number {\n  if (flag) return 1\n  return 2\n}\n",
+      "tests/a.test.ts": passing("picks", "import { pick } from '../lib/a.ts'\npick(true)"),
+    })
+
+    const baseline = runBaseline(directory, ["tests/a.test.ts"], TIMEOUT_SECONDS)
+
+    assert.equal(baseline.outcome, "green")
+    const [file] = baseline.files
+    assert.equal(file?.test, "tests/a.test.ts")
+    assert.equal(file?.passed, 1)
+    assert.ok((file?.durationMs ?? 0) > 0)
+    assert.ok(file?.coverage.seen.has("lib/a.ts"))
+    assert.ok(file?.coverage.executedLines.get("lib/a.ts")?.has(2))
+    assert.equal(file?.coverage.executedLines.get("lib/a.ts")?.has(3), false)
+  })
+
+  it("runBaseline_keepsEachTestFilesCoverageApart", () => {
+    const directory = materialized({
+      "lib/a.ts": "export const a = () => 1\n",
+      "lib/b.ts": "export const b = () => 2\n",
+      "tests/a.test.ts": passing("a", "import { a } from '../lib/a.ts'\na()"),
+      "tests/b.test.ts": passing("b", "import { b } from '../lib/b.ts'\nb()"),
+    })
+
+    const baseline = runBaseline(directory, ["tests/a.test.ts", "tests/b.test.ts"], TIMEOUT_SECONDS)
+
+    assert.equal(baseline.outcome, "green")
+    assert.deepEqual(baseline.files.map((file) => [file.test, file.coverage.seen.has("lib/a.ts"), file.coverage.seen.has("lib/b.ts")]), [
+      ["tests/a.test.ts", true, false],
+      ["tests/b.test.ts", false, true],
+    ])
+  })
+
+  it("runBaseline_seesLinesRunInsideAChildProcessTheTestSpawns", () => {
+    const directory = materialized({
+      "hooks/guard.ts": "console.log('guarded')\n",
+      "tests/guard.test.ts": passing("spawns", "import { execFileSync } from 'node:child_process'\nexecFileSync(process.execPath, ['hooks/guard.ts'])"),
+    })
+
+    const baseline = runBaseline(directory, ["tests/guard.test.ts"], TIMEOUT_SECONDS)
+
+    assert.equal(baseline.outcome, "green")
+    assert.ok(baseline.files[0]?.coverage.seen.has("hooks/guard.ts"))
+  })
+
+  it("runBaseline_countsPassesButNotSkips", () => {
+    const directory = materialized({
+      "tests/a.test.ts": "import { it } from 'node:test'\nit('one', () => {})\nit('two', () => {})\nit('later', { skip: true }, () => {})\nconsole.log('# pass 9')\n",
+    })
+
+    const baseline = runBaseline(directory, ["tests/a.test.ts"], TIMEOUT_SECONDS)
+
+    assert.equal(baseline.outcome, "green")
+    assert.equal(baseline.files[0]?.passed, 2)
+  })
+
+  it("runBaseline_stopsAtTheFirstRedFile", () => {
+    const directory = materialized({
+      "tests/a.test.ts": "import { it } from 'node:test'\nit('breaks', () => { throw new Error('red baseline') })\n",
+      "tests/b.test.ts": passing("fine"),
+    })
+
+    const baseline = runBaseline(directory, ["tests/b.test.ts", "tests/a.test.ts"], TIMEOUT_SECONDS)
+
+    assert.equal(baseline.outcome, "red")
+    assert.equal(baseline.test, "tests/a.test.ts")
+    assert.match(baseline.output, /red baseline/u)
+  })
+
+  it("runBaseline_setsAsideAFileWithNoPasses_andIsEmptyWhenNoFilePasses", () => {
+    const skipping = "import { describe, it } from 'node:test'\ndescribe('needs typescript', { skip: 'absent' }, () => { it('x', () => {}) })\n"
+    const directory = materialized({ "tests/skip.test.ts": skipping, "tests/a.test.ts": passing("fine") })
+
+    const mixed = runBaseline(directory, ["tests/skip.test.ts", "tests/a.test.ts"], TIMEOUT_SECONDS)
+    const onlySkipping = runBaseline(directory, ["tests/skip.test.ts"], TIMEOUT_SECONDS)
+
+    assert.equal(mixed.outcome, "green")
+    assert.deepEqual(mixed.files.map((file) => file.test), ["tests/a.test.ts"])
+    assert.deepEqual(mixed.withoutPasses, ["tests/skip.test.ts"])
+    assert.deepEqual(onlySkipping, { outcome: "empty" })
+  })
+
+  it("runBaseline_reportsATimeoutForAFileThatOutrunsTheLimit", () => {
+    const directory = materialized({
+      "tests/slow.test.ts": "import { it } from 'node:test'\nit('waits', () => new Promise((resolve) => setTimeout(resolve, 30000)))\n",
+    })
+
+    const baseline = runBaseline(directory, ["tests/slow.test.ts"], 1)
+
+    assert.equal(baseline.outcome, "timeout")
+    assert.equal(baseline.test, "tests/slow.test.ts")
+  })
+})

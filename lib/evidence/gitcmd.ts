@@ -272,15 +272,26 @@ export function submoduleRoots(repo: string): string[] {
 }
 
 export function snapshotTree(repo: string): string {
-  const index = join(tmpdir(), 'keel-index-' + randomBytes(TEMP_INDEX_RANDOM_BYTES).toString('hex'));
-  closeSync(openSync(index, 'wx'));
-  unlinkSync(index);
-  const env = { ...process.env, GIT_INDEX_FILE: index };
-  const options = { env, timeoutSeconds: SNAPSHOT_TIMEOUT_SECONDS };
-  try {
+  return withTemporaryIndex((options) => {
     run(repo, ['--work-tree', repo, 'read-tree', 'HEAD'], options);
     run(repo, ['--work-tree', repo, 'add', '-A'], options);
     return text(repo, ['--work-tree', repo, 'write-tree'], options);
+  });
+}
+
+export function checkoutTree(repo: string, tree: string, directory: string): void {
+  withTemporaryIndex((options) => {
+    run(repo, ['read-tree', tree], options);
+    run(repo, ['checkout-index', '--all', '--prefix=' + join(directory, '/')], options);
+  });
+}
+
+function withTemporaryIndex<T>(work: (options: GitOptions) => T): T {
+  const index = join(tmpdir(), 'keel-index-' + randomBytes(TEMP_INDEX_RANDOM_BYTES).toString('hex'));
+  closeSync(openSync(index, 'wx'));
+  unlinkSync(index);
+  try {
+    return work({ env: { ...process.env, GIT_INDEX_FILE: index }, timeoutSeconds: SNAPSHOT_TIMEOUT_SECONDS });
   } finally {
     if (existsSync(index)) unlinkSync(index);
   }

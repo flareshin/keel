@@ -74,8 +74,8 @@ hook run still pins them (see the last bullet of Changed).
   strings (a number whose digits read like an id was accepted), and an id followed by a newline is refused with exit 2
   (the `$` of the old pattern let it through), as is `keel approve '<id>\n'`. `write-smoke` counts a smoke run as passed only
   when its `ok` is JSON `true` (exit 3 otherwise; `1`, `"yes"`, `[]` and `{}` counted before).
-- Codex review evidence: a stored review whose `source.version` is spelled `2.0` (hand-edited; keel writes `2`) is no longer
-  a version 2 record: `keel evidence compatibility` counts it as read-only and validation refuses it. A rollout counts
+- Numbers read back from a stored evidence file are plain JSON numbers: `keel evidence show` prints a stored `1.5` as `1.5` and
+  a stored integer beyond 2^53 exactly, and a `"version": 2.0` still counts as version 2. Codex review evidence: a rollout counts
   as complete only when its turn id is the same non-empty string at start and completion (a number counted before).
   Rollouts and the rule-checks output are split into lines at `\r\n`, `\r` and `\n` only, and the rule-checks summary is
   matched with `\S`. The push urls of a remote are still split at every line break Python knew (U+2028, U+0085, `\v`, `\f`,
@@ -131,8 +131,7 @@ hook run still pins them (see the last bullet of Changed).
   `bin/link --check` after the upgrade may report `<key> changed since the last --write`; when you have not edited
   it and the dry run (`bin/link`) lists no other problem that `--force` would act on, run `bin/link --write --force` once.
 - No step is needed for the evidence store: files written by earlier versions, including the ones the Python wrote, are read as
-  before. A stored Codex review that someone edited to read `"version": 2.0` is refused; delete that file and run
-  `keel evidence record-codex` again. `keel-tests.jsonl` lines are now compact JSON; readers that parse each line are unaffected.
+  before. `keel-tests.jsonl` lines are now compact JSON; readers that parse each line are unaffected.
 - Check an overlay `boundary/regex.txt` written for Python `re` with `measure/boundary --paths <any file>`: exit 2 names
   the line that no longer compiles.
 

@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { RecursionError, UnicodeDecodeError, ValueError, decodeStrict, pyRepr, pyReprList, pythonJsonDumps, pythonJsonLoads, universalNewlines } from './pycompat.ts';
+import { parseJsonKeepingIntegers } from '../../measure/lib/measurekit/json.ts';
+import { PyFloat, RecursionError, UnicodeDecodeError, ValueError, decodeStrict, pyRepr, pyReprList, pythonJsonDumps, pythonJsonLoads, universalNewlines } from './pycompat.ts';
 import type { JsonValue } from './pycompat.ts';
 
 export function dumpFiresLine(record: Record<string, unknown>): string {
@@ -7,7 +8,26 @@ export function dumpFiresLine(record: Record<string, unknown>): string {
 }
 
 export function parseStoredJson(bytes: Buffer): unknown {
-  return pythonJsonLoads(universalNewlines(decodeStrict(bytes)));
+  return withPlainNumbers(pythonJsonLoads(universalNewlines(decodeStrict(bytes))));
+}
+
+function withPlainNumbers(parsed: unknown): unknown {
+  const holder: { root: unknown } = { root: parsed };
+  const pending: Array<[container: any, key: string | number]> = [[holder, 'root']];
+  for (let slot = pending.pop(); slot !== undefined; slot = pending.pop()) {
+    const [container, key] = slot;
+    const value = container[key];
+    if (value instanceof PyFloat) {
+      container[key] = value.value;
+    } else if (typeof value === 'bigint') {
+      container[key] = parseJsonKeepingIntegers(value.toString());
+    } else if (Array.isArray(value)) {
+      value.forEach((_, index) => pending.push([value, index]));
+    } else if (typeof value === 'object' && value !== null) {
+      for (const member of Object.keys(value)) pending.push([value, member]);
+    }
+  }
+  return holder.root;
 }
 
 export function isStoredJsonTooDeep(error: unknown): boolean {

@@ -161,6 +161,22 @@ describe('the evidence store writes and lists with code point order', () => {
   });
 });
 
+describe('keel evidence show prints what a stored record holds', () => {
+  for (const [stored, printed] of [['1.5', '1.5'], ['9007199254740993', '9007199254740993']]) {
+    test('a stored verdict of ' + stored + ' is printed as that number, exit 0', (t) => {
+      const sandbox = new Sandbox(t);
+      const repo = feature(sandbox);
+      sandbox.review(repo);
+      const path = sandbox.evidenceFiles('review')[0]!;
+      writeFileSync(path, readFileSync(path, 'utf8').replace('"verdict":"PASS"', '"verdict":' + stored));
+      assert.ok(readFileSync(path, 'utf8').includes('"verdict":' + stored));
+      const run = sandbox.keel(['evidence', 'show', '--repo', repo.path]);
+      assert.equal(run.rc, 0, run.stderr);
+      assert.ok(run.stdout.includes('"verdict":' + printed + '}'), run.stdout);
+    });
+  }
+});
+
 describe('the data directory expands ~ and ~/ only', () => {
   test('~/x follows HOME and ~user/x stays as written', () => {
     const saved = { data: process.env['KEEL_DATA_DIR'], home: process.env['HOME'] };

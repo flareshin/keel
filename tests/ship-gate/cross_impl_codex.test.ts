@@ -84,7 +84,7 @@ describe('Codex evidence with float spellings of version fields', () => {
     assert.deepEqual(typescriptOutcome(() => registerLenses(f, audits)), ['ok', 'PASS', RECORDED_ROOT_RUN_ID, '2']);
   });
 
-  test('stored lens evidence spelled "version": 2.0 is no longer a version 2 record: it is inventoried as read-only and refused', (t) => {
+  test('stored lens evidence spelled "version": 2.0 is still a version 2 record: it validates, re-registers and extends', (t) => {
     const f = new CodexFixture(t);
     const audits = writeLensAudits(f);
     assert.deepEqual(typescriptOutcome(() => registerLenses(f, audits)), ['ok', 'PASS', RECORDED_ROOT_RUN_ID, '2']);
@@ -93,16 +93,15 @@ describe('Codex evidence with float spellings of version fields', () => {
 
     const [status, inventory] = compatibilityOutcome(f, f.sandbox.data, ['node', KEEL]);
     assert.equal(status, 'rc 0');
-    assert.deepEqual(JSON.parse(inventory!), { chain_roots: [RECORDED_ROOT_RUN_ID], read_only_records: 1, reader_removable: false });
-    assert.deepEqual(typescriptOutcome(() => validateStored(stored[0]!)), ['error', 'Refused', 'invalid Codex review provenance']);
-    assert.deepEqual(typescriptOutcome(() => registerLenses(f, audits)), ['error', 'Refused', 'invalid lens review provenance']);
+    assert.deepEqual(JSON.parse(inventory!), { chain_roots: [], read_only_records: 0, reader_removable: true });
+    assert.deepEqual(typescriptOutcome(() => validateStored(stored[0]!)), ['ok', 'validated']);
+    assert.deepEqual(typescriptOutcome(() => registerLenses(f, audits)), ['ok', 'PASS', RECORDED_ROOT_RUN_ID, '2']);
 
     const previousTree = f.tree;
     f.repo.write('src/a.py', 'print(3)\n');
     f.tree = gitcmd.snapshotTree(f.repo.path);
     const delta = writeLensAudits(f, { since: previousTree, root: RECORDED_ROOT_RUN_ID });
-    assert.deepEqual(typescriptOutcome(() => registerLenses(f, delta)),
-      ['error', 'Refused', 'lens delta requires an existing version 2 review chain']);
+    assert.deepEqual(typescriptOutcome(() => registerLenses(f, delta)), ['ok', 'PASS', RECORDED_ROOT_RUN_ID, '1']);
   });
 
   test('native reports spelled "version": 1.0 are accepted as version 1', (t) => {

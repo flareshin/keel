@@ -172,6 +172,32 @@ describe("findConsumers", () => {
     assert.deepEqual(consumersOf(base, "export", "Shape"), ["src/lib.ts:1", "src/use.ts:1"])
   })
 
+  it("findConsumers_readsACommentedEntryOfAnExportListByItsName", () => {
+    write("src/lib.ts", ["const a = 1", "const b = 2", "export {", "  a,", "  b /* legacy */", "}"])
+    write("src/use.ts", ["b"])
+    const base = snapshot()
+    write("src/lib.ts", ["const a = 1", "const b = 2", "export {", "  a, // legacy", "}"])
+
+    assert.deepEqual(namesOf(base), ["export b"])
+  })
+
+  it("findConsumers_namesNothingWhenOnlyACommentInAnExportListChanged", () => {
+    write("src/lib.ts", ["const b = 2", "export {", "  // old note", "  b", "}"])
+    const base = snapshot()
+    write("src/lib.ts", ["const b = 2", "export {", "  // new note", "  b", "}"])
+
+    assert.deepEqual(namesOf(base), [])
+  })
+
+  it("findConsumers_listsUsesOfAnExportFromADeletedFileWhosePathHasASpace", () => {
+    write("src/my lib.ts", ["export function gone(): void {}"])
+    write("src/use.ts", ["gone()"])
+    const base = snapshot()
+    fs.rmSync(path.join(repo, "src/my lib.ts"))
+
+    assert.deepEqual(consumersOf(base, "export", "gone"), ["src/use.ts:1"])
+  })
+
   it("findConsumers_readsTheNameOfAConstEnum", () => {
     write("src/lib.ts", ["export const enum Color { Red }"])
     write("src/use.ts", ["Color.Red"])

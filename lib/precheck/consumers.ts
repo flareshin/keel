@@ -36,6 +36,7 @@ const EXPORT_DECLARATION = /^export\s+(?:default\s+)?(?:declare\s+)?(?:abstract\
 const EXPORT_LISTS = /^export\s+(?:type\s+)?\{([^}]*)\}/gmu;
 const EXPORT_ALIAS = /\s+as\s+/u;
 const TYPE_ONLY_ENTRY = /^type\s+/u;
+const COMMENT = /\/\/[^\n]*|\/\*[\s\S]*?\*\//gu;
 const COLUMN_ZERO = /^\S/u;
 const FLAG = /(?<![\w-])--[a-z][a-z0-9-]*/gu;
 const JSON_KEY = /^\s*"([^"\\]+)"\s*:/u;
@@ -133,7 +134,7 @@ function removedExports(repo: string, base: string, tree: string, change: FileCh
 
 function exportedNames(source: string): Set<string> {
   const declared = source.split('\n').flatMap((line) => EXPORT_DECLARATION.exec(line)?.[1] ?? []);
-  const listed = [...source.matchAll(EXPORT_LISTS)].flatMap((match) => (match[1] ?? '').split(','))
+  const listed = [...source.matchAll(EXPORT_LISTS)].flatMap((match) => (match[1] ?? '').replace(COMMENT, '').split(','))
     .map((entry) => entry.split(EXPORT_ALIAS).at(-1)?.trim().replace(TYPE_ONLY_ENTRY, '') ?? '')
     .filter((name) => name !== '');
   return new Set([...declared, ...listed]);

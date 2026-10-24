@@ -77,11 +77,9 @@ function exactOutputIfOk(repo: string, args: string[]): string | null {
 }
 
 function outputIfOk(repo: string, args: string[]): string | null {
-  const completed = run(repo, args, { check: false });
-  if (completed.returncode !== 0) return null;
-  const value = withoutFinalNewline(completed.stdout.toString());
-  refuseOtherLineBreaks(args, [value]);
-  return value || null;
+  const lines = linesIfOk(repo, args);
+  if (lines.length > 1) throw new GitError(`git ${args.join(' ')}: the output holds more than one line`);
+  return lines[0] ?? null;
 }
 
 function linesIfOk(repo: string, args: string[]): string[] {
@@ -179,7 +177,8 @@ export function isAncestor(repo: string, ancestor: string, descendant: string): 
 }
 
 export function firstParentAncestors(repo: string, head: string, stop: string): string[] {
-  const line = gateLines(['rev-list', '--first-parent'], run(repo, ['rev-list', '--first-parent', head + '^', '^' + stop]).stdout.toString());
+  const args = ['rev-list', '--first-parent', head + '^', '^' + stop];
+  const line = gateLines(args, run(repo, args).stdout.toString());
   const last = line.length > 0 ? line.at(-1)! : head;
   if (commitSha(repo, last + '^') !== stop) return [];
   return [...line, stop];
@@ -233,7 +232,8 @@ export function treeEntry(repo: string, tree: string, path: string): [mode: stri
 }
 
 export function submoduleRoots(repo: string): string[] {
-  const roots = gateLines(['submodule', 'foreach', 'pwd'], run(repo, ['submodule', 'foreach', '--quiet', '--recursive', 'pwd']).stdout.toString());
+  const args = ['submodule', 'foreach', '--quiet', '--recursive', 'pwd'];
+  const roots = gateLines(args, run(repo, args).stdout.toString());
   return roots.map((root) => resolveLinks(root));
 }
 

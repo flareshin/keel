@@ -15,10 +15,15 @@ const NEXT_LINE = String.fromCharCode(0x85);
 const INFORMATION_SEPARATOR_FOUR = String.fromCharCode(0x1c);
 const NO_BREAK_SPACE = String.fromCharCode(0xa0);
 const LINE_SEPARATOR = String.fromCharCode(0x2028);
+const INFORMATION_SEPARATOR_THREE = String.fromCharCode(0x1d);
+const INFORMATION_SEPARATOR_TWO = String.fromCharCode(0x1e);
+const PARAGRAPH_SEPARATOR = String.fromCharCode(0x2029);
 const CARRIAGE_RETURN = String.fromCharCode(0x0d);
 const NOT_A_LINE_BREAK = [BYTE_ORDER_MARK, NO_BREAK_SPACE];
-const OTHER_LINE_BREAKS = [NEXT_LINE, INFORMATION_SEPARATOR_FOUR, LINE_SEPARATOR, CARRIAGE_RETURN, '\v', '\f'];
+const OTHER_LINE_BREAKS = [NEXT_LINE, INFORMATION_SEPARATOR_FOUR, INFORMATION_SEPARATOR_THREE, INFORMATION_SEPARATOR_TWO, LINE_SEPARATOR, PARAGRAPH_SEPARATOR, CARRIAGE_RETURN, '\v', '\f'];
 const LINE_BREAK_REFUSAL = 'the output holds a line break other than \\n';
+const EMPTY_LINE_REFUSAL = 'the output holds an empty line';
+const SEVERAL_LINES_REFUSAL = 'the output holds more than one line';
 const GIT_ENV = { ...process.env, GIT_AUTHOR_NAME: 'T', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 'T', GIT_COMMITTER_EMAIL: 't@example.com' };
 
 function newRepo(): string {
@@ -32,8 +37,12 @@ function git(repo: string, ...args: string[]): void {
   assert.equal(completed.status, 0, args.join(' ') + ': ' + completed.stderr.toString());
 }
 
+function refuses(refusal: string, read: () => unknown): void {
+  assert.throws(read, (error: Error) => error instanceof gitcmd.GitError && error.message.includes(refusal), String(read));
+}
+
 function refusesLineBreak(read: () => unknown): void {
-  assert.throws(read, (error: Error) => error instanceof gitcmd.GitError && error.message.includes(LINE_BREAK_REFUSAL), String(read));
+  refuses(LINE_BREAK_REFUSAL, read);
 }
 
 describe('git output is data: only its final newline is removed', () => {
@@ -124,9 +133,33 @@ describe('git output that feeds a gate decision and holds a line break other tha
     assert.deepEqual(gitcmd.gateLines(['x'], 'a\n'), ['a']);
     assert.deepEqual(gitcmd.gateLines(['x'], 'a\nb'), ['a', 'b']);
     for (const output of ['\n', 'a\n\nb\n', '\na\n', 'a\n\n']) {
-      assert.throws(() => gitcmd.gateLines(['x'], output), (error: Error) => error instanceof gitcmd.GitError && error.message.includes('the output holds an empty line'), JSON.stringify(output));
+      assert.throws(() => gitcmd.gateLines(['x'], output), (error: Error) => error instanceof gitcmd.GitError && error.message.includes(EMPTY_LINE_REFUSAL), JSON.stringify(output));
     }
   });
+
+  test('a remote url holding a \\n makes a single-value read refuse instead of returning several lines', () => {
+    const repo = newRepo();
+    git(repo, 'remote', 'add', 'origin', 'https://example.com/me/app');
+    git(repo, 'config', 'remote.origin.url', 'https://example.com/me/app\nhttps://example.com/acme/app');
+    refuses(SEVERAL_LINES_REFUSAL, () => gitcmd.remoteUrl(repo, 'origin'));
+    git(repo, 'config', 'remote.origin.url', 'https://example.com/me/app\n\nhttps://example.com/acme/app');
+    refuses(EMPTY_LINE_REFUSAL, () => gitcmd.remoteUrl(repo, 'origin'));
+    refuses(EMPTY_LINE_REFUSAL, () => gitcmd.originUrl(repo));
+  });
+
+  test('a push remote holding a carriage return refuses', () => {
+    const repo = newRepo();
+    git(repo, 'config', 'remote.pushDefault', 'mirror' + CARRIAGE_RETURN + 'junk');
+    refusesLineBreak(() => gitcmd.pushRemote(repo));
+  });
+
+  for (const lineBreak of [NEXT_LINE, LINE_SEPARATOR, PARAGRAPH_SEPARATOR]) {
+    test('a branch name holding ' + JSON.stringify(lineBreak) + ' refuses', () => {
+      const repo = newRepo();
+      git(repo, 'symbolic-ref', 'HEAD', 'refs/heads/feat' + lineBreak + 'ure');
+      refusesLineBreak(() => gitcmd.currentBranch(repo));
+    });
+  }
 
   test('a merge is refused when the stored gh default repo holds a carriage return', (t) => {
     const sandbox = new Sandbox(t);

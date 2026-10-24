@@ -153,6 +153,12 @@ describe('git output that feeds a gate decision and holds a line break other tha
     refusesLineBreak(() => gitcmd.pushRemote(repo));
   });
 
+  test('an empty push remote refuses instead of falling through to the next key', () => {
+    const repo = newRepo();
+    git(repo, 'config', 'remote.pushDefault', '');
+    refuses(EMPTY_LINE_REFUSAL, () => gitcmd.pushRemote(repo));
+  });
+
   for (const lineBreak of [NEXT_LINE, LINE_SEPARATOR, PARAGRAPH_SEPARATOR]) {
     test('a branch name holding ' + JSON.stringify(lineBreak) + ' refuses', () => {
       const repo = newRepo();

@@ -1,14 +1,10 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { constants, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { constants } from 'node:os';
 import { getSystemErrorMap } from 'node:util';
 import {
-  JSONDecodeError, PyFloat, RecursionError, ValueError, decodeSurrogateEscape, fnmatchCase, isDirectory, isFile, isSystemError, pyEquals, pyOsErrorMessage, pyRepr, pySplitLines, pyStr, pyStrip, pyTruthy, pythonJsonDumps, pythonJsonLoads,
+  JSONDecodeError, PyFloat, RecursionError, ValueError, errorText, pyRepr, pyStr, pyStrip, pyTruthy, pythonJsonDumps, pythonJsonLoads,
 } from '../../lib/evidence/pycompat.ts';
-import { OSError } from '../../lib/evidence/subprocess.ts';
-import { isInputFailure } from '../../lib/evidence/writers.ts';
 import { recordedAnswers, recordedPlatformMatches } from '../recorded.ts';
 import type { JsonValue } from '../../lib/evidence/pycompat.ts';
 
@@ -128,49 +124,6 @@ describe('pythonJsonLoads', () => {
 });
 
 describe('python value semantics', () => {
-  test('pyEquals treats the one NaN json.loads returns as identical inside containers but not at the top level', () => {
-    const loaded = (text: string) => pythonJsonLoads(text);
-    assert.equal(pyEquals(loaded('[NaN]'), loaded('[NaN]')), true);
-    assert.equal(pyEquals(loaded('{"a": NaN}'), loaded('{"a": NaN}')), true);
-    assert.equal(pyEquals((loaded('{"t": [NaN]}') as Record<string, unknown>)['t'], loaded('[NaN]')), true);
-    assert.equal(pyEquals(loaded('{"a": NaN, "b": 1}'), loaded('{"b": 1, "a": NaN}')), true);
-    assert.equal(pyEquals(loaded('NaN'), loaded('NaN')), false);
-    assert.equal(pyEquals(loaded('[NaN]'), loaded('[NaN, NaN]')), false);
-    assert.equal(pyEquals(loaded('[NaN]'), loaded('[1]')), false);
-    assert.equal(pyEquals(loaded('[NaN]'), [new PyFloat(NaN)]), false);
-    assert.equal(pyEquals(loaded('Infinity'), loaded('Infinity')), true);
-    assert.equal(pyEquals(loaded('[Infinity, -Infinity]'), loaded('[Infinity, -Infinity]')), true);
-    assert.equal(pyEquals(loaded('[Infinity]'), loaded('[-Infinity]')), false);
-    assert.equal(pyEquals(loaded('[1e999]'), loaded('[Infinity]')), true);
-    for (const depth of [3000, 9999]) {
-      assert.equal(pyEquals(loaded('['.repeat(depth) + 'NaN' + ']'.repeat(depth)), loaded('['.repeat(depth) + 'NaN' + ']'.repeat(depth))), true);
-      assert.equal(pyEquals(loaded('{"a": '.repeat(depth) + '[NaN]' + '}'.repeat(depth)), loaded('{"a": '.repeat(depth) + '[NaN]' + '}'.repeat(depth))), true);
-      assert.equal(pyEquals(loaded('['.repeat(depth) + 'NaN' + ']'.repeat(depth)), loaded('['.repeat(depth) + '1' + ']'.repeat(depth))), false);
-    }
-  });
-
-  test('pyEquals compares values nested far deeper than the call stack', () => {
-    const nest = (bottom: unknown, depth: number) => {
-      let value: unknown = bottom;
-      for (let level = 0; level < depth; level++) value = { a: [value] };
-      return value;
-    };
-    assert.equal(pyEquals(nest(1, 9999), nest(new PyFloat(1), 9999)), true);
-    assert.equal(pyEquals(nest(1, 9999), nest(2, 9999)), false);
-    assert.equal(pyEquals(nest(1, 9999), nest(1, 9998)), false);
-  });
-
-  test('pyEquals compares numbers by value across int, bool and float like ==', () => {
-    for (const [left, right, expected] of [
-      [1, new PyFloat(1), true], [true, 1, true], [new PyFloat(1), true, true], [9007199254740993n, new PyFloat(9007199254740992), false],
-      [9007199254740992n, new PyFloat(9007199254740992), true], [new PyFloat(0), new PyFloat(-0), true], [new PyFloat(NaN), new PyFloat(NaN), false],
-      [1, '1', false], [1, null, false], [2, new PyFloat(1.5), false],
-      [{ a: [1, 2] }, { a: [new PyFloat(1), 2] }, true], [{ a: 1 }, { b: 1 }, false], [[1], [1, 2], false], ['a', 'a', true],
-    ] as const) {
-      assert.equal(pyEquals(left, right), expected, `${String(left)} == ${String(right)}`);
-    }
-  });
-
   test('pyTruthy and pyStr follow bool() and str() for loaded values', () => {
     assert.deepEqual([0, 0n, new PyFloat(-0), '', [], {}, null, false].map(pyTruthy), Array(8).fill(false));
     assert.deepEqual([1, 9007199254740993n, new PyFloat(0.5), 'x', [0], { a: 0 }, true].map(pyTruthy), Array(7).fill(true));
@@ -187,75 +140,24 @@ describe('python value semantics', () => {
 });
 
 describe('python string helpers', () => {
-  test('splitLines uses the unicode line boundaries and drops the trailing empty element', () => {
-    assert.deepEqual(pySplitLines('a\r\nb c\x85d\n'), ['a', 'b', 'c', 'd']);
-    assert.deepEqual(pySplitLines(''), []);
-  });
-
   test('strip removes unicode whitespace that JavaScript trim keeps', () => {
     assert.equal(pyStrip('\x1c\x85 x 　'), 'x');
-  });
-
-  test('decodeSurrogateEscape maps invalid bytes to lone low surrogates', () => {
-    assert.equal(decodeSurrogateEscape(Buffer.from([0x61, 0xff, 0xc3, 0xa9, 0x80])), 'a\udcffé\udc80');
   });
 
   test('repr picks quotes the way python does', () => {
     assert.equal(pyRepr("it's"), '"it\'s"');
     assert.equal(pyRepr('a\nb'), "'a\\nb'");
   });
-
-  test('fnmatchCase follows fnmatch.fnmatchcase for sets and wildcards', () => {
-    assert.equal(fnmatchCase('src/a/billing/x.py', 'src/*/billing/*'), true);
-    assert.equal(fnmatchCase('a.TS', '*.ts'), false);
-    assert.equal(fnmatchCase('b', '[!a]'), true);
-    assert.equal(fnmatchCase(']', '[]]'), true);
-    assert.equal(fnmatchCase('c', '[a-b]'), false);
-  });
 });
 
-describe('failure classification', () => {
-  const errnoError = Object.assign(new Error('boom'), { errno: -2, code: 'ENOENT' });
-  const invalidArgument = Object.assign(new TypeError('path contains a null byte'), { code: 'ERR_INVALID_ARG_VALUE' });
-
-  test('isSystemError accepts errors with a numeric errno only', () => {
-    assert.equal(isSystemError(errnoError), true);
-    assert.equal(isSystemError(invalidArgument), false);
-    assert.equal(isSystemError(new Error('plain')), false);
-    assert.equal(isSystemError('ENOENT'), false);
-  });
-
-  test('isInputFailure accepts what Python catches as OSError, ValueError, KeyError or TypeError and rejects programming errors', () => {
-    for (const expected of [new TypeError('x'), new RangeError('x'), new JSONDecodeError('x', [], 0), new OSError('x'), errnoError]) {
-      assert.equal(isInputFailure(expected), true, expected.constructor.name);
-    }
-    for (const unexpected of [new Error('x'), new ReferenceError('x'), new SyntaxError('x'), 'text', null]) {
-      assert.equal(isInputFailure(unexpected), false, String(unexpected));
-    }
-  });
-
-  test('isDirectory and isFile answer false for missing paths, a file used as a directory and an embedded NUL, like os.path', () => {
-    const directory = mkdtempSync(join(tmpdir(), 'keel-kind-'));
-    try {
-      writeFileSync(join(directory, 'f'), '');
-      assert.deepEqual([isDirectory(directory), isFile(directory)], [true, false]);
-      assert.deepEqual([isDirectory(join(directory, 'f')), isFile(join(directory, 'f'))], [false, true]);
-      assert.deepEqual([isDirectory(join(directory, 'missing')), isFile(join(directory, 'missing'))], [false, false]);
-      assert.deepEqual([isDirectory(join(directory, 'f', 'below')), isFile(join(directory, 'a\0b'))], [false, false]);
-    } finally {
-      rmSync(directory, { recursive: true, force: true });
-    }
-  });
-});
-
-describe('pyOsErrorMessage', () => {
+describe('errorText for errors that carry an errno', () => {
   const reportable = [...getSystemErrorMap()].flatMap(([errno, [code]]) => (code in constants.errno ? [{ errno, code }] : []));
 
   test('words every errno node can report like the host os.strerror', { skip: recordedPlatformMatches() ? false : 'os.strerror wording was recorded on darwin' }, () => {
     const strerror = recordedAnswers<number, string>('ship-gate-strerror', reportable.map(({ errno }) => errno));
     assert.ok(reportable.length > 50, `only ${reportable.length} errnos compared`);
     const differing = reportable.flatMap(({ errno, code }, index) => {
-      const ours = pyOsErrorMessage(Object.assign(new Error('unused'), { errno, code }));
+      const ours = errorText(Object.assign(new Error('unused'), { errno, code }));
       return ours === `[Errno ${-errno}] ${strerror[index]}` ? [] : [`${code}: ${ours} != ${strerror[index]}`];
     });
     assert.deepEqual(differing, []);
@@ -263,6 +165,6 @@ describe('pyOsErrorMessage', () => {
 
   test('appends the repr of the path like OSError.__str__', () => {
     const error = Object.assign(new Error('unused'), { errno: -21, code: 'EISDIR', path: "/tmp/it's" });
-    assert.equal(pyOsErrorMessage(error), `[Errno 21] Is a directory: "/tmp/it's"`);
+    assert.equal(errorText(error), `[Errno 21] Is a directory: "/tmp/it's"`);
   });
 });

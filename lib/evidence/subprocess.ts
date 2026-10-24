@@ -1,21 +1,13 @@
 import childProcess from 'node:child_process';
 import { constants } from 'node:os';
-import { pyOsErrorMessage, pyReprList, pythonErrnoName } from './pycompat.ts';
+import { describeCommand } from './hook_pinned.ts';
 
 const UNLIMITED_OUTPUT = Infinity;
 const SIGNAL_NUMBERS: Record<string, number> = constants.signals;
 
 export class TimeoutExpired extends Error {
   constructor(command: string[], timeoutSeconds: number) {
-    super(`Command '${pyReprList(command)}' timed out after ${timeoutSeconds} seconds`);
-  }
-}
-
-export class OSError extends Error {
-  pythonName: string;
-  constructor(message: string, pythonName = 'OSError') {
-    super(message);
-    this.pythonName = pythonName;
+    super(`Command '${describeCommand(command)}' timed out after ${timeoutSeconds} seconds`);
   }
 }
 
@@ -60,9 +52,8 @@ export function runCaptured(command: string[], options: RunOptions = {}): Comple
   return { returncode: returnCode(completed.status, completed.signal), stdout: completed.stdout, stderr: completed.stderr };
 }
 
-export function spawnFailure(error: NodeJS.ErrnoException, command: string[], timeoutSeconds: number | undefined): Error {
-  if (error.code === 'ETIMEDOUT') return new TimeoutExpired(command, timeoutSeconds ?? 0);
-  return new OSError(pyOsErrorMessage(error), pythonErrnoName(error.code));
+function spawnFailure(error: NodeJS.ErrnoException, command: string[], timeoutSeconds: number | undefined): Error {
+  return error.code === 'ETIMEDOUT' ? new TimeoutExpired(command, timeoutSeconds ?? 0) : error;
 }
 
 export function returnCode(status: number | null, signal: NodeJS.Signals | null): number {

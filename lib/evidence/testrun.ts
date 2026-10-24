@@ -7,23 +7,21 @@ import { delimiter, join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import * as env from './env.ts';
 import * as gitcmd from './gitcmd.ts';
-import { PYTHON_SPACE_PATTERN, decodeReplacing, pyOsErrorMessage, pythonErrnoName, pythonJsonDumps } from './pycompat.ts';
 import * as registry from './registry.ts';
 import { printErrorLine, writeStdout } from './stdio.ts';
 import * as store from './store.ts';
-import { OSError, returnCode } from './subprocess.ts';
+import { returnCode } from './subprocess.ts';
 import { Usage } from './writers.ts';
 
 const NOT_WORD_AFTER = '(?![\\p{L}\\p{N}_])';
 const NOT_WORD_BEFORE = '(?<![\\p{L}\\p{N}_])';
 const LINE_START = '(?<![^\\n])';
-const SPACE = `[${PYTHON_SPACE_PATTERN.slice(1, -1)}]`;
 export const COUNT_PATTERNS: Array<[name: string, pattern: RegExp]> = [
   ['surefire', /Tests run: ([0-9]+)/gu],
   ['unittest', new RegExp(`${LINE_START}Ran ([0-9]+) tests?${NOT_WORD_AFTER}`, 'gu')],
   ['tap', new RegExp(`${LINE_START}# pass ([0-9]+)`, 'gu')],
   ['passed', new RegExp(
-    `${LINE_START}(?!${SPACE}*Test (?:Files|Suites)${NOT_WORD_AFTER})[^\\n]*?${NOT_WORD_BEFORE}([0-9]+) passed${NOT_WORD_AFTER}`, 'gu')],
+    `${LINE_START}(?!\\s*Test (?:Files|Suites)${NOT_WORD_AFTER})[^\\n]*?${NOT_WORD_BEFORE}([0-9]+) passed${NOT_WORD_AFTER}`, 'gu')],
 ];
 const NO_TESTS_RECOGNIZED = 4;
 const COMMAND_NOT_FOUND = 2;
@@ -32,8 +30,6 @@ const MKFIFO = '/usr/bin/mkfifo';
 const KEEPS_SEARCHING_ERRORS = new Set(['ENOENT', 'ENOTDIR']);
 const OUTPUT_POLL_MS = 10;
 const OUTPUT_READ_BYTES = 64 * 1024;
-
-type Json = Parameters<typeof pythonJsonDumps>[0];
 
 export async function run(argv: string[], cwd: string): Promise<number> {
   if (argv.length === 0) throw new Usage('keel test -- <command…>');
@@ -57,12 +53,12 @@ export async function run(argv: string[], cwd: string): Promise<number> {
     evidenceId = evidence.evidence_id;
     submoduleEvidence = writeSubmoduleEvidence(testRecord, submodulesBefore, submodulesAfter);
   }
-  env.appendLogLine('keel-tests.jsonl', {
+  env.appendRecord('keel-tests.jsonl', {
     ...testRecord, ts: env.iso(env.utcNow()), evidence_id: evidenceId, submodule_evidence: submoduleEvidence,
   });
-  printErrorLine('KEEL-TEST ' + pythonJsonDumps({
+  printErrorLine('KEEL-TEST ' + JSON.stringify({
     run_id: runId, count, exit: exitCode, evidence_id: evidenceId, submodule_evidence: submoduleEvidence,
-  } as Json));
+  }));
   if (exitCode === 0 && count === 0) return NO_TESTS_RECOGNIZED;
   return exitCode;
 }
@@ -144,8 +140,7 @@ async function launch(argv: string[], cwd: string, writer: number): Promise<Laun
   }
   const failure = (firstHardFailure ?? lastFailure)!;
   if (failure.code === 'ENOENT') return null;
-  failure.path = name;
-  throw new OSError(pyOsErrorMessage(failure), pythonErrnoName(failure.code));
+  throw new Error(`cannot run ${name}: ${failure.message}`, { cause: failure });
 }
 
 function searchCandidates(name: string): string[] {
@@ -183,7 +178,7 @@ async function relayUntilClosed(exited: Promise<number>, reader: number): Promis
       chunks.push(chunk);
     }
   }
-  return [await exited, decodeReplacing(Buffer.concat(chunks))];
+  return [await exited, Buffer.concat(chunks).toString()];
 }
 
 function readAvailable(reader: number): Buffer | 'pending' {

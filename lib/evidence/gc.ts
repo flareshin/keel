@@ -1,6 +1,6 @@
 import { unlinkSync } from 'node:fs';
+import { compareCodePoints } from '../../measure/lib/measurekit/json.ts';
 import * as env from './env.ts';
-import { compareCodePoints } from './pycompat.ts';
 import { printErrorLine } from './stdio.ts';
 import * as store from './store.ts';
 import { EvidenceError } from './store.ts';

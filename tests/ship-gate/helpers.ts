@@ -34,6 +34,12 @@ export function readJson(path: string): any {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
+export function expireEvidence(path: string): void {
+  const evidence = readJson(path);
+  evidence.expires_at = '1999-01-01T00:00:00Z';
+  writeFileSync(path, JSON.stringify(evidence) + '\n');
+}
+
 export function shipGateTimeout(): number {
   const registered: number[] = readJson(SETTINGS_PATH).hooks.PreToolUse.flatMap((entry: any) => entry.hooks)
     .filter((registration: any) => registration.command.includes('ship-gate.')).map((registration: any) => registration.timeout);

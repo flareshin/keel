@@ -1,5 +1,5 @@
 import { readFileSync, writeSync } from 'node:fs';
-import { decodeStrict } from './pycompat.ts';
+import { decodeStrict } from './text.ts';
 
 const STDOUT_FD = 1;
 const STDERR_FD = 2;
@@ -29,7 +29,7 @@ export function readStdinText(): string {
     if ((error as NodeJS.ErrnoException).code !== 'EOF') throw error;
     bytes = Buffer.alloc(0);
   }
-  return decodeStrict(bytes);
+  return decodeStrict(bytes, 'stdin');
 }
 
 function writeAll(fd: number, data: string | Uint8Array): void {

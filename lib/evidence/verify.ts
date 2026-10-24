@@ -1,10 +1,10 @@
+import { compareCodePoints } from '../../measure/lib/measurekit/json.ts';
 import { buildChains } from './chain.ts';
 import type { Chain } from './chain.ts';
 import * as codexReview from './codex_review.ts';
 import * as commentCleanup from './comment_cleanup.ts';
 import * as gitcmd from './gitcmd.ts';
 import type { PathEntry } from './gitcmd.ts';
-import { pyRepr, sortedStrings } from './pycompat.ts';
 import * as registry from './registry.ts';
 import type { GatedRepo } from './registry.ts';
 import { LIGHT, SMOKE_ONLY, classify, hasTestPath, logicPaths } from './risk.ts';
@@ -105,7 +105,7 @@ function resolveReviews(outgoing: Outgoing, entries: PathEntry[]): [Chain | null
 function stackedOverlapReasons(outgoing: Outgoing, entries: PathEntry[], stackable: Chain[], chains: Chain[]): Reason[] {
   const reasons: Reason[] = [];
   for (const entry of entries) {
-    const reviewers = sortedStrings(stackable.filter((chain) => chain.reviewed.has(entry.path)).map((chain) => chain.rootRunId));
+    const reviewers = stackable.filter((chain) => chain.reviewed.has(entry.path)).map((chain) => chain.rootRunId).sort(compareCodePoints);
     if (gitcmd.isGitlink(entry) || reviewers.length < 2 || coveredByAny(outgoing, entry, chains)) continue;
     const commit = gitcmd.lastCommitTouching(outgoing.repoRoot, outgoing.mergeBase, outgoing.head, entry.path);
     const parent = gitcmd.commitSha(outgoing.repoRoot, commit + '^');
@@ -287,7 +287,7 @@ export function isValidationFailure(error: unknown): boolean {
 }
 
 function failureText(error: unknown): string {
-  return error instanceof Error ? error.message : pyRepr(String(error));
+  return error instanceof Error ? error.message : String(error);
 }
 
 function approvalReasons(outgoing: Outgoing, chain: Chain): Reason[] {

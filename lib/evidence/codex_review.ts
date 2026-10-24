@@ -2,11 +2,14 @@ import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, lstatSync, realpathSync } from 'node:fs';
 import { userInfo } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
+import { isSystemError, resolveLinks, splitLines } from '../../measure/lib/measurekit/files.ts';
+import { compareCodePoints, parseJsonKeepingIntegers } from '../../measure/lib/measurekit/json.ts';
 import * as codexLenses from './codex_lenses.ts';
 import * as env from './env.ts';
-import { PYTHON_SPACE_PATTERN, compareCodePoints, decodeStrict, isJsonObject, isSystemError, pyEquals, pyRealpath, pySplitLines, pyStrip, pyTruthy, pythonJsonLoads, universalNewlines } from './pycompat.ts';
-import { OSError, TimeoutExpired, runCaptured } from './subprocess.ts';
+import { TimeoutExpired, runCaptured } from './subprocess.ts';
+import { decodeStrict } from './text.ts';
 import * as writers from './writers.ts';
+import { isJsonRecord } from './writers.ts';
 import type { JsonObject } from './writers.ts';
 
 export const KIND = 'codex-lens-review';
@@ -19,17 +22,16 @@ const DECISION_KEYS = new Set(['id', 'verdict', 'evidence']);
 const FINDING_KEYS = new Set(['id', 'impact', 'evidence', 'scenario']);
 const CANONICAL_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const RULE_CHECKS_TIMEOUT_SECONDS = 120;
-const NOT_SPACE = `[^${PYTHON_SPACE_PATTERN.slice(1, -1)}]`;
-const SUMMARY_FIELDS = `repos=[0-9]+ scanned_lines=[0-9]+ signals=[0-9]+ unscanned=${NOT_SPACE}+ blocked=${NOT_SPACE}+`;
-const SUMMARY_LINE = new RegExp(
-  `(?<![^\\n])summary repos=([0-9]+) scanned_lines=([0-9]+) signals=([0-9]+) unscanned=(${NOT_SPACE}+) blocked=(${NOT_SPACE}+)(?![^\\n])`, 'gu');
+const SUMMARY_FIELDS = 'repos=[0-9]+ scanned_lines=[0-9]+ signals=[0-9]+ unscanned=\\S+ blocked=\\S+';
+const SUMMARY_LINE = /^summary repos=([0-9]+) scanned_lines=([0-9]+) signals=([0-9]+) unscanned=(\S+) blocked=(\S+)$/u;
 const CITED_SUMMARY = new RegExp(`summary ${SUMMARY_FIELDS}`, 'gu');
+const SUMMARY_PREFIX = 'summary ';
 
 export const seams = { sessionRoot };
 
 export function validateEvidence(evidence: JsonObject): void {
   const source = evidence['source'] || {};
-  if (pyEquals(source['version'], 2)) {
+  if (source['version'] === 2) {
     codexLenses.validateEvidence(evidence);
     return;
   }
@@ -66,13 +68,13 @@ export function locateSession(identity: unknown): [path: string, content: Buffer
   const matches = findRollouts(sessions, identity);
   if (matches.length !== 1) throw new writers.Refused('expected one live Codex rollout for ' + identity);
   const path = matches[0]!;
-  if (lstatSync(path).isSymbolicLink() || !pyRealpath(path).startsWith(sessions + sep)) {
+  if (lstatSync(path).isSymbolicLink() || !resolveLinks(path).startsWith(sessions + sep)) {
     throw new writers.Refused('Codex rollout escaped its session root');
   }
   let content: Buffer;
   try {
     content = readFileSync(path);
-    const records = splitBytesLines(content).map((line) => pythonJsonLoads(decodeStrict(line)) as JsonObject);
+    const records = splitLines(decodeStrict(content, path)).map((line) => parseJsonKeepingIntegers(line) as JsonObject);
     if (records.length === 0 || records[0]!['type'] !== 'session_meta' || asObject(records[0]!['payload'])['id'] !== identity) {
       throw new TypeError('not a session');
     }
@@ -80,7 +82,7 @@ export function locateSession(identity: unknown): [path: string, content: Buffer
     if (!writers.isInputFailure(error)) throw error;
     throw new writers.Refused('invalid Codex rollout: ' + path);
   }
-  return [pyRealpath(path), content];
+  return [resolveLinks(path), content];
 }
 
 function findRollouts(directory: string, identity: string): string[] {
@@ -103,30 +105,13 @@ function findRollouts(directory: string, identity: string): string[] {
   return found;
 }
 
-function splitBytesLines(content: Buffer): Buffer[] {
-  const lines: Buffer[] = [];
-  let start = 0;
-  let index = 0;
-  while (index < content.length) {
-    const byte = content[index]!;
-    if (byte === 0x0a || byte === 0x0d) {
-      lines.push(content.subarray(start, index));
-      if (byte === 0x0d && content[index + 1] === 0x0a) index++;
-      start = index + 1;
-    }
-    index++;
-  }
-  if (start < content.length) lines.push(content.subarray(start));
-  return lines;
-}
-
 export function sessionRoot(): string {
-  return pyRealpath(join(userInfo().homedir, '.codex'));
+  return resolveLinks(join(userInfo().homedir, '.codex'));
 }
 
 export function completedReport(content: Buffer, identity: string): [meta: JsonObject, report: JsonObject] {
   try {
-    const records = splitBytesLines(content).map((line) => asObject(pythonJsonLoads(decodeStrict(line))));
+    const records = splitLines(decodeStrict(content, 'the Codex rollout')).map((line) => asObject(parseJsonKeepingIntegers(line)));
     const meta = asObject(required(records[0], 'payload'));
     if (required(records[0], 'type') !== 'session_meta' || required(meta, 'id') !== identity) throw new RangeError('not this session');
     let turn: any = null;
@@ -143,12 +128,12 @@ export function completedReport(content: Buffer, identity: string): [meta: JsonO
         final = joinOutputText(required(payload, 'content'));
       }
       if (record['type'] === 'event_msg' && (payload['type'] === 'task_complete' || payload['type'] === 'turn_aborted')) {
-        complete = payload['type'] === 'task_complete' && pyTruthy(turn) && pyEquals(payload['turn_id'], turn);
+        complete = payload['type'] === 'task_complete' && typeof turn === 'string' && turn !== '' && payload['turn_id'] === turn;
       }
     }
     if (!complete || final === null) throw new RangeError('no completed report');
-    const report = pythonJsonLoads(final);
-    if (!isJsonObject(report)) throw new RangeError('report is not an object');
+    const report = parseJsonKeepingIntegers(final);
+    if (!isJsonRecord(report)) throw new RangeError('report is not an object');
     return [meta, report as JsonObject];
   } catch (error) {
     if (!writers.isInputFailure(error)) throw error;
@@ -183,7 +168,7 @@ export function sharedAuthor(audit: JsonObject, verifier: JsonObject, auditId: s
 
 export function validateReports(audit: JsonObject, verification: JsonObject, repo: string, auditId: string): string {
   for (const [report, role] of [[audit, 'audit'], [verification, 'verify']] as const) {
-    if (!hasExactKeys(report, REPORT_KEYS) || !pyEquals(report['version'], 1) || report['role'] !== role) {
+    if (!hasExactKeys(report, REPORT_KEYS) || report['version'] !== 1 || report['role'] !== role) {
       throw new writers.Refused('invalid native review report schema or role');
     }
     if (report['repo'] !== repo || report['base'] !== audit['base'] || report['tree'] !== audit['tree']) {
@@ -193,7 +178,7 @@ export function validateReports(audit: JsonObject, verification: JsonObject, rep
       if (!env.isSha(report[key])) throw new writers.Refused('invalid target object id');
     }
     const lenses = report['lenses'];
-    if (!isJsonObject(lenses) || !hasExactKeys(lenses, LENSES)) throw new writers.Refused('every native review must cover all five lenses');
+    if (!isJsonRecord(lenses) || !hasExactKeys(lenses, LENSES)) throw new writers.Refused('every native review must cover all five lenses');
     if (Object.values(lenses).some((item) => !isCompleteLens(item))) throw new writers.Refused('incomplete or unproven review lens');
     validateFindings(report['findings']);
   }
@@ -209,7 +194,7 @@ export function adjudicatedFindings(findings: JsonObject[], decisions: unknown):
   const seen: unknown[] = [];
   const confirmed: unknown[] = [];
   for (const decision of decisions) {
-    if (!isJsonObject(decision) || !hasExactKeys(decision, DECISION_KEYS)
+    if (!isJsonRecord(decision) || !hasExactKeys(decision, DECISION_KEYS)
       || (decision['verdict'] !== 'confirmed' && decision['verdict'] !== 'refuted') || !nonblank(decision['evidence'])) {
       throw new writers.Refused('every finding needs an evidenced verifier decision');
     }
@@ -225,7 +210,7 @@ export function validateFindings(findings: unknown): void {
   if (!Array.isArray(findings)) throw new writers.Refused('findings must be a list');
   const ids: unknown[] = [];
   for (const finding of findings) {
-    if (!isJsonObject(finding) || !hasExactKeys(finding, FINDING_KEYS)) throw new writers.Refused('invalid finding schema');
+    if (!isJsonRecord(finding) || !hasExactKeys(finding, FINDING_KEYS)) throw new writers.Refused('invalid finding schema');
     if (!['high', 'medium', 'low'].includes(finding['impact']) || ['id', 'evidence', 'scenario'].some((key) => !nonblank(finding[key]))) {
       throw new writers.Refused('finding needs impact, file evidence and a failure scenario');
     }
@@ -235,7 +220,7 @@ export function validateFindings(findings: unknown): void {
 }
 
 export function nonblank(value: unknown): boolean {
-  return typeof value === 'string' && pyStrip(value) !== '';
+  return typeof value === 'string' && value.trim() !== '';
 }
 
 export function digest(content: Uint8Array): string {
@@ -251,18 +236,22 @@ export function runRuleChecks(repo: string, base: string, tree: string): string 
     const completed = runCaptured([process.execPath, script, '--repo', repo, '--base', base, '--head', tree],
       { timeoutSeconds: RULE_CHECKS_TIMEOUT_SECONDS });
     returncode = completed.returncode;
-    stdout = universalNewlines(decodeStrict(completed.stdout));
+    stdout = decodeStrict(completed.stdout, 'rule-checks output');
   } catch (error) {
-    if (error instanceof OSError || error instanceof TimeoutExpired) {
+    if (isSystemError(error) || error instanceof TimeoutExpired) {
       throw new writers.Refused('rule-checks could not complete: ' + error.message);
     }
     throw error;
   }
-  const summaries = [...stdout.matchAll(SUMMARY_LINE)].map((match) => match.slice(1, 6));
+  const lines = splitLines(stdout);
+  const summaries = lines.flatMap((line) => {
+    const match = SUMMARY_LINE.exec(line);
+    return match === null ? [] : [match.slice(1, 6)];
+  });
   if (returncode || summaries.length !== 1 || Number(summaries[0]![0]) === 0 || summaries[0]![3] !== 'none' || summaries[0]![4] !== 'none') {
     throw new writers.Refused('rule-checks failed, recognized zero repos or left targets unscanned');
   }
-  return pySplitLines(stdout).find((line) => line.startsWith('summary '))!;
+  return lines.find((line) => line.startsWith(SUMMARY_PREFIX))!;
 }
 
 export function validateRuleChecks(repo: string, base: string, tree: string, audit: JsonObject, verification: JsonObject | null = null): void {
@@ -277,13 +266,13 @@ export function validateRuleChecks(repo: string, base: string, tree: string, aud
 }
 
 export function hasExactKeys(value: unknown, keys: Set<string>): boolean {
-  if (!isJsonObject(value)) return false;
+  if (!isJsonRecord(value)) return false;
   const actual = Object.keys(value);
   return actual.length === keys.size && actual.every((key) => keys.has(key));
 }
 
 function isCompleteLens(item: unknown): boolean {
-  return isJsonObject(item) && hasExactKeys(item, LENS_ITEM_KEYS) && item['status'] === 'complete' && nonblank(item['evidence']);
+  return isJsonRecord(item) && hasExactKeys(item, LENS_ITEM_KEYS) && item['status'] === 'complete' && nonblank(item['evidence']);
 }
 
 function isEmptyList(value: unknown): boolean {
@@ -298,7 +287,7 @@ function sameMultiset(left: unknown[], right: unknown[]): boolean {
 }
 
 function asObject(value: unknown): JsonObject {
-  if (!isJsonObject(value)) throw new TypeError('not an object');
+  if (!isJsonRecord(value)) throw new TypeError('not an object');
   return value;
 }
 

@@ -6,9 +6,8 @@ import { describe, test } from 'node:test';
 import * as codexLenses from '../../lib/evidence/codex_lenses.ts';
 import * as codexReview from '../../lib/evidence/codex_review.ts';
 import * as gitcmd from '../../lib/evidence/gitcmd.ts';
-import { pythonJsonLoads } from '../../lib/evidence/pycompat.ts';
+import * as store from '../../lib/evidence/store.ts';
 import { AUTHOR, AUDIT, CodexFixture, LENSES, VERIFY } from './codex_helpers.ts';
-import { recordedAnswers } from '../recorded.ts';
 import { KEEL } from './helpers.ts';
 
 type Outcome = string[];
@@ -27,7 +26,7 @@ function registerLenses(f: CodexFixture, audits: string[]): Outcome {
 }
 
 function validateStored(path: string): Outcome {
-  codexReview.validateEvidence(pythonJsonLoads(readFileSync(path, 'utf8')) as any);
+  codexReview.validateEvidence(store.readFile(path));
   return ['ok', 'validated'];
 }
 
@@ -74,61 +73,45 @@ function storedReviews(dataDir: string): string[] {
   return (readdirSync(root, { recursive: true }) as string[]).filter((name) => name.endsWith('.json')).sort().map((name) => join(root, name));
 }
 
-function recordedPythonOutcome(f: CodexFixture, question: { test: string; step: string }): Outcome {
-  return recordedAnswers<unknown, Outcome>('ship-gate-cross-impl-codex', [question], { '{{ROOT}}': f.sandbox.root })[0] as Outcome;
-}
+const RECORDED_ROOT_RUN_ID = 'cx2-aef21664daecd793da45b09e83cadd3a';
 
-describe('TypeScript agrees with the recorded Python outcomes on float spellings of version fields', () => {
-  test('lens reports spelled "version": 2.0 are registered like Python', (t) => {
+describe('Codex evidence with float spellings of version fields', () => {
+  test('lens reports spelled "version": 2.0 are registered as version 2', (t) => {
     const f = new CodexFixture(t);
     const audits = writeLensAudits(f);
     for (const identity of audits) respell(sessionFile(f, identity), /\\"version\\":2([,}])/, '\\"version\\":2.0$1');
 
-    const python = recordedPythonOutcome(f, { test: 'lens-version-float', step: 'register' });
-    const typescript = typescriptOutcome(() => registerLenses(f, audits));
-
-    assert.deepEqual(typescript, python);
-    assert.deepEqual(python.slice(0, 2), ['ok', 'PASS']);
+    assert.deepEqual(typescriptOutcome(() => registerLenses(f, audits)), ['ok', 'PASS', RECORDED_ROOT_RUN_ID, '2']);
   });
 
-  test('stored lens evidence spelled "version": 2.0 validates, re-registers and extends like Python', (t) => {
+  test('stored lens evidence spelled "version": 2.0 is no longer a version 2 record: it is inventoried as read-only and refused', (t) => {
     const f = new CodexFixture(t);
     const audits = writeLensAudits(f);
-    const steps: Array<[string, Outcome, Outcome]> = [];
-    const test = 'stored-version-float';
-    const both = (label: string, typescript: Outcome) => steps.push([label, recordedPythonOutcome(f, { test, step: label }), typescript]);
-    both('register', typescriptOutcome(() => registerLenses(f, audits)));
+    assert.deepEqual(typescriptOutcome(() => registerLenses(f, audits)), ['ok', 'PASS', RECORDED_ROOT_RUN_ID, '2']);
     const stored = storedReviews(f.sandbox.data);
-    for (const path of stored) respell(path, /"version": 2([,}\n])/, '"version": 2.0$1');
-    both('compatibility', compatibilityOutcome(f, f.sandbox.data, ['node', KEEL]));
-    both('validate stored', typescriptOutcome(() => validateStored(stored[0]!)));
-    both('register again', typescriptOutcome(() => registerLenses(f, audits)));
+    for (const path of stored) respell(path, /"version":2([,}\n])/, '"version":2.0$1');
+
+    const [status, inventory] = compatibilityOutcome(f, f.sandbox.data, ['node', KEEL]);
+    assert.equal(status, 'rc 0');
+    assert.deepEqual(JSON.parse(inventory!), { chain_roots: [RECORDED_ROOT_RUN_ID], read_only_records: 1, reader_removable: false });
+    assert.deepEqual(typescriptOutcome(() => validateStored(stored[0]!)), ['error', 'Refused', 'invalid Codex review provenance']);
+    assert.deepEqual(typescriptOutcome(() => registerLenses(f, audits)), ['error', 'Refused', 'invalid lens review provenance']);
 
     const previousTree = f.tree;
-    const root = steps[0]![1]![2]!;
     f.repo.write('src/a.py', 'print(3)\n');
     f.tree = gitcmd.snapshotTree(f.repo.path);
-    const delta = writeLensAudits(f, { since: previousTree, root });
-    both('delta', typescriptOutcome(() => registerLenses(f, delta)));
-
-    for (const [label, pythonResult, typescriptResult] of steps) assert.deepEqual(typescriptResult, pythonResult, label);
-    assert.deepEqual(steps.map(([, pythonResult]) => pythonResult[0]), ['ok', 'rc 0', 'ok', 'ok', 'ok']);
-    assert.match(steps[1]![1]![1]!, /"read_only_records": 0/);
+    const delta = writeLensAudits(f, { since: previousTree, root: RECORDED_ROOT_RUN_ID });
+    assert.deepEqual(typescriptOutcome(() => registerLenses(f, delta)),
+      ['error', 'Refused', 'lens delta requires an existing version 2 review chain']);
   });
 
-  test('native reports spelled "version": 1.0 are accepted like Python', (t) => {
+  test('native reports spelled "version": 1.0 are accepted as version 1', (t) => {
     const f = new CodexFixture(t);
     for (const identity of [AUDIT, VERIFY]) respell(sessionFile(f, identity), /\\"version\\":1([,}])/, '\\"version\\":1.0$1');
 
-    const typescript = typescriptOutcome(() => {
+    assert.deepEqual(typescriptOutcome(() => {
       f.register();
       return ['ok', 'validated'];
-    });
-    const python = typescript[0] === 'ok'
-      ? recordedPythonOutcome(f, { test: 'native-version-float', step: 'validate' })
-      : ['not registered'];
-
-    assert.deepEqual(typescript, ['ok', 'validated']);
-    assert.deepEqual(python, typescript);
+    }), ['ok', 'validated']);
   });
 });

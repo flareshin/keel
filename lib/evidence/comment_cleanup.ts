@@ -1,10 +1,10 @@
 import { posix } from 'node:path';
+import { InvalidUtf8Error } from '../../measure/lib/measurekit/files.ts';
 import * as gitcmd from './gitcmd.ts';
-import { PYTHON_SPACE_PATTERN, UnicodeDecodeError, decodeStrict, pyStrip } from './pycompat.ts';
+import { decodeStrict } from './text.ts';
 
 const MAX_SOURCE_BYTES = 1024 * 1024;
-const PYTHON_SPACE_MEMBERS = PYTHON_SPACE_PATTERN.slice(1, -1);
-const PROSE = new RegExp(`^[\\p{L}\\p{N}_${PYTHON_SPACE_MEMBERS}.,!?()'"-]+$`, 'u');
+const PROSE = /^[\p{L}\p{N}_\s.,!?()'"-]+$/u;
 const PROTECTED_KEYWORDS = 'copyright|licen[cs]e|spdx|notice|rights reserved|trademark|coding|encoding|'
   + 'ignore|disable|enable|suppress|pragma|noqa|nosec|lint|prettier|formatter|'
   + 'coverage|istanbul|source[^\\n]?map|sourceurl|checkstyle|generated|preserve|'
@@ -13,7 +13,7 @@ const PROTECTED_KEYWORDS = 'copyright|licen[cs]e|spdx|notice|rights reserved|tra
   + 'global|exported|noinspection|sonar|pmd|isort|ruff|fmt|yapf|__';
 const DOTTED_OR_DOTLESS_I = '[i\\u0130\\u0131]';
 const PROTECTED = new RegExp(
-  PROTECTED_KEYWORDS.replaceAll('i', DOTTED_OR_DOTLESS_I).replace('<space>', `[${PYTHON_SPACE_MEMBERS}-]`), 'iu');
+  PROTECTED_KEYWORDS.replaceAll('i', DOTTED_OR_DOTLESS_I).replace('<space>', '[\\s-]'), 'iu');
 const SUPPORTED_SUFFIXES = ['.js', '.ts', '.java'];
 const REGULAR_FILE_MODES = ['100644', '100755'];
 const FORBIDDEN_CHARS = ['\0', '\ufeff', '\u2028', '\u2029'];
@@ -64,10 +64,10 @@ export function onlyCommentDeletions(path: string, before: Buffer, after: Buffer
   let old: string;
   let current: string;
   try {
-    old = decodeStrict(before);
-    current = decodeStrict(after);
+    old = decodeStrict(before, 'the old blob');
+    current = decodeStrict(after, 'the new blob');
   } catch (error) {
-    if (!(error instanceof UnicodeDecodeError)) throw error;
+    if (!(error instanceof InvalidUtf8Error)) throw error;
     return false;
   }
   if (old.replaceAll('\r\n', '').includes('\r') || FORBIDDEN_CHARS.some((char) => old.includes(char))) return false;
@@ -80,7 +80,7 @@ export function onlyCommentDeletions(path: string, before: Buffer, after: Buffer
     const first = old.lastIndexOf('\n', start - 1) + 1;
     const lineEnd = old.indexOf('\n', end);
     const last = lineEnd < 0 ? old.length : lineEnd + 1;
-    if (pyStrip(old.slice(first, start)) || pyStrip(old.slice(end, last))) continue;
+    if (old.slice(first, start).trim() || old.slice(end, last).trim()) continue;
     chunks.push([old.slice(cursor, first), false], [old.slice(first, last), true]);
     cursor = last;
   }

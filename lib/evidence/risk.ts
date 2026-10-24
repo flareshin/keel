@@ -1,4 +1,4 @@
-import { fnmatchCase } from './pycompat.ts';
+import { globMatches } from './glob.ts';
 import { isGitlink } from './gitcmd.ts';
 import type { PathEntry, PathStat } from './gitcmd.ts';
 import type { RiskRule } from './registry.ts';
@@ -41,12 +41,12 @@ export function isTestPath(path: string): boolean {
   const segments = path.split('/');
   if (segments.slice(0, -1).some((segment) => TEST_SEGMENTS.has(segment))) return true;
   const basename = segments.at(-1)!;
-  return TEST_BASENAME_GLOBS.some((glob) => fnmatchCase(basename, glob));
+  return TEST_BASENAME_GLOBS.some((glob) => globMatches(basename, glob));
 }
 
 export function classifyPath(entry: PathEntry, rules: RiskRule[]): PathRisk {
   if (isTestPath(entry.path)) return { path: entry.path, riskClass: LIGHT, why: 'test', isTest: true, isGitlink: isGitlink(entry) };
-  const matching = rules.filter((rule) => fnmatchCase(entry.path, rule.pathGlob));
+  const matching = rules.filter((rule) => globMatches(entry.path, rule.pathGlob));
   if (matching.length === 0) return { path: entry.path, riskClass: STANDARD, why: 'no rule', isTest: false, isGitlink: isGitlink(entry) };
   const heaviest = matching.reduce((best, rule) =>
     CLASS_ORDER.indexOf(rule.riskClass) > CLASS_ORDER.indexOf(best.riskClass) ? rule : best);

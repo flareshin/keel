@@ -2,10 +2,11 @@ import { closeSync, openSync, unlinkSync, existsSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { isDir, resolveLinks, splitLines } from '../../measure/lib/measurekit/files.ts';
 import { DELETED_MODE, GITLINK_MODE } from './env.ts';
-import { decodeReplacing, decodeSurrogateEscape, isDirectory, pyRealpath, pySplitLines, pySplitWhitespace, pyStrip } from './pycompat.ts';
 import { runCaptured } from './subprocess.ts';
 import type { Completed } from './subprocess.ts';
+import { decodeStrict, words } from './text.ts';
 
 export const GIT_TIMEOUT_SECONDS = 20;
 export const FETCH_TIMEOUT_SECONDS = 20;
@@ -55,24 +56,24 @@ export function run(repo: string, args: string[], options: GitOptions = {}): Com
   const completed = runCaptured(['git', '-C', repo, ...args],
     { env: options.env, timeoutSeconds: options.timeoutSeconds ?? GIT_TIMEOUT_SECONDS });
   if ((options.check ?? true) && completed.returncode !== 0) {
-    throw new GitError(`git ${args.join(' ')}: ${pyStrip(decodeReplacing(completed.stderr))}`);
+    throw new GitError(`git ${args.join(' ')}: ${completed.stderr.toString().trim()}`);
   }
   return completed;
 }
 
 export function text(repo: string, args: string[], options: GitOptions = {}): string {
-  return pyStrip(decodeReplacing(run(repo, args, options).stdout));
+  return run(repo, args, options).stdout.toString().trim();
 }
 
 function outputIfOk(repo: string, args: string[]): string | null {
   const completed = run(repo, args, { check: false });
   if (completed.returncode !== 0) return null;
-  return pyStrip(decodeReplacing(completed.stdout)) || null;
+  return completed.stdout.toString().trim() || null;
 }
 
 export function toplevel(path: string): string | null {
-  const root = isDirectory(path) ? outputIfOk(path, ['rev-parse', '--show-toplevel']) : null;
-  return root ? pyRealpath(root) : null;
+  const root = isDir(path) ? outputIfOk(path, ['rev-parse', '--show-toplevel']) : null;
+  return root ? resolveLinks(root) : null;
 }
 
 export function originUrl(repo: string): string | null {
@@ -84,11 +85,11 @@ export function remoteUrl(repo: string, remote: string): string | null {
 }
 
 export function pushUrls(repo: string, remote: string): string[] {
-  return pySplitLines(outputIfOk(repo, ['remote', 'get-url', '--push', '--all', remote]) ?? '');
+  return splitLines(outputIfOk(repo, ['remote', 'get-url', '--push', '--all', remote]) ?? '');
 }
 
 export function remotes(repo: string): string[] {
-  return pySplitWhitespace(outputIfOk(repo, ['remote']) ?? '');
+  return words(outputIfOk(repo, ['remote']) ?? '');
 }
 
 export function pushRemote(repo: string): string {
@@ -105,7 +106,7 @@ export function pushRemote(repo: string): string {
 export function ghDefaultRemote(repo: string): GhDefault | null {
   const listed = outputIfOk(repo, ['config', '--get-regexp', GH_DEFAULT_REMOTE_KEYS]);
   if (listed === null) return null;
-  const firstLine = pySplitLines(listed)[0]!;
+  const firstLine = splitLines(listed)[0]!;
   const separator = firstLine.indexOf(' ');
   const key = separator < 0 ? firstLine : firstLine.slice(0, separator);
   const value = separator < 0 ? '' : firstLine.slice(separator + 1);
@@ -139,13 +140,13 @@ export function mergeBase(repo: string, left: string, right: string): string | n
 export function isAncestor(repo: string, ancestor: string, descendant: string): boolean {
   const completed = run(repo, ['merge-base', '--is-ancestor', ancestor, descendant], { check: false });
   if (completed.returncode !== 0 && completed.returncode !== 1) {
-    throw new GitError(`merge-base --is-ancestor ${ancestor} ${descendant}: ${decodeReplacing(completed.stderr)}`);
+    throw new GitError(`merge-base --is-ancestor ${ancestor} ${descendant}: ${completed.stderr.toString()}`);
   }
   return completed.returncode === 0;
 }
 
 export function firstParentAncestors(repo: string, head: string, stop: string): string[] {
-  const line = pySplitWhitespace(text(repo, ['rev-list', '--first-parent', head + '^', '^' + stop]));
+  const line = words(text(repo, ['rev-list', '--first-parent', head + '^', '^' + stop]));
   const last = line.length > 0 ? line.at(-1)! : head;
   if (commitSha(repo, last + '^') !== stop) return [];
   return [...line, stop];
@@ -166,10 +167,10 @@ export function diffEntries(repo: string, oldTree: string, newTree: string): Pat
   for (let index = 0; index + 1 < fields.length; index += 2) {
     const meta = fields[index]!;
     if (meta[0] !== 0x3a) continue;
-    const [oldMode, newMode, oldSha, newSha, status] = splitLimit(decodeReplacing(meta.subarray(1)), ' ', 4) as [string, string, string, string, string];
+    const [oldMode, newMode, oldSha, newSha, status] = splitLimit(meta.subarray(1).toString(), ' ', 4) as [string, string, string, string, string];
     const deleted = status.startsWith('D');
     entries.push({
-      path: decodeSurrogateEscape(fields[index + 1]!),
+      path: decodeStrict(fields[index + 1]!, 'a path in the git diff'),
       blob: deleted ? null : newSha,
       mode: deleted ? DELETED_MODE : newMode,
       oldMode,
@@ -184,7 +185,7 @@ export function diffStats(repo: string, oldTree: string, newTree: string): Map<s
     oldTree, newTree]).stdout;
   const stats = new Map<string, PathStat>();
   for (const record of splitOnNul(raw).filter((item) => item.length > 0)) {
-    const [added, deleted, path] = splitLimit(decodeSurrogateEscape(record), '\t', 2) as [string, string, string];
+    const [added, deleted, path] = splitLimit(decodeStrict(record, 'a path in the git diff'), '\t', 2) as [string, string, string];
     const binary = added === '-';
     stats.set(path, { added: binary ? 0 : Number(added), deleted: binary ? 0 : Number(deleted) });
   }
@@ -194,13 +195,13 @@ export function diffStats(repo: string, oldTree: string, newTree: string): Map<s
 export function treeEntry(repo: string, tree: string, path: string): [mode: string, object: string] | null {
   const record = splitOnNul(run(repo, ['ls-tree', '-z', tree, '--', path]).stdout)[0]!;
   if (record.length === 0) return null;
-  const [mode, , rest] = splitLimit(decodeSurrogateEscape(record), ' ', 2) as [string, string, string];
+  const [mode, , rest] = splitLimit(decodeStrict(record, 'a path in the git tree'), ' ', 2) as [string, string, string];
   return [mode, rest.split('\t', 1)[0]!];
 }
 
 export function submoduleRoots(repo: string): string[] {
   const listed = text(repo, ['submodule', 'foreach', '--quiet', '--recursive', 'pwd']);
-  return pySplitLines(listed).map(pyRealpath);
+  return splitLines(listed).map((root) => resolveLinks(root));
 }
 
 export function snapshotTree(repo: string): string {

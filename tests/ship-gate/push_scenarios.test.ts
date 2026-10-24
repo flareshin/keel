@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { describe, test } from 'node:test';
 import type { TestContext } from 'node:test';
 import { splitlines } from '../../hooks/lib/hookkit/pycompat.ts';
-import { LOGIC_WITH_TEST, PUSH_APPROVAL_REGISTRY, Sandbox } from './helpers.ts';
+import { LOGIC_WITH_TEST, PUSH_APPROVAL_REGISTRY, Sandbox, expireEvidence } from './helpers.ts';
 import type { Repo, Run } from './helpers.ts';
 
 const TEST_FILE = 'tests/test_a.py';
@@ -354,7 +354,7 @@ describe('PushScenarioTest', () => {
     const [sandbox, repo] = sandboxAndFeature(t);
     sandbox.fullBundle(repo);
     const path = sandbox.evidenceFiles('review')[0]!;
-    writeFileSync(path, readFileSync(path, 'utf8').replace('"expires_at": "20', '"expires_at": "19'));
+    expireEvidence(path);
     assertDenied(sandbox.push(repo, PUSH_FEATURE), 'K1', 'no review evidence');
   });
 });

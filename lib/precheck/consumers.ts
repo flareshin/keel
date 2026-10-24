@@ -29,7 +29,7 @@ interface Declaration {
   line: number;
 }
 
-const SCRIPT_FILE = /\.(?:[cm]?[jt]s|[jt]sx)$/u;
+export const SCRIPT_FILE = /\.(?:[cm]?[jt]s|[jt]sx)$/u;
 const SHELL_FILE = /\.(?:sh|bash|zsh)$/u;
 const JSON_FILE = /\.json$/u;
 const EXPORT_DECLARATION = /^export\s+(?:default\s+)?(?:declare\s+)?(?:abstract\s+)?(?:async\s+)?(?:function\*?|class|const\s+enum|const|let|var|interface|type|enum|namespace)\s+([A-Za-z_$][\w$]*)/u;

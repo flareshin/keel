@@ -1,4 +1,5 @@
 import ts from 'typescript';
+import { SCRIPT_FILE } from './consumers.ts';
 
 export type Operator =
   | 'call-removal'
@@ -51,6 +52,7 @@ const SENTENCE_GAP = /(?<=[.!?])\s+/gu;
 const QUOTE_LENGTH = 1;
 
 export function generateMutants(fileName: string, source: string, changedLines: Set<number>): Mutant[] {
+  if (!SCRIPT_FILE.test(fileName)) return [];
   const file = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
   const splices: Splice[] = [];
   const visit = (node: ts.Node): void => {
@@ -111,7 +113,8 @@ function returnConstants(statement: ts.ReturnStatement, file: ts.SourceFile): Sp
 function catchSwallow(clause: ts.CatchClause, file: ts.SourceFile): Splice[] {
   const statements = clause.block.statements;
   if (statements.length === 0) return [];
-  const rethrows = statements.length > 1 ? rethrowsIn(clause.block) : [];
+  const onlyRethrows = statements.length === 1 && ts.isThrowStatement(statements[0] as ts.Statement);
+  const rethrows = onlyRethrows ? [] : rethrowsIn(clause.block);
   return [
     splice('catch-swallow', clause.block, file, EMPTY_BLOCK),
     ...rethrows.map((rethrow) => splice('catch-swallow', rethrow, file, EMPTY_STATEMENT)),
@@ -153,7 +156,7 @@ function sentenceRemovals(literal: ts.StringLiteral | ts.NoSubstitutionTemplateL
 
 function stringElementRemovals(array: ts.ArrayLiteralExpression, file: ts.SourceFile): Splice[] {
   const elements = array.elements;
-  if (elements.length < 2 || !elements.every(ts.isStringLiteral)) return [];
+  if (!elements.every(ts.isStringLiteral)) return [];
   return elements.map((element, index): Splice => {
     const next = elements[index + 1];
     const previous = elements[index - 1];

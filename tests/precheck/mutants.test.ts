@@ -92,6 +92,26 @@ describe("generateMutants", { skip: typescriptInstalled ? false : "typescript is
     assert.deepEqual(mutate(["try {", "  run()", "} catch (error) { }"], [3], "catch-swallow"), [])
   })
 
+  it("generateMutants_removesAGuardedRethrowThatIsTheCatchBodysOnlyStatement", () => {
+    const lines = ["try {", "  run()", "} catch (error) {", "  if (fatal(error)) throw error", "}"]
+
+    assert.deepEqual(mutate(lines, [4], "catch-swallow"), [
+      "try {\n  run()\n} catch (error) {}",
+      "try {\n  run()\n} catch (error) {\n  if (fatal(error)) ;\n}",
+    ])
+  })
+
+  it("generateMutants_keepsAThrowInsideANestedCatchOrClassForThatScope", () => {
+    const nested = ["try {", "  run()", "} catch (error) {", "  log(error)", "  try { retry() } catch (again) { throw again }", "}"]
+    const inClass = ["try {", "  run()", "} catch (error) {", "  log(error)", "  later(class { static { throw error } })", "}"]
+
+    assert.deepEqual(mutate(nested, [5], "catch-swallow"), [
+      "try {\n  run()\n} catch (error) {}",
+      "try {\n  run()\n} catch (error) {\n  log(error)\n  try { retry() } catch (again) {}\n}",
+    ])
+    assert.deepEqual(mutate(inClass, [5], "catch-swallow"), ["try {\n  run()\n} catch (error) {}"])
+  })
+
   it("generateMutants_keepsAThrowInsideANestedFunctionOfACatch", () => {
     const lines = ["try {", "  run()", "} catch (error) {", "  log(error)", "  later(() => { throw error })", "}"]
 
@@ -117,6 +137,16 @@ describe("generateMutants", { skip: typescriptInstalled ? false : "typescript is
     ])
   })
 
+  it("generateMutants_removesEachSentenceOfATemplateLiteral_acrossLines", () => {
+    const lines = ["const prompt = `Read the diff.", "Never edit files.`"]
+
+    assert.deepEqual(mutate(lines, [2], "text-removal"), ["const prompt = `Read the diff.`"])
+    assert.deepEqual(mutate(lines, [1, 2], "text-removal"), [
+      "const prompt = `Never edit files.`",
+      "const prompt = `Read the diff.`",
+    ])
+  })
+
   it("generateMutants_leavesAOneSentenceStringAndADottedNameWhole", () => {
     const lines = ["const a = 'Read the diff. '", "const b = 'lib/precheck/mutants.ts'", "const c = `v1.2 is out`"]
 
@@ -124,13 +154,19 @@ describe("generateMutants", { skip: typescriptInstalled ? false : "typescript is
   })
 
   it("generateMutants_removesEachEntryOfAStringList_withItsComma", () => {
-    const lines = ["const allowed = ['PASS', 'NEEDS_FIXES', 'BLOCKED']", "const mixed = ['PASS', 1]"]
+    const lines = ["const allowed = ['PASS', 'NEEDS_FIXES', 'BLOCKED']", "const mixed = ['PASS', 1]", "const one = ['Read']"]
 
-    assert.deepEqual(mutate(lines, [1, 2], "text-removal"), [
-      "const allowed = ['NEEDS_FIXES', 'BLOCKED']\nconst mixed = ['PASS', 1]",
-      "const allowed = ['PASS', 'BLOCKED']\nconst mixed = ['PASS', 1]",
-      "const allowed = ['PASS', 'NEEDS_FIXES']\nconst mixed = ['PASS', 1]",
+    assert.deepEqual(mutate(lines, [1, 2, 3], "text-removal"), [
+      "const allowed = ['NEEDS_FIXES', 'BLOCKED']\nconst mixed = ['PASS', 1]\nconst one = ['Read']",
+      "const allowed = ['PASS', 'BLOCKED']\nconst mixed = ['PASS', 1]\nconst one = ['Read']",
+      "const allowed = ['PASS', 'NEEDS_FIXES']\nconst mixed = ['PASS', 1]\nconst one = ['Read']",
+      "const allowed = ['PASS', 'NEEDS_FIXES', 'BLOCKED']\nconst mixed = ['PASS', 1]\nconst one = []",
     ])
+  })
+
+  it("generateMutants_returnsNothingForAFileThatIsNotTsOrJs", () => {
+    assert.deepEqual(mutate(["# Skill", "Run check(x) when a > b."], [1, 2], undefined, "skills/SKILL.md"), [])
+    assert.equal(mutate(["check(x)"], [1], undefined, "bin/run.mjs").length, 1)
   })
 
   it("generateMutants_mutatesOnlyCodeThatTouchesAChangedLine", () => {

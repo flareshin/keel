@@ -127,6 +127,77 @@ describe("findConsumers", () => {
     assert.deepEqual(consumersOf(base, "export", "compute"), ["src/naïve.ts:1"])
   })
 
+  it("findConsumers_keepsAUseOnTheUnchangedDeclarationLineOfAnotherChangedExport", () => {
+    write("src/lib.ts", ["export const LIMIT = 1", "export function total(n = LIMIT): number {", "  return n", "}"])
+    write("src/use.ts", ["LIMIT"])
+    const base = snapshot()
+    write("src/lib.ts", ["export const LIMIT = 2", "export function total(n = LIMIT): number {", "  return n + 1", "}"])
+
+    assert.deepEqual(consumersOf(base, "export", "LIMIT"), ["src/lib.ts:2", "src/use.ts:1"])
+  })
+
+  it("findConsumers_readsAChangedPathThatContainsASpace", () => {
+    write("src/my lib.ts", ["export function total(): number {", "  return 1", "}"])
+    write("src/use.ts", ["total()"])
+    const base = snapshot()
+    write("src/my lib.ts", ["export function total(): number {", "  return 2", "}"])
+
+    assert.deepEqual(consumersOf(base, "export", "total"), ["src/use.ts:1"])
+  })
+
+  it("findConsumers_namesAnEntryDroppedFromAMultiLineExportList", () => {
+    write("src/lib.ts", ["const a = 1", "const b = 2", "export {", "  a,", "  b,", "}"])
+    write("src/use.ts", ["b"])
+    const base = snapshot()
+    write("src/lib.ts", ["const a = 1", "const b = 2", "export {", "  a,", "}"])
+
+    assert.deepEqual(namesOf(base), ["export b"])
+    assert.deepEqual(consumersOf(base, "export", "b"), ["src/lib.ts:2", "src/use.ts:1"])
+  })
+
+  it("findConsumers_readsANewScriptFileThatTheBaseDoesNotHave", () => {
+    write("src/kept.ts", ["export const kept = 1"])
+    const base = snapshot()
+    write("src/added.ts", ["export const added = 1"])
+
+    assert.deepEqual(consumersOf(base, "export", "added"), [])
+  })
+
+  it("findConsumers_namesATypeOnlyEntryByItsTypeName", () => {
+    write("src/lib.ts", ["interface Shape {}", "const other = 1", "export { type Shape, other }"])
+    write("src/use.ts", ["let s: Shape"])
+    const base = snapshot()
+    write("src/lib.ts", ["interface Shape {}", "const other = 1", "export { other }"])
+
+    assert.deepEqual(consumersOf(base, "export", "Shape"), ["src/lib.ts:1", "src/use.ts:1"])
+  })
+
+  it("findConsumers_readsTheNameOfAConstEnum", () => {
+    write("src/lib.ts", ["export const enum Color { Red }"])
+    write("src/use.ts", ["Color.Red"])
+    const base = snapshot()
+    write("src/lib.ts", ["export const other = 1"])
+
+    assert.deepEqual(consumersOf(base, "export", "Color"), ["src/use.ts:1"])
+  })
+
+  it("findConsumers_ignoresAnExportLineRemovedFromANonScriptFile", () => {
+    write("docs/guide.md", ["export function sample() {}", "text"])
+    const base = snapshot()
+    write("docs/guide.md", ["text"])
+
+    assert.deepEqual(namesOf(base), [])
+  })
+
+  it("findConsumers_listsAFlagRenamedInsideAShellScript", () => {
+    write("bin/run.sh", ["keel diff --old-flag"])
+    write("docs/usage.md", ["Run keel diff --old-flag first."])
+    const base = snapshot()
+    write("bin/run.sh", ["keel diff --new-flag"])
+
+    assert.deepEqual(consumersOf(base, "flag", "--old-flag"), ["docs/usage.md:1"])
+  })
+
   it("findConsumers_matchesARenamedFlagExactly_andSkipsAFlagThatOnlyExtendsIt", () => {
     write("bin/cli.ts", ["const FLAG = '--since'", "const OTHER = '--quiet' // was"])
     write("bin/run.sh", ["keel diff --since x", "keel diff --since-tree y"])

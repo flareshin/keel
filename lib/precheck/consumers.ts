@@ -19,6 +19,8 @@ interface FileChange {
   anchors: number[];
   removedText: string[];
   addedText: string[];
+  inBase: boolean;
+  inTree: boolean;
 }
 
 interface Declaration {
@@ -30,9 +32,10 @@ interface Declaration {
 const SCRIPT_FILE = /\.(?:[cm]?[jt]s|[jt]sx)$/u;
 const SHELL_FILE = /\.(?:sh|bash|zsh)$/u;
 const JSON_FILE = /\.json$/u;
-const EXPORT_DECLARATION = /^export\s+(?:default\s+)?(?:declare\s+)?(?:abstract\s+)?(?:async\s+)?(?:function\*?|class|const|let|var|interface|type|enum|namespace)\s+([A-Za-z_$][\w$]*)/u;
-const EXPORT_LIST = /^export\s+(?:type\s+)?\{([^}]*)\}/u;
+const EXPORT_DECLARATION = /^export\s+(?:default\s+)?(?:declare\s+)?(?:abstract\s+)?(?:async\s+)?(?:function\*?|class|const\s+enum|const|let|var|interface|type|enum|namespace)\s+([A-Za-z_$][\w$]*)/u;
+const EXPORT_LISTS = /^export\s+(?:type\s+)?\{([^}]*)\}/gmu;
 const EXPORT_ALIAS = /\s+as\s+/u;
+const TYPE_ONLY_ENTRY = /^type\s+/u;
 const COLUMN_ZERO = /^\S/u;
 const FLAG = /(?<![\w-])--[a-z][a-z0-9-]*/gu;
 const JSON_KEY = /^\s*"([^"\\]+)"\s*:/u;
@@ -40,7 +43,10 @@ const HUNK_HEADER = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/u;
 const NEW_FILE_HEADER = 'diff --git ';
 const OLD_PATH_PREFIX = '--- a/';
 const NEW_PATH_PREFIX = '+++ b/';
+const OLD_PATH_LINE = '--- ';
+const ADDED_FILE = '--- /dev/null';
 const DELETED_FILE = '+++ /dev/null';
+const PATH_END = '\t';
 const NO_MATCH = 1;
 
 export function findConsumers(repo: string, base: string, tree: string): ChangedName[] {
@@ -50,17 +56,18 @@ export function findConsumers(repo: string, base: string, tree: string): Changed
   const add = (kind: NameKind, name: string): void => { names.set(`${kind}\0${name}`, { kind, name }); };
   for (const declaration of declarations) add('export', declaration.name);
   for (const change of changes) {
-    for (const name of removedExports(change)) add('export', name);
+    for (const name of removedExports(repo, base, tree, change)) add('export', name);
     for (const name of changedTokens(change, flagsOf, SCRIPT_FILE, SHELL_FILE)) add('flag', name);
     for (const name of changedTokens(change, jsonKeysOf, JSON_FILE)) add('key', name);
   }
-  const insideDiff = (consumer: Consumer): boolean =>
+  const insideDiff = (name: string, consumer: Consumer): boolean =>
     changes.some((change) => change.path === consumer.path && change.addedLines.has(consumer.line))
-    || declarations.some((declaration) => declaration.path === consumer.path && declaration.line === consumer.line);
+    || declarations.some((declaration) =>
+      declaration.name === name && declaration.path === consumer.path && declaration.line === consumer.line);
   return [...names.values()]
     .sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name))
     .map(({ kind, name }) => {
-      const consumers = grepWord(repo, tree, kind, name).filter((consumer) => !insideDiff(consumer));
+      const consumers = grepWord(repo, tree, kind, name).filter((consumer) => !insideDiff(name, consumer));
       return { kind, name, consumers };
     });
 }
@@ -68,22 +75,22 @@ export function findConsumers(repo: string, base: string, tree: string): Changed
 function parseDiff(diff: string): FileChange[] {
   const changes: FileChange[] = [];
   let current: FileChange | null = null;
-  let oldPath = '';
+  let oldPath: string | null = null;
   let nextAdded = 0;
-  const open = (path: string): FileChange => {
-    const change = { path, addedLines: new Set<number>(), anchors: [], removedText: [], addedText: [] };
+  const open = (path: string, inBase: boolean, inTree: boolean): FileChange => {
+    const change = { path, addedLines: new Set<number>(), anchors: [], removedText: [], addedText: [], inBase, inTree };
     changes.push(change);
     return change;
   };
   for (const line of diff.split('\n')) {
     if (line.startsWith(NEW_FILE_HEADER)) {
       current = null;
-    } else if (current === null && line.startsWith(OLD_PATH_PREFIX)) {
-      oldPath = line.slice(OLD_PATH_PREFIX.length);
+    } else if (current === null && line.startsWith(OLD_PATH_LINE)) {
+      oldPath = line === ADDED_FILE ? null : diffPath(line, OLD_PATH_PREFIX);
     } else if (current === null && line === DELETED_FILE) {
-      current = open(oldPath);
+      current = open(oldPath ?? '', true, false);
     } else if (current === null && line.startsWith(NEW_PATH_PREFIX)) {
-      current = open(line.slice(NEW_PATH_PREFIX.length));
+      current = open(diffPath(line, NEW_PATH_PREFIX), oldPath !== null, true);
     } else if (current !== null && HUNK_HEADER.test(line)) {
       const [, start, count] = HUNK_HEADER.exec(line) as RegExpExecArray;
       nextAdded = Number(start);
@@ -100,6 +107,10 @@ function parseDiff(diff: string): FileChange[] {
   return changes;
 }
 
+function diffPath(line: string, prefix: string): string {
+  return line.slice(prefix.length).split(PATH_END)[0] ?? '';
+}
+
 function enclosingExports(repo: string, tree: string, change: FileChange): Declaration[] {
   if (!SCRIPT_FILE.test(change.path) || change.anchors.length === 0) return [];
   const lines = text(repo, ['show', `${tree}:${change.path}`]).split('\n');
@@ -113,18 +124,19 @@ function enclosingExports(repo: string, tree: string, change: FileChange): Decla
   return [...found.values()];
 }
 
-function removedExports(change: FileChange): string[] {
+function removedExports(repo: string, base: string, tree: string, change: FileChange): string[] {
   if (!SCRIPT_FILE.test(change.path)) return [];
-  const kept = new Set(change.addedText.flatMap(exportedNames));
-  return change.removedText.flatMap(exportedNames).filter((name) => !kept.has(name));
+  const before = change.inBase ? exportedNames(text(repo, ['show', `${base}:${change.path}`])) : new Set<string>();
+  const after = change.inTree ? exportedNames(text(repo, ['show', `${tree}:${change.path}`])) : new Set<string>();
+  return [...before].filter((name) => !after.has(name));
 }
 
-function exportedNames(line: string): string[] {
-  const declared = EXPORT_DECLARATION.exec(line)?.[1];
-  if (declared !== undefined) return [declared];
-  const list = EXPORT_LIST.exec(line)?.[1];
-  if (list === undefined) return [];
-  return list.split(',').map((entry) => entry.split(EXPORT_ALIAS).at(-1)?.trim() ?? '').filter((name) => name !== '');
+function exportedNames(source: string): Set<string> {
+  const declared = source.split('\n').flatMap((line) => EXPORT_DECLARATION.exec(line)?.[1] ?? []);
+  const listed = [...source.matchAll(EXPORT_LISTS)].flatMap((match) => (match[1] ?? '').split(','))
+    .map((entry) => entry.split(EXPORT_ALIAS).at(-1)?.trim().replace(TYPE_ONLY_ENTRY, '') ?? '')
+    .filter((name) => name !== '');
+  return new Set([...declared, ...listed]);
 }
 
 function changedTokens(change: FileChange, tokensOf: (line: string) => string[], ...fileTypes: RegExp[]): string[] {

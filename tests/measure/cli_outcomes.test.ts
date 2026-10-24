@@ -10,13 +10,14 @@ import type { RawRun } from "./eval_helpers.ts"
 import { summarizeOutcome } from "./outcomes.ts"
 import type { OutcomeSummary, RunOutcome } from "./outcomes.ts"
 import { addDays } from "../../measure/lib/measurekit/dates.ts"
-import { CHECKOUT, FUTURE, LEDGER_COLUMNS, NEVER_EXPIRES, PAST, TODAY, charterRow, ledgerRow, readText } from "./helpers.ts"
+import { CHECKOUT, FUTURE, LEDGER_COLUMNS, PAST, TODAY, charterRow, ledgerRow, readText } from "./helpers.ts"
 
 const REVIEW_STUB_DIR = path.join(CHECKOUT, "tests", "measure", "stubs", "review")
 const STUBS_DIR = path.join(CHECKOUT, "tests", "measure", "stubs")
 const CASES = path.join("measure", "evals", "review", "cases")
 const FAKE_AWS_KEY = "AKIA" + "ABCDEFGHIJKLMNOP"
 const INVENTED_PRIVATE_IP = "10.250." + "3.4"
+const NEVER_EXPIRES = "2999-12-31"
 
 const TMPDIR = fs.realpathSync(os.tmpdir())
 const MASKS: [RegExp, string][] = [
@@ -399,7 +400,7 @@ describe("measure entries keep their exit code, JSON output and written logs", (
   })
 
   it("smokeSeedLedgerSetup_postponesEveryDate_andKeepsEveryOtherCell", () => {
-    const dateColumns = ["review_by", "grace_until"].map((column) => LEDGER_COLUMNS.indexOf(column))
+    const dateColumns = (["review_by", "grace_until"] as const).map((column) => LEDGER_COLUMNS.indexOf(column))
     const tableOf = (file: string): string[][] => readText(file).split("\n").filter((line) => line !== "").map((line) => line.split("\t"))
     const withoutDates = (table: string[][]): string[][] => table.map((cells) => cells.filter((_, column) => !dateColumns.includes(column)))
     copySeedLedgerWithDatesNeverReached(box)

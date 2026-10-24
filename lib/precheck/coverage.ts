@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -30,7 +30,7 @@ export function readCoverage(coverageDir: string, repoRoot: string): Coverage {
   for (const name of readdirSync(coverageDir).filter((entry) => COVERAGE_FILE.test(entry)).sort()) {
     for (const script of parseCoverageFile(join(coverageDir, name))) {
       const path = repoRelativePath(script.url, root);
-      if (path === null) continue;
+      if (path === null || !existsSync(join(root, path))) continue;
       coverage.seen.add(path);
       const lines = coverage.executedLines.get(path) ?? new Set<number>();
       for (const line of executedLines(readFileSync(join(root, path), 'utf8'), script.ranges)) lines.add(line);
@@ -41,7 +41,13 @@ export function readCoverage(coverageDir: string, repoRoot: string): Coverage {
 }
 
 function parseCoverageFile(file: string): ScriptCoverage[] {
-  const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'));
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(file, 'utf8'));
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    throw new CoverageFormatError(`${file} is not V8 coverage output`, { cause: error });
+  }
   const scripts = isRecord(parsed) ? parsed['result'] : undefined;
   if (!Array.isArray(scripts) || !scripts.every(isScriptCoverage)) {
     throw new CoverageFormatError(`${file} is not V8 coverage output`);

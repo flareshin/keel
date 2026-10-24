@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import { pathToFileURL } from "node:url"
 import { afterEach, beforeEach, describe, it } from "node:test"
 
 import { CoverageFormatError, readCoverage } from "../../lib/precheck/coverage.ts"
@@ -106,12 +107,74 @@ describe("readCoverage", () => {
     assert.deepEqual([...readCoverage(coverageDir, repo).seen], ["src/inside.js"])
   })
 
-  it("readCoverage_namesTheFile_whenACoverageFileIsNotV8Coverage", () => {
-    fs.mkdirSync(coverageDir)
-    const bad = path.join(coverageDir, "coverage-1.json")
-    fs.writeFileSync(bad, JSON.stringify({ result: [{ url: 1 }] }))
+  const NESTED = [
+    "function outer() {",
+    "  function inner() {",
+    "    return 1",
+    "  }",
+    "  return 2",
+    "}",
+    "outer()",
+  ]
+  const writeCoverage = (contents: string): string => {
+    fs.mkdirSync(coverageDir, { recursive: true })
+    const file = path.join(coverageDir, "coverage-1.json")
+    fs.writeFileSync(file, contents)
+    return file
+  }
+  const nestedRanges = (): { script: object, inner: object } => {
+    const source = NESTED.join("\n") + "\n"
+    const innerStart = source.indexOf("function inner")
+    const innerEnd = source.indexOf("}", innerStart) + 1
+    return {
+      script: { startOffset: 0, endOffset: source.length, count: 1 },
+      inner: { startOffset: innerStart, endOffset: innerEnd, count: 0 },
+    }
+  }
+  const writeNestedCoverage = (ranges: object[]): void => {
+    write("src/nested.js", NESTED)
+    const url = pathToFileURL(path.join(repo, "src/nested.js")).href
+    writeCoverage(JSON.stringify({ result: [{ url, functions: ranges.map((range) => ({ ranges: [range] })) }] }))
+  }
 
-    assert.throws(() => readCoverage(coverageDir, repo),
-      (error) => error instanceof CoverageFormatError && error.message === `${bad} is not V8 coverage output`)
+  it("readCoverage_leavesOutALineWhoseOnlyExecutedCharactersAreItsIndentation", () => {
+    const { script, inner } = nestedRanges()
+    writeNestedCoverage([script, inner])
+
+    assert.deepEqual(executed("src/nested.js"), [1, 5, 6, 7])
   })
+
+  it("readCoverage_letsTheInnerRangeWin_evenWhenTheCoverageFileListsItBeforeTheOuterOne", () => {
+    const { script, inner } = nestedRanges()
+    writeNestedCoverage([inner, script])
+
+    assert.deepEqual(executed("src/nested.js"), [1, 5, 6, 7])
+  })
+
+  it("readCoverage_leavesAFileDeletedAfterItRanOutOfSeen_soItCountsAsUnknown", () => {
+    write("src/gone.js", ["module.exports = 1"])
+    runWithCoverage("src/gone.js")
+    fs.rmSync(path.join(repo, "src/gone.js"))
+
+    assert.deepEqual([...readCoverage(coverageDir, repo).seen], [])
+  })
+
+  it("readCoverage_passesAReadFailureThrough_insteadOfCallingItMalformedCoverage", () => {
+    fs.mkdirSync(path.join(coverageDir, "coverage-1.json"), { recursive: true })
+
+    assert.throws(() => readCoverage(coverageDir, repo), (error) => (error as NodeJS.ErrnoException).code === "EISDIR")
+  })
+
+  for (const [name, contents] of [
+    ["a url that is not a string", JSON.stringify({ result: [{ url: 1, functions: [] }] })],
+    ["a range without an integer count", JSON.stringify({ result: [{ url: "file:///x.js", functions: [{ ranges: [{ startOffset: 0, endOffset: 1, count: "1" }] }] }] })],
+    ["truncated JSON", '{"result":['],
+  ] as const) {
+    it(`readCoverage_namesTheFile_whenACoverageFileHas ${name}`, () => {
+      const bad = writeCoverage(contents)
+
+      assert.throws(() => readCoverage(coverageDir, repo),
+        (error) => error instanceof CoverageFormatError && error.message === `${bad} is not V8 coverage output`)
+    })
+  }
 })

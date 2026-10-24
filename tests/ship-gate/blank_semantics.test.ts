@@ -8,7 +8,7 @@ import { RegistryError, normalizeRepoKey, readTsv } from '../../lib/evidence/reg
 import { provenanceReasons } from '../../lib/evidence/verify.ts';
 import type { Chain } from '../../lib/evidence/chain.ts';
 import { Refused } from '../../lib/evidence/writers.ts';
-import { AUDIT, AUTHOR, CodexFixture, VERIFY } from './codex_helpers.ts';
+import { AUDIT, CodexFixture } from './codex_helpers.ts';
 import { LOGIC_WITH_TEST, Sandbox } from './helpers.ts';
 
 const scratch = mkdtempSync(join(tmpdir(), 'keel-blank-'));
@@ -46,7 +46,6 @@ describe('a text that is blank by either reading of whitespace is blank', () => 
       assert.throws(() => codexReview.adjudicatedFindings([finding], [{ id: 'f1', verdict: 'confirmed', evidence: blank }]),
         (error: Error) => error instanceof Refused && error.message === 'every finding needs an evidenced verifier decision');
       assert.deepEqual(codexReview.adjudicatedFindings([finding], [{ id: 'f1', verdict: 'confirmed', evidence: 'src/a.py:1' }]), [finding]);
-      assert.ok(AUTHOR && VERIFY);
     });
   }
 });

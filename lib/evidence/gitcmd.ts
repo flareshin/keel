@@ -2,7 +2,7 @@ import { closeSync, openSync, unlinkSync, existsSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { decodeStrict, isDir, resolveLinks } from '../../measure/lib/measurekit/files.ts';
+import { decodeStrict, InvalidUtf8Error, isDir, resolveLinks } from '../../measure/lib/measurekit/files.ts';
 import { DELETED_MODE, GITLINK_MODE } from './env.ts';
 import { runCaptured } from './subprocess.ts';
 import { stripEitherWay } from './text.ts';
@@ -18,6 +18,12 @@ const GH_RESOLVED_SUFFIX = '.gh-resolved';
 const REMOTE_PREFIX = 'remote.';
 const TEMP_INDEX_RANDOM_BYTES = 6;
 const OTHER_LINE_BREAK = /[\r\v\f\x1c-\x1e\x85\u2028\u2029]/;
+const OBJECT_ID = /^[0-9a-f]{40}$/;
+
+type TreeEntry = [mode: string, object: string];
+
+const treeListings = new Map<string, Map<string, TreeEntry>>();
+const ancestryAnswers = new Map<string, boolean>();
 
 export class GitError extends Error {}
 
@@ -169,11 +175,16 @@ export function mergeBase(repo: string, left: string, right: string): string | n
 }
 
 export function isAncestor(repo: string, ancestor: string, descendant: string): boolean {
+  const key = [repo, ancestor, descendant].join('\0');
+  const known = ancestryAnswers.get(key);
+  if (known !== undefined) return known;
   const completed = run(repo, ['merge-base', '--is-ancestor', ancestor, descendant], { check: false });
   if (completed.returncode !== 0 && completed.returncode !== 1) {
     throw new GitError(`merge-base --is-ancestor ${ancestor} ${descendant}: ${completed.stderr.toString()}`);
   }
-  return completed.returncode === 0;
+  const answer = completed.returncode === 0;
+  if (OBJECT_ID.test(ancestor) && OBJECT_ID.test(descendant)) ancestryAnswers.set(key, answer);
+  return answer;
 }
 
 export function firstParentAncestors(repo: string, head: string, stop: string): string[] {
@@ -224,11 +235,34 @@ export function diffStats(repo: string, oldTree: string, newTree: string): Map<s
   return stats;
 }
 
-export function treeEntry(repo: string, tree: string, path: string): [mode: string, object: string] | null {
-  const record = splitOnNul(run(repo, ['ls-tree', '-z', tree, '--', path]).stdout)[0]!;
-  if (record.length === 0) return null;
-  const [mode, , rest] = splitLimit(decodeStrict(record, 'a path in the git tree'), ' ', 2) as [string, string, string];
-  return [mode, rest.split('\t', 1)[0]!];
+export function treeEntry(repo: string, tree: string, path: string): TreeEntry | null {
+  return treeListing(repo, tree).get(path) ?? null;
+}
+
+function treeListing(repo: string, tree: string): Map<string, TreeEntry> {
+  const key = [repo, tree].join('\0');
+  const cached = treeListings.get(key);
+  if (cached) return cached;
+  const listing = new Map<string, TreeEntry>();
+  for (const record of splitOnNul(run(repo, ['ls-tree', '-r', '-t', '-z', tree]).stdout)) {
+    if (record.length === 0) continue;
+    const text = utf8OrNull(record);
+    if (text === null) continue;
+    const [mode, , rest] = splitLimit(text, ' ', 2) as [string, string, string];
+    const [object, path] = splitLimit(rest, '\t', 1) as [string, string];
+    listing.set(path, [mode, object]);
+  }
+  if (OBJECT_ID.test(tree)) treeListings.set(key, listing);
+  return listing;
+}
+
+function utf8OrNull(record: Buffer): string | null {
+  try {
+    return decodeStrict(record, 'a path in the git tree');
+  } catch (error) {
+    if (error instanceof InvalidUtf8Error) return null;
+    throw error;
+  }
 }
 
 export function submoduleRoots(repo: string): string[] {

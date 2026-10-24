@@ -8,11 +8,14 @@ const LINE_BREAK = /\r\n|\r|\n/
 export class InvalidUtf8Error extends Error {}
 
 export function readUtf8(file: string): string {
-  const bytes = fs.readFileSync(file)
+  return decodeUtf8(fs.readFileSync(file), file)
+}
+
+export function decodeUtf8(bytes: Uint8Array, source: string): string {
   try {
     return STRICT_UTF8.decode(bytes)
   } catch {
-    throw new InvalidUtf8Error(`${file} is not valid UTF-8`)
+    throw new InvalidUtf8Error(`${source} is not valid UTF-8`)
   }
 }
 

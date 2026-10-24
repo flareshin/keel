@@ -4,7 +4,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
-import { expandHome, firstLine, InvalidUtf8Error, readUtf8, resolveLinks, splitLines, walkEntries } from "../../measure/lib/measurekit/files.ts"
+import { decodeUtf8, expandHome, firstLine, InvalidUtf8Error, readUtf8, resolveLinks, splitLines, walkEntries } from "../../measure/lib/measurekit/files.ts"
 
 describe("files", () => {
   let root: string
@@ -26,6 +26,13 @@ describe("files", () => {
     assert.equal(readUtf8(at("crlf")), "\ufeffa\r\nb")
     fs.writeFileSync(at("bad"), Buffer.concat([Buffer.alloc(9000, 0x61), Buffer.from([0x0a, 0xff, 0x0a])]))
     assert.throws(() => readUtf8(at("bad")), (error) => error instanceof InvalidUtf8Error && error.message === `${at("bad")} is not valid UTF-8`)
+  })
+
+  it("decodeUtf8_keepsAByteOrderMark_andRejectsEveryInvalidSequenceNamingItsSource", () => {
+    assert.equal(decodeUtf8(Buffer.from([0xef, 0xbb, 0xbf, 0x61]), "stdin"), "\ufeffa")
+    for (const bytes of [[0xff], [0xe2, 0x82], [0xc0, 0xaf], [0xed, 0xa0, 0x80], [0xc3, 0x28], [0xf4, 0x90, 0x80, 0x80]]) {
+      assert.throws(() => decodeUtf8(Buffer.from(bytes), "stdin"), (error) => error instanceof InvalidUtf8Error && error.message === "stdin is not valid UTF-8", `${bytes}`)
+    }
   })
 
   it("firstLine_isTheTextBeforeTheFirstLineFeed_ofAStrictlyDecodedFile", () => {

@@ -63,7 +63,7 @@ test('treeEntry_findsEachPathItself_forColonPrefixedNfdAndNonUtf8Names', (t) => 
   repo.git('config', 'core.precomposeunicode', 'true');
   const blobs = ['colon', 'decomposed', 'plain', 'latin1'].map((content) =>
     spawnSync('git', ['-C', repo.path, 'hash-object', '-w', '--stdin'], { input: content, encoding: 'utf8' }).stdout.trim());
-  const names = [Buffer.from(':memo.ts'), Buffer.from('café.ts'), Buffer.from('memo.ts'), Buffer.from([0xff, ...Buffer.from('.ts')])];
+  const names = [Buffer.from(':memo.ts'), Buffer.from('cafe\u0301.ts'), Buffer.from('memo.ts'), Buffer.from([0xff, ...Buffer.from('.ts')])];
   const listing = Buffer.concat(names.map((name, index) => Buffer.concat([Buffer.from(`100644 blob ${blobs[index]}\t`), name, Buffer.from([0])])));
   const tree = spawnSync('git', ['-C', repo.path, 'mktree', '-z'], { input: listing, encoding: 'utf8' }).stdout.trim();
   const entries = gitcmd.diffEntries(repo.path, EMPTY_TREE, tree);

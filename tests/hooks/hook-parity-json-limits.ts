@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { MAX_JSON_DEPTH } from "../../hooks/lib/hookkit/json.ts";
+import { MAX_JSON_DEPTH } from "../../hooks/lib/hookkit/pycompat.ts";
 import { AGENT_ID, basePayload, bash, GIT_GUARD, HANDOFF, KEEL_EVIDENCE_LINE, MODEL_ASSIGN, preToolUse, REPORT_GATE, SESSION_ID, subagentStop } from "./helpers.ts";
 import type { HookSandbox } from "./helpers.ts";
 import type { AdversarialCase } from "./hook-parity-adversarial.ts";

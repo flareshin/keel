@@ -1,11 +1,21 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { describe, it } from "node:test";
-import { JsonSyntaxError, MAX_JSON_DEPTH, NonFiniteJsonNumber, parseFiniteJson, parseJson, parseJsonReadingNonFiniteNumbersAsZero, parsePayload, parseTranscriptLine } from "../../hooks/lib/hookkit/json.ts";
+import { JsonSyntaxError, NonFiniteJsonNumber, parseFiniteJson, parseJson, parseJsonReadingNonFiniteNumbersAsZero, parsePayload, parseTranscriptLine } from "../../hooks/lib/hookkit/json.ts";
+import { MAX_JSON_DEPTH } from "../../hooks/lib/hookkit/pycompat.ts";
 import { RecursionError, ValueError } from "../../hooks/lib/hookkit/pyruntime.ts";
 
 function nestedArrays(depth: number): string {
   return "[".repeat(depth) + "]".repeat(depth);
 }
+
+describe("json module", () => {
+  it("loads_whenTheRuntimeModuleIsImportedFirst", () => {
+    const script = 'await import("./hooks/lib/hookkit/pyruntime.ts"); await import("./hooks/lib/hookkit/json.ts");';
+    const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+  });
+});
 
 describe("parseJson", () => {
   it("parseJson_readsADocument_nestedExactlyToTheLimit", () => {
@@ -62,6 +72,10 @@ describe("parseFiniteJson", () => {
   it("parseFiniteJson_walksADocumentNestedToTheLimit", () => {
     assert.doesNotThrow(() => parseFiniteJson(nestedArrays(MAX_JSON_DEPTH)));
   });
+
+  it("parseFiniteJson_walksAWideArray", () => {
+    assert.equal((parseFiniteJson("[" + "1,".repeat(200_000) + "1]") as number[]).length, 200_001);
+  });
 });
 
 describe("parseJsonReadingNonFiniteNumbersAsZero", () => {
@@ -71,21 +85,21 @@ describe("parseJsonReadingNonFiniteNumbersAsZero", () => {
   });
 
   it("throwsJsonSyntaxError_whenTheTextIsMalformedAnyway", () => {
-    for (const text of ['{"a": NaNx}', '{NaN: 1}', '{"a": 1 NaN}']) assert.throws(() => parseJsonReadingNonFiniteNumbersAsZero(text), JsonSyntaxError, text);
+    for (const text of ['{"a": NaNx}', '{NaN: 1}', '{"a": 1 NaN}', '{"a": NaN.5}', '{"a": NaNe5}', '[Infinity0]']) assert.throws(() => parseJsonReadingNonFiniteNumbersAsZero(text), JsonSyntaxError, text);
   });
 });
 
 describe("parseTranscriptLine", () => {
   it("parseTranscriptLine_throwsNonFiniteJsonNumber_whenOnlyANonFiniteValueBreaksTheLine", () => {
     for (const literal of ["NaN", "Infinity", "-Infinity"]) {
-      for (const text of [`{"a": ${literal}}`, `[1, ${literal}]`, `{"a":[${literal}]}`]) {
+      for (const text of [`{"a": ${literal}}`, `[1, ${literal}]`, `{"a":[${literal}]}`, `[${literal} ]`, `{"a": ${literal}\n}`, literal]) {
         assert.throws(() => parseTranscriptLine(text), (error: unknown) => error instanceof NonFiniteJsonNumber && !(error instanceof ValueError), text);
       }
     }
   });
 
   it("parseTranscriptLine_throwsJsonSyntaxError_whenTheLineIsMalformedAnyway", () => {
-    for (const text of ['{"a": NaN', '{"a": NaNx}', '{"a": 1 NaN}', '{NaN: 1}', "not json"]) {
+    for (const text of ['{"a": NaN', '{"a": NaNx}', '{"a": 1 NaN}', '{NaN: 1}', "not json", '{"a": NaN.5}', '{"a": NaNe5}', '[Infinity0]']) {
       assert.throws(() => parseTranscriptLine(text), JsonSyntaxError, text);
     }
   });

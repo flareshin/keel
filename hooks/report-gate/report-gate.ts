@@ -6,7 +6,7 @@ import { FireLog } from "../lib/hookkit/fires.ts";
 import * as protocol from "../lib/hookkit/protocol.ts";
 import type { Payload } from "../lib/hookkit/protocol.ts";
 import {
-  dumpsAscii, expandUser, getField, isRecord, isTruthy, joinPath, normalizePath, PY_SPACE, PY_WORD, pythonStr, sortedByCodePoint, SPACE_CLASS, strip,
+  dumpsAscii, expandUser, getField, isRecord, isTruthy, joinPath, MAX_JSON_DEPTH, normalizePath, PY_SPACE, PY_WORD, pythonStr, sortedByCodePoint, SPACE_CLASS, strip,
   testCaseFolded, WORD_BOUNDARY,
 } from "../lib/hookkit/pycompat.ts";
 import { NonFiniteJsonNumber, parseFiniteJson, parseJson, parsePayload } from "../lib/hookkit/json.ts";
@@ -61,7 +61,7 @@ const EVIDENCE_TEXT =
   "the command's zero exit status, a grep or wc count, a file path with line number, or a diff " +
   "summary. If you did not verify, say so in one line starting 'UNVERIFIED:' with the reason.";
 const UNCHECKABLE_TEXT =
-  "Reading the hook input, the turn state or the agent transcript held JSON the gate does not follow (nesting deeper than 10000 levels, " +
+  `Reading the hook input, the turn state or the agent transcript held JSON the gate does not follow (nesting deeper than ${MAX_JSON_DEPTH} levels, ` +
   "or a NaN or Infinity number in an agent transcript line), " +
   "so it cannot tell whether the report is proven or the changes are in scope.";
 const UNPARSED_EVENT = /"hook_event_name"\s*:\s*"(PreToolUse|SubagentStop)"/;

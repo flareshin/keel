@@ -1,9 +1,9 @@
+import { MAX_JSON_DEPTH } from "./pycompat.ts";
 import { RecursionError, ValueError } from "./pyruntime.ts";
-
-export const MAX_JSON_DEPTH = 10000;
 
 const NON_FINITE_TOKENS = ["-Infinity", "Infinity", "NaN"];
 const VALUE_STARTERS = "[{:,";
+const VALUE_ENDERS = ",]}";
 const JSON_WHITESPACE = " \t\n\r";
 
 export class JsonSyntaxError extends ValueError {
@@ -75,7 +75,9 @@ function holdsOnlyFiniteNumbers(value: unknown): boolean {
   while (pending.length > 0) {
     const next = pending.pop();
     if (typeof next === "number" && !Number.isFinite(next)) return false;
-    if (typeof next === "object" && next !== null) pending.push(...Object.values(next));
+    if (typeof next === "object" && next !== null) {
+      for (const child of Object.values(next)) pending.push(child);
+    }
   }
   return true;
 }
@@ -108,7 +110,7 @@ function withNonFiniteNumbersAsZero(text: string): string {
       continue;
     }
     const token = NON_FINITE_TOKENS.find((candidate) => text.startsWith(candidate, index));
-    if (token !== undefined && (lastSignificant === "" || VALUE_STARTERS.includes(lastSignificant))) {
+    if (token !== undefined && standsAsAValue(text, index, token.length, lastSignificant)) {
       replaced += "0";
       lastSignificant = "0";
       index += token.length - 1;
@@ -119,4 +121,11 @@ function withNonFiniteNumbersAsZero(text: string): string {
     if (character === '"') inString = true;
   }
   return replaced;
+}
+
+function standsAsAValue(text: string, index: number, length: number, lastSignificant: string): boolean {
+  const next = text[index + length];
+  const startsAValue = lastSignificant === "" || VALUE_STARTERS.includes(lastSignificant);
+  const endsAValue = next === undefined || JSON_WHITESPACE.includes(next) || VALUE_ENDERS.includes(next);
+  return startsAValue && endsAValue;
 }

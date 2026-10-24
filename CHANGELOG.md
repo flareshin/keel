@@ -98,9 +98,9 @@ hook run still pins them (see the last bullet of Changed).
 - Truthiness is strict where Python's let odd values through: a review link has agent provenance only with a non-empty
   string `agent_id`, a stored `no_test_reason` waives K3 only as a non-blank string, and a smoke run covers a repo only with a
   non-empty string tree.
-- Paths from git (`diff-tree`, `ls-tree`) must be valid UTF-8: a path that is not now stops the command with
+- Paths from `git diff-tree` must be valid UTF-8: a path that is not now stops the command with
   `a path in the git diff is not valid UTF-8` (exit 70) instead of being kept as lone surrogates, which already made the
-  push judgment fail. `KEEL_DATA_DIR`, `KEEL_OVERLAY_DIR` and a review's transcript path expand `~` and `~/` only, not
+  push judgment fail. A tree listing leaves out names that are not UTF-8, since no checked path can match one. `KEEL_DATA_DIR`, `KEEL_OVERLAY_DIR` and a review's transcript path expand `~` and `~/` only, not
   `~user`.
 - `risk-rules.tsv` globs are `*`, `?`, `[...]` and `[!...]` with the star crossing slashes, as before. A character range
   written backwards (`[z-a]`) is now an error that blocks the gate; it used to match nothing.

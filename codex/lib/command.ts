@@ -1,4 +1,7 @@
-import { UsageExit } from "../../measure/lib/measurekit/cli.ts";
+import { UsageExit, usageError } from "../../measure/lib/measurekit/cli.ts";
+import type { CommandSpec } from "../../measure/lib/measurekit/cli.ts";
+
+const END_OF_OPTIONS = "--";
 
 export interface CommandResult {
   code: number;
@@ -23,4 +26,8 @@ export function parseOrExit<T>(parse: () => T): T | CommandResult {
 
 export function isCommandResult(value: object): value is CommandResult {
   return "code" in value && "stdout" in value && "stderr" in value;
+}
+
+export function refuseEndOfOptions(spec: CommandSpec, argv: readonly string[]): void {
+  if (argv.includes(END_OF_OPTIONS)) usageError(spec, `unrecognized arguments: ${END_OF_OPTIONS}`);
 }

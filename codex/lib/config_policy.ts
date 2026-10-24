@@ -1,7 +1,7 @@
 import { expandUser } from "../../hooks/lib/hookkit/pycompat.ts";
 import { parseCommandLine, noPositionals, usageError } from "../../measure/lib/measurekit/cli.ts";
 import type { CommandSpec } from "../../measure/lib/measurekit/cli.ts";
-import { isCommandResult, parseOrExit } from "./command.ts";
+import { isCommandResult, parseOrExit, refuseEndOfOptions } from "./command.ts";
 import type { CommandResult } from "./command.ts";
 import { readText, writeAtomic } from "./files.ts";
 import { isTruthy } from "./json.ts";
@@ -28,6 +28,7 @@ function defaultProfile(): string {
 export function main(argv: readonly string[]): CommandResult {
   const options = parseOrExit(() => {
     const parsed = parseCommandLine(CONFIG_COMMAND, [...argv]);
+    refuseEndOfOptions(CONFIG_COMMAND, argv);
     noPositionals(CONFIG_COMMAND, parsed);
     const file = parsed.values["file"];
     if (typeof file !== "string") usageError(CONFIG_COMMAND, "the following arguments are required: --file");

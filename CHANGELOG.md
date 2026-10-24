@@ -82,14 +82,14 @@ All notable changes to keel are recorded here. The format follows
   - Registry and state files: a key such as `"2"` inside the skill registry is written in ascending order before the other
     keys; a `version` of `true` or `1.0` is still accepted.
   - Command lines: option prefixes and stacked short options are no longer expanded (`--wr`, `--fil x`, `-hh` and `--he` exit
-    2); a lone `--` is accepted; `-h` is honoured wherever it appears (`link --write --check -h` prints help and exits 0, it
+    2); `-h` is honoured wherever it appears (`link --write --check -h` prints help and exits 0, it
     exited 2); a value that starts with `-` after `--home` or `--file` (`--home -5`) exits 2, it was read as a value when it
     looked like a number.
   - The files and tests that checked the Python emulation are replaced by comparisons with the recorded Python runs that
     accept the listed changes: the hook corpus lists 71 payloads whose outcome changed and counts the denials worded
     differently, the link and config scenarios skip the steps whose arguments changed, and
-    `codex/tests/boundary.test.ts` pins 802 input boundaries (line breaks, Unicode spaces, number forms, invalid UTF-8,
-    symlink chains, sort order, command lines) against the outcomes the old adapter gave and lists the 56 that differ.
+    `codex/tests/boundary.test.ts` pins 812 input boundaries (line breaks, Unicode spaces, number forms, invalid UTF-8,
+    symlink chains, sort order, command lines) against the outcomes the old adapter gave and lists the 54 that differ.
 
 ### Removed
 - The Python-emulation modules `codex/lib/{argparse,pycodec_names,pycodecs,pyerrors,pyfs,pyjson,pyrepr,pystdin,pystr}.ts`

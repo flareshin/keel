@@ -3,7 +3,7 @@ import { basename, dirname } from "node:path";
 import { expandUser, isSystemError, sortedByCodePoint } from "../../hooks/lib/hookkit/pycompat.ts";
 import { noPositionals, parseCommandLine, usageError } from "../../measure/lib/measurekit/cli.ts";
 import type { CommandSpec } from "../../measure/lib/measurekit/cli.ts";
-import { isCommandResult, parseOrExit } from "./command.ts";
+import { isCommandResult, parseOrExit, refuseEndOfOptions } from "./command.ts";
 import type { CommandResult } from "./command.ts";
 import { digest, fingerprint, readJson, readText, writeAtomic } from "./files.ts";
 import type { ManagedFile } from "./files.ts";
@@ -56,6 +56,7 @@ export function hookRuntime(binary: string = process.execPath, searchPath: strin
 function readOptions(argv: readonly string[]): { mode: LinkMode; home: string | undefined } | CommandResult {
   return parseOrExit(() => {
     const parsed = parseCommandLine(LINK_COMMAND, [...argv]);
+    refuseEndOfOptions(LINK_COMMAND, argv);
     noPositionals(LINK_COMMAND, parsed);
     const chosen = MODE_FLAGS.filter((flag) => parsed.values[flag] === true);
     const [first, second] = chosen;

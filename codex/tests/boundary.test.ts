@@ -9,7 +9,7 @@ const PASSED = "pass, guard calls 2";
 const PASSED_ONE_GUARD = "pass, guard calls 1";
 const NON_NUMBER_WORDS = "NaN|Infinity|-Infinity";
 const NON_STRING_CWD_LITERALS = "9007199254740991|9007199254740992|9007199254740993|-9007199254740993|12345678901234567890|1e400|-1e400|1E400|1\\.0|100\\.0|1e16|1x4300|1x4301\\.0|1x4301e0";
-const EXPECTED_CHANGES = 56;
+const EXPECTED_CHANGES = 54;
 
 interface Change {
   reason: string;
@@ -29,7 +29,6 @@ const CHANGES: Change[] = [
   { reason: "an option prefix is no longer expanded", keys: /^command line\/(link abbreviated (write|home|help)|config abbreviated help)$/, was: "exit 0", now: "exit 2" },
   { reason: "an option prefix is no longer expanded", keys: /^command line\/config abbreviated (file|profile with equals)$/, was: "exit 3", now: "exit 2" },
   { reason: "stacked short options are no longer expanded", keys: /^command line\/(link|config) (stacked short help|short help with a stray letter)$/, was: "exit 0", now: "exit 2" },
-  { reason: "a lone -- after the options is accepted", keys: /^command line\/link (double dash|write then double dash)$/, was: "exit 2", now: "exit 0" },
   { reason: "a number-like option value is ambiguous to parseArgs", keys: /^command line\/link home negative number then check$/, was: "exit 1", now: "exit 2" },
   { reason: "help is honoured wherever it appears among the arguments", keys: /^command line\/link write check and help$/, was: "exit 2", now: "exit 0" },
 ];

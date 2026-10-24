@@ -8,6 +8,8 @@ import { afterEach, beforeEach, describe, it } from "node:test"
 
 import { CoverageFormatError, readCoverage } from "../../lib/precheck/coverage.ts"
 
+type RangeJson = { startOffset: number, endOffset: number, count: number }
+
 describe("readCoverage", () => {
   let root: string
   let repo: string
@@ -122,7 +124,7 @@ describe("readCoverage", () => {
     fs.writeFileSync(file, contents)
     return file
   }
-  const nestedRanges = (): { script: object, inner: object } => {
+  const nestedRanges = (): { script: RangeJson, inner: RangeJson } => {
     const source = NESTED.join("\n") + "\n"
     const innerStart = source.indexOf("function inner")
     const innerEnd = source.indexOf("}", innerStart) + 1
@@ -131,7 +133,7 @@ describe("readCoverage", () => {
       inner: { startOffset: innerStart, endOffset: innerEnd, count: 0 },
     }
   }
-  const writeNestedCoverage = (ranges: object[]): void => {
+  const writeNestedCoverage = (ranges: RangeJson[]): void => {
     write("src/nested.js", NESTED)
     const url = pathToFileURL(path.join(repo, "src/nested.js")).href
     writeCoverage(JSON.stringify({ result: [{ url, functions: ranges.map((range) => ({ ranges: [range] })) }] }))
@@ -150,6 +152,41 @@ describe("readCoverage", () => {
 
     assert.deepEqual(executed("src/nested.js"), [1, 5, 6, 7])
   })
+
+  it("readCoverage_subtractsTheKeelPrefixNamedInTheUrl_beforeMappingOffsetsToLines", () => {
+    const prefix = 40
+    const { script, inner } = nestedRanges()
+    write("src/nested.js", NESTED)
+    const url = `${pathToFileURL(path.join(repo, "src/nested.js")).href}#keel-prefix=${prefix}`
+    writeCoverage(JSON.stringify({ result: [{ url, functions: [
+      { ranges: [{ startOffset: 0, endOffset: script.endOffset + prefix + 3, count: 1 }] },
+      { ranges: [{ ...inner, startOffset: inner.startOffset + prefix, endOffset: inner.endOffset + prefix }] },
+    ] }] }))
+
+    assert.deepEqual(executed("src/nested.js"), [1, 5, 6, 7])
+  })
+
+  it("readCoverage_ignoresARangeLyingWhollyInsideTheKeelPrefix", () => {
+    const prefix = 40
+    write("src/nested.js", NESTED)
+    const url = `${pathToFileURL(path.join(repo, "src/nested.js")).href}#keel-prefix=${prefix}`
+    writeCoverage(JSON.stringify({ result: [{ url, functions: [
+      { ranges: [{ startOffset: 0, endOffset: prefix + 200, count: 0 }] },
+      { ranges: [{ startOffset: 0, endOffset: prefix - 30, count: 1 }] },
+    ] }] }))
+
+    assert.deepEqual(executed("src/nested.js"), [])
+  })
+
+  for (const malformed of ["-3", "abc", "1.5", ""]) {
+    it(`readCoverage_treatsAMalformedKeelPrefixAsUnknown: "${malformed}"`, () => {
+      write("src/nested.js", NESTED)
+      const url = `${pathToFileURL(path.join(repo, "src/nested.js")).href}#keel-prefix=${malformed}`
+      writeCoverage(JSON.stringify({ result: [{ url, functions: [{ ranges: [{ startOffset: 0, endOffset: 10, count: 1 }] }] }] }))
+
+      assert.deepEqual([...readCoverage(coverageDir, repo).seen], [])
+    })
+  }
 
   it("readCoverage_leavesAFileDeletedAfterItRanOutOfSeen_soItCountsAsUnknown", () => {
     write("src/gone.js", ["module.exports = 1"])

@@ -18,10 +18,17 @@ interface ScriptCoverage {
   ranges: Range[];
 }
 
+interface ScriptLocation {
+  path: string;
+  prefix: number;
+}
+
 export class CoverageFormatError extends Error {}
 
 const COVERAGE_FILE = /^coverage-.*\.json$/u;
 const FILE_URL_PREFIX = 'file://';
+const SOURCE_PREFIX_PARAM = 'keel-prefix';
+const DECIMAL_DIGITS = /^[0-9]+$/u;
 const NOT_WHITESPACE = /\S/u;
 
 export function readCoverage(coverageDir: string, repoRoot: string): Coverage {
@@ -29,11 +36,13 @@ export function readCoverage(coverageDir: string, repoRoot: string): Coverage {
   const coverage: Coverage = { seen: new Set(), executedLines: new Map() };
   for (const name of readdirSync(coverageDir).filter((entry) => COVERAGE_FILE.test(entry)).sort()) {
     for (const script of parseCoverageFile(join(coverageDir, name))) {
-      const path = repoRelativePath(script.url, root);
-      if (path === null || !existsSync(join(root, path))) continue;
+      const location = scriptLocation(script.url, root);
+      if (location === null || !existsSync(join(root, location.path))) continue;
+      const { path, prefix } = location;
       coverage.seen.add(path);
       const lines = coverage.executedLines.get(path) ?? new Set<number>();
-      for (const line of executedLines(readFileSync(join(root, path), 'utf8'), script.ranges)) lines.add(line);
+      const ranges = script.ranges.map((range) => shiftRange(range, prefix));
+      for (const line of executedLines(readFileSync(join(root, path), 'utf8'), ranges)) lines.add(line);
       coverage.executedLines.set(path, lines);
     }
   }
@@ -55,11 +64,18 @@ function parseCoverageFile(file: string): ScriptCoverage[] {
   return scripts.map((script) => ({ url: script.url, ranges: script.functions.flatMap((fn) => fn.ranges) }));
 }
 
-function repoRelativePath(url: string, root: string): string | null {
+function scriptLocation(url: string, root: string): ScriptLocation | null {
   if (!url.startsWith(FILE_URL_PREFIX)) return null;
-  const path = relative(root, fileURLToPath(url));
+  const parsed = new URL(url);
+  const path = relative(root, fileURLToPath(parsed));
   if (path === '' || path.startsWith('..') || path.startsWith(sep)) return null;
-  return path.split(sep).join('/');
+  const prefix = new URLSearchParams(parsed.hash.slice(1)).get(SOURCE_PREFIX_PARAM);
+  if (prefix !== null && !DECIMAL_DIGITS.test(prefix)) return null;
+  return { path: path.split(sep).join('/'), prefix: prefix === null ? 0 : Number(prefix) };
+}
+
+function shiftRange(range: Range, prefix: number): Range {
+  return { ...range, startOffset: Math.max(0, range.startOffset - prefix), endOffset: Math.max(0, range.endOffset - prefix) };
 }
 
 function executedLines(source: string, ranges: Range[]): Set<number> {

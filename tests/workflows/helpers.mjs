@@ -1,7 +1,7 @@
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, chmodSync, realpathSync, copyFileSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { execFileSync } from 'node:child_process'
 
 export const KEEL_HOME = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -15,16 +15,26 @@ export const SHA_D = 'd'.repeat(40)
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 const RUNTIME_GLOBALS = ['args', 'agent', 'parallel', 'pipeline', 'phase', 'log', 'workflow']
+const META_EXPORT = 'export const meta = '
+const BODY_MARKER = 'BODY'
+// V8 compiles constructor source as "(" + fn.toString() + ")", so coverage offsets start one character before toString's.
+const BODY_OFFSET = new AsyncFunction(...RUNTIME_GLOBALS, BODY_MARKER).toString().indexOf(BODY_MARKER) + 1
 
 export function readScript(name) {
   return readFileSync(join(WORKFLOWS_DIR, `${name}.js`), 'utf8')
 }
 
-// The workflow runtime evaluates the body as an async function; `export` is the only module syntax it strips.
 export function compileScript(name) {
-  const source = readScript(name)
-  if (!source.startsWith('export const meta = ')) throw new Error(`${name}.js must begin with export const meta`)
-  return new AsyncFunction(...RUNTIME_GLOBALS, source.replace('export const meta = ', 'const meta = '))
+  return compileWorkflowFile(join(WORKFLOWS_DIR, `${name}.js`))
+}
+
+// The workflow runtime evaluates the body as an async function; `export` is the only module syntax it strips.
+export function compileWorkflowFile(file) {
+  const source = readFileSync(file, 'utf8')
+  if (!source.startsWith(META_EXPORT)) throw new Error(`${file} must begin with export const meta`)
+  const sameLengthBody = ' '.repeat('export '.length) + source.slice('export '.length)
+  const sourceUrl = `${pathToFileURL(file).href}#keel-prefix=${BODY_OFFSET}`
+  return new AsyncFunction(...RUNTIME_GLOBALS, `${sameLengthBody}\n//# sourceURL=${sourceUrl}`)
 }
 
 export function extractMetaText(source) {

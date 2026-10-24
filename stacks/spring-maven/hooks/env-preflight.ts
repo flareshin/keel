@@ -170,7 +170,7 @@ function pinsJdk(build: MavenBuild, major: string): boolean {
 function namesJdk(value: string, major: string): boolean {
   const escaped = major.replace(SYNTAX_CHARACTERS, "\\$&");
   const space = `[${PY_SPACE}]`;
-  const lookup = new RegExp(`java_home${space}+(?:-v${space}*|--version[${PY_SPACE}=]+)${escaped}(?:\\.0)?(?![0-9.+*])`, "u");
+  const lookup = new RegExp(`java_home${space}+(?:-v${space}*|--version[${PY_SPACE}=]+)${escaped}(?:\\.[0-9]+)*(?![0-9.+*])`, "u");
   const path = new RegExp(`${JDK_VENDOR_WORDS}[-_.@/]?${escaped}(?![0-9])`, "iu");
   return lookup.test(value) || testCaseFolded(path, value);
 }

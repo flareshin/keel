@@ -157,6 +157,11 @@ Python-shaped for now because the recorded ship-gate hook run still pins them (s
   `repr` quoting and the UTF-8 message of the registry reader; the `TimeoutExpired` text with a Python list repr; and
   `UnicodeEncodeError` for a command word holding a lone surrogate. They go with the parity re-recording in the hooks kit.
 
+### Fixed
+- `env-preflight` (`[S-jdk]`) accepts a `java_home` lookup that names a patch release of the required major, such as
+  `-v 17.0.20` or `--version=17.0.2`; it already accepted `-v 17` and `-v 17.0`. An open range (`17.0.20+`), a wildcard
+  (`17.0.*`), a trailing dot or another major is still denied.
+
 ### Removed
 - The Python-emulation modules `codex/lib/{argparse,pycodec_names,pycodecs,pyerrors,pyfs,pyjson,pyrepr,pystdin,pystr}.ts`
   and the tests that compared them with Python (`codex/tests/{pycompat,stdin-decoding}.test.ts`, `pyref.ts`,

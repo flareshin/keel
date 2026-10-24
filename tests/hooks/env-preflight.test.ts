@@ -132,6 +132,18 @@ describe("PassTest", () => {
     assertPassed(check(`export ${PIN_17} && mvn test`));
   });
 
+  it("mvn_passes_whenJavaHomeLookupNamesAPatchReleaseOfTheRequiredMajor", () => {
+    assertPassed(check("export JAVA_HOME=$(/usr/libexec/java_home -v 17.0.20); mvn -o -q compile"));
+    assertPassed(check("JAVA_HOME=$(/usr/libexec/java_home --version=17.0.2) mvn test"));
+  });
+
+  it("mvn_denied_whenJavaHomeLookupNamesAnOpenRangeOrAnotherMajor", () => {
+    assertDenied(check("JAVA_HOME=$(/usr/libexec/java_home -v 17.0.20+) mvn test"));
+    assertDenied(check("JAVA_HOME=$(/usr/libexec/java_home -v 17.0.*) mvn test"));
+    assertDenied(check("JAVA_HOME=$(/usr/libexec/java_home -v 170.0.1) mvn test"));
+    assertDenied(check("JAVA_HOME=$(/usr/libexec/java_home -v 17.) mvn test"));
+  });
+
   it("mvn_passes_whenPrefixReferencesEarlierVariable", () => {
     assertPassed(check("J=$(/usr/libexec/java_home -v 17); JAVA_HOME=$J mvn test"));
   });

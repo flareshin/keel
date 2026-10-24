@@ -1,10 +1,9 @@
-import { expandUser } from "../../hooks/lib/hookkit/pycompat.ts";
+import { expandUser, isTruthy } from "../../hooks/lib/hookkit/pycompat.ts";
 import { parseCommandLine, noPositionals, usageError } from "../../measure/lib/measurekit/cli.ts";
 import type { CommandSpec } from "../../measure/lib/measurekit/cli.ts";
 import { isCommandResult, parseOrExit, refuseEndOfOptions } from "./command.ts";
 import type { CommandResult } from "./command.ts";
 import { readText, writeAtomic } from "./files.ts";
-import { isTruthy } from "./json.ts";
 import { childPath, cleanPath, pathExists, resolvePath } from "./paths.ts";
 import { Refusal, refusalMessage } from "./refusal.ts";
 import { tomlEquals, tomlLoads } from "./toml.ts";

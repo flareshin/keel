@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { userInfo } from "node:os";
 import { dirname } from "node:path";
-import { expandUser, glob, splitlines, strip } from "../../hooks/lib/hookkit/pycompat.ts";
+import { expandUser, glob, isTruthy, splitlines, strip } from "../../hooks/lib/hookkit/pycompat.ts";
 import { resolveDirectory, steps, writeTargets } from "../../hooks/lib/hookkit/shell.ts";
 import { run } from "../../hooks/lib/hookkit/subprocess.ts";
 import type { CompletedProcess } from "../../hooks/lib/hookkit/subprocess.ts";
@@ -10,7 +10,7 @@ import { emit } from "../lib/command.ts";
 import type { CommandResult } from "../lib/command.ts";
 import { completeEdit, HOOK_CALLER_FRAMES, validateUpdate } from "../lib/config_policy.ts";
 import { readText } from "../lib/files.ts";
-import { asciiJson, isJsonObject, isTruthy, parseHookJson } from "../lib/json.ts";
+import { asciiJson, isJsonObject, parseHookJson } from "../lib/json.ts";
 import type { JsonValue } from "../lib/json.ts";
 import { childPath, hasGlobMagic, isStrictAncestor, pathExists, resolvePath } from "../lib/paths.ts";
 import { Refusal, refusalMessage } from "../lib/refusal.ts";

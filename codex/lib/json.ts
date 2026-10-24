@@ -25,13 +25,6 @@ export function asciiJson(value: JsonValue): string {
   return JSON.stringify(value).replace(NON_PRINTABLE_ASCII, (character) => "\\u" + character.charCodeAt(0).toString(16).padStart(ESCAPE_WIDTH, "0"));
 }
 
-export function isTruthy(value: unknown): boolean {
-  if (value === null || value === undefined || value === false || value === 0 || value === "") return false;
-  if (Array.isArray(value)) return value.length > 0;
-  if (isJsonObject(value)) return Object.keys(value).length > 0;
-  return true;
-}
-
 function parseDocument(text: string, parse: (text: string) => JsonValue): JsonValue {
   try {
     const value = parse(text);

@@ -83,6 +83,25 @@ describe("precheck baseline", () => {
     assert.equal(git(directory, "status", "--porcelain", "--", ".", ":!tests/top.test.ts"), "")
   })
 
+  it("materializeTree_ignoresTheUsersInitTemplate_andStillLeavesACleanCheckout", () => {
+    const root = repo({ ".gitignore": "node_modules/\n", "node_modules/pkg/index.js": "export default 1\n" })
+    const template = mkdtempSync(join(tmpdir(), "precheck-template-"))
+    directories.push(template)
+    write(template, { "hooks/post-checkout": "#!/bin/sh\ntouch hook-ran\n" })
+    chmodSync(join(template, "hooks", "post-checkout"), 0o755)
+    const config = { GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "init.templateDir", GIT_CONFIG_VALUE_0: template }
+    Object.assign(process.env, config)
+    try {
+      const directory = materializeTree(root, snapshotTree(root))
+      directories.push(directory)
+
+      assert.equal(existsSync(join(directory, ".git", "hooks", "post-checkout")), false)
+      assert.equal(git(directory, "status", "--porcelain"), "")
+    } finally {
+      Object.keys(config).forEach((key) => delete process.env[key])
+    }
+  })
+
   it("materializeTree_removesItsDirectoryWhenTheCheckoutFails", () => {
     const root = repo({ "lib/a.ts": "export const a = 1\n" })
     const temporary = mkdtempSync(join(tmpdir(), "precheck-tmpdir-"))

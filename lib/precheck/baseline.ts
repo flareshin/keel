@@ -1,6 +1,6 @@
-import { appendFileSync, existsSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { checkoutSnapshot } from '../evidence/gitcmd.ts';
 import { runProcessGroup, TimeoutExpired } from '../evidence/subprocess.ts';
@@ -42,6 +42,7 @@ function linkDependencies(repo: string, directory: string): void {
   const dependencies = join(repo, DEPENDENCY_DIRECTORY);
   if (!existsSync(dependencies)) return;
   symlinkSync(dependencies, join(directory, DEPENDENCY_DIRECTORY));
+  mkdirSync(dirname(join(directory, LOCAL_EXCLUDE)), { recursive: true });
   appendFileSync(join(directory, LOCAL_EXCLUDE), `/${DEPENDENCY_DIRECTORY}\n`);
 }
 

@@ -294,7 +294,7 @@ export function snapshotTree(repo: string): string {
 }
 
 export function checkoutSnapshot(repo: string, tree: string, directory: string): void {
-  run(directory, ['init', '-q']);
+  run(directory, ['init', '-q', '--template=']);
   const objects = text(repo, ['rev-parse', '--path-format=absolute', '--git-path', 'objects']);
   mkdirSync(join(directory, '.git', 'objects', 'info'), { recursive: true });
   writeFileSync(join(directory, '.git', 'objects', 'info', 'alternates'), objects + '\n');

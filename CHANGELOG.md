@@ -72,58 +72,7 @@ hook run still pins them (see the last bullet of Changed).
 - `keel evidence write-review`: `keel_evidence.v` must be the JSON number 1 in any spelling (`1.0`, `1e0`, `10e-1`); `true`
   is now refused with exit 2 (it was accepted). `run_id`, `root_run_id`, `review_base`, `head`, `snapshot_tree` and `since` must be JSON
   strings (a number whose digits read like an id was accepted), and an id followed by a newline is refused with exit 2
-  (the `# Changelog
-
-All notable changes to keel are recorded here. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
-[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Unreleased]
-
-`measure`, `bin/link` and `lib/evidence` (the `keel` command, the evidence store and the verdict the ship-gate reads) drop
-their Python emulation and run on plain Node behavior: `JSON.parse` and `JSON.stringify`, `node:path`, `node:fs`, `RegExp`
-and `node:util` `parseArgs`. Four spellings in `lib/evidence` stay Python-shaped for now because the recorded ship-gate
-hook run still pins them (see the last bullet of Changed).
-
-### Changed
-- What stays the same: exit codes for every documented outcome, the field names and values of every JSON and JSONL
-  line the tools print or write (`measure/{run,smoke,propose,weekly,boundary}`, `measure/evals/{eval,review-eval}`,
-  `bin/link`, the `keel-*.jsonl` logs and raw-dir files), the `[ID]` tags in messages, and the CLI flags with their
-  meaning, including exit 2 with a `usage:` line on bad arguments.
-- What may differ and does: JSON is compact `JSON.stringify` output with non-ASCII written as is (keys stay sorted
-  where they were sorted, and indented files keep two spaces); help and usage text is a short hand-written usage
-  string without wrapping or colour; error messages use Node's wording and JSON-style quoting instead of Python's
-  `repr` (`unknown scope "x"` was `unknown scope 'x'`; `internal error: InvalidUtf8Error: <path> is not valid UTF-8`
-  and `internal error: Error: EISDIR: ...` replace Python class names); the review-eval stderr summary prints
-  numbers as JavaScript does (`recall 1`, `none`).
-- Command lines: option prefixes are no longer expanded (`--gen`, `--sin=2020-1-1` and `--s` now exit 2 as unknown
-  options); `--repeat` and `--timeout-seconds` take ASCII digits only (` 1_0 `, `+5` and other scripts' digits now exit 2,
-  leading zeros such as `010` still work); `-h` given as an option value (`--since -h`) is a value, not a help request,
-  so it still exits 2; `measure/boundary --range=` exits 2 with `--range takes <old>..<new>` (it was an internal error, 70);
-  dates (`--since`, `review_by`, `grace_until`) take ASCII digits, one or two for month and day, and no space padding.
-- `boundary/regex.txt` and `measure/boundary-generic.tsv` are JavaScript `RegExp` syntax; a leading `(?i)` still
-  makes a line case-insensitive. Python-only forms change meaning or exit 2 (`x{,3}` is literal text, `(?P<n>...)` and
-  `(?x)` do not compile), `\d`, `\w` and `\b` are ASCII, and case folding no longer equates `İ` or `ı` with `i`.
-- Text files are split into lines at `\r\n`, `\r` and `\n` only. A `\u2028`, `\f` or `\v` no longer starts a line, which
-  moves boundary hit line numbers and keeps a bullet after one of them out of the `[ID]` tagging check.
-- Metric runners must print a JSON integer count: `true` and `false` are now an error (FAIL, a `recheck` proposal, a
-  weekly `error` entry), `1.0` counts as 1, and a count beyond 2^53 is printed as the nearest double
-  (`12345678901234567890` becomes `12345678901234567000`). Floats in runner items print in JavaScript form (`1.0` is `1`).
-- A `fires:` or `evals:` metric no longer counts a log record whose `ts` is not a string (Python counted it by its text,
-  so `"ts": null` read as `None` and fell inside every window).
-- The files read through `readUtf8` (ledgers, TSV and JSONL data, link manifests, settings, fragments, link state,
-  `CLAUDE.md`, `PRINCIPLES.md`, skills, eval cases and fixtures) are decoded as strict UTF-8 in full. A `CLAUDE.md` with
-  an invalid byte past its first 8 KiB now makes `bin/link --check`, `--unlink` and `measure/evals/eval --dry-run`
-  exit 70, as an invalid byte earlier already did. The boundary scan alone decodes leniently on purpose: it replaces
-  invalid bytes so it can still scan such a file, as before.
-- `bin/link`: a `settings.json` holding `NaN` or `Infinity` is refused as invalid JSON (exit 3, was a drift report);
-  a lone surrogate in a settings value is written as a `\udXXX` escape (`--write` exit 0, was 70) and shown as U+FFFD
-  on stderr; integer-like keys inside an owned object (`env`, `permissions`) are written first, in ascending order;
-  a drift report counts a non-list value where a list belongs as 0 items instead of failing or counting characters.
-- The `settings_owned_sha256` digests in `state/keel/link-state.json` hash the same text as before (keys sorted
-  by code point, `", "` and `": "` separators, non-ASCII as is) for strings, integers (also beyond 2^53, which settings and
-  fragments keep exact), booleans, null, lists and objects; only floats are written differently (`10.0` is `10`, `1e-07` is `1e-7`).
- of the old pattern let it through), as is `keel approve '<id>\n'`. `write-smoke` counts a smoke run as passed only
+  (the `$` of the old pattern let it through), as is `keel approve '<id>\n'`. `write-smoke` counts a smoke run as passed only
   when its `ok` is JSON `true` (exit 3 otherwise; `1`, `"yes"`, `[]` and `{}` counted before).
 - Codex review evidence: a stored review whose `source.version` is spelled `2.0` (hand-edited; keel writes `2`) is no longer
   a version 2 record: `keel evidence compatibility` counts it as read-only and validation refuses it. A rollout counts

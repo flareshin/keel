@@ -5,7 +5,7 @@ import * as protocol from "../../../hooks/lib/hookkit/protocol.ts";
 import type { Payload } from "../../../hooks/lib/hookkit/protocol.ts";
 import { getField, isTruthy, joinPath, normalizePath, expandUser, partition, pythonStr, strip, arraysEqual, PY_SPACE, testCaseFolded } from "../../../hooks/lib/hookkit/pycompat.ts";
 import { globMatches } from "../../../lib/evidence/glob.ts";
-import { parsePayload } from "../../../hooks/lib/hookkit/pyjson.ts";
+import { parsePayload } from "../../../hooks/lib/hookkit/json.ts";
 import { isDirectory } from "../../../hooks/lib/hookkit/files.ts";
 import { describeError, readStdin, ValueError } from "../../../hooks/lib/hookkit/pyruntime.ts";
 import { findRepoKey, findSuperproject, findToplevel } from "../../../hooks/lib/hookkit/repo.ts";

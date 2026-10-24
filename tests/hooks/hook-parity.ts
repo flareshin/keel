@@ -19,6 +19,11 @@ const UNREADABLE = "<unreadable>";
 const GIT_DIRECTORY = ".git";
 const REMOTES_TREE = "remotes";
 const FIRES_PATH = join("data", "logs", "keel-fires.jsonl");
+const PYTHON_DECODE_ERROR_NAME = "(JSONDecodeError)";
+const DECODE_ERROR_NAME = "(JsonSyntaxError)";
+const PYTHON_DECODE_DETAIL = /\b(JSONDecodeError: |payload is not JSON: )(?:[^"\\]|\\.)*?: line \d+ column \d+ \(char \d+\)/g;
+const NODE_DECODE_DETAIL = /\b(JsonSyntaxError: |payload is not JSON: )(?!hook payload is not a JSON object)(?:[^"\\]|\\.)*/g;
+const DECODE_MESSAGE = "<JSON syntax error message>";
 
 interface Case {
   id: string;
@@ -205,6 +210,7 @@ function unmetOutcome(outcome: TsOutcome, actual: Observation): string[] {
   if (outcome.stdoutIncludes !== undefined && !actual.stdout.includes(outcome.stdoutIncludes)) {
     unmet.push(`listed divergence: stdout ${excerpt(actual.stdout)} lacks ${excerpt(outcome.stdoutIncludes)}`);
   }
+  if (outcome.stdoutEmpty && actual.stdout !== "") unmet.push(`listed divergence: stdout ${excerpt(actual.stdout)} is not empty`);
   if (outcome.stderrIncludes !== undefined && !actual.stderr.includes(outcome.stderrIncludes)) {
     unmet.push(`listed divergence: stderr ${excerpt(actual.stderr)} lacks ${excerpt(outcome.stderrIncludes)}`);
   }
@@ -217,7 +223,26 @@ function unmetOutcome(outcome: TsOutcome, actual: Observation): string[] {
 
 function compareWithRecorded(testCase: Case, run: Run): string[] {
   if (testCase.expected === undefined) return ["no recorded Python outcome for this case; the corpus changed or the case was never recorded"];
-  return differencesFromRecorded(testCase.expected, run, testCase.root);
+  return differencesFromRecorded(withDecodeWordingAsNode(testCase.expected), withDecodeMessageMasked(run), testCase.root);
+}
+
+function withDecodeWordingAsNode(expected: ObservedDelta): ObservedDelta {
+  const fires = expected.set[FIRES_PATH];
+  const set = fires === undefined ? expected.set : { ...expected.set, [FIRES_PATH]: maskedDecodeDetail(fires) };
+  return { ...expected, stderr: expected.stderr.replaceAll(PYTHON_DECODE_ERROR_NAME, DECODE_ERROR_NAME), set };
+}
+
+function maskedDecodeDetail(fires: string): string {
+  return fires
+    .replace(PYTHON_DECODE_DETAIL, (_match, prefix: string) => `${prefix === "JSONDecodeError: " ? "JsonSyntaxError: " : prefix}${DECODE_MESSAGE}`)
+    .replace(NODE_DECODE_DETAIL, (_match, prefix: string) => `${prefix}${DECODE_MESSAGE}`);
+}
+
+function withDecodeMessageMasked(run: Run): Run {
+  const fires = run.observation.files.get(FIRES_PATH);
+  if (fires === undefined) return run;
+  const files = new Map(run.observation.files).set(FIRES_PATH, maskedDecodeDetail(fires));
+  return { ...run, observation: { ...run.observation, files } };
 }
 
 export function summary(report: ParityReport): string {

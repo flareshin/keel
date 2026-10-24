@@ -5,9 +5,9 @@ import { FireLog, utcNow } from "../lib/hookkit/fires.ts";
 import * as protocol from "../lib/hookkit/protocol.ts";
 import type { Payload } from "../lib/hookkit/protocol.ts";
 import {
-  basename, getField, isTruthy, joinPath, pythonStr, rstripChar, splitlines, strip,
+  basename, dumpsAscii, getField, isTruthy, joinPath, pythonStr, rstripChar, splitlines, strip,
 } from "../lib/hookkit/pycompat.ts";
-import { dumpsAscii, parsePayload } from "../lib/hookkit/pyjson.ts";
+import { parsePayload } from "../lib/hookkit/json.ts";
 import { isDirectory, isFile } from "../lib/hookkit/files.ts";
 import { describeError, printLine, readStdin, stripChars, RecursionError, ValueError, writeStderr } from "../lib/hookkit/pyruntime.ts";
 import { findToplevel, findUpstream, gitOutput } from "../lib/hookkit/repo.ts";

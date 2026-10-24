@@ -6,10 +6,10 @@ import { FireLog } from "../lib/hookkit/fires.ts";
 import * as protocol from "../lib/hookkit/protocol.ts";
 import type { Payload } from "../lib/hookkit/protocol.ts";
 import {
-  expandUser, getField, isRecord, isTruthy, joinPath, normalizePath, PY_SPACE, PY_WORD, pythonStr, sortedByCodePoint, SPACE_CLASS, strip,
+  dumpsAscii, expandUser, getField, isRecord, isTruthy, joinPath, normalizePath, PY_SPACE, PY_WORD, pythonStr, sortedByCodePoint, SPACE_CLASS, strip,
   testCaseFolded, WORD_BOUNDARY,
 } from "../lib/hookkit/pycompat.ts";
-import { dumpsAscii, loads, parsePayload } from "../lib/hookkit/pyjson.ts";
+import { NonFiniteJsonNumber, parseFiniteJson, parseJson, parsePayload } from "../lib/hookkit/json.ts";
 import { AttributeError, describeError, pythonErrorName, pythonList, pythonTypeName, readStdin, stripChars, RecursionError, ValueError } from "../lib/hookkit/pyruntime.ts";
 import { OSError, run, TimeoutExpired } from "../lib/hookkit/subprocess.ts";
 import type { CompletedProcess } from "../lib/hookkit/subprocess.ts";
@@ -61,7 +61,8 @@ const EVIDENCE_TEXT =
   "the command's zero exit status, a grep or wc count, a file path with line number, or a diff " +
   "summary. If you did not verify, say so in one line starting 'UNVERIFIED:' with the reason.";
 const UNCHECKABLE_TEXT =
-  "Reading the hook input, the turn state or the agent transcript reached a nesting depth the gate does not follow (RecursionError), " +
+  "Reading the hook input, the turn state or the agent transcript held JSON the gate does not follow (nesting deeper than 10000 levels, " +
+  "or a NaN or Infinity number in an agent transcript line), " +
   "so it cannot tell whether the report is proven or the changes are in scope.";
 const UNPARSED_EVENT = /"hook_event_name"\s*:\s*"(PreToolUse|SubagentStop)"/;
 const UNPARSED_HANDBACK_TOOL = /"tool_name"\s*:\s*"subagenthandback"/i;
@@ -82,7 +83,7 @@ class TurnState {
     if (this.path === null || !existsSync(this.path)) return;
     let data: unknown;
     try {
-      data = loads(readFileSync(this.path, "utf8"));
+      data = parseJson(readFileSync(this.path, "utf8"));
     } catch (error) {
       if (!isReadFailure(error)) throw error;
       this.handedBack = true;
@@ -258,9 +259,9 @@ function judgeStop(payload: Payload, fires: FireLog): number {
 }
 
 class UncheckableReport extends Error {
-  readonly reason: RecursionError;
+  readonly reason: RecursionError | NonFiniteJsonNumber;
 
-  constructor(reason: RecursionError) {
+  constructor(reason: RecursionError | NonFiniteJsonNumber) {
     super(reason.message);
     this.reason = reason;
   }
@@ -270,7 +271,7 @@ function whileDeciding<T>(read: () => T): T {
   try {
     return read();
   } catch (error) {
-    if (error instanceof RecursionError) throw new UncheckableReport(error);
+    if (error instanceof RecursionError || error instanceof NonFiniteJsonNumber) throw new UncheckableReport(error);
     throw error;
   }
 }
@@ -371,7 +372,7 @@ function writeReviewEvidence(
 function sendToCli(evidenceLine: string, verdict: string, source: Record<string, unknown>, fires: FireLog): void {
   let request: string;
   try {
-    request = dumpsAscii({ keel_evidence: loads(evidenceLine), verdict, source });
+    request = dumpsAscii({ keel_evidence: parseFiniteJson(evidenceLine), verdict, source });
   } catch (error) {
     if (!(error instanceof ValueError)) throw error;
     fires.append("K1", "warn", { detail: "KEEL-EVIDENCE line is not JSON" });
@@ -394,7 +395,7 @@ function sendToCli(evidenceLine: string, verdict: string, source: Record<string,
 
 function evidenceIdOf(stdout: string): string {
   try {
-    const response = loads(stdout);
+    const response = parseJson(stdout);
     return isRecord(response) ? pythonStr(getField(response, "evidence_id")) : "(unparsed stdout)";
   } catch (error) {
     if (error instanceof ValueError) return "(unparsed stdout)";

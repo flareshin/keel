@@ -1,4 +1,4 @@
-import { JSONDecodeError, loads } from "./pyjson.ts";
+import { JsonSyntaxError, parseTranscriptLine } from "./json.ts";
 import { universalNewlineLines, getField, hasField, isRecord, isTruthy, strip } from "./pycompat.ts";
 
 export type Entry = Record<string, unknown>;
@@ -27,9 +27,9 @@ export function* iterEntries(path: string): Generator<Entry> {
   for (const line of universalNewlineLines(path)) {
     let entry: unknown;
     try {
-      entry = loads(strip(line));
+      entry = parseTranscriptLine(strip(line));
     } catch (error) {
-      if (error instanceof JSONDecodeError) continue;
+      if (error instanceof JsonSyntaxError) continue;
       throw error;
     }
     if (isRecord(entry)) yield entry;

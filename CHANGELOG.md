@@ -164,6 +164,30 @@ Python-shaped for now because the recorded ship-gate hook run still pins them (s
   CRLF into a newline. An agent definition's frontmatter still opens and closes with `---` on a CRLF line. `git-guard`
   still turns a lone CR and a CRLF into a newline in commit message files (`git commit -F`, `gh pr --body-file`), so an
   attribution phrase wrapped at one is denied as before.
+- The hooks (`git-guard`, `report-gate`, `handoff`, `model-assign`, `env-preflight`) read JSON with `JSON.parse` behind a
+  10,000 level nesting bound (`hooks/lib/hookkit/json.ts`). What stays the same: text nested past 10,000 levels raises
+  `RecursionError`, now also when it is malformed as well, so the hooks that fail closed on it still do; malformed JSON
+  takes the same path in every hook as before; the JSON the hooks send on (the report-gate review request) is written
+  by the same `dumpsAscii`.
+- What may differ and does, in the hooks:
+  - A stdin payload holding `NaN`, `Infinity` or `-Infinity` is malformed JSON (Python accepted it): `git-guard`
+    refuses it as an internal error when the text looks like a guarded command and passes it otherwise, `report-gate` logs a K2 `error` fire and passes, `handoff`, `model-assign`
+    and `env-preflight` pass without acting. A report-gate state file holding one counts as unreadable, as other
+    malformed state does.
+  - An integer of more than 4,300 digits is no longer refused; it reads as the nearest double (`Infinity` past the
+    double range), in payloads, transcript lines and settings.
+  - `git-guard` still reads a `--settings` JSON value holding `NaN` or `Infinity`: those values read as 0 there, so a
+    `disableAllHooks: true` in it, with an escaped key or not, is still denied.
+  - `report-gate`: an agent transcript line that is valid JSON apart from a `NaN` or `Infinity` value makes the gate
+    refuse the report as uncheckable (K2), as nesting past the bound does; such a line used to be read with the number.
+    A line that is malformed otherwise is still skipped. A `KEEL-EVIDENCE` line holding one, or a number past the double
+    range (`1e400`, an integer of 310 digits or more), is not JSON to the hand-back: it warns K1 (`KEEL-EVIDENCE line is not JSON`)
+    and sends no review request, where it used to forward `NaN` or `Infinity`, which `keel evidence write-review` refuses.
+  - The detail of a fire for malformed JSON names `JsonSyntaxError` and V8's message (it named `JSONDecodeError` with
+    Python's message); a `RecursionError:` detail keeps its prefix.
+  - `tests/hooks/hook-parity.test.ts` compares the recorded Python runs with the decode error message masked on both sides
+    (`JSONDecodeError` reads as `JsonSyntaxError`) and lists 31 more payloads whose outcome changed: the non-finite
+    numbers above and the integers of more than 4,300 digits, which the hooks now judge like any other payload.
 
 ### Fixed
 - `env-preflight` (`[S-jdk]`) accepts a `java_home` lookup that names a patch release of the required major, such as
@@ -171,6 +195,9 @@ Python-shaped for now because the recorded ship-gate hook run still pins them (s
   (`17.0.*`), a trailing dot or another major is still denied.
 
 ### Removed
+- The hook module `hooks/lib/hookkit/pyjson.ts` and its tests in `tests/hooks/pyhook-compat.test.ts`. Its place is taken by
+  `parseJson`, `parsePayload`, `parseTranscriptLine` and `parseJsonReadingNonFiniteNumbersAsZero` in `hooks/lib/hookkit/json.ts`;
+  `dumpsAscii` moved to `hooks/lib/hookkit/pycompat.ts` unchanged.
 - The hook modules `hooks/lib/hookkit/{pyfnmatch,pypath}.ts`. Their place is taken by `globMatches` from
   `lib/evidence/glob.ts`, `shlexQuote` from `measure/lib/measurekit/shlex.ts`, `node:path` `dirname`, `readFileSync` and
   `realpathSync`, and `isFile`, `isDirectory` and `resolveSymlinksKeepingMissingTail` in the new

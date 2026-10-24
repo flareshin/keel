@@ -1,6 +1,7 @@
 import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import type { Dirent } from "node:fs";
 import { userInfo } from "node:os";
+import { MAX_JSON_DEPTH } from "./json.ts";
 import { RecursionError, ValueError } from "./pyruntime.ts";
 import { OSError, run, TimeoutExpired } from "./subprocess.ts";
 import type { CompletedProcess } from "./subprocess.ts";
@@ -386,8 +387,6 @@ export function expandVars(path: string): string {
   });
 }
 
-export const MAX_JSON_DEPTH = 10000;
-
 function pythonReprText(value: string): string {
   const quote = value.includes("'") && !value.includes('"') ? '"' : "'";
   const escaped = value.replaceAll("\\", "\\\\").replaceAll("\n", "\\n").replaceAll("\r", "\\r").replaceAll("\t", "\\t");
@@ -512,4 +511,10 @@ function memberPrefix(container: Container, index: number, rendering: Rendering)
 function nonFiniteNumberText(value: number): string {
   if (Number.isNaN(value)) return "NaN";
   return value > 0 ? "Infinity" : "-Infinity";
+}
+
+const NOT_PRINTABLE_ASCII = /[^\x20-\x7e]/g;
+
+export function dumpsAscii(value: unknown): string {
+  return pythonJsonDumps(value).replace(NOT_PRINTABLE_ASCII, (character) => "\\u" + character.charCodeAt(0).toString(16).padStart(4, "0"));
 }

@@ -7,7 +7,7 @@ import { missingFields } from "../../hooks/lib/hookkit/contract.ts";
 import * as env from "../../hooks/lib/hookkit/env.ts";
 import { FireLog } from "../../hooks/lib/hookkit/fires.ts";
 import * as protocol from "../../hooks/lib/hookkit/protocol.ts";
-import { JSONDecodeError, parsePayload } from "../../hooks/lib/hookkit/pyjson.ts";
+import { JsonSyntaxError, parsePayload } from "../../hooks/lib/hookkit/json.ts";
 import { RecursionError, ValueError } from "../../hooks/lib/hookkit/pyruntime.ts";
 import * as pycompat from "../../hooks/lib/hookkit/pycompat.ts";
 import * as repo from "../../hooks/lib/hookkit/repo.ts";
@@ -266,7 +266,7 @@ describe("protocol payload", () => {
   it("parsePayload_returnsAnObject_andRejectsOtherJson", () => {
     assert.deepEqual(parsePayload('{"tool_name": "Bash"}'), { tool_name: "Bash" });
     assert.throws(() => parsePayload("[1]"), /not a JSON object/);
-    assert.throws(() => parsePayload('{"a": '), JSONDecodeError);
+    assert.throws(() => parsePayload('{"a": '), JsonSyntaxError);
   });
 
   it("toolName_isLowerCased_andEmptyWhenAbsentOrFalsy", () => {
@@ -404,10 +404,9 @@ describe("overlay and transcript files", () => {
     assert.throws(() => Array.from(transcript.iterEntries(path)), RecursionError);
   });
 
-  it("iterEntries_raisesValueError_whenALineHoldsAnIntegerOverTheDigitLimit", () => {
+  it("iterEntries_readsALineHoldingAnIntegerPastPythonsDigitLimit", () => {
     const path = sandbox.write(join(sandbox.root, "big.jsonl"), `{"a": 1}\n{"n": ${"1".repeat(4301)}}\n{"b": 2}\n`);
-    const read = () => Array.from(transcript.iterEntries(path));
-    assert.throws(read, (error: Error) => error instanceof ValueError && !(error instanceof JSONDecodeError) && error.message.startsWith("Exceeds the limit (4300 digits)"));
+    assert.deepEqual(Array.from(transcript.iterEntries(path)).map((entry) => Object.keys(entry)), [["a"], ["n"], ["b"]]);
   });
 
   it("textOf_readsStringsBlocksAndMessageWrappers", () => {

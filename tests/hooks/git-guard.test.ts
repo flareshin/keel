@@ -1093,6 +1093,16 @@ describe("FailClosedTest", () => {
     }
   });
 
+  it("guard_treatsAPayloadHoldingANonFiniteNumberAsUnparseable", () => {
+    for (const literal of ["NaN", "Infinity", "-Infinity"]) {
+      const pushed = sandbox.runHook(GIT_GUARD, { raw: `{"tool_name": "Bash", "tool_input": {"command": "git push origin main"}, "x": ${literal}}` });
+      assert.equal(pushed.code, 2, literal);
+      assert.ok(pushed.stderr.includes("(JsonSyntaxError)"), pushed.stderr);
+      assert.equal(lastLine(pushed.stderr), ASK_USER);
+      assert.equal(sandbox.runHook(GIT_GUARD, { raw: `{"tool_name": "Bash", "tool_input": {"command": "ls"}, "x": ${literal}}` }).code, 0, literal);
+    }
+  });
+
   it("guard_passes_whenPayloadUnparseableAndHarmless", () => {
     assert.equal(sandbox.runHook(GIT_GUARD, { raw: '{"tool_input": {"command": "ls -la"' }).code, 0);
   });

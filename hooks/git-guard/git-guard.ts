@@ -13,7 +13,7 @@ import {
   SPACE_CLASS, splitlines, strip, testCaseFolded, truncate, WORD_BOUNDARY,
 } from "../lib/hookkit/pycompat.ts";
 import { globMatches } from "../../lib/evidence/glob.ts";
-import { loads, parsePayload } from "../lib/hookkit/pyjson.ts";
+import { parseJson, parseJsonReadingNonFiniteNumbersAsZero, parsePayload } from "../lib/hookkit/json.ts";
 import { isDirectory, isFile, resolveSymlinksKeepingMissingTail } from "../lib/hookkit/files.ts";
 import { AttributeError, describeError, pythonErrorName, pythonList, pythonTypeName, readStdin, RecursionError, ValueError } from "../lib/hookkit/pyruntime.ts";
 import { currentBranch, findRepoKey, findToplevel, git, gitOutput, isCommit } from "../lib/hookkit/repo.ts";
@@ -341,7 +341,7 @@ function optionValues(args: readonly string[], names: readonly string[]): string
 function settingsDisableHooks(text: string): boolean {
   let settings: unknown;
   try {
-    settings = loads(text);
+    settings = parseJsonReadingNonFiniteNumbersAsZero(text);
   } catch (error) {
     if (!(error instanceof ValueError)) throw error;
     return DISABLE_HOOKS_RE.test(text);
@@ -481,7 +481,7 @@ export function scanStagedSecrets(toplevel: string, repoKey: string | null, time
   }
   if (result.returncode === BOUNDARY_EXIT_CLEAN) return [];
   if (result.returncode !== BOUNDARY_EXIT_HITS) throw new GuardError(`boundary scanner exit ${result.returncode}`);
-  const report = loads(result.stdout);
+  const report = parseJson(result.stdout);
   if (!isRecord(report)) throw noGet(report);
   const described = pythonList(getField(report, "hits")).map((hit) => {
     if (!isRecord(hit)) throw noGet(hit);
@@ -619,7 +619,7 @@ function salvage(raw: string): { session: string | null; command: string | null 
   const unknown = { session: null, command: null };
   let payload: unknown;
   try {
-    payload = loads(raw);
+    payload = parseJson(raw);
   } catch (error) {
     if (error instanceof ValueError || error instanceof RecursionError) return unknown;
     throw error;

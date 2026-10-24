@@ -187,15 +187,27 @@ describe("HandbackReviewEvidenceTest", () => {
     assertFired(sandbox, "K1", "record", "report-gate");
   });
 
-  it("handback_forwardsNonFiniteNumbers_asPythonJsonDoes", () => {
+  it("handback_warnsK1AndSendsNothing_whenEvidenceLineHoldsANonFiniteNumber", () => {
     for (const literal of ["NaN", "Infinity", "-Infinity"]) {
       sandbox.close();
       sandbox = new HookSandbox();
       sandbox.env["KEEL_CLI"] = sandbox.stub("keel", { stdout: CLI_RESPONSE });
       sandbox.putStubClaudeOnPath();
       assert.equal(handback(PASS_REPORT.replace('"v":1,', `"v":1,"x":${literal},`)).code, 0);
-      const stdin = sandbox.stubCalls("keel")[0]?.stdin ?? "";
-      assert.ok(stdin.startsWith(`{"keel_evidence": {"v": 1, "x": ${literal}, "repo_root"`), stdin);
+      assert.deepEqual(sandbox.stubCalls("keel"), [], literal);
+      assertFired(sandbox, "K1", "warn", "report-gate");
+    }
+  });
+
+  it("handback_warnsK1AndSendsNothing_whenEvidenceLineHoldsANumberPastTheDoubleRange", () => {
+    for (const number of ["1e400", "-1e400", "1".repeat(4301)]) {
+      sandbox.close();
+      sandbox = new HookSandbox();
+      sandbox.env["KEEL_CLI"] = sandbox.stub("keel", { stdout: CLI_RESPONSE });
+      sandbox.putStubClaudeOnPath();
+      assert.equal(handback(PASS_REPORT.replace('"v":1,', `"v":1,"x":[${number}],`)).code, 0);
+      assert.deepEqual(sandbox.stubCalls("keel"), [], number.slice(0, 8));
+      assert.ok(sandbox.fires().some((fire) => fire.rule_id === "K1" && fire.outcome === "warn" && fire.detail === "KEEL-EVIDENCE line is not JSON"), number.slice(0, 8));
     }
   });
 
@@ -404,6 +416,20 @@ describe("SubagentStopTest", () => {
     assert.equal(result.stdout, "");
     assert.deepEqual(sandbox.stubCalls("keel"), []);
     assertFired(sandbox, "K1", "warn", "report-gate");
+  });
+
+  it("stop_refusesWithK2_whenATranscriptLineHoldsANonFiniteNumber", () => {
+    for (const literal of ["NaN", "Infinity", "-Infinity"]) {
+      sandbox.close();
+      sandbox = new HookSandbox();
+      const path = sandbox.agentTranscript(`[SCOPE] ${scope}\nDo the task.`);
+      const edit = { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_1", name: "Edit", input: { file_path: "/elsewhere/b.py" } }] }, x: 0 };
+      sandbox.write(path, readFileSync(path, "utf8") + JSON.stringify(edit).replace(/"x":0/, `"x":${literal}`) + "\n");
+      const result = stop("Changed it.", { agentTranscript: path });
+      assert.match(result.stdout, /"decision": "block"/, literal);
+      assert.match(result.stdout, /could not check this report; refusing it/, literal);
+      assert.ok(sandbox.fires().some((fire) => fire.rule_id === "K2" && fire.outcome === "error" && String(fire.detail).startsWith("NonFiniteJsonNumber:")), literal);
+    }
   });
 
   it("stop_passesAndLogsError_whenTranscriptUnreadable", () => {

@@ -10,7 +10,7 @@ import type { RawRun } from "./eval_helpers.ts"
 import { summarizeOutcome } from "./outcomes.ts"
 import type { OutcomeSummary, RunOutcome } from "./outcomes.ts"
 import { addDays } from "../../measure/lib/measurekit/dates.ts"
-import { CHECKOUT, FUTURE, PAST, TODAY, charterRow, ledgerRow, readText } from "./helpers.ts"
+import { CHECKOUT, FUTURE, LEDGER_COLUMNS, NEVER_EXPIRES, PAST, TODAY, charterRow, ledgerRow, readText } from "./helpers.ts"
 
 const REVIEW_STUB_DIR = path.join(CHECKOUT, "tests", "measure", "stubs", "review")
 const STUBS_DIR = path.join(CHECKOUT, "tests", "measure", "stubs")
@@ -78,6 +78,17 @@ function workingTree(box: EvalSandbox): string | null {
   if (!fs.existsSync(path.join(box.keel, ".git"))) return null
   box.git(box.keel, "add", "-A")
   return box.git(box.keel, "write-tree").trim()
+}
+
+function copySeedLedgerWithDatesNeverReached(box: EvalSandbox): void {
+  const dateColumns = [LEDGER_COLUMNS.indexOf("review_by"), LEDGER_COLUMNS.indexOf("grace_until")]
+  const [header, ...rows] = readText(path.join(CHECKOUT, "ledger.tsv")).split("\n").filter((line) => line !== "")
+  const postponed = rows.map((row) => {
+    const cells = row.split("\t")
+    for (const column of dateColumns) if (cells[column] !== "-") cells[column] = NEVER_EXPIRES
+    return cells.join("\t")
+  })
+  box.write("keel/ledger.tsv", [header, ...postponed].join("\n") + "\n")
 }
 
 function ledgerBox(box: EvalSandbox, rows: ReturnType<typeof ledgerRow>[]): void {
@@ -226,7 +237,7 @@ const CLI_CASES: CliCase[] = [
   { name: "smoke failing", tool: "smoke", args: [], setup: (box) => { box.seedCleanKeel(); box.fire("C-unknown"); box.write("keel/PRINCIPLES.md", "- Untagged\n- [K9] ghost\n"); box.write("data/projects/p/memory/MEMORY.md", "x".repeat(9000)) } },
   { name: "smoke principles bullet after a unicode line separator", tool: "smoke", args: ["--json-only"], setup: (box) => { box.seedCleanKeel(); box.write("keel/PRINCIPLES.md", "# Principles\n\n- [K1] Tagged.\u2028- untagged bullet\n"); box.commitAll(box.keel) } },
   { name: "smoke principles bullet after a form feed", tool: "smoke", args: ["--json-only"], setup: (box) => { box.seedCleanKeel(); box.write("keel/PRINCIPLES.md", "# Principles\n\n- [K1] Tagged.\f- untagged bullet\n"); box.commitAll(box.keel) } },
-  { name: "smoke seed ledger", tool: "smoke", args: ["--json-only"], setup: (box) => fs.copyFileSync(path.join(CHECKOUT, "ledger.tsv"), path.join(box.keel, "ledger.tsv")) },
+  { name: "smoke seed ledger", tool: "smoke", args: ["--json-only"], setup: copySeedLedgerWithDatesNeverReached },
   { name: "smoke bad flag", tool: "smoke", args: ["--candidate=1"] },
   { name: "eval dry-run", tool: "evals/eval", args: ["K4", "--model", "m", "--dry-run"], stub: "eval", setup: (box) => { box.linkKeel(); box.seedSuite(box.askScenario(), box.editScenario()) } },
   {

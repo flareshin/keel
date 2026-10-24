@@ -51,16 +51,20 @@ All notable changes to keel are recorded here. The format follows
 - Codex adapter (`codex/hooks/pre-tool-use.ts`, `codex/bin/{link,config}`):
   - What stays the same: the exit codes (hook 0 with a JSON decision or empty output, link `0`, `1` for a pending
     `--check`, `3` for a refusal, `2` for bad arguments, config `0`, `3`, `2`), the JSON field names and values of the hook
-    decision, the link and config reports, `hooks.json`, `keel-codex-state.json` and the shared skill registry, the `[ID]`
-    tags in messages, the flag names and meanings, which tool calls the hook denies, passes or sends to git-guard and
+    decision, the link and config reports, `hooks.json`, `keel-codex-state.json`, the shared skill registry's fields
+    and layout, the `[ID]` tags in messages, the flag names and meanings, which tool calls the hook denies, passes or sends to git-guard and
     ship-gate, and the TOML reader's accepted and refused documents (`codex/lib/toml.ts` is unchanged apart from quoting
     in its messages). The ownership digests in the state file hash the same text as before.
   - What may differ and does: JSON is compact `JSON.stringify` output with non-ASCII written as is (the indented files keep
-    two spaces; `hooks.json`, the state file and the registry are unchanged byte for byte when their content is ASCII);
+    two spaces; `hooks.json` and the state file are unchanged byte for byte when their content is ASCII, and so is the
+    shared skill registry unless another tool's skill record holds a float, see the next item);
     the text sent to git-guard and ship-gate is compact and still escapes every character outside space to `~`; help and
     usage text is a short hand-written usage string; error messages use Node's wording and JSON-style quoting instead of
     Python's (`invalid JSON: Unexpected end of JSON input` replaces `Expecting value: line 1 column 1 (char 0)`, an OS error
     reads `ENOENT: no such file or directory, open '<path>'`, a non-string tool name is shown as JSON).
+  - Rewriting the shared skill registry (`keel-codex-skills.json`) writes the float fields of another tool's skill record
+    the way JavaScript prints numbers: `100.0` becomes `100`, `-0.0` becomes `0`, `1e-07` becomes `1e-7` and `1e+16`
+    becomes `10000000000000000`. The values stay numerically equal, so a reader that parses the file sees no change.
   - Hook stdin is strict UTF-8 and nothing else. `PYTHONUTF8`, `PYTHONIOENCODING`, `PYTHONCOERCECLOCALE` and the locale
     variables no longer change how it is read, an invalid `PYTHONUTF8` no longer exits 1 with `Fatal Python error`, and the
     `stdin encoding <codec> is not supported; set PYTHONUTF8=1` denial is gone. Stdin that is not valid UTF-8 (a stray byte,

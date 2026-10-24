@@ -51,7 +51,7 @@ export function prepareTarget(target: JsonObject): JsonObject {
   if (since !== null && (!env.isSha(since) || gitcmd.objectType(repo, since) !== 'tree')) {
     throw new writers.Refused('since must be a recorded snapshot tree');
   }
-  const stat = gitcmd.text(repo, ['diff', '--shortstat', since || start, end]);
+  const stat = gitcmd.text(repo, ['diff', '--shortstat', since || start, end]).trim();
   return { repo_root: repo, review_base: start, head: head ? end : null, snapshot_tree: head ? null : end, diff_stat: stat };
 }
 

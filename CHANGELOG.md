@@ -81,13 +81,17 @@ hook run still pins them (see the last bullet of Changed).
   matched with `\S`. The push urls of a remote are still split at every line break Python knew (U+2028, U+0085, `\v`, `\f`,
   U+001C to U+001E), so the gate sees the repo behind each piece.
 - Whitespace follows JavaScript only where that cannot accept what the base refused. Where a guard asks whether a text is blank
-  (`no_test_reason`, the lens, decision and finding texts of a Codex review, the stored waiver, a repo key's edges, git
-  output) the characters either reading strips count as blank: JavaScript's plus U+001C to U+001F and U+0085. A
+  (`no_test_reason`, the lens, decision and finding texts of a Codex review, the stored waiver, a repo key's edges)
+  the characters either reading strips count as blank: JavaScript's plus U+001C to U+001F and U+0085. A
   `no_test_reason` of only those characters is refused with exit 2 (as before), and a repo key ending in U+0085 or U+FEFF is the
   same key as without it. Where blank means "skip" (a registry line, the text around a comment) only characters both readings
   call whitespace count, so a registry line of only U+001C or only a BOM is a row with too few columns, an error. Runner output
   leaves out a `Test Files` or `Test Suites` line led by U+0085 or U+FEFF as well, and a comment holding U+0085 is not prose,
   so deleting it no longer keeps review evidence.
+- Git output is data: only its final newline is removed, nothing is trimmed. A remote url, a config value, a branch or remote name and a
+  toplevel path keep a trailing U+0085, U+001C, U+FEFF or no-break space, `git remote` is read one name per line (a name holding
+  U+FEFF stays one name, so the gate still sees the repo behind it), and a repo key is stripped only when it is normalized. The
+  `diff_stat` of `review prepare` is the one value trimmed, as before.
 - Truthiness is strict where Python's let odd values through: a review link has agent provenance only with a non-empty
   string `agent_id`, a stored `no_test_reason` waives K3 only as a non-blank string, and a smoke run covers a repo only with a
   non-empty string tree.

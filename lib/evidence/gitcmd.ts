@@ -2,10 +2,10 @@ import { closeSync, openSync, unlinkSync, existsSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { decodeStrict, isDir, resolveLinks, splitLines, words } from '../../measure/lib/measurekit/files.ts';
+import { decodeStrict, isDir, resolveLinks, splitAtEveryLineBreak } from '../../measure/lib/measurekit/files.ts';
 import { DELETED_MODE, GITLINK_MODE } from './env.ts';
 import { runCaptured } from './subprocess.ts';
-import { splitAtEveryLineBreak, stripEitherWay } from './text.ts';
+import { stripEitherWay } from './text.ts';
 import type { Completed } from './subprocess.ts';
 
 export const GIT_TIMEOUT_SECONDS = 20;
@@ -62,13 +62,29 @@ export function run(repo: string, args: string[], options: GitOptions = {}): Com
 }
 
 export function text(repo: string, args: string[], options: GitOptions = {}): string {
-  return stripEitherWay(run(repo, args, options).stdout.toString());
+  return withoutFinalNewline(run(repo, args, options).stdout.toString());
+}
+
+function withoutFinalNewline(output: string): string {
+  return output.endsWith('\n') ? output.slice(0, -1) : output;
 }
 
 function outputIfOk(repo: string, args: string[]): string | null {
   const completed = run(repo, args, { check: false });
   if (completed.returncode !== 0) return null;
-  return stripEitherWay(completed.stdout.toString()) || null;
+  return withoutFinalNewline(completed.stdout.toString()) || null;
+}
+
+function linesIfOk(repo: string, args: string[]): string[] {
+  const completed = run(repo, args, { check: false });
+  if (completed.returncode !== 0) return [];
+  return linesOf(completed.stdout.toString());
+}
+
+function linesOf(output: string): string[] {
+  const lines = output.split('\n');
+  if (lines.at(-1) === '') lines.pop();
+  return lines;
 }
 
 export function toplevel(path: string): string | null {
@@ -85,11 +101,12 @@ export function remoteUrl(repo: string, remote: string): string | null {
 }
 
 export function pushUrls(repo: string, remote: string): string[] {
-  return splitAtEveryLineBreak(outputIfOk(repo, ['remote', 'get-url', '--push', '--all', remote]) ?? '');
+  const completed = run(repo, ['remote', 'get-url', '--push', '--all', remote], { check: false });
+  return completed.returncode === 0 ? splitAtEveryLineBreak(completed.stdout.toString()) : [];
 }
 
 export function remotes(repo: string): string[] {
-  return words(outputIfOk(repo, ['remote']) ?? '');
+  return linesIfOk(repo, ['remote']);
 }
 
 export function pushRemote(repo: string): string {
@@ -106,7 +123,7 @@ export function pushRemote(repo: string): string {
 export function ghDefaultRemote(repo: string): GhDefault | null {
   const listed = outputIfOk(repo, ['config', '--get-regexp', GH_DEFAULT_REMOTE_KEYS]);
   if (listed === null) return null;
-  const firstLine = splitLines(listed)[0]!;
+  const firstLine = linesOf(listed)[0]!;
   const separator = firstLine.indexOf(' ');
   const key = separator < 0 ? firstLine : firstLine.slice(0, separator);
   const value = separator < 0 ? '' : firstLine.slice(separator + 1);
@@ -146,7 +163,7 @@ export function isAncestor(repo: string, ancestor: string, descendant: string): 
 }
 
 export function firstParentAncestors(repo: string, head: string, stop: string): string[] {
-  const line = words(text(repo, ['rev-list', '--first-parent', head + '^', '^' + stop]));
+  const line = linesOf(run(repo, ['rev-list', '--first-parent', head + '^', '^' + stop]).stdout.toString());
   const last = line.length > 0 ? line.at(-1)! : head;
   if (commitSha(repo, last + '^') !== stop) return [];
   return [...line, stop];
@@ -200,8 +217,8 @@ export function treeEntry(repo: string, tree: string, path: string): [mode: stri
 }
 
 export function submoduleRoots(repo: string): string[] {
-  const listed = text(repo, ['submodule', 'foreach', '--quiet', '--recursive', 'pwd']);
-  return splitLines(listed).map((root) => resolveLinks(root));
+  const roots = linesOf(run(repo, ['submodule', 'foreach', '--quiet', '--recursive', 'pwd']).stdout.toString());
+  return roots.map((root) => resolveLinks(root));
 }
 
 export function snapshotTree(repo: string): string {

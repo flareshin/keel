@@ -2,7 +2,7 @@ import { closeSync, openSync, unlinkSync, existsSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { decodeStrict, isDir, resolveLinks, splitAtEveryLineBreak } from '../../measure/lib/measurekit/files.ts';
+import { decodeStrict, isDir, resolveLinks } from '../../measure/lib/measurekit/files.ts';
 import { DELETED_MODE, GITLINK_MODE } from './env.ts';
 import { runCaptured } from './subprocess.ts';
 import { stripEitherWay } from './text.ts';
@@ -17,6 +17,7 @@ const GH_DEFAULT_REMOTE_KEYS = '^remote\\..*\\.gh-resolved$';
 const GH_RESOLVED_SUFFIX = '.gh-resolved';
 const REMOTE_PREFIX = 'remote.';
 const TEMP_INDEX_RANDOM_BYTES = 6;
+const OTHER_LINE_BREAK = /[\r\v\f\x1c-\x1e\x85\u2028\u2029]/;
 
 export class GitError extends Error {}
 
@@ -69,26 +70,42 @@ function withoutFinalNewline(output: string): string {
   return output.endsWith('\n') ? output.slice(0, -1) : output;
 }
 
-function outputIfOk(repo: string, args: string[]): string | null {
+function exactOutputIfOk(repo: string, args: string[]): string | null {
   const completed = run(repo, args, { check: false });
   if (completed.returncode !== 0) return null;
   return withoutFinalNewline(completed.stdout.toString()) || null;
 }
 
-function linesIfOk(repo: string, args: string[]): string[] {
+function outputIfOk(repo: string, args: string[]): string | null {
   const completed = run(repo, args, { check: false });
-  if (completed.returncode !== 0) return [];
-  return linesOf(completed.stdout.toString());
+  if (completed.returncode !== 0) return null;
+  const value = withoutFinalNewline(completed.stdout.toString());
+  refuseOtherLineBreaks(args, [value]);
+  return value || null;
 }
 
-function linesOf(output: string): string[] {
-  const lines = output.split('\n');
-  if (lines.at(-1) === '') lines.pop();
+function linesIfOk(repo: string, args: string[]): string[] {
+  const completed = run(repo, args, { check: false });
+  return completed.returncode === 0 ? gateLines(args, completed.stdout.toString()) : [];
+}
+
+export function gateLines(args: string[], output: string): string[] {
+  if (output === '') return [];
+  const lines = withoutFinalNewline(output).split('\n');
+  refuseOtherLineBreaks(args, lines);
+  if (lines.includes('')) throw new GitError(`git ${args.join(' ')}: the output holds an empty line`);
   return lines;
 }
 
+function refuseOtherLineBreaks(args: string[], pieces: string[]): void {
+  const broken = pieces.find((piece) => OTHER_LINE_BREAK.test(piece));
+  if (broken !== undefined) {
+    throw new GitError(`git ${args.join(' ')}: the output holds a line break other than \\n: ${JSON.stringify(broken)}`);
+  }
+}
+
 export function toplevel(path: string): string | null {
-  const root = isDir(path) ? outputIfOk(path, ['rev-parse', '--show-toplevel']) : null;
+  const root = isDir(path) ? exactOutputIfOk(path, ['rev-parse', '--show-toplevel']) : null;
   return root ? resolveLinks(root) : null;
 }
 
@@ -101,8 +118,7 @@ export function remoteUrl(repo: string, remote: string): string | null {
 }
 
 export function pushUrls(repo: string, remote: string): string[] {
-  const completed = run(repo, ['remote', 'get-url', '--push', '--all', remote], { check: false });
-  return completed.returncode === 0 ? splitAtEveryLineBreak(completed.stdout.toString()) : [];
+  return linesIfOk(repo, ['remote', 'get-url', '--push', '--all', remote]);
 }
 
 export function remotes(repo: string): string[] {
@@ -121,9 +137,9 @@ export function pushRemote(repo: string): string {
 }
 
 export function ghDefaultRemote(repo: string): GhDefault | null {
-  const listed = outputIfOk(repo, ['config', '--get-regexp', GH_DEFAULT_REMOTE_KEYS]);
-  if (listed === null) return null;
-  const firstLine = linesOf(listed)[0]!;
+  const listed = linesIfOk(repo, ['config', '--get-regexp', GH_DEFAULT_REMOTE_KEYS]);
+  if (listed.length === 0) return null;
+  const firstLine = listed[0]!;
   const separator = firstLine.indexOf(' ');
   const key = separator < 0 ? firstLine : firstLine.slice(0, separator);
   const value = separator < 0 ? '' : firstLine.slice(separator + 1);
@@ -163,7 +179,7 @@ export function isAncestor(repo: string, ancestor: string, descendant: string): 
 }
 
 export function firstParentAncestors(repo: string, head: string, stop: string): string[] {
-  const line = linesOf(run(repo, ['rev-list', '--first-parent', head + '^', '^' + stop]).stdout.toString());
+  const line = gateLines(['rev-list', '--first-parent'], run(repo, ['rev-list', '--first-parent', head + '^', '^' + stop]).stdout.toString());
   const last = line.length > 0 ? line.at(-1)! : head;
   if (commitSha(repo, last + '^') !== stop) return [];
   return [...line, stop];
@@ -217,7 +233,7 @@ export function treeEntry(repo: string, tree: string, path: string): [mode: stri
 }
 
 export function submoduleRoots(repo: string): string[] {
-  const roots = linesOf(run(repo, ['submodule', 'foreach', '--quiet', '--recursive', 'pwd']).stdout.toString());
+  const roots = gateLines(['submodule', 'foreach', 'pwd'], run(repo, ['submodule', 'foreach', '--quiet', '--recursive', 'pwd']).stdout.toString());
   return roots.map((root) => resolveLinks(root));
 }
 

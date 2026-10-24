@@ -4,7 +4,6 @@ import path from "node:path"
 
 const STRICT_UTF8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true })
 const LINE_BREAK = /\r\n|\r|\n/
-const EVERY_LINE_BREAK = /\r\n|[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]/
 const WHITESPACE_RUN = /\s+/
 
 export class InvalidUtf8Error extends Error {}
@@ -34,12 +33,6 @@ export function words(text: string): string[] {
 
 export function splitLines(text: string): string[] {
   const lines = text.split(LINE_BREAK)
-  if (lines.at(-1) === "") lines.pop()
-  return lines
-}
-
-export function splitAtEveryLineBreak(text: string): string[] {
-  const lines = text.split(EVERY_LINE_BREAK)
   if (lines.at(-1) === "") lines.pop()
   return lines
 }

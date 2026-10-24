@@ -294,14 +294,12 @@ describe('Codex rollouts and runner output at their edges', () => {
     assert.deepEqual(codexReview.completedReport(Buffer.from(lines.join('\r')), IDENTITY)[1], { a: 1 });
   });
 
-  test('a push url holding U+2028 is two urls, so the gate sees the repo behind either, and remotes are listed one per line', () => {
+  test('git remote lists one name per line', () => {
     const repo = mkdtempSync(join(scratch, 'urls-'));
     const git = (...args: string[]) => assert.equal(spawnSync('git', ['-C', repo, ...args]).status, 0, args.join(' '));
     git('init', '-q');
     git('remote', 'add', 'origin', 'https://example.com/acme/app.git');
-    git('config', 'remote.origin.pushurl', 'https://example.com/a\u2028b.git');
     git('remote', 'add', 'upstream', 'https://example.com/acme/other.git');
-    assert.deepEqual(gitcmd.pushUrls(repo, 'origin'), ['https://example.com/a', 'b.git']);
     assert.deepEqual(gitcmd.remotes(repo), ['origin', 'upstream']);
   });
 

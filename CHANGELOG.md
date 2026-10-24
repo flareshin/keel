@@ -78,8 +78,7 @@ hook run still pins them (see the last bullet of Changed).
   a stored integer beyond 2^53 exactly, and a `"version": 2.0` still counts as version 2. Codex review evidence: a rollout counts
   as complete only when its turn id is the same non-empty string at start and completion (a number counted before).
   Rollouts and the rule-checks output are split into lines at `\r\n`, `\r` and `\n` only, and the rule-checks summary is
-  matched with `\S`. The push urls of a remote are still split at every line break Python knew (U+2028, U+0085, `\v`, `\f`,
-  U+001C to U+001E), so the gate sees the repo behind each piece.
+  matched with `\S`.
 - Whitespace follows JavaScript only where that cannot accept what the base refused. Where a guard asks whether a text is blank
   (`no_test_reason`, the lens, decision and finding texts of a Codex review, the stored waiver, a repo key's edges)
   the characters either reading strips count as blank: JavaScript's plus U+001C to U+001F and U+0085. A
@@ -88,10 +87,14 @@ hook run still pins them (see the last bullet of Changed).
   call whitespace count, so a registry line of only U+001C or only a BOM is a row with too few columns, an error. Runner output
   leaves out a `Test Files` or `Test Suites` line led by U+0085 or U+FEFF as well, and a comment holding U+0085 is not prose,
   so deleting it no longer keeps review evidence.
-- Git output is data: only its final newline is removed, nothing is trimmed. A remote url, a config value, a branch or remote name and a
-  toplevel path keep a trailing U+0085, U+001C, U+FEFF or no-break space, `git remote` is read one name per line (a name holding
-  U+FEFF stays one name, so the gate still sees the repo behind it), and a repo key is stripped only when it is normalized. The
+- Git output is data: only its final newline is removed, nothing is trimmed. A toplevel path and a config value read through the
+  plain reader keep a trailing U+0085, U+001C, U+FEFF or no-break space, and a repo key is stripped only when it is normalized. The
   `diff_stat` of `review prepare` is the one value trimmed, as before.
+- Git output holding a line break other than `\n` refuses. Every git output that feeds a gate decision (remote names, the gh
+  default repo, the push urls and origin url of a remote, branch and commit ids, the submodule roots, the first-parent
+  ancestors) is split at `\n` only after its single final newline, and a piece holding `\r`, `\v`, `\f`, U+001C to U+001E, U+0085,
+  U+2028 or U+2029, or an empty piece anywhere in the output, raises a `GitError` that the gate reports as a refusal. Nothing is
+  dropped and no reading is guessed. A name or url with a trailing U+FEFF or no-break space is read exactly.
 - Truthiness is strict where Python's let odd values through: a review link has agent provenance only with a non-empty
   string `agent_id`, a stored `no_test_reason` waives K3 only as a non-blank string, and a smoke run covers a repo only with a
   non-empty string tree.

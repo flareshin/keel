@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { withEnv } from "../../tests/hooks/helpers.ts";
+import { INVALID_UTF8 } from "./boundary-table.ts";
 import type { CompletedProcess } from "../../hooks/lib/hookkit/subprocess.ts";
 import { main as runHook } from "../hooks/pre-tool-use.ts";
 import type { GuardRunner } from "../hooks/pre-tool-use.ts";
@@ -16,10 +17,7 @@ const PYTHON_TEXT_SETTINGS: Array<Record<string, string>> = [
   { PYTHONIOENCODING: "utf-16" }, { PYTHONIOENCODING: "bogus" }, { PYTHONIOENCODING: "ascii:strict" }, { PYTHONIOENCODING: "utf-8-sig" },
   { PYTHONIOENCODING: "latin-1:replace" }, { PYTHONIOENCODING: "hex" }, { PYTHONUTF8: "0", LC_ALL: "C" }, { PYTHONUTF8: "0", LANG: "ko_KR.eucKR" },
 ];
-const INVALID_SEQUENCES: Record<string, number[]> = {
-  "start byte": [0xff], "truncated sequence": [0xe2, 0x82], "overlong slash": [0xc0, 0xaf], "encoded surrogate": [0xed, 0xa0, 0x80],
-  "bad continuation": [0xc3, 0x28], "past U+10FFFF": [0xf4, 0x90, 0x80, 0x80], "lone continuation": [0x80], "latin-1 e acute": [0xe9],
-};
+const INVALID_SEQUENCES: Record<string, number[]> = { ...INVALID_UTF8, "latin-1 e acute": [0xe9] };
 
 describe("hook stdin", () => {
   let temp: string;

@@ -24,7 +24,7 @@ const NUMBER_LITERALS = [
   "1e-400", "NaN", "Infinity", "-Infinity", "1.0", "-0.0", "0.0", "100.0", "1e16", DIGITS_AT_LIMIT, DIGITS_PAST_LIMIT, "-" + DIGITS_PAST_LIMIT,
   DIGITS_PAST_LIMIT + ".0", DIGITS_PAST_LIMIT + "e0",
 ];
-const INVALID_UTF8 = {
+export const INVALID_UTF8: Record<string, number[]> = {
   "start byte": [0xff], "truncated sequence": [0xe2, 0x82], "overlong slash": [0xc0, 0xaf], "encoded surrogate": [0xed, 0xa0, 0x80],
   "bad continuation": [0xc3, 0x28], "past the last code point": [0xf4, 0x90, 0x80, 0x80], "lone continuation": [0x80],
 };

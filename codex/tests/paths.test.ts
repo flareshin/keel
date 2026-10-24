@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
-import { recordedAnswers } from "../../tests/recorded.ts";
+import { recordedAnswers, recordedPlatformMatches } from "../../tests/recorded.ts";
 import { readText } from "../lib/files.ts";
 import { childPath, cleanPath, isDirectory, isFile, isStrictAncestor, isSymlink, pathExists, resolvePath } from "../lib/paths.ts";
 import { Refusal } from "../lib/refusal.ts";
@@ -12,8 +12,9 @@ const RECORDED_DOCUMENT = "codex-pyref";
 const WELL_FORMED = [
   "", ".", "..", "/", "//", "///x", "//x//y", "a//b/./c/", "real", "real/", "real/../real/file.txt", "alias", "alias/inner", "alias/../alias",
   "relative-link", "relative-link/..", "relative-link/../file.txt", "dangling", "dangling/child", "loop-a", "loop-a/x", "nope/../real",
-  "real/file.txt/child", "/nonexistent/a/b", "real/inner/../../alias/inner", "é/😀", "/tmp/../tmp", "/private/../etc",
+  "real/file.txt/child", "/nonexistent/a/b", "real/inner/../../alias/inner", "é/😀",
 ];
+const HOST_SYMLINKED = ["/tmp/../tmp", "/private/../etc"];
 const UNUSABLE = [
   "a\u0000b", "\ud800", "real/x\ud800.txt", "real/\ud800\ud801y/z", "a\udc80/b", "\udc80\ud800", "real/\udfff", "\ud800\u0000", "\u0000\ud800",
   "real/inner/../\ud800", "\udc80x", "real/\ud800\ud801",
@@ -53,6 +54,12 @@ describe("path helpers", () => {
     const recorded = recordedAnswers<unknown, Outcome>(RECORDED_DOCUMENT, calls, { "{{CWD}}": sandbox });
     const now = WELL_FORMED.map((path) => ({ ok: resolvePath(path) }));
     assert.deepEqual(now, recorded);
+  });
+
+  it("resolvePath_resolvesLikePathlib_throughTheHostsOwnSymlinkedDirectories", { skip: recordedPlatformMatches() ? false : "/tmp and /private were recorded on darwin" }, () => {
+    const calls = HOST_SYMLINKED.map((path) => ({ fn: "resolve", args: [path] }));
+    const recorded = recordedAnswers<unknown, Outcome>(RECORDED_DOCUMENT, calls, { "{{CWD}}": sandbox });
+    assert.deepEqual(HOST_SYMLINKED.map((path) => ({ ok: resolvePath(path) })), recorded);
   });
 
   it("resolvePath_followsADotDotAfterASymlinkInThePhysicalDirectory_notLexically", () => {

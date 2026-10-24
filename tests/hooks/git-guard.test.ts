@@ -542,6 +542,13 @@ describe("AttributionTest", () => {
     assertDenied(guard("git commit -F msg.txt", repo), "F-attribution");
   });
 
+  it("commit_denied_whenMessageFileWrapsAnAttributionPhraseAtACrOrCrlf", () => {
+    for (const text of ["Generated with\r\nClaude Code", "Thanks to\r\nClaude", "Generated with\rClaude Code"]) {
+      sandbox.write(join(repo, "msg.txt"), `Fix parser\r\n\r\n${text}\r\n`);
+      assertDenied(guard("git commit -F msg.txt", repo), "F-attribution");
+    }
+  });
+
   it("commit_denied_whenMessageFilePathUsesAVariableTheHookKnows", () => {
     const scratch = join(sandbox.root, "scratch");
     sandbox.write(join(scratch, "msg.txt"), `Fix\n\n${ATTRIBUTION_TRAILER}\n`);

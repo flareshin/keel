@@ -160,9 +160,10 @@ Python-shaped for now because the recorded ship-gate hook run still pins them (s
   `risk-rules.tsv`. A backwards character range there is now an error: `git-guard` refuses the guarded command as an
   internal error (fail closed), and `env-preflight` logs an `error` fire and lets the command run, where both used to
   treat the rule as matching nothing.
-- The hooks read commit message files (`git commit -F`, `gh pr --body-file`), handoff notes, agent definitions and
-  report-gate state as UTF-8 text without turning a lone CR or a CRLF into a newline. An agent definition's frontmatter
-  still opens and closes with `---` on a CRLF line.
+- The hooks read handoff notes, agent definitions and report-gate state as UTF-8 text without turning a lone CR or a
+  CRLF into a newline. An agent definition's frontmatter still opens and closes with `---` on a CRLF line. `git-guard`
+  still turns a lone CR and a CRLF into a newline in commit message files (`git commit -F`, `gh pr --body-file`), so an
+  attribution phrase wrapped at one is denied as before.
 
 ### Fixed
 - `env-preflight` (`[S-jdk]`) accepts a `java_home` lookup that names a patch release of the required major, such as

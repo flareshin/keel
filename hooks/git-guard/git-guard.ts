@@ -667,7 +667,11 @@ function readMessageFiles(args: readonly string[], options: ReadonlySet<string>,
 
 function messageSourceTexts(path: string, step: Step): string[] {
   const resolved = resolveDirectory(step.directory, path, step.expansion);
-  return isFile(resolved) ? [readFileSync(resolved, "utf8")] : [];
+  return isFile(resolved) ? [withLfLineEnds(readFileSync(resolved, "utf8"))] : [];
+}
+
+function withLfLineEnds(text: string): string {
+  return text.replace(/\r\n?/g, "\n");
 }
 
 function readCommitOption(arg: string): CommitOption {

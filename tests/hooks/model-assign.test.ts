@@ -73,6 +73,12 @@ describe("AgentDispatchTest", () => {
     assert.equal(result.stdout, "");
   });
 
+  it("dispatch_keepsEffortUnset_whenAgentFileWithCrlfLineEndsPinsEffort", () => {
+    sandbox.write(join(sandbox.data, "agents", "worker-pinned.md"), "---\r\nname: worker-pinned\r\neffort: low\r\n---\r\nBody\r\n");
+    const result = dispatch({ subagent_type: "worker-pinned", model: "sonnet" });
+    assert.equal(result.stdout, "");
+  });
+
   it("dispatch_setsEffort_whenAgentFileHasNoPin", () => {
     sandbox.write(join(sandbox.data, "agents", "worker-plain.md"), "---\nname: worker-plain\n---\neffort: in body only\n");
     assert.equal(updated(dispatch({ subagent_type: "worker-plain", model: "sonnet" }))["effort"], "medium");

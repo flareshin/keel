@@ -832,6 +832,17 @@ describe("guard", () => {
     assert.match(decision["permissionDecisionReason"] as string, /^keel Codex guard: invalid JSON: /);
   });
 
+  it("test_hookMain_deniesWithTheNestingReason_onADeeplyNestedPayloadHoldingAnOversizedInteger", () => {
+    const nesting = 5000;
+    const deep = "[".repeat(nesting) + "1".repeat(4301) + "]".repeat(nesting);
+    const input = `{"tool_name": "Bash", "tool_input": {"command": "git status"}, "deep": ${deep}}`;
+    const run = runNode(HOOK, [], { ...process.env, KEEL_DATA_DIR: temp, KEEL_OVERLAY_DIR: temp }, input);
+    assert.equal(run.status, 0, run.stderr);
+    const decision = (JSON.parse(run.stdout) as Record<string, any>)["hookSpecificOutput"];
+    assert.equal(decision["permissionDecision"], "deny");
+    assert.equal(decision["permissionDecisionReason"], "keel Codex guard: JSON nests too deeply to check its integers for the 4300 digit limit");
+  });
+
   it("test_realGuard_blocksForcePush_andAllowsRead", () => {
     spawnSync("git", ["init", "-q", temp], { stdio: "ignore" });
     const env = { ...process.env, KEEL_DATA_DIR: temp, KEEL_OVERLAY_DIR: temp };

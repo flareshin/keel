@@ -84,11 +84,24 @@ describe("candidateTests", () => {
     assert.deepEqual(candidateTests(root, ["workflows/lens-review.js"]), ["tests/workflows/lens-review.test.mjs"])
   })
 
+  it("candidateTests_selectsATestThatRunsAShellWrapperWhoseScriptImportsTheChangedFile", () => {
+    const root = repo({
+      "lib/a.ts": "export const a = 1",
+      "measure/smoke.ts": "import { a } from '../lib/a.ts'",
+      "measure/smoke": "#!/bin/bash\nexec node \"$(dirname \"$0\")/smoke.ts\" \"$@\"",
+      "measure/notes": "smoke.ts runs the smoke stage",
+      "tests/smoke.test.ts": "const SMOKE = join(HOME, 'measure', 'smoke')",
+      "tests/prose.test.ts": "it('smoke stage runs', () => readFileSync(join(HOME, 'measure', 'notes')))",
+    })
+
+    assert.deepEqual(candidateTests(root, ["lib/a.ts"]), ["tests/smoke.test.ts"])
+  })
+
   it("candidateTests_ignoresANameInsideALongerName_andAMentionOutsideTheTestDirectories", () => {
     const root = repo({
       "lib/coverage.ts": "export {}",
       "lib/report.ts": "const label = 'coverage.ts'",
-      "tests/url.test.ts": "const name = 'coverage-url'\nconst old = 'legacy-coverage'\nconst env = 'NODE_V8_COVERAGE'",
+      "tests/url.test.ts": "const name = 'coverage-url'\nconst old = 'legacy-coverage'\nconst env = 'NODE_V8_coverage'\nconst old = 'coverage_old'",
       "tests/report.test.ts": "import '../lib/report.ts'",
     })
 

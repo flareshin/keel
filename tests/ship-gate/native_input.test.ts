@@ -108,6 +108,21 @@ describe('write-smoke counts a smoke run as passed only when ok is JSON true', (
   });
 });
 
+describe('write-smoke reads its log line by line', () => {
+  test('a line of only a byte order mark is not skipped, so no evidence is written', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    mkdirSync(join(sandbox.data, 'logs'), { recursive: true });
+    const line = '{"run_id":"sm-0001","ok":true,"trees":{"' + repo.key + '":"' + repo.tree() + '"}}';
+    writeFileSync(join(sandbox.data, 'logs', 'keel-smoke.jsonl'), String.fromCharCode(0xfeff) + '\n' + line + '\n');
+    const run = sandbox.keel(['evidence', 'write-smoke', '--repo', repo.path]);
+    assert.equal(run.rc, 70, run.stderr);
+    assert.deepEqual(sandbox.evidenceFiles('smoke'), []);
+    writeFileSync(join(sandbox.data, 'logs', 'keel-smoke.jsonl'), ' \t\n\n' + line + '\n');
+    assert.equal(sandbox.keel(['evidence', 'write-smoke', '--repo', repo.path]).rc, 0);
+  });
+});
+
 describe('keel test prints the KEEL-TEST line with its five fields in order', () => {
   test('a green run names the run, count, exit and evidence ids, and an empty submodule map', (t) => {
     const sandbox = new Sandbox(t);
@@ -279,7 +294,7 @@ describe('Codex rollouts and runner output at their edges', () => {
     assert.deepEqual(codexReview.completedReport(Buffer.from(lines.join('\r')), IDENTITY)[1], { a: 1 });
   });
 
-  test('a push url holding U+2028 is two urls, so the gate sees the repo behind either, and remotes are split at any whitespace', () => {
+  test('a push url holding U+2028 is two urls, so the gate sees the repo behind either, and remotes are listed one per line', () => {
     const repo = mkdtempSync(join(scratch, 'urls-'));
     const git = (...args: string[]) => assert.equal(spawnSync('git', ['-C', repo, ...args]).status, 0, args.join(' '));
     git('init', '-q');

@@ -7,7 +7,7 @@ import * as codexReview from './codex_review.ts';
 import * as env from './env.ts';
 import * as gitcmd from './gitcmd.ts';
 import { isPinnedParseFailure } from './hook_pinned.ts';
-import { isBlankEitherWay } from './text.ts';
+import { isBlankEitherWay, isWhitespaceBothWays } from './text.ts';
 import * as registry from './registry.ts';
 import * as store from './store.ts';
 import type { ReviewEvidence } from './store.ts';
@@ -189,7 +189,7 @@ function smokeRun(runId: string | null): JsonObject | null {
   const path = join(env.logsDir(), 'keel-smoke.jsonl');
   if (!isFile(path)) return null;
   const runs = splitLines(readUtf8(path))
-    .filter((line) => line.trim()).map((line) => parseJsonKeepingIntegers(line) as JsonObject);
+    .filter((line) => !isWhitespaceBothWays(line)).map((line) => parseJsonKeepingIntegers(line) as JsonObject);
   const matching = runs.filter((run) => runId === null || run['run_id'] === runId);
   return matching.at(-1) ?? null;
 }

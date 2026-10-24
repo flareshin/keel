@@ -210,7 +210,7 @@ describe('the data directory expands ~ and ~/ only', () => {
   });
 });
 
-describe('git paths are decoded as UTF-8 or refused', () => {
+describe('git diff paths are decoded as UTF-8 or refused, and a tree lookup never returns a lossy name', () => {
   function treeWithRawPath(rawPath: Buffer): [repo: string, emptyTree: string, tree: string] {
     const repo = mkdtempSync(join(scratch, 'git-'));
     const git = (args: string[], input?: Buffer) => {

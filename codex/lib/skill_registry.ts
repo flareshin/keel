@@ -1,14 +1,17 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { basename, dirname } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { isSystemError, sortedByCodePoint } from "../../hooks/lib/hookkit/pycompat.ts";
 import { OSError } from "../../hooks/lib/hookkit/subprocess.ts";
 import { readJson, writeAtomic } from "./files.ts";
 import type { ManagedFile } from "./files.ts";
-import { ValueError } from "./pyerrors.ts";
-import { childPath, isAbsolute, isSymlink, nameOf, parentOf, pathExists, resolvePath } from "./pyfs.ts";
-import { cloneJson, isJsonObject, PyFloat, pythonJsonDumps } from "./pyjson.ts";
-import type { JsonValue } from "./pyjson.ts";
+import { isJsonObject } from "./json.ts";
+import type { JsonValue } from "./json.ts";
+import { childPath, isAbsolute, isSymlink, pathExists, resolvePath } from "./paths.ts";
+import { Refusal } from "./refusal.ts";
+
+const JSON_INDENT = 2;
 
 export const REGISTRY_NAME = "keel-codex-skills.json";
 export const LOCK_NAME = "keel-codex-skills.lock";
@@ -139,8 +142,8 @@ export const realSkillFiles: SkillFiles = { writeAtomic, replaceLink };
 
 export function planSkills(agentsHome: string, profile: string, desired: Map<string, ManagedFile>): SkillPlan {
   const original = readRegistry(agentsHome);
-  const plan: SkillPlan = { records: new Map(Array.from(original, ([name, record]) => [name, cloneJson(record)])), create: new Map(), replace: new Map(), remove: [], problems: [], changed: false };
-  const desiredNames = new Set(Array.from(desired.keys(), nameOf));
+  const plan: SkillPlan = { records: new Map(Array.from(original, ([name, record]) => [name, copyRecord(record)])), create: new Map(), replace: new Map(), remove: [], problems: [], changed: false };
+  const desiredNames = new Set(Array.from(desired.keys(), (path) => basename(path)));
   for (const [name, record] of Array.from(plan.records)) {
     if (!desiredNames.has(name) && record.profiles.includes(profile)) releaseSkill(plan, childPath(agentsHome, `skills/${name}`), profile);
   }
@@ -153,7 +156,7 @@ function readRegistry(agentsHome: string): SkillRecords {
   const registry = readJson(childPath(agentsHome, REGISTRY_NAME));
   if (Object.keys(registry).length === 0) return new Map();
   const skills = registry["skills"];
-  if (!isVersionOne(registry["version"]) || !isJsonObject(skills)) throw new ValueError("invalid shared skill registry");
+  if (!isVersionOne(registry["version"]) || !isJsonObject(skills)) throw new Refusal("invalid shared skill registry");
   const records: SkillRecords = new Map();
   for (const [name, entry] of Object.entries(skills)) {
     records.set(name, validatedRecord(name, entry));
@@ -162,32 +165,36 @@ function readRegistry(agentsHome: string): SkillRecords {
 }
 
 function isVersionOne(version: JsonValue | undefined): boolean {
-  return version === REGISTRY_VERSION || version === true || (version instanceof PyFloat && version.value === REGISTRY_VERSION);
+  return version === REGISTRY_VERSION || version === true;
+}
+
+function copyRecord(record: SkillRecord): SkillRecord {
+  return { ...record, profiles: [...record.profiles] };
 }
 
 function validatedRecord(name: string, entry: JsonValue): SkillRecord {
   if (name === "" || name === "." || name === ".." || name.includes("/") || !isJsonObject(entry)) {
-    throw new ValueError("invalid skill registry entry");
+    throw new Refusal("invalid skill registry entry");
   }
   const { target, profiles, managed } = entry as { [key: string]: JsonValue | undefined };
   if (typeof target !== "string" || !isAbsolute(target) || typeof managed !== "boolean") {
-    throw new ValueError(`invalid skill target or ownership: ${name}`);
+    throw new Refusal(`invalid skill target or ownership: ${name}`);
   }
-  if (!Array.isArray(profiles) || profiles.length === 0) throw new ValueError(`invalid skill profile references: ${name}`);
+  if (!Array.isArray(profiles) || profiles.length === 0) throw new Refusal(`invalid skill profile references: ${name}`);
   if (profiles.some((profile) => typeof profile !== "string" || !isAbsolute(profile))) {
-    throw new ValueError(`invalid skill profile path: ${name}`);
+    throw new Refusal(`invalid skill profile path: ${name}`);
   }
   return entry as SkillRecord;
 }
 
 function recordOf(plan: SkillPlan, name: string): SkillRecord {
   const record = plan.records.get(name);
-  if (record === undefined) throw new ValueError(`unknown skill: ${name}`);
+  if (record === undefined) throw new Refusal(`unknown skill: ${name}`);
   return record;
 }
 
 function releaseSkill(plan: SkillPlan, path: string, profile: string): void {
-  const name = nameOf(path);
+  const name = basename(path);
   const record = recordOf(plan, name);
   const remaining = record.profiles.filter((item) => item !== profile);
   if (remaining.length > 0) {
@@ -205,7 +212,7 @@ function releaseSkill(plan: SkillPlan, path: string, profile: string): void {
 }
 
 function registerSkill(plan: SkillPlan, path: string, target: string, profile: string): void {
-  const name = nameOf(path);
+  const name = basename(path);
   let record = plan.records.get(name);
   if (record !== undefined && record.target !== target) {
     retargetSkill(plan, record, path, target, profile);
@@ -244,25 +251,19 @@ function sameLink(path: string, target: string): boolean {
 
 export function applySkillPlan(agentsHome: string, plan: SkillPlan, files: SkillFiles = realSkillFiles): void {
   for (const [path, target] of plan.create) {
-    mkdirSync(parentOf(path), { recursive: true });
+    mkdirSync(dirname(path), { recursive: true });
     symlinkSync(target, path, "dir");
   }
   for (const [path, target] of plan.replace) files.replaceLink(path, target);
   if (plan.changed) {
-    files.writeAtomic(childPath(agentsHome, REGISTRY_NAME), pythonJsonDumps({ version: REGISTRY_VERSION, skills: recordsAsJson(plan.records) }, { indent: 2 }) + "\n");
+    files.writeAtomic(childPath(agentsHome, REGISTRY_NAME), JSON.stringify({ version: REGISTRY_VERSION, skills: Object.fromEntries(plan.records) }, null, JSON_INDENT) + "\n");
   }
   for (const path of plan.remove) unlinkSync(path);
 }
 
-function recordsAsJson(records: SkillRecords): { [key: string]: JsonValue } {
-  const skills: { [key: string]: JsonValue } = {};
-  for (const [name, record] of records) Object.defineProperty(skills, name, { value: record, enumerable: true, writable: true, configurable: true });
-  return skills;
-}
-
 export function replaceLink(path: string, target: string): void {
-  const directory = parentOf(path);
-  const temporary = mkdtempSync(`${directory}/.${nameOf(path)}.`);
+  const directory = dirname(path);
+  const temporary = mkdtempSync(`${directory}/.${basename(path)}.`);
   try {
     const replacement = `${temporary}/link`;
     symlinkSync(target, replacement, "dir");

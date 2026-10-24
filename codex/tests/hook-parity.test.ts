@@ -22,8 +22,8 @@ function runWorker(index: number, count: number): Promise<HookParityReport> {
   });
 }
 
-describe("pre-tool-use hook parity with the recorded pre-tool-use.py results", () => {
-  it("returns the same stdout, stderr, exit code and files for every payload", async () => {
+describe("pre-tool-use hook against the recorded pre-tool-use.py results", () => {
+  it("decides, exits and writes as recorded for every payload, except the listed divergences and reworded denials", async () => {
     const corpus = hookCases(sandboxPaths());
     const total = corpus.length;
     const workers = Math.min(MAX_WORKERS, availableParallelism());
@@ -32,11 +32,12 @@ describe("pre-tool-use hook parity with the recorded pre-tool-use.py results", (
     const mismatches = reports.reduce((sum, report) => sum + report.mismatches, 0);
     const denied = reports.reduce((sum, report) => sum + report.denied, 0);
     const divergences = reports.reduce((sum, report) => sum + report.divergences, 0);
+    const reworded = reports.reduce((sum, report) => sum + report.reworded, 0);
     const contextual = reports.reduce((sum, report) => sum + report.contextual, 0);
     const passed = reports.reduce((sum, report) => sum + report.passed, 0);
-    console.log(`parity hook: ${cases} cases, ${mismatches} mismatches (${denied} denied, ${contextual} with context, ${passed} passed silently, ${divergences} expected policy divergences)`);
+    console.log(`parity hook: ${cases} cases, ${mismatches} mismatches (${denied} denied, ${contextual} with context, ${passed} passed silently, ${reworded} denials worded differently, ${divergences} listed divergences)`);
     assert.equal(divergences, corpus.filter((testCase) => testCase.divergence !== undefined).length);
-    assert.ok(divergences > 0);
+    assert.ok(divergences > 0 && reworded > 0);
     assert.equal(cases, total);
     assert.ok(cases >= MIN_CASES, `${cases} cases`);
     assert.ok(denied > 0 && passed > 0, "the corpus must exercise both denials and passes");

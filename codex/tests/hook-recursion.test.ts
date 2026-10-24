@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { recordedAnswers } from "../../tests/recorded.ts";
-import { withoutLocale } from "./locale-env.ts";
 
 const HOOKS = join(import.meta.dirname, "..", "hooks");
 const SHAPES: Record<string, (depth: number) => string> = {
@@ -22,7 +21,7 @@ describe("pre-tool-use hook crash depth on deeply nested config TOML", () => {
   function hookStatus(content: string): number | null {
     const payload = { tool_name: "Write", tool_input: { file_path: join(profile, "config.toml"), content }, cwd: root };
     const command = [process.execPath, join(HOOKS, "pre-tool-use.ts")];
-    const env = { ...withoutLocale(process.env), HOME: root, KEEL_CODEX_HOME: profile, KEEL_AGENTS_HOME: join(root, "agents"), KEEL_DATA_DIR: join(root, "data"), KEEL_OVERLAY_DIR: join(root, "overlay") };
+    const env = { ...process.env, HOME: root, KEEL_CODEX_HOME: profile, KEEL_AGENTS_HOME: join(root, "agents"), KEEL_DATA_DIR: join(root, "data"), KEEL_OVERLAY_DIR: join(root, "overlay") };
     return spawnSync(command[0] as string, command.slice(1), { input: JSON.stringify(payload), env, encoding: "utf8" }).status;
   }
 

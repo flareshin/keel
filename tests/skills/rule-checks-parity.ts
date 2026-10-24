@@ -2,7 +2,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { mutate, seededRandom } from "../../codex/tests/pyref.ts";
+import { mutate, seededRandom } from "../fuzz.ts";
 import { digestOf, paddedRoot, restored, tokenized } from "../recorded-cases.ts";
 
 const SKILL_SCRIPTS = join(import.meta.dirname, "..", "..", "skills", "readable-code", "scripts");

@@ -1,28 +1,59 @@
-import { chmodSync, closeSync, existsSync, mkdirSync, openSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
-import { randomBytes } from "node:crypto";
-import { ValueError } from "./pyerrors.ts";
-import { fileMode, isFile, isSymlink, nameOf, parentOf, pathExists, readText, resolvePath, sha256Hex } from "./pyfs.ts";
-import { isJsonObject, pythonJsonLoads } from "./pyjson.ts";
-import type { JsonValue } from "./pyjson.ts";
+import { createHash, randomBytes } from "node:crypto";
+import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { basename, dirname } from "node:path";
+import { decodeUtf8 } from "../../measure/lib/measurekit/files.ts";
+import { isJsonObject, parseStateJson } from "./json.ts";
+import type { JsonObject } from "./json.ts";
+import { isFile, isSymlink, pathExists, requireUsableFileName, resolvePath } from "./paths.ts";
+import { Refusal } from "./refusal.ts";
 
 const TEMPORARY_SUFFIX_LENGTH = 8;
 const TEMPORARY_SUFFIX_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789_";
 const PRIVATE_FILE_MODE = 0o600;
+const PERMISSION_BITS = 0o777;
+const NEWLINES = /\r\n?/g;
 
 export interface ManagedFile {
   kind: "file" | "link";
   content: string;
 }
 
+export function readText(path: string): string {
+  return decodeUtf8(readFileSync(requireUsableFileName(path)), path).replace(NEWLINES, "\n");
+}
+
 export function fingerprint(path: string): string | null {
   if (isSymlink(path)) return digest("link", resolvePath(path));
   if (isFile(path)) return digest("file", readText(path));
-  if (pathExists(path)) throw new ValueError(`expected a file or symlink: ${path}`);
+  if (pathExists(path)) throw new Refusal(`expected a file or symlink: ${path}`);
   return null;
 }
 
 export function digest(kind: string, content: string): string {
-  return sha256Hex(kind + "\0" + content);
+  return createHash("sha256").update(kind + "\0" + content, "utf8").digest("hex");
+}
+
+export function writeAtomic(path: string, content: string): void {
+  const directory = dirname(path);
+  mkdirSync(directory, { recursive: true });
+  const temporary = createTemporaryFile(directory, `.${basename(path)}.`);
+  try {
+    try {
+      writeFileSync(temporary.descriptor, content);
+    } finally {
+      closeSync(temporary.descriptor);
+    }
+    if (pathExists(path)) chmodSync(temporary.path, statSync(path).mode & PERMISSION_BITS);
+    renameSync(temporary.path, path);
+  } finally {
+    if (existsSync(temporary.path)) unlinkSync(temporary.path);
+  }
+}
+
+export function readJson(path: string): JsonObject {
+  const value = isFile(path) ? parseStateJson(readText(path)) : {};
+  if (!isJsonObject(value)) throw new Refusal(`expected an object: ${path}`);
+  return value;
 }
 
 function randomSuffix(): string {
@@ -38,27 +69,4 @@ function createTemporaryFile(directory: string, prefix: string): { descriptor: n
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
     }
   }
-}
-
-export function writeAtomic(path: string, content: string): void {
-  const directory = parentOf(path);
-  mkdirSync(directory, { recursive: true });
-  const temporary = createTemporaryFile(directory, `.${nameOf(path)}.`);
-  try {
-    try {
-      writeFileSync(temporary.descriptor, content);
-    } finally {
-      closeSync(temporary.descriptor);
-    }
-    if (pathExists(path)) chmodSync(temporary.path, fileMode(path));
-    renameSync(temporary.path, path);
-  } finally {
-    if (existsSync(temporary.path)) unlinkSync(temporary.path);
-  }
-}
-
-export function readJson(path: string): { [key: string]: JsonValue } {
-  const value = isFile(path) ? pythonJsonLoads(readText(path)) : {};
-  if (!isJsonObject(value)) throw new ValueError(`expected an object: ${path}`);
-  return value as { [key: string]: JsonValue };
 }

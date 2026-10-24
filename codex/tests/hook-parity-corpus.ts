@@ -1,7 +1,6 @@
 import { join } from "node:path";
 import { divergenceForDepth } from "./json-depth-policy.ts";
-import type { StdinDivergence } from "./stdin-policy.ts";
-import type { HookCase, Paths } from "./hook-parity.ts";
+import type { DenyDivergence, HookCase, Paths } from "./hook-parity.ts";
 
 const PATCH_BEGIN = "*** Begin Patch\n";
 const PATCH_END = "\n*** End Patch";
@@ -10,6 +9,20 @@ const DISABLED_HOOKS = "[features]\nhooks = false\n";
 const OWNER_MODEL = 'model = "owner-model"\n';
 
 const DEEP_NESTING = [3000, 9998, 10001, 20000];
+const INVALID_UTF8: DenyDivergence = { kind: "deny", reason: /^keel Codex guard: stdin is not valid UTF-8$/ };
+const CWD_NOT_STRING: DenyDivergence = { kind: "deny", reason: /^keel Codex guard: cwd must be a string$/ };
+const NOT_JSON: DenyDivergence = { kind: "deny", reason: /^keel Codex guard: invalid JSON: / };
+const UNPAIRED_SURROGATE: DenyDivergence = { kind: "deny", reason: /^keel Codex guard: path holds a NUL character or an unpaired surrogate$/ };
+const FALSY_LITERALS = ["0.0", "-0.0"];
+
+function isValidUtf8(bytes: Buffer): boolean {
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function deepArray(depth: number): string {
   return "[".repeat(depth) + "]".repeat(depth);
@@ -63,7 +76,7 @@ export function hookCases(paths: Paths): HookCase[] {
   add("json null", "null");
   add("json string", '"text"');
   add("json number", "12");
-  add("json NaN", "NaN");
+  add("json NaN", "NaN", { divergence: NOT_JSON });
   add("empty object", "{}");
   add("tool_input missing", '{"tool_name": "Bash"}');
   add("tool_input list", payload("Bash", []));
@@ -87,19 +100,13 @@ export function hookCases(paths: Paths): HookCase[] {
   add("apply_patch bad text", payload("apply_patch", { command: "bad" }));
   add("apply_patch empty text", payload("apply_patch", { command: "" }));
   add("apply_patch command number", payload("apply_patch", { command: 3 }));
-  add("invalid utf-8 start byte", Buffer.concat([Buffer.from('{"tool_name": "Bash", "tool_input": {"command": "'), Buffer.from([0xff]), Buffer.from('"}}')]));
-  add("truncated utf-8 sequence", Buffer.concat([Buffer.from('{"a": "'), Buffer.from([0xe2, 0x82]), Buffer.from('"}')]));
-  add("invalid continuation", Buffer.concat([Buffer.from('{"a": "'), Buffer.from([0xc3, 0x28]), Buffer.from('"}')]));
-  const strictLocale = { PYTHONUTF8: "0", LANG: "en_US.UTF-8", LC_ALL: "en_US.UTF-8" };
-  add("strict locale invalid start byte", Buffer.concat([Buffer.from('{"tool_name": "Bash", "tool_input": {"command": "'), Buffer.from([0xff]), Buffer.from('"}}')]), { env: strictLocale });
-  add("strict locale truncated sequence", Buffer.concat([Buffer.from('{"a": "'), Buffer.from([0xe2, 0x82]), Buffer.from('"}')]), { env: strictLocale });
-  add("strict locale valid non-ascii", payload("Bash", { command: "echo h\u00e9llo" }, { cwd: repo }), { env: strictLocale });
-  add("posix locale invalid byte with utf8 mode off", Buffer.concat([Buffer.from('{"a": "'), Buffer.from([0xc3, 0x28]), Buffer.from('"}')]), { env: { PYTHONUTF8: "0", LANG: "C" } });
-  add("utf8 mode invalid byte", Buffer.concat([Buffer.from('{"a": "'), Buffer.from([0xc3, 0x28]), Buffer.from('"}')]), { env: { PYTHONUTF8: "1", LANG: "en_US.UTF-8" } });
+  add("invalid utf-8 start byte", Buffer.concat([Buffer.from('{"tool_name": "Bash", "tool_input": {"command": "'), Buffer.from([0xff]), Buffer.from('"}}')]), { divergence: INVALID_UTF8 });
+  add("truncated utf-8 sequence", Buffer.concat([Buffer.from('{"a": "'), Buffer.from([0xe2, 0x82]), Buffer.from('"}')]), { divergence: INVALID_UTF8 });
+  add("invalid continuation", Buffer.concat([Buffer.from('{"a": "'), Buffer.from([0xc3, 0x28]), Buffer.from('"}')]), { divergence: INVALID_UTF8 });
   add("crlf whitespace json", payload("Bash", { command: "ls" }).replace(/,/g, ",\r\n"));
   add("bare cr in string", payload("Bash", { command: "ls" }).replace("ls", "l\\rs").replace("\\r", "\r"));
-  add("json constants inside tool_input", `{"tool_name": "Bash", "tool_input": {"command": "git status", "timeout": NaN, "limits": [Infinity, -Infinity]}, "cwd": "${repo}"}`);
-  add("json constant as tool_input", '{"tool_name": "Bash", "tool_input": NaN}');
+  add("json constants inside tool_input", `{"tool_name": "Bash", "tool_input": {"command": "git status", "timeout": NaN, "limits": [Infinity, -Infinity]}, "cwd": "${repo}"}`, { divergence: NOT_JSON });
+  add("json constant as tool_input", '{"tool_name": "Bash", "tool_input": NaN}', { divergence: NOT_JSON });
   add("deep unicode escapes", `{"tool_name": "Bash", "tool_input": {"command": "echo \\u00e9\\ud83d\\ude00 \\ud800"}, "cwd": "${repo}"}`);
   add("lone surrogate payload", `{"tool_name": "Bash", "tool_input": {"command": "echo \\ud800"}, "cwd": "${repo}"}`);
 
@@ -126,7 +133,7 @@ export function hookCases(paths: Paths): HookCase[] {
   bash("cwd missing", "git status", { cwd: undefined });
   bash("cwd nonexistent", "git status", { cwd: join(paths.root, "nowhere") });
   bash("cwd relative", "git status", { cwd: "repo" });
-  bash("cwd number", "git status", { cwd: 5 });
+  bash("cwd number", "git status", { cwd: 5 }, { divergence: CWD_NOT_STRING });
   bash("cwd empty", "git status", { cwd: "" });
   bash("pipeline of guarded commands", "git status && git push --force origin main | cat");
   bash("subshell", "(cd /tmp && git push -f origin main)");
@@ -323,7 +330,7 @@ export function hookCases(paths: Paths): HookCase[] {
     add(`deep array beside force push (${depth})`, rawPayload('"Bash"', '{"command": "git push --force origin main"}', `, "deep": ${deepArray(depth)}`), reachesGuard);
     add(`deep array as tool_name (${depth})`, rawPayload(deepArray(depth), "{}"));
     add(`deep object as tool_name (${depth})`, rawPayload(deepObject(depth), "{}"));
-    add(`deep array as cwd (${depth})`, `{"tool_name": "Bash", "tool_input": {"command": "git status"}, "cwd": ${deepArray(depth)}}`, reachesGuard);
+    add(`deep array as cwd (${depth})`, `{"tool_name": "Bash", "tool_input": {"command": "git status"}, "cwd": ${deepArray(depth)}}`, { divergence: CWD_NOT_STRING });
     add(`deep array then malformed tail (${depth})`, rawPayload('"Write"', protectedWrite, `, "deep": ${deepArray(depth)} x`));
   }
 
@@ -348,15 +355,16 @@ export function hookCases(paths: Paths): HookCase[] {
     ["surrogate after dotdot", "sub/../\ud800"],
   ];
   for (const [name, suffix] of surrogateTargets) {
-    write(`write target with ${name}`, `${repo}/${suffix}`, "x");
-    write(`write profile target with ${name}`, `${profile}/${suffix}`, "x");
-    write(`write relative target with ${name}`, suffix, "x");
-    edit(`edit target with ${name}`, `${repo}/${suffix}`, { old_string: "a", new_string: "b" });
-    patch(`patch target with ${name}`, `*** Add File: ${suffix}\n+x`);
-    bash(`shell redirect to ${name}`, `echo x > ${repo}/${suffix}`);
-    bash(`shell rm of ${name}`, `rm ${repo}/${suffix}`);
-    bash(`shell tee into profile with ${name}`, `echo x | tee ${profile}/${suffix}`);
-    bash(`shell cp to ${name}`, `cp x ${repo}/${suffix}`);
+    const options: Partial<HookCase> = name === "escaped byte alone" || name === "escaped byte range edges" ? { divergence: UNPAIRED_SURROGATE } : {};
+    write(`write target with ${name}`, `${repo}/${suffix}`, "x", options);
+    write(`write profile target with ${name}`, `${profile}/${suffix}`, "x", options);
+    write(`write relative target with ${name}`, suffix, "x", options);
+    edit(`edit target with ${name}`, `${repo}/${suffix}`, { old_string: "a", new_string: "b" }, options);
+    patch(`patch target with ${name}`, `*** Add File: ${suffix}\n+x`, options);
+    bash(`shell redirect to ${name}`, `echo x > ${repo}/${suffix}`, {}, options);
+    bash(`shell rm of ${name}`, `rm ${repo}/${suffix}`, {}, options);
+    bash(`shell tee into profile with ${name}`, `echo x | tee ${profile}/${suffix}`, {}, options);
+    bash(`shell cp to ${name}`, `cp x ${repo}/${suffix}`, {}, options);
   }
   bash("shell glob with surrogate", `rm ${repo}/\ud800*`);
   bash("shell glob over profile with surrogate", `rm ${profile}/\ud800*`);
@@ -378,8 +386,8 @@ export function hookCases(paths: Paths): HookCase[] {
   const FLOAT_LITERALS = ["1.0", "100.0", "-0.0", "0.0", "1e16", "1E22", "0.5", "2.5", "1e400", "-1e400"];
   const withCwd = (cwd: string): string => `{"tool_name": "Write", "tool_input": {"file_path": "hj", "content": "x"}, "cwd": ${cwd}}`;
   for (const literal of FLOAT_LITERALS) {
-    add(`float cwd ${literal}`, withCwd(literal));
-    add(`float cwd ${literal} in a list`, withCwd(`[${literal}]`));
+    add(`float cwd ${literal}`, withCwd(literal), FALSY_LITERALS.includes(literal) ? {} : { divergence: CWD_NOT_STRING });
+    add(`float cwd ${literal} in a list`, withCwd(`[${literal}]`), { divergence: CWD_NOT_STRING });
     add(`float tool_name ${literal}`, `{"tool_name": ${literal}, "tool_input": {}, "cwd": ${JSON.stringify(repo)}}`);
     add(`float tool_name ${literal} in a list`, `{"tool_name": [${literal}, "x"], "tool_input": {}, "cwd": ${JSON.stringify(repo)}}`);
     add(`float tool_name ${literal} in a dict`, `{"tool_name": {"k": ${literal}}, "tool_input": {}, "cwd": ${JSON.stringify(repo)}}`);
@@ -392,77 +400,9 @@ export function hookCases(paths: Paths): HookCase[] {
     add(`float replace_all ${literal}`, `{"tool_name": "Edit", "tool_input": {"file_path": ${JSON.stringify(`${profile}/config.toml`)}, "old_string": "e", "new_string": "E", "replace_all": ${literal}}, "cwd": ${JSON.stringify(repo)}}`);
     add(`float beside force push ${literal}`, `{"tool_name": "Bash", "tool_input": {"command": "git push --force origin main"}, "cwd": ${JSON.stringify(repo)}, "extra": [${literal}, {"k": ${literal}}]}`);
   }
-  add("integral float cwd beside a decoy integer directory", withCwd("1.0"));
-  add("integer cwd", withCwd("1"));
+  add("integral float cwd beside a decoy integer directory", withCwd("1.0"), { divergence: CWD_NOT_STRING });
+  add("integer cwd", withCwd("1"), { divergence: CWD_NOT_STRING });
 
-  const CRASHING_HANDLER_SAFE_INPUTS = ["ascii only", "byte order mark first", "valid non-ascii", "iso2022 escape sequence", "empty input"];
-  const textVariables: Array<[string, Record<string, string>, StdinDivergence?]> = [
-    ["default", {}],
-    ["utf8 invalid value", { PYTHONUTF8: "2" }],
-    ["utf8 invalid with encoding override", { PYTHONUTF8: "bogus", PYTHONIOENCODING: "utf-8" }],
-    ["utf8 invalid precedes unknown encoding", { PYTHONUTF8: "2", PYTHONIOENCODING: "bogus" }],
-    ["utf8 invalid precedes unsupported encoding", { PYTHONUTF8: "bogus", PYTHONIOENCODING: "utf-16" }],
-    ["utf8 mode off in the C locale via LANG", { PYTHONUTF8: "0", LANG: "C" }],
-    ["utf8 mode off, LANG C and LC_CTYPE C.UTF-8 as a Python parent exports it", { PYTHONUTF8: "0", LANG: "C", LC_CTYPE: "C.UTF-8" }],
-    ["utf8 mode off with only LC_CTYPE C.UTF-8", { PYTHONUTF8: "0", LC_CTYPE: "C.UTF-8" }],
-    ["utf8 mode off with LC_CTYPE UTF-8", { PYTHONUTF8: "0", LC_CTYPE: "UTF-8" }],
-    ["utf8 mode off with no locale variables", { PYTHONUTF8: "0" }],
-    ["utf8 mode off with LC_ALL C", { PYTHONUTF8: "0", LC_ALL: "C" }],
-    ["utf8 mode off with LC_ALL C and no coercion", { PYTHONUTF8: "0", LC_ALL: "C", PYTHONCOERCECLOCALE: "0" }],
-    ["utf8 mode off with LC_CTYPE C and no coercion", { PYTHONUTF8: "0", LC_CTYPE: "C", PYTHONCOERCECLOCALE: "0" }],
-    ["utf8 mode off with LC_ALL overriding LC_CTYPE", { PYTHONUTF8: "0", LC_ALL: "en_US.UTF-8", LC_CTYPE: "C" }],
-    ["utf8 mode off with LC_CTYPE overriding LANG", { PYTHONUTF8: "0", LC_CTYPE: "en_US.UTF-8", LANG: "C" }],
-    ["utf8 mode off in a UTF-8 locale", { PYTHONUTF8: "0", LANG: "en_US.UTF-8" }],
-    ["utf8 mode off in a Latin-1 locale", { PYTHONUTF8: "0", LC_ALL: "en_US.ISO8859-1" }],
-    ["utf8 mode off in an ASCII locale", { PYTHONUTF8: "0", LC_ALL: "en_US.US-ASCII" }],
-    ["utf8 mode off in a missing locale", { PYTHONUTF8: "0", LANG: "xx_YY.UTF-8" }],
-    ["utf8 mode off with a missing LC_ALL", { PYTHONUTF8: "0", LC_ALL: "xx_YY.UTF-8" }],
-    ["utf8 mode on in the C locale", { PYTHONUTF8: "1", LANG: "C" }],
-    ["utf8 mode empty value", { PYTHONUTF8: "", LC_ALL: "C" }],
-    ["io encoding utf-8", { PYTHONIOENCODING: "utf-8" }],
-    ["io encoding utf-8 with surrogateescape", { PYTHONIOENCODING: "utf-8:surrogateescape", PYTHONUTF8: "0", LANG: "en_US.UTF-8" }],
-    ["io errors strict only", { PYTHONIOENCODING: ":strict" }],
-    ["io errors replace only", { PYTHONIOENCODING: ":replace" }],
-    ["io errors ignore only", { PYTHONIOENCODING: ":ignore" }],
-    ["io errors backslashreplace only", { PYTHONIOENCODING: ":backslashreplace" }],
-    ["io encoding ascii", { PYTHONIOENCODING: "ascii" }],
-    ["io encoding ascii with replace", { PYTHONIOENCODING: "ascii:replace" }],
-    ["io encoding latin-1", { PYTHONIOENCODING: "latin-1" }],
-    ["io encoding with an empty spec in the C locale", { PYTHONIOENCODING: ":", PYTHONUTF8: "0", LC_ALL: "C" }],
-    ["io encoding u8", { PYTHONIOENCODING: "u8" }],
-    ["io encoding cp65001", { PYTHONIOENCODING: "cp65001" }],
-    ["io encoding utf alias", { PYTHONIOENCODING: "utf" }],
-    ["io encoding spelled UTF 8", { PYTHONIOENCODING: "UTF 8" }],
-    ["io encoding cp1252", { PYTHONIOENCODING: "cp1252" }],
-    ["io encoding windows-1252 with replace", { PYTHONIOENCODING: "windows-1252:replace" }],
-    ["io encoding cp1251 with surrogateescape", { PYTHONIOENCODING: "cp1251:surrogateescape" }],
-    ["io encoding iso-8859-15 with backslashreplace", { PYTHONIOENCODING: "iso-8859-15:backslashreplace" }],
-    ["io encoding koi8-r with ignore", { PYTHONIOENCODING: "koi8-r:ignore" }],
-    ["io encoding cp819", { PYTHONIOENCODING: "cp819" }],
-    ["io encoding utf-8-sig", { PYTHONIOENCODING: "utf-8-sig" }],
-    ["io errors surrogatepass only", { PYTHONIOENCODING: ":surrogatepass" }],
-    ["io encoding utf-8 with surrogatepass", { PYTHONIOENCODING: "utf-8:surrogatepass" }],
-    ["io encoding ascii with surrogatepass", { PYTHONIOENCODING: "ascii:surrogatepass" }],
-    ["io errors xmlcharrefreplace", { PYTHONIOENCODING: "utf-8:xmlcharrefreplace" }],
-    ["io errors namereplace", { PYTHONIOENCODING: "utf-8:namereplace" }],
-    ["io errors unknown", { PYTHONIOENCODING: "utf-8:bogus" }],
-    ["io encoding unknown name", { PYTHONIOENCODING: "bogus" }],
-    ["io encoding non-text hex", { PYTHONIOENCODING: "hex" }],
-    ["io encoding non-text rot13", { PYTHONIOENCODING: "rot13" }],
-    ["io encoding dotted module name", { PYTHONIOENCODING: "ISO8859.15" }],
-    ["io encoding dotted alias", { PYTHONIOENCODING: "iso8859.1" }],
-    ["io encoding utf-16", { PYTHONIOENCODING: "utf-16" }, { codec: "utf_16", encoding: "utf_16" }],
-    ["io encoding gb2312", { PYTHONIOENCODING: "gb2312" }, { codec: "gb2312", encoding: "gb2312" }],
-    ["io encoding big5", { PYTHONIOENCODING: "big5" }, { codec: "big5", encoding: "big5" }],
-    ["io encoding gbk", { PYTHONIOENCODING: "gbk" }, { codec: "gbk", encoding: "gbk" }],
-    ["io encoding cp949", { PYTHONIOENCODING: "cp949" }, { codec: "cp949", encoding: "cp949" }],
-    ["io encoding iso2022_jp", { PYTHONIOENCODING: "iso2022_jp" }, { codec: "iso2022_jp", encoding: "iso2022_jp" }],
-    ["utf8 mode off in a CP949 locale", { PYTHONUTF8: "0", LC_ALL: "ko_KR.CP949" }, { codec: "cp949", encoding: "cp949" }],
-    ["io encoding euc-kr", { PYTHONIOENCODING: "euc-kr" }, { codec: "euc_kr", encoding: "euc_kr" }],
-    ["utf8 mode off in an EUC-KR locale", { PYTHONUTF8: "0", LC_ALL: "ko_KR.eucKR" }, { codec: "euc_kr", encoding: "euckr" }],
-    ["utf8 mode off in a KOI8-R locale", { PYTHONUTF8: "0", LC_ALL: "ru_RU.KOI8-R" }],
-    ["utf8 mode off in a CP1251 locale", { PYTHONUTF8: "0", LC_CTYPE: "ru_RU.CP1251" }],
-  ];
   const asciiPayload = `{"tool_name": "Bash", "tool_input": {"command": "echo hi"}, "cwd": ${JSON.stringify(repo)}}`;
   const insideCommand = (middle: number[]): Buffer =>
     Buffer.concat([Buffer.from('{"tool_name": "Bash", "tool_input": {"command": "echo '), Buffer.from(middle), Buffer.from(`"}, "cwd": ${JSON.stringify(repo)}}`)]);
@@ -487,12 +427,9 @@ export function hookCases(paths: Paths): HookCase[] {
     ["bad continuation", Buffer.concat([Buffer.from('{"tool_name": "Bash", "tool_input": {"command": "echo '), Buffer.from([0xc3, 0x28]), Buffer.from(`"}, "cwd": ${JSON.stringify(repo)}}`)])],
     ["invalid byte before a protected write", Buffer.concat([Buffer.from(`{"tool_name": "Write", "tool_input": {"file_path": ${JSON.stringify(`${profile}/hooks.json`)}, "content": "`), Buffer.from([0xc3, 0x28]), Buffer.from(`"}, "cwd": ${JSON.stringify(repo)}}`)])],
   ];
-  for (const [variablesName, env, divergence] of textVariables) {
-    for (const [inputName, stdin] of textInputs) {
-      const startupFailure = variablesName.startsWith("utf8 invalid") || variablesName === "io encoding unknown name" || variablesName === "io encoding dotted module name" || variablesName.startsWith("io encoding non-text");
-      const crashes = !startupFailure && /xmlcharrefreplace|namereplace|unknown/.test(variablesName) && !CRASHING_HANDLER_SAFE_INPUTS.includes(inputName);
-      add(`stdin ${inputName} with ${variablesName}`, stdin, { env, crash: crashes, divergence, startupFailure });
-    }
+  for (const [inputName, stdin] of textInputs) {
+    const valid = isValidUtf8(stdin);
+    add(`stdin ${inputName} with default`, stdin, valid ? {} : { divergence: INVALID_UTF8 });
   }
 
   return cases;

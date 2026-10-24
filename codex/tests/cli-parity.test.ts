@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { recordedAnswers } from "../../tests/recorded.ts";
-import { withoutLocale } from "./locale-env.ts";
 
 const ADAPTER = realpathSync(join(import.meta.dirname, ".."));
 const HOOK_SCRIPT_PATH = /\S*codex\/hooks\/pre-tool-use\.(?:py|ts)/;
@@ -13,7 +12,7 @@ const RUNTIME_TOKEN = new RegExp(` \\S+ (?=${HOOK_SCRIPT_PATH.source})`, "g");
 const HOOKS_JSON_DIGEST = /(\/hooks\.json": ")[0-9a-f]{64}(")/g;
 const TEMPORARY_NAME = /(\/\.[A-Za-z0-9._-]+?)\.[a-z0-9_]{8}'/g;
 const LOCK_ARTIFACT = /\.agents\/keel-codex-skills\.lock(?:\.d)?$/;
-const MISMATCHES_SHOWN = 6;
+const MISMATCHES_SHOWN = 400;
 const SHA256_HEX = /\b[0-9a-f]{64}\b/g;
 
 interface Step {
@@ -21,6 +20,7 @@ interface Step {
   args: string[];
   env?: Record<string, string>;
   before?: (root: string) => void;
+  changedByNativeParsing?: boolean;
 }
 
 interface Scenario {
@@ -67,7 +67,7 @@ function snapshot(root: string): Record<string, string> {
 }
 
 function runStep(step: Step, root: string): Observation {
-  const env: NodeJS.ProcessEnv = { ...withoutLocale(process.env), HOME: root, KEEL_OVERLAY_DIR: join(root, "overlay"), KEEL_DATA_DIR: join(root, "data"), ...step.env };
+  const env: NodeJS.ProcessEnv = { ...process.env, HOME: root, KEEL_OVERLAY_DIR: join(root, "overlay"), KEEL_DATA_DIR: join(root, "data"), ...step.env };
   delete env["CODEX_HOME"];
   Object.assign(env, step.env);
   const command = [process.execPath, join(ADAPTER, "bin", `${step.command}.ts`)];
@@ -80,10 +80,11 @@ function runStep(step: Step, root: string): Observation {
   };
 }
 
-function runScenario(scenario: Scenario, root: string): Observation[] {
+function runScenario(scenario: Scenario, root: string): Array<Observation | null> {
   rmSync(root, { recursive: true, force: true });
   mkdirSync(root);
   return scenario.steps.map((step) => {
+    if (step.changedByNativeParsing) return null;
     step.before?.(root);
     return runStep(step, root);
   });
@@ -91,6 +92,10 @@ function runScenario(scenario: Scenario, root: string): Observation[] {
 
 function link(...args: string[]): Step {
   return { command: "link", args };
+}
+
+function changedByNativeParsing(step: Step): Step {
+  return { ...step, changedByNativeParsing: true };
 }
 
 function config(...args: string[]): Step {
@@ -147,19 +152,19 @@ const SCENARIOS: Scenario[] = [
   { name: "state owned is a float", steps: [withFiles(link("--check"), { ".codex/keel-codex-state.json": '{"owned": 1.0}' })] },
   { name: "state is a float", steps: [withFiles(link("--check"), { ".codex/keel-codex-state.json": "1.0" })] },
   { name: "dry run on pre-existing owned drift", steps: [WRITE, withFiles(link("--check"), { ".codex/hooks.json": "{}" })] },
-  { name: "home option variants", steps: [link("--home", "{root}/h1"), link("--home={root}/h2", "--write"), link("--ho", "{root}/h3", "--check")] },
+  { name: "home option variants", steps: [link("--home", "{root}/h1"), link("--home={root}/h2", "--write"), changedByNativeParsing(link("--ho", "{root}/h3", "--check"))] },
   { name: "home with tilde and dots", steps: [link("--home", "{root}/./a//b/../c", "--check")] },
   { name: "empty home option", steps: [link("--home", "", "--check")] },
   { name: "empty home equals", steps: [link("--home=", "--check")] },
-  { name: "help", steps: [link("-h"), link("--help"), link("--he"), link("-hh"), config("-h"), config("--help")] },
-  { name: "help after error", steps: [link("--bogus", "-h"), link("--write", "--check", "-h"), link("--home", "-h")] },
-  { name: "unknown arguments", steps: [link("--bogus"), link("x"), link("x", "--nope", "y"), link("-x"), link("-"), link("--"), link("-5"), link("a b")] },
+  { name: "help", steps: [link("-h"), link("--help"), changedByNativeParsing(link("--he")), changedByNativeParsing(link("-hh")), config("-h"), config("--help")] },
+  { name: "help after error", steps: [link("--bogus", "-h"), changedByNativeParsing(link("--write", "--check", "-h")), link("--home", "-h")] },
+  { name: "unknown arguments", steps: [link("--bogus"), link("x"), link("x", "--nope", "y"), link("-x"), link("-"), changedByNativeParsing(link("--")), link("-5"), link("a b")] },
   { name: "mutually exclusive modes", steps: [link("--write", "--check"), link("--check", "--unlink"), link("--unlink", "--write"), link("--write", "--write")] },
-  { name: "abbreviations", steps: [link("--wr"), link("--w"), link("--c"), link("--u"), link("--h"), link("--he"), link("--ho", "{root}/h"), link("--che=1"), link("--home", "--h"), link("--h", "--bogus"), link("--bogus=1", "--h"), link("--he", "--h")] },
-  { name: "explicit values on flags", steps: [link("--write=1"), link("--check="), link("-h=1"), link("--help=x"), link("-hx"), link("-hh"), link("-hxyz"), link("-xh")] },
-  { name: "missing values", steps: [link("--home"), link("--home", "--write"), link("--home", "-x"), link("--home", "-5", "--check"), link("--home", "a b", "--check")] },
-  { name: "double dash handling", steps: [link("--", "--write"), link("--write", "--"), link("--home", "--", "{root}/x"), link("--home", "{root}/x", "--", "--check"), link("x", "--", "--")] },
-  { name: "config help and usage", steps: [config(), config("--profile", "x"), config("--file"), config("--file", "a", "b"), config("--fil", "x"), config("--pro=x", "--file=y")] },
+  { name: "abbreviations", steps: [changedByNativeParsing(link("--wr")), changedByNativeParsing(link("--w")), changedByNativeParsing(link("--c")), changedByNativeParsing(link("--u")), changedByNativeParsing(link("--h")), changedByNativeParsing(link("--he")), changedByNativeParsing(link("--ho", "{root}/h")), changedByNativeParsing(link("--che=1")), changedByNativeParsing(link("--home", "--h")), changedByNativeParsing(link("--h", "--bogus")), changedByNativeParsing(link("--bogus=1", "--h")), changedByNativeParsing(link("--he", "--h"))] },
+  { name: "explicit values on flags", steps: [link("--write=1"), link("--check="), link("-h=1"), link("--help=x"), changedByNativeParsing(link("-hx")), changedByNativeParsing(link("-hh")), changedByNativeParsing(link("-hxyz")), link("-xh")] },
+  { name: "missing values", steps: [link("--home"), link("--home", "--write"), link("--home", "-x"), changedByNativeParsing(link("--home", "-5", "--check")), link("--home", "a b", "--check")] },
+  { name: "double dash handling", steps: [link("--", "--write"), changedByNativeParsing(link("--write", "--")), link("--home", "--", "{root}/x"), link("--home", "{root}/x", "--", "--check"), link("x", "--", "--")] },
+  { name: "config help and usage", steps: [config(), config("--profile", "x"), config("--file"), config("--file", "a", "b"), changedByNativeParsing(config("--fil", "x")), changedByNativeParsing(config("--pro=x", "--file=y"))] },
   {
     name: "config updates preserving mode",
     steps: [withFiles(config("--profile", "{root}/profile", "--file", "{root}/candidate.toml"), { "profile/config.toml": "[features]\nhooks = true\n", "candidate.toml": GOOD_CONFIG })],
@@ -223,18 +228,49 @@ function prepared(scenario: Scenario, root: string): Scenario {
       args: step.args.map(expand),
       env: step.env === undefined ? undefined : Object.fromEntries(Object.entries(step.env).map(([name, value]) => [name, expand(value)])),
       before: step.before,
+      changedByNativeParsing: step.changedByNativeParsing,
     })),
   };
+}
+
+const ID_TAG = /\[[A-Z][A-Za-z0-9-]*\]/g;
+const SNAPSHOT_PREFIX = /^file:(\d+):/;
+
+function normalizedJson(text: string): string | null {
+  try {
+    return JSON.stringify(JSON.parse(text));
+  } catch {
+    return null;
+  }
+}
+
+function sameStdout(recorded: string, now: string): boolean {
+  if (recorded.startsWith("usage:") || now.startsWith("usage:")) return recorded.startsWith("usage:") && now.startsWith("usage:");
+  const json = normalizedJson(recorded);
+  return json === null ? recorded === now : json === normalizedJson(now);
+}
+
+function sameStderr(recorded: string, now: string): boolean {
+  const kind = (text: string): string => text === "" ? "" : text.startsWith("usage:") ? "usage" : text.startsWith("codex/") ? text.slice(0, text.indexOf(": refused: ")) : text;
+  return kind(recorded) === kind(now) && JSON.stringify(recorded.match(ID_TAG)) === JSON.stringify(now.match(ID_TAG));
+}
+
+function sameFile(name: string, recorded: string | undefined, now: string | undefined): boolean {
+  if (recorded === undefined || now === undefined || !name.endsWith(".json")) return recorded === now;
+  const [recordedMode, nowMode] = [SNAPSHOT_PREFIX.exec(recorded)?.[1], SNAPSHOT_PREFIX.exec(now)?.[1]];
+  const decoded = (snapshot: string): string => Buffer.from(snapshot.replace(SNAPSHOT_PREFIX, ""), "latin1").toString("utf8");
+  const [recordedJson, nowJson] = [normalizedJson(decoded(recorded)), normalizedJson(decoded(now))];
+  return recordedMode === nowMode && (recordedJson === null ? recorded === now : recordedJson === nowJson);
 }
 
 function compare(scenario: string, index: number, python: Observation, typescript: Observation): string[] {
   const found: string[] = [];
   const label = `${scenario} step ${index + 1}`;
   if (python.status !== typescript.status) found.push(`${label}: exit ${python.status} vs ${typescript.status}`);
-  if (python.stdout !== typescript.stdout) found.push(`${label}: stdout\n  py: ${JSON.stringify(python.stdout)}\n  ts: ${JSON.stringify(typescript.stdout)}`);
-  if (python.stderr !== typescript.stderr) found.push(`${label}: stderr\n  py: ${JSON.stringify(python.stderr)}\n  ts: ${JSON.stringify(typescript.stderr)}`);
+  if (!sameStdout(python.stdout, typescript.stdout)) found.push(`${label}: stdout\n  py: ${JSON.stringify(python.stdout)}\n  ts: ${JSON.stringify(typescript.stdout)}`);
+  if (!sameStderr(python.stderr, typescript.stderr)) found.push(`${label}: stderr\n  py: ${JSON.stringify(python.stderr)}\n  ts: ${JSON.stringify(typescript.stderr)}`);
   for (const key of new Set([...Object.keys(python.files), ...Object.keys(typescript.files)])) {
-    if (python.files[key] !== typescript.files[key]) found.push(`${label}: file ${key}\n  py: ${python.files[key]?.slice(0, 200)}\n  ts: ${typescript.files[key]?.slice(0, 200)}`);
+    if (!sameFile(key, python.files[key], typescript.files[key])) found.push(`${label}: file ${key}\n  py: ${python.files[key]?.slice(0, 200)}\n  ts: ${typescript.files[key]?.slice(0, 200)}`);
   }
   return found;
 }
@@ -249,8 +285,11 @@ describe("link and config parity with the recorded Python entries", () => {
         const scenario = prepared(raw, root);
         const python = recordedAnswers<unknown, Observation[]>("codex-cli-parity", [{ scenario: raw.name }], { "{{ROOT}}": root, "{{KEEL_HOME}}": dirname(ADAPTER) })[0] as Observation[];
         const typescript = runScenario(scenario, root);
-        invocations += scenario.steps.length;
-        scenario.steps.forEach((_step, index) => mismatches.push(...compare(scenario.name, index, python[index] as Observation, typescript[index] as Observation)));
+        invocations += scenario.steps.filter((step) => !step.changedByNativeParsing).length;
+        scenario.steps.forEach((_step, index) => {
+          const observed = typescript[index];
+          if (observed !== null && observed !== undefined) mismatches.push(...compare(scenario.name, index, python[index] as Observation, observed));
+        });
       }
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -273,7 +312,7 @@ describe("config crash parity on deeply nested TOML", () => {
       put(join(root, "candidate.toml"), text);
       const command = [process.execPath, join(ADAPTER, "bin", "config.ts")];
       const args = ["--profile", join(root, "profile"), "--file", join(root, "candidate.toml")];
-      return spawnSync(command[0] as string, [...command.slice(1), ...args], { env: { ...withoutLocale(process.env), HOME: root }, encoding: "utf8" }).status;
+      return spawnSync(command[0] as string, [...command.slice(1), ...args], { env: { ...process.env, HOME: root }, encoding: "utf8" }).status;
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

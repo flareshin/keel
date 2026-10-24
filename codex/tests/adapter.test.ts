@@ -17,8 +17,7 @@ import { withEnv } from "../../tests/hooks/helpers.ts";
 import { completeEdit, validateUpdate } from "../lib/config_policy.ts";
 import { digest, fingerprint } from "../lib/files.ts";
 import { buildFiles, buildSkillLinks, reconcile } from "../lib/install.ts";
-import { ValueError } from "../lib/pyerrors.ts";
-import { pythonJsonLoads } from "../lib/pyjson.ts";
+import { Refusal } from "../lib/refusal.ts";
 import { applySkillPlan, lockIsStale, planSkills, realSkillFiles, replaceLink } from "../lib/skill_registry.ts";
 import type { SkillFiles } from "../lib/skill_registry.ts";
 import { main as runHook, normalize, protectAdapter, runGuard } from "../hooks/pre-tool-use.ts";
@@ -40,7 +39,7 @@ function read(path: string): string {
 }
 
 function readJsonFile(path: string): Record<string, any> {
-  return pythonJsonLoads(read(path)) as Record<string, any>;
+  return JSON.parse(read(path)) as Record<string, any>;
 }
 
 function referenceDigest(kind: string, content: Buffer): string {
@@ -78,14 +77,14 @@ describe("installation", () => {
     const source = join(home, name);
     mkdirSync(source);
     for (const file of ["PRINCIPLES.md", "package.json"]) cpSync(join(KEEL, file), join(source, file));
-    for (const directory of ["skills", "codex", "hooks/lib"]) {
+    for (const directory of ["skills", "codex", "hooks/lib", "measure/lib/measurekit"]) {
       cpSync(join(KEEL, directory), join(source, directory), { recursive: true, dereference: true, filter: (path) => !path.includes("__pycache__") });
     }
     return source;
   }
 
   function actionsOf(result: { stdout: string }): unknown {
-    return (pythonJsonLoads(result.stdout) as Record<string, unknown>)["actions"];
+    return (JSON.parse(result.stdout) as Record<string, unknown>)["actions"];
   }
 
   it("test_dryRun_doesNotWrite_home", () => {
@@ -235,7 +234,7 @@ describe("installation", () => {
       const agents = join(home, ".agents");
       const registry = join(agents, "keel-codex-skills.json");
       const original = readFileSync(registry);
-      const records = (pythonJsonLoads(original.toString()) as Record<string, any>)["skills"] as Record<string, { target: string }>;
+      const records = (JSON.parse(original.toString()) as Record<string, any>)["skills"] as Record<string, { target: string }>;
       const desired = new Map(Object.entries(records).map(([name, entry]) =>
         [join(agents, "skills", name), { kind: "link" as const, content: entry.target.replace(first, second) }]));
       const profile = join(home, ".codex");
@@ -264,7 +263,7 @@ describe("installation", () => {
       applySkillPlan(agents, retry);
 
       for (const [path, file] of desired) assert.equal(realpathSync(path), file.content);
-      const persisted = (pythonJsonLoads(readFileSync(registry).toString()) as Record<string, any>)["skills"] as Record<string, { target: string }>;
+      const persisted = (JSON.parse(readFileSync(registry).toString()) as Record<string, any>)["skills"] as Record<string, { target: string }>;
       assert.deepEqual(
         Object.fromEntries(Object.entries(persisted).map(([name, entry]) => [name, entry.target])),
         Object.fromEntries(Array.from(desired, ([path, file]) => [path.slice(path.lastIndexOf("/") + 1), file.content])));
@@ -304,7 +303,7 @@ describe("installation", () => {
     const checked = runSourceLink(second, "--check");
 
     assert.equal(checked.status, 1, checked.stdout);
-    assert.deepEqual((pythonJsonLoads(checked.stdout) as Record<string, unknown>)["problems"], []);
+    assert.deepEqual((JSON.parse(checked.stdout) as Record<string, unknown>)["problems"], []);
     assert.deepEqual(readFileSync(registry), before);
     assert.equal(realpathSync(join(home, ".agents/skills/readable-code")), join(first, "skills/readable-code"));
   });
@@ -486,7 +485,7 @@ describe("installation", () => {
       const write = { tool_name: "Write", tool_input: { file_path: `${home}/.codex/hooks.json`, content: "x" }, cwd: home, session_id: "link-test" };
       const run = spawnSync("sh", ["-c", command], { input: JSON.stringify(write), encoding: "utf8", env: { ...PAYLOAD_ENV, HOME: home } });
       assert.equal(run.status, 0, run.stderr);
-      const decision = (pythonJsonLoads(run.stdout) as Record<string, any>)["hookSpecificOutput"];
+      const decision = (JSON.parse(run.stdout) as Record<string, any>)["hookSpecificOutput"];
       assert.equal(decision["permissionDecision"], "deny");
       assert.equal(decision["permissionDecisionReason"], `keel Codex guard: generated Codex configuration must be changed through codex/bin/link: ${home}/.codex/hooks.json`);
     });
@@ -533,7 +532,7 @@ describe("installation", () => {
       const pythonHooks = read(hooks);
       const check = runLink("--check");
       assert.equal(check.status, 1, check.stderr);
-      assert.deepEqual(pythonJsonLoads(check.stdout), { ...HOOKS_ONLY, actions: [hooks] });
+      assert.deepEqual(JSON.parse(check.stdout), { ...HOOKS_ONLY, actions: [hooks] });
       assert.equal(runLink("--write").status, 0);
       assert.notEqual(read(hooks), pythonHooks);
       assert.match(read(hooks), /pre-tool-use\.ts"/);
@@ -633,7 +632,7 @@ describe("config", () => {
 
   it("test_policy_parsesCompleteToml", () => {
     for (const candidate of ['[features]\n"hooks" = false', "features = {hooks = false}", "allow_managed_hooks_only = true", "hooks = {enabled = false}", "bad ["]) {
-      assert.throws(() => validateUpdate("[features]\nhooks = true", candidate), ValueError, candidate);
+      assert.throws(() => validateUpdate("[features]\nhooks = true", candidate), Refusal, candidate);
     }
     validateUpdate("", '# hooks = false\nmodel = "safe"');
   });
@@ -644,8 +643,8 @@ describe("config", () => {
       const config = join(profile, "config.toml");
       writeFileSync(config, "[features]\nhooks = true");
       const candidate = completeEdit(config, { old_string: "true", new_string: "false" });
-      assert.throws(() => validateUpdate(read(config), candidate), ValueError);
-      assert.throws(() => completeEdit(config, { keel_partial: true, content: 'model = "safe"' }), ValueError);
+      assert.throws(() => validateUpdate(read(config), candidate), Refusal);
+      assert.throws(() => completeEdit(config, { keel_partial: true, content: 'model = "safe"' }), Refusal);
     } finally {
       rmSync(profile, { recursive: true, force: true });
     }
@@ -666,7 +665,7 @@ describe("guard", () => {
   }
 
   function expectProtected(call: Call, message?: string): void {
-    assert.throws(() => protectAdapter(call), (error: unknown) => error instanceof ValueError, message ?? JSON.stringify(call));
+    assert.throws(() => protectAdapter(call), (error: unknown) => error instanceof Refusal, message ?? JSON.stringify(call));
   }
 
   it("test_shell_preservesCommand", () => {
@@ -761,26 +760,26 @@ describe("guard", () => {
     withEnv({ KEEL_CODEX_HOME: join(temp, "custom"), HOME: join(temp, "fake") }, () => {
       for (const folder of ["sessions", "archived_sessions"]) {
         const call = payload("Write", { file_path: join(temp, ".codex", folder, "record.jsonl"), content: "forged" });
-        assert.throws(() => protectAdapter(call, temp), ValueError);
+        assert.throws(() => protectAdapter(call, temp), Refusal);
       }
     });
   });
 
   it("test_badPayload_refusesRatherThanPassing", () => {
     for (const bad of [[], payload("Bash", {}), payload("apply_patch", { command: "bad" })]) {
-      assert.throws(() => normalize(bad), ValueError, JSON.stringify(bad));
+      assert.throws(() => normalize(bad), Refusal, JSON.stringify(bad));
     }
   });
 
   it("test_guardFailure_returnsDenial", () => {
     const failed: CompletedProcess = { returncode: 2, stdout: "", stderr: "blocked by floor" };
-    assert.throws(() => runGuard("git-guard", payload("Bash", { command: "git push" }), () => failed), { name: "ValueError", message: /blocked by floor/ });
+    assert.throws(() => runGuard("git-guard", payload("Bash", { command: "git push" }), () => failed), { name: "Refusal", message: /blocked by floor/ });
   });
 
   it("test_invalidGuardResponse_isRefused", () => {
     for (const stdout of ["[]", '{"hookSpecificOutput": []}']) {
       const passed: CompletedProcess = { returncode: 0, stdout, stderr: "" };
-      assert.throws(() => runGuard("git-guard", {}, () => passed), ValueError, stdout);
+      assert.throws(() => runGuard("git-guard", {}, () => passed), Refusal, stdout);
     }
   });
 
@@ -789,24 +788,21 @@ describe("guard", () => {
     assert.deepEqual(runGuard("ship-gate", {}, () => passed), ["warning"]);
   });
 
-  it("test_guardInput_isPythonJsonWithEscapedNonAscii", () => {
+  it("test_guardInput_isCompactJsonWithEveryNonAsciiCharacterEscaped", () => {
     const seen: string[] = [];
-    runGuard("git-guard", { tool_name: "Bash", note: "é😀" }, (_command, input) => {
+    runGuard("git-guard", { tool_name: "Bash", note: "\u00e9\u{1f600}\u007f\ud800" }, (_command, input) => {
       seen.push(input);
       return { returncode: 0, stdout: "", stderr: "" };
     });
-    assert.deepEqual(seen, ['{"tool_name": "Bash", "note": "\\u00e9\\ud83d\\ude00"}']);
+    assert.deepEqual(seen, ['{"tool_name":"Bash","note":"\\u00e9\\ud83d\\ude00\\u007f\\ud800"}']);
   });
 
-  it("test_hookMain_deniesWithPythonStyleReason_onMalformedJson", () => {
+  it("test_hookMain_deniesWithTheGuardPrefix_onMalformedJson", () => {
     const result = runHook(() => Buffer.from("{bad"));
     assert.equal(result.code, 0);
-    assert.deepEqual(pythonJsonLoads(result.stdout), {
-      hookSpecificOutput: {
-        hookEventName: "PreToolUse", permissionDecision: "deny",
-        permissionDecisionReason: "keel Codex guard: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)",
-      },
-    });
+    const decision = (JSON.parse(result.stdout) as { hookSpecificOutput: Record<string, string> }).hookSpecificOutput;
+    assert.deepEqual([decision["hookEventName"], decision["permissionDecision"]], ["PreToolUse", "deny"]);
+    assert.match(decision["permissionDecisionReason"] as string, /^keel Codex guard: invalid JSON: /);
   });
 
   it("test_realGuard_blocksForcePush_andAllowsRead", () => {
@@ -817,7 +813,7 @@ describe("guard", () => {
       const run = runNode(HOOK, [], env, input);
       assert.equal(run.status, 0, run.stderr);
       if (denied) {
-        const decision = (pythonJsonLoads(run.stdout) as Record<string, any>)["hookSpecificOutput"];
+        const decision = (JSON.parse(run.stdout) as Record<string, any>)["hookSpecificOutput"];
         assert.equal(decision["permissionDecision"], "deny");
         assert.ok(decision["permissionDecisionReason"].includes("F-force-push"));
       } else {
@@ -831,6 +827,6 @@ describe("guard", () => {
     const env = { ...process.env, KEEL_DATA_DIR: temp, KEEL_OVERLAY_DIR: temp };
     const input = JSON.stringify(payload("apply_patch", { command: `*** Begin Patch\n*** Add File: ${target}\n+fake\n*** End Patch` }));
     const run = runNode(HOOK, [], env, input);
-    assert.equal((pythonJsonLoads(run.stdout) as Record<string, any>)["hookSpecificOutput"]["permissionDecision"], "deny");
+    assert.equal((JSON.parse(run.stdout) as Record<string, any>)["hookSpecificOutput"]["permissionDecision"], "deny");
   });
 });

@@ -1,6 +1,5 @@
 import { codePointLength } from "../../hooks/lib/hookkit/pycompat.ts";
-import { ValueError } from "./pyerrors.ts";
-import { pythonRepr } from "./pyrepr.ts";
+import { Refusal } from "./refusal.ts";
 
 export type TomlTable = Map<string, TomlValue>;
 export type TomlValue = string | bigint | number | boolean | TomlTemporal | TomlValue[] | TomlTable;
@@ -30,7 +29,7 @@ export class TomlTemporal {
   }
 }
 
-export class TOMLDecodeError extends ValueError {
+export class TOMLDecodeError extends Refusal {
   constructor(message: string, text: string, position: number) {
     super(`${message} (at ${describePosition(text, position)})`);
     this.name = "TOMLDecodeError";
@@ -94,8 +93,7 @@ function isIllegalInString(character: string, allowNewline: boolean): boolean {
 }
 
 function keyRepr(key: Key): string {
-  const items = key.map(pythonRepr);
-  return items.length === 1 ? `(${items[0]},)` : `(${items.join(", ")})`;
+  return key.map((part) => JSON.stringify(part)).join(".");
 }
 
 interface FlagNode {
@@ -239,12 +237,12 @@ function skipUntil(source: string, start: number, expect: string, allowNewline: 
   let end = source.indexOf(expect, start);
   if (end < 0) {
     end = source.length;
-    if (errorOnEof) throw new TOMLDecodeError(`Expected ${pythonRepr(expect)}`, source, end);
+    if (errorOnEof) throw new TOMLDecodeError(`Expected ${JSON.stringify(expect)}`, source, end);
   }
   for (let position = start; position < end; position += 1) {
     const character = source[position] ?? "";
     if (isIllegalInString(character, allowNewline)) {
-      throw new TOMLDecodeError(`Found invalid character ${pythonRepr(character)}`, source, position);
+      throw new TOMLDecodeError(`Found invalid character ${JSON.stringify(character)}`, source, position);
     }
   }
   return end;
@@ -374,7 +372,7 @@ function parseInlineTable(source: string, start: number, frame: number): [number
     const stem = key[key.length - 1] ?? "";
     if (flags.is(key, FROZEN)) throw new TOMLDecodeError(`Cannot mutate immutable namespace ${keyRepr(key)}`, source, position);
     const nest = nestOrFail(source, position, () => nested.getOrCreateNest(key.slice(0, -1), false));
-    if (nest.has(stem)) throw new TOMLDecodeError(`Duplicate inline table key ${pythonRepr(stem)}`, source, position);
+    if (nest.has(stem)) throw new TOMLDecodeError(`Duplicate inline table key ${JSON.stringify(stem)}`, source, position);
     nest.set(stem, value);
     position = skipCommentsAndArrayWhitespace(source, position);
     const character = source.slice(position, position + 1);
@@ -459,7 +457,7 @@ function parseBasicString(source: string, start: number, multiline: boolean): [n
       parsedText += parsed;
       chunkStart = position;
     } else if (isIllegalInString(character, multiline)) {
-      throw new TOMLDecodeError(`Illegal character ${pythonRepr(character)}`, source, position);
+      throw new TOMLDecodeError(`Illegal character ${JSON.stringify(character)}`, source, position);
     } else {
       position += 1;
     }
@@ -531,7 +529,7 @@ function numberFromMatch(match: RegExpExecArray): bigint | number {
   if (match.groups?.["floatpart"]) return Number(text);
   const digits = /^[+-]?[0-9]+$/.test(text) ? text.replace(/^[+-]/, "").length : 0;
   if (digits > DECIMAL_DIGIT_LIMIT) {
-    throw new ValueError(`Exceeds the limit (${DECIMAL_DIGIT_LIMIT} digits) for integer string conversion: value has ${digits} digits; ` +
+    throw new Refusal(`Exceeds the limit (${DECIMAL_DIGIT_LIMIT} digits) for integer string conversion: value has ${digits} digits; ` +
       "use sys.set_int_max_str_digits() to increase the limit");
   }
   return BigInt(text);

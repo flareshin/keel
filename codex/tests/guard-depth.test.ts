@@ -15,7 +15,7 @@ import { EXPECTED_DEPTH_DENY_REASON, JSON_DEPTH_BOUND } from "./json-depth-polic
 const GUARD_TIMEOUT_SECONDS = 35;
 const PAST_THE_BOUND = 2 * JSON_DEPTH_BOUND;
 const FORCE_PUSH_REASON = "F-force-push";
-const SHIP_GATE_FAILS_CLOSED = new Set(["deep array as cwd"]);
+const REFUSED_BEFORE_ANY_GUARD: Record<string, string> = { "deep array as cwd": "keel Codex guard: cwd must be a string" };
 
 function deepArray(depth: number): string {
   return "[".repeat(depth) + "]".repeat(depth);
@@ -73,13 +73,13 @@ describe("git-guard JSON depth bound", () => {
         next += 1;
         return guards[next - 1] as CompletedProcess;
       });
-      if (SHIP_GATE_FAILS_CLOSED.has(name)) {
+      if (name in REFUSED_BEFORE_ANY_GUARD) {
         assert.equal(typescript.code, 0, name);
-        assert.equal(JSON.parse(typescript.stdout).hookSpecificOutput.permissionDecision, "deny", name);
+        assert.equal(JSON.parse(typescript.stdout).hookSpecificOutput.permissionDecisionReason, REFUSED_BEFORE_ANY_GUARD[name], name);
         continue;
       }
       assert.equal(typescript.code, python.status, name);
-      assert.equal(typescript.stdout, python.stdout, name);
+      assert.deepEqual(typescript.stdout === "" ? "" : JSON.parse(typescript.stdout), python.stdout === "" ? "" : JSON.parse(python.stdout), name);
     }
   });
 
@@ -92,7 +92,7 @@ describe("git-guard JSON depth bound", () => {
       assert.equal(typescript.code, 0, name);
       const decision = JSON.parse(typescript.stdout).hookSpecificOutput;
       assert.equal(decision.permissionDecision, "deny", name);
-      assert.equal(decision.permissionDecisionReason, EXPECTED_DEPTH_DENY_REASON, name);
+      assert.equal(decision.permissionDecisionReason, REFUSED_BEFORE_ANY_GUARD[name] ?? EXPECTED_DEPTH_DENY_REASON, name);
     }
   });
 });

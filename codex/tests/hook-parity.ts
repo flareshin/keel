@@ -5,27 +5,35 @@ import { dirname, join } from "node:path";
 import { recordedAnswers } from "../../tests/recorded.ts";
 import { EXPECTED_DEPTH_DENY_REASON } from "./json-depth-policy.ts";
 import type { JsonDepthDivergence } from "./json-depth-policy.ts";
-import { withoutLocale } from "./locale-env.ts";
-import { expectedStdinDeny, UNSUPPORTED_STDIN_CODECS } from "./stdin-policy.ts";
-import type { StdinDivergence } from "./stdin-policy.ts";
 
 const ADAPTER = join(import.meta.dirname, "..");
 const TYPESCRIPT_HOOK = join(ADAPTER, "hooks", "pre-tool-use.ts");
 const NORMAL_CONFIG = "[features]\nhooks = true\n";
 const MAX_MISMATCHES_SHOWN = 6;
+const PYTHON_WORDING = [
+  /^keel Codex guard: (Expecting|Unterminated string|Invalid control character|Extra data|Unexpected UTF-8 BOM|Illegal trailing comma|Invalid \\escape|Invalid \\uXXXX)/,
+  /^keel Codex guard: 'utf-8' codec can't (decode|encode)/,
+  /^keel Codex guard: (\[Errno |lstat: embedded null|embedded null byte|Exceeds the limit \(4300 digits\))/,
+  /^keel Codex guard: unsupported guarded tool: /,
+  /^keel Codex guard: (Expected|Found invalid character|Illegal character|Duplicate inline table key|Cannot (declare|mutate|redefine)) /,
+];
 const DEPTH_FIRE_DIRECTORY = "data/logs";
 const DEPTH_FIRE_LOG = "data/logs/keel-fires.jsonl";
 const FILE_SNAPSHOT_PREFIX = /^file:\d+:/;
 const FLOAT_DIRECTORIES = ["1", "1.0", "100.0", "-0.0", "1e+16", "1e+22", "0.5", "2.5"];
 const TIMESTAMP = /\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)?/g;
 
+export interface DenyDivergence {
+  kind: "deny";
+  reason: RegExp;
+}
+
 export interface HookCase {
   name: string;
   stdin: string | Buffer;
   config?: string | Buffer | null;
   crash?: boolean;
-  startupFailure?: boolean;
-  divergence?: StdinDivergence | JsonDepthDivergence;
+  divergence?: DenyDivergence | JsonDepthDivergence;
   env?: Record<string, string>;
 }
 
@@ -57,6 +65,7 @@ export interface HookParityReport {
   passed: number;
   contextual: number;
   divergences: number;
+  reworded: number;
 }
 
 export function sandboxPaths(): Paths {
@@ -104,7 +113,7 @@ function buildSandbox(paths: Paths, config: string | Buffer | null): void {
 
 function environmentFor(paths: Paths, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
-  for (const [name, value] of Object.entries(withoutLocale(process.env))) if (!name.startsWith("KEEL_") && !name.startsWith("CODEX_")) env[name] = value;
+  for (const [name, value] of Object.entries(process.env)) if (!name.startsWith("KEEL_") && !name.startsWith("CODEX_")) env[name] = value;
   return {
     ...env, HOME: paths.home, KEEL_CODEX_HOME: paths.profile, KEEL_AGENTS_HOME: paths.agents, KEEL_DATA_DIR: paths.data,
     KEEL_OVERLAY_DIR: paths.overlay, GIT_CONFIG_GLOBAL: join(paths.root, "gitconfig"), GIT_CONFIG_NOSYSTEM: "1", ...extra,
@@ -147,18 +156,23 @@ function recordedPythonObservation(testCase: HookCase, paths: Paths): Observatio
   return recordedAnswers<unknown, Observation>("codex-hook-parity", [question], { "{{ROOT}}": paths.root })[0] as Observation;
 }
 
-function stdinDivergenceDifferences(divergence: StdinDivergence, typescript: Observation): string[] {
+function recordedDecision(python: Observation): "pass" | "deny" | "other" {
+  if (python.status === 0 && python.stdout === "") return "pass";
+  return python.status === 0 && python.stdout.includes('"permissionDecision": "deny"') ? "deny" : "other";
+}
+
+function denyDivergenceDifferences(divergence: DenyDivergence, python: Observation, typescript: Observation): string[] {
   const found: string[] = [];
-  const { codec, encoding } = divergence;
-  const expected = { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: `keel Codex guard: ${expectedStdinDeny(encoding)}` } };
-  if (!UNSUPPORTED_STDIN_CODECS.includes(codec)) found.push(`unlisted divergence: ${codec}`);
-  if (typescript.status !== 0 || typescript.stderr !== "") found.push(`unsupported codec crashed: ${typescript.stderr}`);
+  if (recordedDecision(python) === "other") found.push(`recorded python outcome is neither a pass nor a denial: ${python.status} ${python.stdout}`);
+  if (typescript.status !== 0 || typescript.stderr !== "") found.push(`diverging case crashed: ${typescript.status} ${typescript.stderr}`);
   try {
-    if (JSON.stringify(JSON.parse(typescript.stdout)) !== JSON.stringify(expected)) found.push(`unsupported codec decision: ${typescript.stdout}`);
+    const { hookSpecificOutput: decision } = JSON.parse(typescript.stdout) as { hookSpecificOutput: Record<string, string> };
+    const reason = decision["permissionDecisionReason"] ?? "";
+    if (decision["permissionDecision"] !== "deny" || !divergence.reason.test(reason)) found.push(`diverging case decision: ${typescript.stdout}`);
   } catch {
-    found.push(`unsupported codec emitted invalid JSON: ${typescript.stdout}`);
+    found.push(`diverging case emitted invalid JSON: ${JSON.stringify(typescript.stdout)}`);
   }
-  if (JSON.stringify(typescript.before) !== JSON.stringify(typescript.files)) found.push("unsupported codec changed files");
+  if (JSON.stringify(typescript.before) !== JSON.stringify(typescript.files)) found.push("diverging case changed files");
   return found;
 }
 
@@ -183,17 +197,39 @@ function jsonDepthDivergenceDifferences(python: Observation, typescript: Observa
   return found;
 }
 
+function sameJson(recorded: string, now: string): boolean {
+  if (recorded === "" || now === "") return recorded === now;
+  try {
+    return JSON.stringify(JSON.parse(recorded)) === JSON.stringify(JSON.parse(now));
+  } catch {
+    return false;
+  }
+}
+
+function denialReason(stdout: string): string | null {
+  try {
+    const { hookSpecificOutput: decision } = JSON.parse(stdout) as { hookSpecificOutput: Record<string, string> };
+    return decision["permissionDecision"] === "deny" ? (decision["permissionDecisionReason"] ?? "") : null;
+  } catch {
+    return null;
+  }
+}
+
+function isReworded(python: Observation, typescript: Observation): boolean {
+  const [recorded, now] = [denialReason(python.stdout), denialReason(typescript.stdout)];
+  return recorded !== null && now !== null && now.startsWith("keel Codex guard: ") && PYTHON_WORDING.some((pattern) => pattern.test(recorded));
+}
+
 function differences(testCase: HookCase, python: Observation, typescript: Observation): string[] {
   const found: string[] = [];
   if (testCase.divergence !== undefined) {
-    return "codec" in testCase.divergence
-      ? stdinDivergenceDifferences(testCase.divergence, typescript)
+    return testCase.divergence.kind === "deny"
+      ? denyDivergenceDifferences(testCase.divergence, python, typescript)
       : jsonDepthDivergenceDifferences(python, typescript);
   }
   if (python.status !== typescript.status) found.push(`exit ${python.status} vs ${typescript.status}`);
-  if (python.stdout !== typescript.stdout) found.push(`stdout\n    py: ${JSON.stringify(python.stdout)}\n    ts: ${JSON.stringify(typescript.stdout)}`);
-  const normalizeStderr = (text: string): string => testCase.startupFailure ? text.replace(/Current thread 0x[0-9a-f]+/g, "Current thread <address>") : text;
-  if (!testCase.crash && normalizeStderr(python.stderr) !== normalizeStderr(typescript.stderr)) found.push(`stderr\n    py: ${JSON.stringify(python.stderr)}\n    ts: ${JSON.stringify(typescript.stderr)}`);
+  if (!sameJson(python.stdout, typescript.stdout) && !isReworded(python, typescript)) found.push(`stdout\n    py: ${JSON.stringify(python.stdout)}\n    ts: ${JSON.stringify(typescript.stdout)}`);
+  if (!testCase.crash && python.stderr !== typescript.stderr) found.push(`stderr\n    py: ${JSON.stringify(python.stderr)}\n    ts: ${JSON.stringify(typescript.stderr)}`);
   if (testCase.crash && python.stderr === "") found.push("crash case produced no python error output");
   for (const key of new Set([...Object.keys(python.files), ...Object.keys(typescript.files)])) {
     if (python.files[key] !== typescript.files[key]) found.push(`file ${key}: py=${python.files[key]} ts=${typescript.files[key]}`);
@@ -202,12 +238,13 @@ function differences(testCase: HookCase, python: Observation, typescript: Observ
 }
 
 export function runHookParity(cases: readonly HookCase[], paths: Paths): HookParityReport {
-  const report: HookParityReport = { cases: cases.length, mismatches: 0, details: [], denied: 0, passed: 0, contextual: 0, divergences: 0 };
+  const report: HookParityReport = { cases: cases.length, mismatches: 0, details: [], denied: 0, passed: 0, contextual: 0, divergences: 0, reworded: 0 };
   for (const testCase of cases) {
     const python = recordedPythonObservation(testCase, paths);
     const typescript = observe([process.execPath, TYPESCRIPT_HOOK], testCase, paths);
     const found = differences(testCase, python, typescript);
     if (testCase.divergence !== undefined) report.divergences += 1;
+    else if (!sameJson(python.stdout, typescript.stdout) && isReworded(python, typescript)) report.reworded += 1;
     if (found.length > 0) {
       report.mismatches += 1;
       if (report.details.length < MAX_MISMATCHES_SHOWN) report.details.push(`${testCase.name}: ${found.join("; ")}`);

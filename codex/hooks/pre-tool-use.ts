@@ -1,23 +1,22 @@
 import { readFileSync } from "node:fs";
 import { userInfo } from "node:os";
+import { dirname } from "node:path";
 import { expandUser, glob, splitlines, strip } from "../../hooks/lib/hookkit/pycompat.ts";
 import { resolveDirectory, steps, writeTargets } from "../../hooks/lib/hookkit/shell.ts";
-import { OSError, run } from "../../hooks/lib/hookkit/subprocess.ts";
+import { run } from "../../hooks/lib/hookkit/subprocess.ts";
 import type { CompletedProcess } from "../../hooks/lib/hookkit/subprocess.ts";
+import { decodeUtf8 } from "../../measure/lib/measurekit/files.ts";
 import { emit } from "../lib/command.ts";
 import type { CommandResult } from "../lib/command.ts";
 import { completeEdit, HOOK_CALLER_FRAMES, validateUpdate } from "../lib/config_policy.ts";
-import { osErrorMessage, pythonFailureMessage, ValueError } from "../lib/pyerrors.ts";
-import { childPath, hasGlobMagic, isStrictAncestor, parentOf, pathExists, purePath, readText, resolvePath, translateNewlines } from "../lib/pyfs.ts";
-import { isJsonObject, isTruthy, pythonJsonDumps, pythonJsonLoads } from "../lib/pyjson.ts";
-import { PythonStartupFailure } from "../lib/pycodecs.ts";
-import { readStdin, encodeStdout } from "../lib/pystdin.ts";
-import { pythonValueStr } from "../lib/pystr.ts";
-import type { JsonValue } from "../lib/pyjson.ts";
+import { readText } from "../lib/files.ts";
+import { asciiJson, isJsonObject, isTruthy, parseHookJson } from "../lib/json.ts";
+import type { JsonValue } from "../lib/json.ts";
+import { childPath, hasGlobMagic, isStrictAncestor, pathExists, resolvePath } from "../lib/paths.ts";
+import { Refusal, refusalMessage } from "../lib/refusal.ts";
 
-const KEEL = parentOf(parentOf(parentOf(resolvePath(import.meta.filename))));
+const KEEL = dirname(dirname(dirname(resolvePath(import.meta.filename))));
 const GUARD_TIMEOUT_SECONDS = 35;
-const PYTHON_STARTUP_FAILURE_EXIT_CODE = 1;
 const GUARDED_TOOLS = ["Bash", "Edit", "Write"];
 const PATCH_PREFIXES = ["*** Add File: ", "*** Update File: ", "*** Delete File: ", "*** Move to: "];
 const ADAPTER_FILES = ["AGENTS.md", "hooks.json", "keel-codex-state.json"];
@@ -35,7 +34,7 @@ export type GuardRunner = (command: readonly string[], input: string) => Complet
 
 export function main(readInput: () => Buffer, runner: GuardRunner = spawnGuard): CommandResult {
   try {
-    const calls = normalize(pythonJsonLoads(translateNewlines(readStdin(readInput))));
+    const calls = normalize(parseHookJson(decodeUtf8(readInput(), "stdin")));
     const contexts: string[] = [];
     for (const call of calls) {
       protectAdapter(call);
@@ -44,30 +43,29 @@ export function main(readInput: () => Buffer, runner: GuardRunner = spawnGuard):
     }
     if (contexts.length === 0) return { code: 0, stdout: "", stderr: "" };
     const output = { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: contexts.join("\n") } };
-    return { code: 0, stdout: pythonJsonDumps(output) + "\n", stderr: "" };
+    return { code: 0, stdout: JSON.stringify(output) + "\n", stderr: "" };
   } catch (error) {
-    if (error instanceof PythonStartupFailure) return { code: PYTHON_STARTUP_FAILURE_EXIT_CODE, stdout: "", stderr: error.stderr };
-    const message = pythonFailureMessage(error);
+    const message = refusalMessage(error);
     if (message === null) throw error;
     const decision = {
       hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: `keel Codex guard: ${message}` },
     };
-    return { code: 0, stdout: pythonJsonDumps(decision) + "\n", stderr: "" };
+    return { code: 0, stdout: JSON.stringify(decision) + "\n", stderr: "" };
   }
 }
 
 export function normalize(payload: unknown): Call[] {
-  if (!isJsonObject(payload)) throw new ValueError("payload must be an object");
+  if (!isJsonObject(payload)) throw new Refusal("payload must be an object");
   const name = payload["tool_name"];
   const tool = payload["tool_input"];
-  if (!isJsonObject(tool)) throw new ValueError("tool_input must be an object");
+  if (!isJsonObject(tool)) throw new Refusal("tool_input must be an object");
   if (typeof name === "string" && GUARDED_TOOLS.includes(name)) {
-    if (name === "Bash" && typeof tool["command"] !== "string") throw new ValueError("Bash command is missing");
+    if (name === "Bash" && typeof tool["command"] !== "string") throw new Refusal("Bash command is missing");
     return [payload as Call];
   }
-  if (name !== "apply_patch") throw new ValueError(`unsupported guarded tool: ${pythonValueStr(name)}`);
+  if (name !== "apply_patch") throw new Refusal(`unsupported guarded tool: ${typeof name === "string" ? name : JSON.stringify(name)}`);
   const patch = tool["command"];
-  if (typeof patch !== "string") throw new ValueError("apply_patch command is missing");
+  if (typeof patch !== "string") throw new Refusal("apply_patch command is missing");
   const calls: Call[] = [];
   let path: string | null = null;
   let added: string[] = [];
@@ -82,7 +80,7 @@ export function normalize(payload: unknown): Call[] {
     }
   }
   if (path !== null) calls.push(editCall(payload, path, added));
-  if (calls.length === 0) throw new ValueError("apply_patch has no recognized file operations");
+  if (calls.length === 0) throw new Refusal("apply_patch has no recognized file operations");
   return calls;
 }
 
@@ -92,8 +90,8 @@ function editCall(payload: Record<string, unknown>, path: string, added: string[
 
 export function protectAdapter(call: Call, accountHome: string = userInfo().homedir): void {
   const home = expandUser("~");
-  const profile = resolvePath(purePath(process.env["KEEL_CODEX_HOME"] ?? childPath(home, ".codex")));
-  const agentsHome = resolvePath(purePath(process.env["KEEL_AGENTS_HOME"] ?? childPath(home, ".agents")));
+  const profile = resolvePath(process.env["KEEL_CODEX_HOME"] ?? childPath(home, ".codex"));
+  const agentsHome = resolvePath(process.env["KEEL_AGENTS_HOME"] ?? childPath(home, ".agents"));
   const protectedPaths = new Set([
     ...ADAPTER_FILES.map((name) => resolvePath(childPath(profile, name))),
     ...SKILL_REGISTRY_FILES.map((name) => resolvePath(childPath(agentsHome, name))),
@@ -101,7 +99,7 @@ export function protectAdapter(call: Call, accountHome: string = userInfo().home
   const defaultProfile = childPath(accountHome, ".codex");
   const records = new Set([profile, defaultProfile].flatMap((root) => SESSION_FOLDERS.map((name) => resolvePath(childPath(root, name)))));
   const config = resolvePath(childPath(profile, "config.toml"));
-  const cwd = pythonValueStr(isTruthy(call["cwd"]) ? call["cwd"] : process.cwd());
+  const cwd = workingDirectory(call);
   if (call.tool_name === "Bash") {
     protectShell(call.tool_input["command"] as string, cwd, new Set([...protectedPaths, config]), records);
     return;
@@ -109,7 +107,7 @@ export function protectAdapter(call: Call, accountHome: string = userInfo().home
   const path = resolvePath(childPath(cwd, filePathOf(call.tool_input)));
   protectRecords(path, records);
   if (protectedPaths.has(path)) {
-    throw new ValueError(`generated Codex configuration must be changed through codex/bin/link: ${path}`);
+    throw new Refusal(`generated Codex configuration must be changed through codex/bin/link: ${path}`);
   }
   if (path === config) {
     const candidate = completeEdit(path, call.tool_input);
@@ -117,16 +115,23 @@ export function protectAdapter(call: Call, accountHome: string = userInfo().home
   }
 }
 
+function workingDirectory(call: Call): string {
+  const cwd = call["cwd"];
+  if (!isTruthy(cwd)) return process.cwd();
+  if (typeof cwd !== "string") throw new Refusal("cwd must be a string");
+  return cwd;
+}
+
 function filePathOf(tool: Record<string, unknown>): string {
   const filePath = Object.hasOwn(tool, "file_path") ? tool["file_path"] : "";
-  if (typeof filePath !== "string") throw new TypeError(`unsupported operand type(s) for /: 'PosixPath' and '${typeof filePath}'`);
+  if (typeof filePath !== "string") throw new TypeError(`file_path must be a string, not ${typeof filePath}`);
   return filePath;
 }
 
 function protectRecords(path: string, roots: ReadonlySet<string>): void {
   for (const root of roots) {
     if (path === root || isStrictAncestor(root, path) || isStrictAncestor(path, root)) {
-      throw new ValueError("Codex session provenance is read-only to agent tools");
+      throw new Refusal("Codex session provenance is read-only to agent tools");
     }
   }
 }
@@ -141,7 +146,7 @@ function protectShell(command: string, cwd: string, protectedPaths: ReadonlySet<
         for (const matched of glob(path)) protectRecords(resolvePath(matched), records);
       }
       if (protectedPaths.has(path) || Array.from(protectedPaths).some((item) => isStrictAncestor(path, item))) {
-        throw new ValueError("shell config edits cannot be verified; use codex/bin/config --file <complete TOML>");
+        throw new Refusal("shell config edits cannot be verified; use codex/bin/config --file <complete TOML>");
       }
     }
   }
@@ -161,28 +166,22 @@ function guardCommand(name: string): string[] {
 }
 
 function spawnGuard(command: readonly string[], input: string): CompletedProcess {
-  try {
-    return run(command, GUARD_TIMEOUT_SECONDS, { input });
-  } catch (error) {
-    if (error instanceof OSError) throw new OSError(osErrorMessage(error.code, command[0]), error.code);
-    throw error;
-  }
+  return run(command, GUARD_TIMEOUT_SECONDS, { input });
 }
 
 export function runGuard(name: string, call: Record<string, unknown>, runner: GuardRunner = spawnGuard): string[] {
-  const completed = runner(guardCommand(name), pythonJsonDumps(call as JsonValue));
-  if (completed.returncode !== 0) throw new ValueError(strip(completed.stderr) || `${name} exited ${completed.returncode}`);
+  const completed = runner(guardCommand(name), asciiJson(call as JsonValue));
+  if (completed.returncode !== 0) throw new Refusal(strip(completed.stderr) || `${name} exited ${completed.returncode}`);
   if (strip(completed.stdout) === "") return [];
-  const output = pythonJsonLoads(completed.stdout);
-  if (!isJsonObject(output)) throw new ValueError(`${name} returned a non-object response`);
+  const output = parseHookJson(completed.stdout);
+  if (!isJsonObject(output)) throw new Refusal(`${name} returned a non-object response`);
   const specific = Object.hasOwn(output, "hookSpecificOutput") ? output["hookSpecificOutput"] : {};
-  if (!isJsonObject(specific)) throw new ValueError(`${name} returned invalid hook output`);
+  if (!isJsonObject(specific)) throw new Refusal(`${name} returned invalid hook output`);
   const context = Object.hasOwn(specific, "additionalContext") ? specific["additionalContext"] : null;
-  if (context !== null && typeof context !== "string") throw new ValueError(`${name} returned invalid context`);
-  return isTruthy(context) ? [context as string] : [];
+  if (context !== null && typeof context !== "string") throw new Refusal(`${name} returned invalid context`);
+  return context === null || context === "" ? [] : [context];
 }
 
 if (import.meta.main) {
-  const hookResult = main(() => readFileSync(0));
-  emit({ ...hookResult, stdout: encodeStdout(hookResult.stdout) });
+  emit(main(() => readFileSync(0)));
 }

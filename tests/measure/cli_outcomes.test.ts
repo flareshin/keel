@@ -397,6 +397,19 @@ describe("measure entries keep their exit code, JSON output and written logs", (
     const unchanged = CLI_CASES.map((cliCase) => cliCase.name).filter((name) => !(name in EXPLICIT_OUTCOMES))
     assert.deepEqual(Object.keys(RECORDED_OUTCOMES).sort(), unchanged.sort())
   })
+
+  it("smokeSeedLedgerSetup_postponesEveryDate_andKeepsEveryOtherCell", () => {
+    const dateColumns = ["review_by", "grace_until"].map((column) => LEDGER_COLUMNS.indexOf(column))
+    const tableOf = (file: string): string[][] => readText(file).split("\n").filter((line) => line !== "").map((line) => line.split("\t"))
+    const withoutDates = (table: string[][]): string[][] => table.map((cells) => cells.filter((_, column) => !dateColumns.includes(column)))
+    copySeedLedgerWithDatesNeverReached(box)
+    const seed = tableOf(path.join(CHECKOUT, "ledger.tsv"))
+    const written = tableOf(path.join(box.keel, "ledger.tsv"))
+    assert.deepEqual(withoutDates(written), withoutDates(seed))
+    const writtenDates = written.slice(1).flatMap((cells) => dateColumns.map((column) => cells[column]))
+    assert.ok(writtenDates.includes(NEVER_EXPIRES), "the seed ledger has no dated row to postpone")
+    assert.deepEqual(writtenDates.filter((date) => date !== "-" && date !== NEVER_EXPIRES), [])
+  })
 })
 
 describe("every entry's help names its flags", () => {

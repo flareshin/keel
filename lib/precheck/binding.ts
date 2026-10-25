@@ -36,7 +36,8 @@ function describeTestChange(repo: string, precheckTree: string, end: string): Pr
 }
 
 function rewritesExistingTest(entry: PathEntry, stat: PathStat | undefined): boolean {
-  if (entry.oldBlob === null) return false;
-  const isBinaryOrModeOnly = stat === undefined || (stat.added === 0 && stat.deleted === 0);
-  return isBinaryOrModeOnly || stat.deleted > 0;
+  const isNewOrModeOnly = entry.oldBlob === null || entry.oldBlob === entry.blob;
+  if (isNewOrModeOnly) return false;
+  const isBinary = stat === undefined || (stat.added === 0 && stat.deleted === 0);
+  return isBinary || stat.deleted > 0;
 }

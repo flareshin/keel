@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
-import { rmSync } from "node:fs"
+import { chmodSync, rmSync } from "node:fs"
 import { join } from "node:path"
 import { after, describe, it } from "node:test"
 import { bindPrecheck, DELETED_BLOB, precheckTreeOf } from "../../lib/precheck/binding.ts"
@@ -68,6 +68,17 @@ describe("bindPrecheck", () => {
     const binding = bindPrecheck(root, precheckTree, treeOf(root, { "tests/fixtures/a.bin": "\u0000one-two" }), precheckTree)
 
     assert.equal(binding.test_change?.lines_removed, true)
+  })
+
+  it("bindPrecheck_keepsTheTestChangeEmpty_whenAnExistingTestFileOnlyChangesMode", () => {
+    const root = repo({ "tests/a.test.ts": "one\n" })
+    const precheckTree = git(root, "rev-parse", "HEAD^{tree}")
+    chmodSync(join(root, "tests", "a.test.ts"), 0o755)
+    git(root, "add", "-A")
+
+    const binding = bindPrecheck(root, precheckTree, git(root, "write-tree"), precheckTree)
+
+    assert.deepEqual(binding.test_change, { lines_removed: false, lines_added: false })
   })
 
   it("bindPrecheck_countsANewBinaryTestFixtureAsAdded_notAsRemoved", () => {

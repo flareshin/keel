@@ -311,6 +311,23 @@ test('lensReview_bindsAPrecheckThroughThePrepareCommand_whenOnlyTestsGrewAfterIt
   assert.deepEqual(moved.precheck, { status: 'stale', tree: precheckTree, reason: 'src/cart.ts changed after the precheck', survivorsOpen: false })
 })
 
+test('lensReview_bindsAPrecheckFromCliPreparedMetadata_whenTheDiffEndsAtAHeadCommit', async () => {
+  const box = createSandbox()
+  const { repo, precheck } = precheckRepo(box)
+  box.git(repo, 'add', '-A')
+  box.git(repo, 'commit', '-qm', 'change')
+  const head = box.git(repo, 'rev-parse', 'HEAD')
+  const request = { diffs: [{ repo, base: 'main~1', head: 'HEAD' }], precheck }
+  const prepared = JSON.parse(execFileSync(join(KEEL_HOME, 'bin', 'keel'), ['review', 'prepare'], {
+    env: box.env, input: JSON.stringify(request), encoding: 'utf8',
+  }))
+
+  const result = await createRuntime({ respond: shellResponder(box) }).run('lens-review', { ...request, auditMode: 'split', prepared })
+
+  assert.deepEqual(JSON.parse(prepared.diff_outputs[0]).precheck_binding.blobs, { 'src/cart.ts': box.git(repo, 'rev-parse', `${head}:src/cart.ts`) })
+  assert.equal(result.precheck.status, 'bound')
+})
+
 test('lensReview_bindsAPrecheckFromCliPreparedMetadata_withoutAPrepareAgent', async () => {
   const box = createSandbox()
   const { repo, precheckTree, precheck } = precheckRepo(box)

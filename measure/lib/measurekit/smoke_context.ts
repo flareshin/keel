@@ -6,7 +6,8 @@ import * as env from "./env.ts"
 import { isDir, isFile } from "./files.ts"
 import { allRows, countedRows, loadLedgersFrom } from "./ledger.ts"
 import type { Ledger, LedgerRow } from "./ledger.ts"
-import { DEFAULT_WINDOW_DAYS } from "./metrics.ts"
+import { DEFAULT_WINDOW_DAYS, runRunnersConcurrently } from "./metrics.ts"
+import type { FinishedRunners } from "./metrics.ts"
 
 export interface Assertion {
   check: string
@@ -22,6 +23,7 @@ export class SmokeContext {
   readonly today: string
   readonly ledgers: Ledger[]
   readonly candidate: boolean
+  finishedRunners: FinishedRunners = new Map()
 
   constructor(keelHome: string, overlayDir: string, dataDir: string, today: string, ledgers: Ledger[], candidate: boolean = false) {
     this.keelHome = keelHome
@@ -48,6 +50,10 @@ export class SmokeContext {
 
   get metricWindowStart(): string {
     return addDays(this.today, -DEFAULT_WINDOW_DAYS)
+  }
+
+  async runMetricRunners(): Promise<void> {
+    this.finishedRunners = await runRunnersConcurrently(this.countedRows, this.metricWindowStart)
   }
 
   memoryIndexes(): string[] {

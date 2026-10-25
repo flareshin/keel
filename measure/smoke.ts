@@ -41,10 +41,11 @@ interface SmokeResult {
   assertions: Assertion[]
 }
 
-function main(argv: string[]): number {
+async function main(argv: string[]): Promise<number> {
   const parsed = parseCommandLine(COMMAND, argv)
   noPositionals(COMMAND, parsed)
   const ctx = SmokeContext.fromEnvironment(flagOption(parsed, "candidate"))
+  await ctx.runMetricRunners()
   const result = runSmoke(ctx)
   recordSmokeRun(result, ctx)
   printJson(result)

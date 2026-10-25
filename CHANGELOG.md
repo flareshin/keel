@@ -318,6 +318,11 @@ Codex adapter (`codex/`) drop their Python emulation and run on plain Node behav
   logs deny, pass or record lines, so none drops to zero.
 
 ### Added
+- `measure/smoke` starts every `run:` metric runner of the ledger rows before it judges the rows, at most 6 at a time,
+  instead of running them one after another inside the metrics check. On the owner's machine the 13 overlay runners took
+  about 360 s in sequence (the slowest alone 55 s) and now finish together in about 70 s. Each runner keeps its 120 s
+  timeout, rows are judged in ledger order, and the `metrics` assertion and every error text are the ones a sequential
+  run prints. `measure/run`, `measure/propose` and `measure/weekly` still run a runner when they need it.
 - `measure/smoke` check `contract-miss-cap`: more than 20 `contract-miss` fires lines dated today or yesterday FAILs,
   with the count per hook, so a Claude Code payload change shows up within a day instead of in a later review. Every
   `contract-miss` line logged so far came from the `last_assistant_message` drift fixed above; ship-gate has logged

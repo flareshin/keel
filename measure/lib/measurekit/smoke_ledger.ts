@@ -106,7 +106,7 @@ export function checkMetrics(ctx: SmokeContext): Assertion[] {
     const failing: string[] = []
     const inGrace: string[] = []
     for (const row of rows) {
-      const outcome = evaluateMetric(row, ctx.metricWindowStart, ctx.today)
+      const outcome = evaluateMetric(row, ctx.metricWindowStart, ctx.today, ctx.finishedRunners)
       const note = `${row.id}: ${outcome.error ?? `0 items for ${row.metric}`}`
       if (outcome.status === FAIL) failing.push(note)
       else if (outcome.status === GRACE) inGrace.push(note)

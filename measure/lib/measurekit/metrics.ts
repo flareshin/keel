@@ -8,7 +8,7 @@ import type { LedgerRow } from "./ledger.ts"
 import { expandHome, isExecutable, isFile, isSystemError } from "./files.ts"
 import { isJsonObject, parseJson } from "./json.ts"
 import type { JsonObject, JsonValue } from "./json.ts"
-import { runProcess, TimeoutExpired } from "./subprocess.ts"
+import { runProcess, runProcessAsync, TimeoutExpired } from "./subprocess.ts"
 import type { RunResult } from "./subprocess.ts"
 
 export const PASS = "PASS"
@@ -17,6 +17,7 @@ export const GRACE = "GRACE"
 export const WARN = "WARN"
 export const DEFAULT_WINDOW_DAYS = 60
 const RUNNER_TIMEOUT_SECONDS = 120
+export const MAX_CONCURRENT_RUNNERS = 6
 const ISO_DATE_LENGTH = 10
 const STDERR_EXCERPT_CHARS = 200
 const NON_DECISION_OUTCOMES = new Set(["error", "contract-miss", "warn"])
@@ -34,9 +35,11 @@ export interface MetricResult {
 
 export type MetricItems = [number, JsonValue[]]
 
-export function evaluateMetric(row: LedgerRow, since: string, today: string): MetricResult {
+export type FinishedRunners = ReadonlyMap<string, RunResult | MetricError>
+
+export function evaluateMetric(row: LedgerRow, since: string, today: string, finished: FinishedRunners = new Map()): MetricResult {
   try {
-    const [count, items] = collectMetricItems(row.metric, since)
+    const [count, items] = collectMetricItems(row.metric, since, finished)
     const status = count > 0 ? PASS : row.isInGrace(today) ? GRACE : FAIL
     return { id: row.id, metric: row.metric, count, items, status }
   } catch (error) {
@@ -45,15 +48,18 @@ export function evaluateMetric(row: LedgerRow, since: string, today: string): Me
   }
 }
 
-export function collectMetricItems(metric: string, since: string): MetricItems {
-  if (metric === EMPTY) throw new MetricError("row has no metric")
+function splitMetric(metric: string): [kind: string, argument: string] {
   const colon = metric.indexOf(":")
-  const kind = colon < 0 ? metric : metric.slice(0, colon)
-  const argument = colon < 0 ? "" : metric.slice(colon + 1)
+  return colon < 0 ? [metric, ""] : [metric.slice(0, colon), metric.slice(colon + 1)]
+}
+
+export function collectMetricItems(metric: string, since: string, finished: FinishedRunners = new Map()): MetricItems {
+  if (metric === EMPTY) throw new MetricError("row has no metric")
+  const [kind, argument] = splitMetric(metric)
   switch (kind) {
     case "fires": return firesItems(argument, since)
     case "evals": return evalItems(argument, since)
-    case "run": return runnerItems(argument, since)
+    case "run": return runnerItems(argument, since, finished)
     case "exists": return existenceItems(argument)
     default: throw new MetricError(`unknown metric kind ${JSON.stringify(kind)}`)
   }
@@ -78,16 +84,59 @@ export function isWithinWindow(record: JsonObject, since: string): boolean {
   return typeof timestamp === "string" && timestamp.slice(0, ISO_DATE_LENGTH) >= since
 }
 
-function runnerItems(runner: string, since: string): MetricItems {
+function runnerItems(runner: string, since: string, finished: FinishedRunners): MetricItems {
   const path = findRunner(runner)
   if (path === null) throw new MetricError(`no runner measure/metrics/${runner} in keel or overlay`)
-  let completed: RunResult
-  try {
-    completed = runProcess([path, "--since", since], { timeoutSeconds: RUNNER_TIMEOUT_SECONDS })
-  } catch (error) {
-    if (error instanceof TimeoutExpired || isSystemError(error)) throw new MetricError(`runner ${runner} could not run: ${(error as Error).message}`)
-    throw error
+  const completed = finished.get(runner) ?? runRunnerBlocking(runner, path, since)
+  if (completed instanceof MetricError) throw completed
+  return parseRunnerOutput(runner, completed)
+}
+
+export async function runRunnersConcurrently(rows: LedgerRow[], since: string): Promise<FinishedRunners> {
+  const waiting = [...runnerPaths(rows)]
+  const finished = new Map<string, RunResult | MetricError>()
+  const worker = async (): Promise<void> => {
+    for (let next = waiting.shift(); next !== undefined; next = waiting.shift()) {
+      const [runner, runnerPath] = next
+      finished.set(runner, await runRunnerAsync(runner, runnerPath, since))
+    }
   }
+  await Promise.all(Array.from({ length: Math.min(MAX_CONCURRENT_RUNNERS, waiting.length) }, worker))
+  return finished
+}
+
+function runnerPaths(rows: LedgerRow[]): Map<string, string> {
+  const paths = new Map<string, string>()
+  for (const row of rows) {
+    const [kind, runner] = splitMetric(row.metric)
+    const runnerPath = kind === "run" ? findRunner(runner) : null
+    if (runnerPath !== null) paths.set(runner, runnerPath)
+  }
+  return paths
+}
+
+function runRunnerBlocking(runner: string, runnerPath: string, since: string): RunResult {
+  try {
+    return runProcess([runnerPath, "--since", since], { timeoutSeconds: RUNNER_TIMEOUT_SECONDS })
+  } catch (error) {
+    throw couldNotRun(runner, error)
+  }
+}
+
+async function runRunnerAsync(runner: string, runnerPath: string, since: string): Promise<RunResult | MetricError> {
+  try {
+    return await runProcessAsync([runnerPath, "--since", since], { timeoutSeconds: RUNNER_TIMEOUT_SECONDS })
+  } catch (error) {
+    return couldNotRun(runner, error)
+  }
+}
+
+function couldNotRun(runner: string, error: unknown): MetricError {
+  if (error instanceof TimeoutExpired || isSystemError(error)) return new MetricError(`runner ${runner} could not run: ${(error as Error).message}`)
+  throw error
+}
+
+function parseRunnerOutput(runner: string, completed: RunResult): MetricItems {
   if (completed.returncode !== 0) throw new MetricError(`runner ${runner} exited ${completed.returncode}: ${stderrExcerpt(completed)}`)
   let payload: JsonValue
   try {

@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process"
+import { spawn, spawnSync } from "node:child_process"
 import os from "node:os"
 
 export interface RunOptions {
@@ -44,6 +44,34 @@ export function runProcess(command: string[] | string, options: RunOptions = {})
   const error = result.error as NodeJS.ErrnoException | undefined
   if (error?.code === "ETIMEDOUT") throw new TimeoutExpired(command, options.timeoutSeconds ?? 0, result.stdout ?? "")
   if (error) throw error
-  const returncode = result.status ?? -(os.constants.signals[result.signal as NodeJS.Signals] ?? 0)
-  return { returncode, stdout: result.stdout ?? "", stderr: result.stderr ?? "" }
+  return { returncode: exitCode(result.status, result.signal), stdout: result.stdout ?? "", stderr: result.stderr ?? "" }
+}
+
+export function runProcessAsync(command: string[], options: Pick<RunOptions, "timeoutSeconds" | "stdin"> = {}): Promise<RunResult> {
+  const [program = "", ...args] = command
+  return new Promise((resolve, reject) => {
+    const child = spawn(program, args, { stdio: [options.stdin ?? "inherit", "pipe", "pipe"] })
+    let stdout = ""
+    let stderr = ""
+    let timedOut = false
+    const timer = options.timeoutSeconds === undefined ? undefined : setTimeout(() => {
+      timedOut = true
+      child.kill("SIGKILL")
+    }, options.timeoutSeconds * 1000)
+    child.stdout.setEncoding("utf8").on("data", (chunk: string) => { stdout += chunk })
+    child.stderr.setEncoding("utf8").on("data", (chunk: string) => { stderr += chunk })
+    child.once("error", (error) => {
+      clearTimeout(timer)
+      reject(error)
+    })
+    child.once("close", (status, signal) => {
+      clearTimeout(timer)
+      if (timedOut) reject(new TimeoutExpired(command, options.timeoutSeconds ?? 0, stdout))
+      else resolve({ returncode: exitCode(status, signal), stdout, stderr })
+    })
+  })
+}
+
+function exitCode(status: number | null, signal: NodeJS.Signals | null): number {
+  return status ?? -(os.constants.signals[signal as NodeJS.Signals] ?? 0)
 }

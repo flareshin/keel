@@ -32,9 +32,9 @@ export interface CommandSpec {
 
 export type ParsedCommandLine = ReturnType<typeof parseArgsWithTokens>
 
-export function runMain(main: (argv: string[]) => number): void {
+export async function runMain(main: (argv: string[]) => number | Promise<number>): Promise<void> {
   try {
-    process.exitCode = main(process.argv.slice(2))
+    process.exitCode = await main(process.argv.slice(2))
   } catch (error) {
     if (error instanceof UsageExit) {
       process.exitCode = error.code

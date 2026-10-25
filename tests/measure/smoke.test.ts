@@ -4,6 +4,7 @@ import fs from "node:fs"
 import path from "node:path"
 
 import { addDays } from "../../measure/lib/measurekit/dates.ts"
+import { MAX_CONCURRENT_RUNNERS } from "../../measure/lib/measurekit/metrics.ts"
 import { CHECKOUT, FUTURE, NOW_TS, PAST, TODAY, charterRow, ledgerRow, readText } from "./helpers.ts"
 import { SmokeHarness } from "./smoke_helpers.ts"
 
@@ -170,6 +171,61 @@ describe("ledger checks", () => {
   it("metrics_fail_whenRowHasNoMetric", () => {
     keelRows(charterRow("K1"), ledgerRow("C-demo", { metric: "-", grace_until: FUTURE }))
     assertStatus("metrics", "keel", "FAIL", "C-demo: row has no metric")
+  })
+
+  function runnerRows(names: string[]): void {
+    keelRows(charterRow("K1"), ...names.map((name) => ledgerRow(`C-${name}`, { metric: `run:${name}` })))
+  }
+
+  function writeRunner(name: string, body: string): void {
+    harness.box.write(`keel/measure/metrics/${name}`, `#!/bin/bash\n${body}\n`, true)
+  }
+
+  it("metrics_runsRunnersAtTheSameTime_soSlowRunnersAddUpToTheSlowestOne", () => {
+    const names = ["rv-a", "rv-b", "rv-c"]
+    runnerRows(names)
+    for (const name of names) {
+      writeRunner(name, [
+        'dir="$KEEL_DATA_DIR/rendezvous"; mkdir -p "$dir"; touch "$dir/' + name + '"',
+        'for _ in $(seq 50); do [ "$(ls "$dir" | wc -l)" -ge ' + names.length + ' ] && break; sleep 0.1; done',
+        '[ "$(ls "$dir" | wc -l)" -ge ' + names.length + ' ] || { echo "no peer runner started" >&2; exit 3; }',
+        'echo \'{"count": 1, "items": ["' + name + '"]}\'',
+      ].join("\n"))
+    }
+    assertStatus("metrics", "keel", "PASS", "4 rows checked")
+  })
+
+  it("metrics_boundsHowManyRunnersRunAtOnce_andStillEvaluatesEveryRow", () => {
+    const names = Array.from({ length: MAX_CONCURRENT_RUNNERS + 3 }, (_, index) => `slow-${index}`)
+    runnerRows(names)
+    for (const name of names) {
+      writeRunner(name, [
+        'echo "start" >> "$KEEL_DATA_DIR/activity.log"',
+        "sleep 0.3",
+        'echo "end" >> "$KEEL_DATA_DIR/activity.log"',
+        'echo \'{"count": 1, "items": []}\'',
+      ].join("\n"))
+    }
+    assertStatus("metrics", "keel", "PASS", `${names.length + 1} rows checked`)
+    let running = 0
+    let peak = 0
+    for (const event of readText(path.join(harness.box.data, "activity.log")).split("\n").filter((line) => line !== "")) {
+      running += event === "start" ? 1 : -1
+      peak = Math.max(peak, running)
+    }
+    assert.ok(peak > 1, `runners ran one at a time (peak ${peak})`)
+    assert.ok(peak <= MAX_CONCURRENT_RUNNERS, `peak ${peak} runners exceeds the bound ${MAX_CONCURRENT_RUNNERS}`)
+  })
+
+  it("metrics_namesEveryFailingRunnerInRowOrder_whateverOrderTheRunnersFinish", () => {
+    runnerRows(["first-slow", "second-fast", "third-missing"])
+    writeRunner("first-slow", 'sleep 0.5; echo "late" >&2; exit 3')
+    writeRunner("second-fast", 'echo "early" >&2; exit 4')
+    fs.rmSync(path.join(harness.box.keel, "measure", "metrics", "third-missing"), { force: true })
+    assertStatus(
+      "metrics", "keel", "FAIL",
+      "failing: C-first-slow: runner first-slow exited 3: late; C-second-fast: runner second-fast exited 4: early; C-third-missing: no runner measure/metrics/third-missing in keel or overlay",
+    )
   })
 
   it("metrics_isGrace_whenRowCountsZeroBeforeGraceUntil", () => {

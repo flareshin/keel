@@ -217,6 +217,14 @@ describe("ledger checks", () => {
     assert.ok(peak <= MAX_CONCURRENT_RUNNERS, `peak ${peak} runners exceeds the bound ${MAX_CONCURRENT_RUNNERS}`)
   })
 
+  it("metrics_saysWhyARunnerCouldNotRun_withTheTextMeasureRunPrints", () => {
+    runnerRows(["noshebang"])
+    const runner = harness.box.write("keel/measure/metrics/noshebang", "echo '{\"count\": 1, \"items\": []}'\n", true)
+    const [, run] = harness.box.runJson("run", ["C-noshebang"])
+    assert.equal(run.error, `runner noshebang could not run: spawnSync ${runner} ENOEXEC`)
+    assertStatus("metrics", "keel", "FAIL", `failing: C-noshebang: ${run.error}`)
+  })
+
   it("metrics_namesEveryFailingRunnerInRowOrder_whateverOrderTheRunnersFinish", () => {
     runnerRows(["first-slow", "second-fast", "third-missing"])
     writeRunner("first-slow", 'sleep 0.5; echo "late" >&2; exit 3')

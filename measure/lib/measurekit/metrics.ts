@@ -119,7 +119,7 @@ function runRunnerBlocking(runner: string, runnerPath: string, since: string): R
   try {
     return runProcess([runnerPath, "--since", since], { timeoutSeconds: RUNNER_TIMEOUT_SECONDS })
   } catch (error) {
-    throw couldNotRun(runner, error)
+    throw couldNotRun(runner, runnerPath, error)
   }
 }
 
@@ -127,12 +127,13 @@ async function runRunnerAsync(runner: string, runnerPath: string, since: string)
   try {
     return await runProcessAsync([runnerPath, "--since", since], { timeoutSeconds: RUNNER_TIMEOUT_SECONDS })
   } catch (error) {
-    return couldNotRun(runner, error)
+    return couldNotRun(runner, runnerPath, error)
   }
 }
 
-function couldNotRun(runner: string, error: unknown): MetricError {
-  if (error instanceof TimeoutExpired || isSystemError(error)) return new MetricError(`runner ${runner} could not run: ${(error as Error).message}`)
+function couldNotRun(runner: string, runnerPath: string, error: unknown): MetricError {
+  if (error instanceof TimeoutExpired) return new MetricError(`runner ${runner} could not run: ${error.message}`)
+  if (isSystemError(error)) return new MetricError(`runner ${runner} could not run: spawnSync ${runnerPath} ${error.code}`)
   throw error
 }
 

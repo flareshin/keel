@@ -1,8 +1,8 @@
 import assert from "node:assert/strict"
 import { execFileSync, spawnSync } from "node:child_process"
-import { mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from "node:fs"
+import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { basename, join } from "node:path"
 import { after, afterEach, beforeEach, describe, it } from "node:test"
 import { snapshotTree } from "../../lib/evidence/gitcmd.ts"
 import * as cli from "../../lib/evidence/cli.ts"
@@ -223,6 +223,19 @@ describe("keel precheck run", { skip: typescriptInstalled ? false : "typescript 
     const unknownBase = keel(["--repo", root, "--base", "no-such-ref"], dataDir)
     assert.equal(unknownBase.status, 3)
     assert.match(unknownBase.stderr, /no-such-ref has no merge base with HEAD/)
+  })
+
+  it("keelPrecheckRun_refusesWithTheNpmCiHint_fromACheckoutWithoutNodeModules", () => {
+    const root = committedRepo({ "lib/a.ts": PICK })
+    roots.push(root)
+    const checkout = scratchDir("keel-checkout-")
+    const keelRoot = join(import.meta.dirname, "..", "..")
+    cpSync(keelRoot, checkout, { recursive: true, filter: (source) => !["node_modules", ".git"].includes(basename(source)) })
+
+    const completed = spawnSync(join(checkout, "bin", "keel"), ["precheck", "run", "--repo", root, "--base", "HEAD"], { encoding: "utf8", env: { ...process.env, KEEL_DATA_DIR: scratchDir("keel-data-") } })
+
+    assert.equal(completed.status, 3, completed.stderr)
+    assert.match(completed.stderr, /keel precheck run needs typescript; run npm ci in the keel checkout/)
   })
 
   it("typescriptResolves_answersFalseOnlyForAModuleNotFound_andRethrowsOtherResolveErrors", (t) => {

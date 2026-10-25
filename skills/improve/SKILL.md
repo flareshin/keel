@@ -1,13 +1,29 @@
 ---
 name: improve
-description: Finding and making one structural improvement in existing code that no current task touches — shallow modules, pass-through layers, dead code, seams nothing varies across. Trigger; "improve this module", "where is this codebase hard to change", "refactor candidates", "architecture review of <area>", a requested legacy cleanup. Do NOT use for code the current diff already changes (readable-code covers it), a behavior bug (fix it with a red test), a recurring review finding a machine can decide (descend), or an unrequested repo-wide sweep.
+description: Finding and making one behavior-preserving structural improvement or a specified refactoring in existing code — shallow modules, pass-through layers, dead code, seams nothing varies across. Trigger; "improve this module", "where is this codebase hard to change", "refactor candidates", "refactor this module", "simplify this structure without changing behavior", "architecture review of <area>", a requested legacy cleanup. Do NOT use for code the current diff already changes (readable-code covers it), a behavior bug (fix it with a red test), a recurring review finding a machine can decide (descend), or an unrequested repo-wide sweep.
 ---
 
 # Improve
 
-K5 keeps unrelated legacy cleanup out of feature diffs and makes it a separate requested task; this skill is that task's procedure. A run leaves an HTML report of ranked candidates and, for the one the user picks, one behavior-preserving diff that goes through the normal review and ship-gate.
+K5 keeps unrelated legacy cleanup out of feature diffs and makes it a separate requested task; this skill is that task's procedure. Candidate discovery leaves an HTML report of ranked candidates. A selected improvement or specified refactoring leaves one behavior-preserving diff that goes through the normal review and ship-gate.
 
 The vocabulary and the deletion test are adapted from Matt Pocock's `improve-codebase-architecture` and `codebase-design` skills (github.com/mattpocock/skills at 49dd158, MIT); the ordering rules from pstack's subtract-before-you-add and migrate-callers principles (github.com/cursor/plugins at 6b78e9f, MIT).
+
+## Choose the entry point
+
+- **Find an improvement.** The user names an area but has not chosen a structural
+  change: follow steps 1–4, report candidates and let the user choose one.
+- **Make a specified refactoring.** The request or prior conversation already
+  names the structural change and its scope: read the affected flow and the reasons
+  for the current shape, enter step 4 with that choice, and follow step 5. Do not
+  repeat candidate discovery or require another selection. A file name alone does
+  not settle an unclear structural goal; use `prompt-refine` for decisions that
+  change the work.
+
+Before implementing either path, read [Refactoring](references/refactoring.md).
+It defines the behavior pin, equivalence proof and reader-load comparison. Load
+`readable-code` for the changed code. This skill adds no model panel or permission
+for commits, activation, PRs or other delivery actions.
 
 ## Vocabulary
 
@@ -74,10 +90,11 @@ Three tests decide most candidates:
 
    If the user rejects the candidate for a reason a later run would need, record it where step 1 reads (the notes directory or a short ADR) so it is not proposed again.
 
-5. **Make the change.** Through `keel test -- <cmd>`:
-   - write tests at the new interface for the behavior callers rely on and run them against the current code: they pass before any restructuring (they pin behavior, they are not red-first bug tests);
-   - restructure; the same tests pass after, and so does the existing suite;
-   - **replace, don't layer**: delete tests of the old shallow modules only where a new interface test covers the same behavior, and list each pair in the reading guide.
+5. **Make the change.** Follow the behavior pin and equivalence procedure in
+   [Refactoring](references/refactoring.md), running tests through
+   `keel test -- <cmd>`. Replace tests of old shallow modules only where an
+   observable-boundary test covers the same behavior; list each pair in the
+   reading guide.
 
    A behavior bug found on the way is not fixed here; it becomes its own change with a red test (K3). Ship through `/lens-review` and ship-gate like any other diff.
 
@@ -85,7 +102,7 @@ Three tests decide most candidates:
 
 - [K4] Run only on an explicit request, scoped to one module or the hot-spot list; never as a repo-wide sweep.
 - [K5] One candidate per diff, structure only: observable behavior, outputs and error modes stay the same; a behavior fix found on the way is a separate change.
-- [K3] Tests at the new interface pass on the code before the restructuring and after it, both runs quoted from `keel test`.
+- [K3] The behavior pin runs before restructuring and after it at a boundary both versions expose, with both runs quoted from `keel test`.
 - [K2] Every candidate cites `file:line` and its deletion-test result; a report with zero candidates states the files and commit range it scanned.
 - [K1] A separate agent checks the report's claims, and `/lens-review` judges the diff; the author approves neither.
 - [K5] A deleted test is listed with the new interface test that covers its behavior; a deletion with no covering test is not made.
@@ -106,6 +123,8 @@ After the change:
 ```
 Improved   : <candidate> — <modules before> → <module after>
 Pinned     : <runner summary before> / <runner summary after> (exit 0)
+Equivalent : <old/new comparison or covered behavior and remaining limits>
+Readability: <concrete caller-trace or decision-ownership improvement>
 Deleted    : <old tests or code, each with its covering test> or "none"
 Review     : <lens-review verdict line>
 ```
@@ -114,5 +133,5 @@ Review     : <lens-review verdict line>
 
 - **No hot spots** (young or quiet repo): ask the user for the area that hurts; do not scan everything.
 - **Every candidate is Speculative**: say so and stop; a weak report is a valid result.
-- **The pinning tests cannot reach the behavior through the new interface**: the seam is in the wrong place; go back to step 4 before restructuring.
-- **A test fails after restructuring**: the change altered behavior; revert to the last green commit and split the step smaller.
+- **The pinning tests cannot exercise both versions**: move the pin to their shared observable boundary or use an explicit old/new adapter in the equivalence harness; do not skip the before run.
+- **A test fails after restructuring**: identify the mismatch, restore only this refactoring's affected changes to the last verified state, and split the step smaller. Preserve unrelated work; do not reset the checkout.

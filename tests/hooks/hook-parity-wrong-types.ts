@@ -68,6 +68,9 @@ function gitGuardCases(sandbox: HookSandbox, repo: string, outcomeFor: OutcomeFo
   const targets: Array<[string, string]> = [
     ["overlay", join(sandbox.overlay, "ledger.tsv")], ["protected store", join(sandbox.data, "state", "keel", "x.json")], ["repo", join(repo, "README.txt")],
   ];
+  const absoluteNotebookTargets: Array<[string, string]> = [
+    ["overlay", join(sandbox.overlay, "ledger.tsv")], ["protected store", join(sandbox.data, "state", "keel", "x.json")],
+  ];
   const guarded: Value[] = [["guarded list", ["git", "commit", "-m", "Written by Claude"]], ["guarded object", { cmd: DENIED_COMMIT }]];
   const family = (name: string, values: readonly Value[], build: (value: unknown) => unknown, cwd = repo) =>
     varied(`git-guard wrong-type ${name}`, GIT_GUARD, cwd, values, build, outcomeFor);
@@ -80,6 +83,8 @@ function gitGuardCases(sandbox: HookSandbox, repo: string, outcomeFor: OutcomeFo
       ...family(`notebook_path from ${where}`, NOT_TEXT, (value) => preToolUse("NotebookEdit", { notebook_path: value, new_source: "x" }, directory), root),
       ...family(`file_path with notebook_path from ${where}`, NOT_TEXT, (value) => preToolUse("NotebookEdit", { file_path: value, notebook_path: "n.ipynb", new_source: "x" }, directory), root),
     ]),
+    ...absoluteNotebookTargets.flatMap(([where, notebook]) =>
+      family(`file_path with absolute notebook_path in ${where}`, NOT_TEXT, (value) => preToolUse("Edit", { file_path: value, notebook_path: notebook, old_string: "a", new_string: "b" }, repo), root)),
     ...targets.flatMap(([where, target]) =>
       family(`edits on ${where}`, NOT_LIST, (value) => preToolUse("MultiEdit", { file_path: target, edits: value }, root), root)),
   ];

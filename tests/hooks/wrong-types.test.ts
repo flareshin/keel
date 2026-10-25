@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { after, before, describe, it } from "node:test";
 import { join } from "node:path";
 import {
-  AGENT_ID, basePayload, bash, ENV_PREFLIGHT, GIT_GUARD, HANDOFF, HookSandbox, MODEL_ASSIGN, preToolUse, REPORT_GATE, SESSION_ID, SHIP_GATE, subagentStop,
+  AGENT_ID, basePayload, bash, ENV_PREFLIGHT, GIT_GUARD, HANDOFF, HookSandbox, KEEL_HOME, MODEL_ASSIGN, preToolUse, REPORT_GATE, SESSION_ID, SHIP_GATE, subagentStop,
 } from "./helpers.ts";
 import type { HookResult } from "./helpers.ts";
 
@@ -71,6 +71,32 @@ describe("git-guard reads a field of the wrong type as a refusal, never as a pas
       assert.match(errorFires("git-guard").at(-1) ?? "", /^FieldTypeError: file_path must be a string, not /);
     });
   }
+
+  for (const [where, rule] of [["overlay", "C-isolation"], ["protected store", "K1"], ["live checkout", "C-isolation"]] as const) {
+    const notebook = () => ({ overlay: join(sandbox.overlay, "ledger.tsv"), "protected store": join(sandbox.data, "state", "keel", "x.json"), "live checkout": join(KEEL_HOME, "README.md") })[where];
+    for (const [label, filePath] of [["number", 5], ["true", true], ["object", { k: "v" }], ["list", ["x"]], ["false", false], ["zero", 0], ["empty list", []], ["empty object", {}]] as const) {
+      it(`denies an Edit whose file_path is ${label} and whose notebook_path is in the ${where}, from a cwd that protects nothing`, () => {
+        const result = run(GIT_GUARD, preToolUse("Edit", { file_path: filePath, notebook_path: notebook(), old_string: "a", new_string: "b" }, repo), repo);
+        assert.equal(result.code, DENY);
+        assert.match(result.stderr, new RegExp(`\\[${rule}\\] git-guard: blocked`));
+        assert.ok(result.stderr.includes(notebook()), result.stderr);
+      });
+    }
+  }
+
+  it("raises for a non-text file_path beside a notebook_path that nothing denies", () => {
+    const result = run(GIT_GUARD, preToolUse("Edit", { file_path: false, notebook_path: join(repo, "README.txt"), old_string: "a", new_string: "b" }, repo), repo);
+    assert.equal(result.code, PASS);
+    assert.match(errorFires("git-guard").at(-1) ?? "", /^FieldTypeError: file_path must be a string, not boolean$/);
+  });
+
+  it("judges the file_path when it is text, whatever the notebook_path holds", () => {
+    const denied = run(GIT_GUARD, preToolUse("Edit", { file_path: join(sandbox.overlay, "ledger.tsv"), notebook_path: 5, old_string: "a", new_string: "b" }, repo), repo);
+    assert.equal(denied.code, DENY);
+    const errorsBefore = errorFires("git-guard").length;
+    assert.equal(run(GIT_GUARD, preToolUse("Edit", { file_path: join(repo, "README.txt"), notebook_path: 5, old_string: "a", new_string: "b" }, repo), repo).code, PASS);
+    assert.equal(errorFires("git-guard").length, errorsBefore);
+  });
 
   it("still falls back to notebook_path when file_path is null or empty", () => {
     for (const filePath of [null, ""]) {

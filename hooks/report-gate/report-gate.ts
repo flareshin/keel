@@ -7,7 +7,7 @@ import * as protocol from "../lib/hookkit/protocol.ts";
 import type { Payload } from "../lib/hookkit/protocol.ts";
 import { dumpsAscii } from "../lib/hookkit/jsonout.ts";
 import { expandUser, joinPath, normalizePath } from "../lib/hookkit/paths.ts";
-import { FieldTypeError, getField, isRecord, textField, textOrEmpty } from "../lib/hookkit/fields.ts";
+import { editTarget, FieldTypeError, getField, isRecord, textField, textOrEmpty } from "../lib/hookkit/fields.ts";
 import { compareCodePoints, MAX_JSON_DEPTH } from "../../measure/lib/measurekit/json.ts";
 import { NonFiniteJsonNumber, parseFiniteJson, parseJson, parsePayload } from "../lib/hookkit/json.ts";
 import { AttributeError, describeError, errorName, pythonTypeName, RecursionError, ValueError } from "../lib/hookkit/errors.ts";
@@ -176,7 +176,9 @@ function readAgentTranscript(path: string | null): AgentTranscript {
 }
 
 function editedPath(toolArgs: Payload): string {
-  return textField(toolArgs, "file_path") || textField(toolArgs, "notebook_path");
+  const { path, unreadable } = editTarget(toolArgs);
+  if (unreadable !== null) throw unreadable;
+  return path;
 }
 
 function main(): number {

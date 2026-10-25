@@ -29,3 +29,19 @@ export function textOrEmpty(value: unknown, field: string): string {
 export function textField(record: Record<string, unknown>, key: string): string {
   return textOrEmpty(getField(record, key), key);
 }
+
+export interface EditTarget {
+  path: string;
+  unreadable: FieldTypeError | null;
+}
+
+export function editTarget(toolArgs: Record<string, unknown>): EditTarget {
+  let unreadable: FieldTypeError | null = null;
+  for (const field of ["file_path", "notebook_path"]) {
+    const value = getField(toolArgs, field);
+    if (value === null || value === undefined || value === "") continue;
+    if (typeof value === "string") return { path: value, unreadable };
+    unreadable ??= new FieldTypeError(`${field} must be a string, not ${jsonTypeName(value)}`);
+  }
+  return { path: "", unreadable };
+}

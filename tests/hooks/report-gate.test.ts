@@ -229,6 +229,23 @@ describe("HandbackReviewEvidenceTest", () => {
     }
   });
 
+  it("handback_recordsTheEvidenceIdOfTheWriteReviewAnswer_whenItIsText", () => {
+    sandbox.env["KEEL_CLI"] = sandbox.stub("keel-answer", { stdout: CLI_RESPONSE });
+    assert.equal(handback(PASS_REPORT).code, 0);
+    assert.equal(sandbox.fires().find((fire) => fire.outcome === "record")?.detail, "review evidence review-20261011T090000Z-1a2b3c4d");
+  });
+
+  for (const [label, answer] of [
+    ["has no evidence_id", '{"repo": "acme/app"}'], ["has a numeric evidence_id", '{"evidence_id": 5}'], ["has a null evidence_id", '{"evidence_id": null}'],
+    ["has a list evidence_id", '{"evidence_id": ["x"]}'], ["is a list", "[1]"], ["is not JSON", "ok"],
+  ] as const) {
+    it(`handback_recordsUnparsedStdout_whenTheWriteReviewAnswer_${label.replaceAll(" ", "_")}`, () => {
+      sandbox.env["KEEL_CLI"] = sandbox.stub("keel-answer", { stdout: answer });
+      assert.equal(handback(PASS_REPORT).code, 0);
+      assert.equal(sandbox.fires().find((fire) => fire.outcome === "record")?.detail, "review evidence (unparsed stdout)");
+    });
+  }
+
   it("handback_sendsNeedsFixes_whenFirstLineIsVerdictNeedsFixes", () => {
     handback(PASS_REPORT.replace("VERDICT: PASS", "VERDICT: NEEDS_FIXES"));
     assert.equal(keelRequests()[0].verdict, "NEEDS_FIXES");

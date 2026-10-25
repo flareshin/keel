@@ -9,7 +9,7 @@ import { readTsv } from "../lib/hookkit/overlay.ts";
 import * as protocol from "../lib/hookkit/protocol.ts";
 import type { Payload } from "../lib/hookkit/protocol.ts";
 import { basename, expandUser, joinPath, normalizePath } from "../lib/hookkit/paths.ts";
-import { FieldTypeError, getField, isNonEmptyString, isRecord, jsonTypeName, textField } from "../lib/hookkit/fields.ts";
+import { editTarget, FieldTypeError, getField, isNonEmptyString, isRecord, jsonTypeName, textField } from "../lib/hookkit/fields.ts";
 import { partition, SPACE_CHARS, SPACE_CLASS, splitlines, testCaseFolded, trimSpace, truncate, WORD_BOUNDARY } from "../lib/hookkit/text.ts";
 import { compareCodePoints } from "../../measure/lib/measurekit/json.ts";
 import { globMatches } from "../../lib/evidence/glob.ts";
@@ -165,37 +165,29 @@ function refuseNonTextCwd(payload: Payload): void {
   textField(payload, "cwd");
 }
 
-interface EditTarget {
-  field: string;
-  value: unknown;
-}
-
-function editTarget(toolArgs: Payload): EditTarget {
-  const filePath = getField(toolArgs, "file_path");
-  if (filePath !== null && filePath !== "") return { field: "file_path", value: filePath };
-  return { field: "notebook_path", value: getField(toolArgs, "notebook_path") };
-}
-
 function checkEdit(toolArgs: Payload, cwd: string): Violation[] {
-  const { field, value: target } = editTarget(toolArgs);
-  if (target === null || target === "") return [];
-  const targetIsText = typeof target === "string";
-  const shown = targetIsText ? target : NOT_TEXT_PATH;
-  const path = normalizePath(targetIsText ? joinPath(cwd, expandUser(shown)) : cwd);
+  const { path: target, unreadable } = editTarget(toolArgs);
+  if (target === "" && unreadable === null) return [];
   const edits = getField(toolArgs, "edits");
-  const editsAreMalformed = edits !== null && !Array.isArray(edits);
   const text = editedText(toolArgs, Array.isArray(edits) ? edits : []);
+  const judged: Array<[shown: string, path: string]> = [];
+  if (target !== "") judged.push([target, normalizePath(joinPath(cwd, expandUser(target)))]);
+  if (unreadable !== null) judged.push([NOT_TEXT_PATH, normalizePath(cwd)]);
+  const found = unique(judged.flatMap(([shown, path]) => editViolations(shown, path, text)));
+  if (found.length > 0) return found;
+  if (unreadable !== null) throw unreadable;
+  if (edits !== null && !Array.isArray(edits)) throw new TypeError(`edits is not a list: '${pythonTypeName(edits)}'`);
+  return found;
+}
+
+function editViolations(shown: string, path: string, text: string): Violation[] {
   const violations: Violation[] = [];
   const rule = new ProtectedStore().ruleFor(path);
   if (rule) violations.push({ ruleId: rule, text: fillIn(PROTECTED_TEXT[rule] ?? "", shown) });
   const liveRoot = new LiveCheckouts().rootOf(path);
   if (liveRoot) violations.push(liveViolation(shown, liveRoot));
   if (isClaudeSettingsFile(path) && DISABLE_HOOKS_RE.test(text)) violations.push(disableHooksViolation(shown));
-  const found = [...violations, ...knownValueViolations(() => knownvalues.numberedLines(shown, text))];
-  if (found.length > 0) return found;
-  if (!targetIsText) throw new FieldTypeError(`${field} must be a string, not ${jsonTypeName(target)}`);
-  if (editsAreMalformed) throw new TypeError(`edits is not a list: '${pythonTypeName(edits)}'`);
-  return found;
+  return [...violations, ...knownValueViolations(() => knownvalues.numberedLines(shown, text))];
 }
 
 function fillIn(template: string, value: string): string {

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { ccVersion } from "../../hooks/lib/hookkit/contract.ts";
-import { FieldTypeError, isNonEmptyString, jsonTypeName, textField, textOrEmpty } from "../../hooks/lib/hookkit/fields.ts";
+import { editTarget, FieldTypeError, isNonEmptyString, jsonTypeName, textField, textOrEmpty } from "../../hooks/lib/hookkit/fields.ts";
 import { FireLog } from "../../hooks/lib/hookkit/fires.ts";
 import * as protocol from "../../hooks/lib/hookkit/protocol.ts";
 import { roleOf } from "../../hooks/lib/hookkit/transcript.ts";
@@ -132,4 +132,34 @@ describe("ccVersion with a session of the wrong type", () => {
       sandbox.close();
     }
   });
+});
+
+describe("editTarget", () => {
+  it("prefersTheFilePath_whenItIsText_andIgnoresTheNotebookPathBehindIt", () => {
+    for (const notebook of [undefined, null, "", "n.ipynb", 5, ["x"]]) {
+      assert.deepEqual(editTarget({ file_path: "a.py", notebook_path: notebook }), { path: "a.py", unreadable: null });
+    }
+  });
+
+  it("fallsBackToTheNotebookPath_whenTheFilePathIsMissingNullOrEmpty", () => {
+    for (const filePath of [undefined, null, ""]) {
+      assert.deepEqual(editTarget({ file_path: filePath, notebook_path: "n.ipynb" }), { path: "n.ipynb", unreadable: null });
+    }
+    assert.deepEqual(editTarget({}), { path: "", unreadable: null });
+  });
+
+  for (const [label, value, typeName] of NOT_TEXT) {
+    it(`keepsTheTextNotebookPathAndReportsTheFilePath_when_${label.replace(" ", "_")}`, () => {
+      const target = editTarget({ file_path: value, notebook_path: "n.ipynb" });
+      assert.equal(target.path, "n.ipynb");
+      assert.ok(target.unreadable instanceof FieldTypeError);
+      assert.equal(target.unreadable.message, `file_path must be a string, not ${typeName}`);
+    });
+
+    it(`reportsTheFirstNonTextPathWithNoPath_when_${label.replace(" ", "_")}`, () => {
+      assert.equal(editTarget({ file_path: value }).unreadable?.message, `file_path must be a string, not ${typeName}`);
+      assert.equal(editTarget({ notebook_path: value }).unreadable?.message, `notebook_path must be a string, not ${typeName}`);
+      assert.equal(editTarget({ file_path: value, notebook_path: ["y"] }).unreadable?.message, `file_path must be a string, not ${typeName}`);
+    });
+  }
 });

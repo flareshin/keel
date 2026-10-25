@@ -29,6 +29,10 @@ function judgedWhereTheCallStarts(rule: string): (label: string) => TsOutcome {
   return () => ({ code: 2, stderrIncludes: `[${rule}] git-guard: blocked`, firesInclude: NOT_A_PATH });
 }
 
+function judgedByTheNotebookPath(rule: string): (label: string) => TsOutcome {
+  return () => ({ code: 2, stderrIncludes: `[${rule}] git-guard: blocked` });
+}
+
 function pathRules(name: string, field: string, labels: readonly string[]): Rule[] {
   return [
     [`git-guard wrong-type ${name} from overlay`, labels, judgedWhereTheCallStarts("C-isolation")],
@@ -50,6 +54,8 @@ const RULES: readonly Rule[] = [
   ["git-guard wrong-type file_path with notebook_path from overlay", WRONG_TYPE_LABELS, judgedWhereTheCallStarts("C-isolation")],
   ["git-guard wrong-type file_path with notebook_path from protected store", WRONG_TYPE_LABELS, judgedWhereTheCallStarts("K1")],
   ["git-guard wrong-type file_path with notebook_path from repo", WRONG_TYPE_LABELS, readFailure("file_path", 0)],
+  ["git-guard wrong-type file_path with absolute notebook_path in overlay", TRUTHY_WRONG_TYPE_LABELS, judgedByTheNotebookPath("C-isolation")],
+  ["git-guard wrong-type file_path with absolute notebook_path in protected store", TRUTHY_WRONG_TYPE_LABELS, judgedByTheNotebookPath("K1")],
   ["git-guard wrong-type edits on repo", ["zero", "false", "empty string", "empty object"], () => ({ code: 0, firesInclude: "TypeError: edits is not a list" })],
   ["ship-gate wrong-type command", WRONG_TYPE_LABELS, () => ({ code: 0, stderrIncludes: "FieldTypeError: command must be a string" })],
   ["ship-gate wrong-type command", GUARDED_LABELS, () => ({ code: 2, stderrIncludes: "FieldTypeError: command must be a string" })],

@@ -245,10 +245,13 @@ Codex adapter (`codex/`) drop their Python emulation and run on plain Node behav
       judged as text; `["git", "commit", "-m", "..."]` passed, and a nested list holding a quote was judged on its repr].
       A `cwd` that is not text is judged as the process directory and raises only when nothing denied [a number, `true`, a list
       or an object became a relative directory named after its repr; `0`, `false`, `[]` and `{}` were the process directory].
-      A `file_path` or `notebook_path` that is not text is judged as the call's `cwd` and raises when nothing denied, so a call
-      from the live checkout, the overlay or `state/keel` is still denied, shown as `(a path that is not text)` [`0`, `false`, `[]`
-      and `{}` read as no path and passed; the others were judged as a path named after their repr]; `null` and `""` still fall
-      back to `notebook_path`. An `edits` of `0`, `false`, `""` or `{}` is malformed like a string [an empty list]. A boundary
+      The edit target is chosen by one rule shared with `report-gate` (`editTarget` in `fields.ts`): a text `file_path` wins; when
+      it is missing, `null`, `""` or not text, a text `notebook_path` is the target. Every rule (protected store, live checkout,
+      overlay, Claude settings, known values) judges that target, and a `file_path` or `notebook_path` that is not text is also
+      judged as the call's `cwd` (shown as `(a path that is not text)`), so a call from or into the live checkout, the overlay or
+      `state/keel` is still denied. A non-text path raises only when nothing denied [`0`, `false`, `[]` and `{}` read as no path, so
+      the `notebook_path` beside them decided; a truthy one was judged as a relative path named after its repr, and the
+      `notebook_path` beside it was never read, so it passed]. An `edits` of `0`, `false`, `""` or `{}` is malformed like a string [an empty list]. A boundary
       report whose `hits` is `false`, `0`, `""` or `{}` fails closed like any other non-list [it was an empty list], and a hit
       whose `file`, `line` or `rule` is neither a string nor a number fails closed [it was printed with `str()`]. A `tool_name`
       that is not text names no tool, as before.
@@ -262,10 +265,11 @@ Codex adapter (`codex/`) drop their Python emulation and run on plain Node behav
       text is shown as `?` (or by its `context`).
     - `report-gate`: a `session_id`, `agent_id`, `transcript_path` or `agent_transcript_path` that is not text, a
       `tool_input.message` that is not text, and a transcript entry whose `message.role`, tool name, Bash `command` or edited
-      path is not text, are refused as unreadable (a handback is denied, a stop is blocked, `could not read this report`, K2) [they
+      path (the same `editTarget` rule: a non-text `file_path` or `notebook_path` of an edit tool) is not text, are refused as unreadable (a handback is denied, a stop is blocked, `could not read this report`, K2) [they
       were read through `str()`; `0`, `false`, `[]` and `{}` as absent, so an agent whose id was `0` was not checked at all].
       A `stop_hook_active`, or a stored `ev` or `hb`, excuses the report only as exactly `true` [`"yes"`, `1`, `[1]` and `{"k": 1}`
-      counted]. A fire's `session` is `-` unless it is non-empty text.
+      counted]. A fire's `session` is `-` unless it is non-empty text. The fire for a written review records `review evidence (unparsed stdout)`
+      when the `keel evidence write-review` answer has no text `evidence_id` [it recorded `None` or the number].
     - `model-assign`: `resumeFromRunId` skips the workflow check only as a non-empty string [`true`, a number, a list or an
       object did, so a script without a model passed]; a `scriptPath` that is not text is left out of the deny message. A
       `subagent_type`, `prompt`, `description`, `model` or `effort` of an `Agent` or `Task` call that is not text logs an `error`
@@ -284,14 +288,14 @@ Codex adapter (`codex/`) drop their Python emulation and run on plain Node behav
     of those runs, stderr, stdout and every written file, is still compared, and the test fails on a recorded Python
     deny that passes in node. Its adversarial set adds four `MultiEdit` payloads with a string or object `edits` aimed at the
     overlay and at `state/keel`, with the outcome of the previous release's hook recorded for them. `tests/ship-gate/ship-gate-parity.test.ts` lists 25 more rows the same way.
-    The wrong-type payloads (476 in `tests/hooks/hook-parity-wrong-types.ts` for `git-guard`, `ship-gate`, `env-preflight`,
+    The wrong-type payloads (494 in `tests/hooks/hook-parity-wrong-types.ts` for `git-guard`, `ship-gate`, `env-preflight`,
     `model-assign`, `handoff` and `report-gate`: each field that holds text or a flag, set to an object, a list, a number,
-    `true`, `false`, `0`, `[]`, `{}` or `null`) are recorded from the hooks as they were before the typed readers. 317 end
+    `true`, `false`, `0`, `[]`, `{}` or `null`) are recorded from the hooks as they were before the typed readers. 325 end
     differently and are listed in `tests/hooks/hook-parity-wrong-type-divergences.ts` with the exit and a text the hook must give
-    (every unchanged one is compared in full, and none of the 476 lets a recorded deny pass). The three `git-guard command nested
+    (every unchanged one is compared in full, and none of the 494 lets a recorded deny pass; the corpus includes an `Edit` whose `file_path` is of the wrong type beside an absolute `notebook_path` in the overlay or in `state/keel`, from a `cwd` that protects nothing). The three `git-guard command nested
     in N lists` payloads below the depth bound are listed too: a command that is a list used to be judged on its Python `str()`
     text, in which a quote inside an element let the rest of the element run as shell words (`F-hookskip` denied it), and it is
-    now refused as an internal error. The run reports 344 recorded + 766 adversarial cases, 457 listed divergences (137 before),
+    now refused as an internal error. The run reports 344 recorded + 784 adversarial cases, 465 listed divergences (137 before),
     0 mismatches, deny-to-pass 0; fire logs written with compact JSON (`ship-gate`) now have their `ts` masked as well.
     `tests/ship-gate/ship-gate-parity.test.ts` lists 61 more rows (146 in all): a `command`, `cwd` or `session_id` that is not
     text, and `gh` answers whose `statusCheckRollup`, a check or `baseRefName` has the wrong type; 1,757 cases, 0 mismatches,

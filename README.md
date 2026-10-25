@@ -279,7 +279,7 @@ whose blocked hooks would stop them.
 ```
 PRINCIPLES.md  ledger.tsv     principles and the keel ledger
 bin/           keel, link     evidence CLI, link/merge tool
-hooks/         core hooks     plus hooks/lib/hookkit (shared shell parser)
+hooks/         core hooks     plus hooks/lib/hookkit (shell parser, shared helpers)
 lib/           evidence/, link/
 measure/       run, smoke, propose, boundary, weekly, evals/
 githooks/      pre-commit, pre-push (boundary scan)
@@ -311,7 +311,9 @@ npm ci   # once, before the typecheck
 npx tsc -p tsconfig.json
 ```
 
-The parity harnesses compare the TypeScript with outputs recorded from the earlier Python implementation (Python 3.15.0, macOS) and stored as fixtures under `tests/fixtures/python`, `tests/hooks/fixtures`, `tests/ship-gate/fixtures` and `tests/skills/fixtures`. `measure`, `bin/link` and `lib/evidence` run on plain Node behavior instead (`lib/evidence` keeps the few spellings the ship-gate hook recording still pins, listed in the changelog); their tests keep the recorded outcomes (exit code, JSON fields, written files) in `tests/fixtures/measure`, `tests/fixtures/link` and `tests/fixtures/evidence`. The fixtures are frozen: the tools that recorded them needed the Python, which is gone, and survive only in the git history of the commits that introduced the fixtures. The errno-wording checks were recorded on macOS and skip on other platforms.
+No keel code emulates Python: no `py*.ts` module or argparse clone is left, and `measure`, `bin/link`, `lib/evidence`, `codex/` and `hooks/lib/hookkit` run on plain Node behavior. A few outputs keep Python's spelling on purpose, for example the hooks' JSON spacing and error class names.
+
+The parity harnesses of the hooks, the ship-gate hook, the shell parser, `rule-checks` and the Codex adapter compare the TypeScript with outputs recorded from the earlier Python implementation (Python 3.15.0, macOS) and stored as fixtures under `tests/fixtures/python`, `tests/hooks/fixtures`, `tests/ship-gate/fixtures` and `tests/skills/fixtures`. Each case whose outcome changed since is listed with the result it must give. The wrong-type payloads added after 1.0.0 (in `tests/hooks/fixtures/hook-parity/adversarial.json` and `tests/fixtures/python/codex-hook-parity.json.gz`) were recorded from the TypeScript hooks and adapter as they were before the typed readers replaced `hooks/lib/hookkit/pycompat.ts`. `measure`, `bin/link` and `lib/evidence` keep only the recorded outcomes (exit code, JSON fields, written files) in `tests/fixtures/measure`, `tests/fixtures/link` and `tests/fixtures/evidence`, and the Codex adapter pins its input boundaries against the old adapter's outcomes in `tests/fixtures/codex`. The fixtures are frozen: the tools that recorded them needed the Python, which is gone, and survive only in the git history of the commits that introduced the fixtures. The Codex path test that resolves through `/tmp` and `/private` was recorded on macOS and skips on other platforms.
 
 To enable the boundary-scan git hooks in a checkout, run `git config core.hooksPath githooks`.
 

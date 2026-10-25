@@ -96,6 +96,25 @@ describe("readCoverage", () => {
     assert.deepEqual(spans.filter((span) => span.start < catchEnd && catchStart < span.end), [])
   })
 
+  it("readCoverage_keepsTheExecutedSpansOfEveryProcessThatRanAFile", () => {
+    write("src/branch.js", [
+      "if (process.argv[2] === 'yes') {",
+      "  console.log('took yes')",
+      "} else {",
+      "  console.log('took no')",
+      "}",
+    ])
+    for (const answer of ["yes", "no"]) {
+      const result = spawnSync(process.execPath, [path.join(repo, "src/branch.js"), answer], { env: { ...process.env, NODE_V8_COVERAGE: coverageDir } })
+      assert.equal(result.status, 0)
+    }
+    const source = fs.readFileSync(path.join(repo, "src/branch.js"), "utf8")
+    const spans = readCoverage(coverageDir, repo).executedSpans.get("src/branch.js") ?? []
+    const covered = (text: string): boolean => spans.some((span) => span.start <= source.indexOf(text) && source.indexOf(text) + text.length <= span.end)
+
+    assert.deepEqual([covered("'took yes'"), covered("'took no'")], [true, true])
+  })
+
   it("readCoverage_includesLinesRunInASpawnedNodeChild_becauseTheChildInheritsTheCoverageDirectory", () => {
     write("src/child.js", [
       "const unused = () => 'never'",

@@ -10,7 +10,7 @@ import { GitError, isGitRepo, repoKey, snapshotTree } from "./lib/measurekit/git
 import { FAIL, PASS } from "./lib/measurekit/metrics.ts"
 import { assertion, SmokeContext } from "./lib/measurekit/smoke_context.ts"
 import type { Assertion } from "./lib/measurekit/smoke_context.ts"
-import { checkBoundary, checkDangling, checkFileCaps, checkFiresRuleIds, checkIdTagging, checkLinkIntegrity } from "./lib/measurekit/smoke_files.ts"
+import { checkBoundary, checkContractMisses, checkDangling, checkFileCaps, checkFiresRuleIds, checkIdTagging, checkLinkIntegrity } from "./lib/measurekit/smoke_files.ts"
 import { checkExpiry, checkIdUnique, checkLedgerFormat, checkMetrics, checkRowCaps, checkRuleOfTwo } from "./lib/measurekit/smoke_ledger.ts"
 import { checkModTrust } from "./lib/measurekit/smoke_mods.ts"
 import { checkWiredFires } from "./lib/measurekit/smoke_wired.ts"
@@ -27,7 +27,7 @@ const COMMAND: CommandSpec = {
 }
 const CHECKS: ((ctx: SmokeContext) => Assertion[])[] = [
   checkLedgerFormat, checkIdUnique, checkRowCaps, checkFileCaps, checkIdTagging,
-  checkFiresRuleIds, checkRuleOfTwo, checkMetrics, checkExpiry, checkBoundary,
+  checkFiresRuleIds, checkContractMisses, checkRuleOfTwo, checkMetrics, checkExpiry, checkBoundary,
   checkLinkIntegrity, checkDangling, checkWiredFires, checkModTrust,
 ]
 const ASSERTIONS_PER_ROW = 2

@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, it } from "node:test"
 import fs from "node:fs"
 import path from "node:path"
 
-import { CHECKOUT, FUTURE, PAST, charterRow, ledgerRow, readText } from "./helpers.ts"
+import { addDays } from "../../measure/lib/measurekit/dates.ts"
+import { CHECKOUT, FUTURE, NOW_TS, PAST, TODAY, charterRow, ledgerRow, readText } from "./helpers.ts"
 import { SmokeHarness } from "./smoke_helpers.ts"
 
 let harness: SmokeHarness
@@ -301,6 +302,30 @@ describe("file checks", () => {
     harness.box.write("overlay/git-guard/repo-rules.tsv", "origin_glob\taction\tpattern\trule_id\tmessage\nacmecorp/*\tdeny-path\t*.sql\tO-files\tNo SQL.\n")
     harness.box.fire("O-files")
     assertStatus("fires-rule-ids", "all", "PASS")
+  })
+
+  const contractMisses = (count: number, ts: string, hook: string = "report-gate") => {
+    for (let index = 0; index < count; index += 1) {
+      harness.box.appendLog("keel-fires.jsonl", { ts, rule_id: "K2", hook, outcome: "contract-miss", session: "-" })
+    }
+  }
+
+  it("contractMissCap_passes_whenTodayAndYesterdayHoldTwentyContractMisses", () => {
+    contractMisses(15, NOW_TS)
+    contractMisses(5, addDays(TODAY, -1) + "T09:00:00Z", "ship-gate")
+    harness.box.fire("K2", NOW_TS, "warn")
+    assertStatus("contract-miss-cap", "all", "PASS", "20 in the last 2 days (cap 20)")
+  })
+
+  it("contractMissCap_failsNamingEachHook_whenTodayAndYesterdayHoldMoreThanTwenty", () => {
+    contractMisses(19, NOW_TS)
+    contractMisses(2, addDays(TODAY, -1) + "T09:00:00Z", "ship-gate")
+    assertStatus("contract-miss-cap", "all", "FAIL", "21 in the last 2 days (cap 20): report-gate 19; ship-gate 2")
+  })
+
+  it("contractMissCap_ignoresContractMissesOlderThanYesterday", () => {
+    contractMisses(30, addDays(TODAY, -2) + "T23:59:59Z")
+    assertStatus("contract-miss-cap", "all", "PASS", "0 in the last 2 days (cap 20)")
   })
 
   it("boundary_fails_whenATrackedFileHitsTheLexicon", () => {

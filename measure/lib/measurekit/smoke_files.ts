@@ -7,9 +7,10 @@ import { readJsonl, readTsvRecords, TsvError } from "./datafiles.ts"
 import { entryExists, InvalidUtf8Error, isDir, isExecutable, isFile, isSymlink, isSystemError, readUtf8, splitLines } from "./files.ts"
 import { GitError, isGitRepo, runGit } from "./gitutil.ts"
 import { iterRegistrations } from "./hook_settings.ts"
+import { addDays } from "./dates.ts"
 import { compareCodePoints, displayText, isJsonObject, parseJson } from "./json.ts"
 import type { JsonObject, JsonValue } from "./json.ts"
-import { FAIL, PASS, stderrExcerpt, WARN } from "./metrics.ts"
+import { FAIL, isWithinWindow, PASS, stderrExcerpt, WARN } from "./metrics.ts"
 import { runProcess, TimeoutExpired } from "./subprocess.ts"
 import type { RunResult } from "./subprocess.ts"
 import { assertion, firstItems } from "./smoke_context.ts"
@@ -25,6 +26,8 @@ const FENCE = "```"
 const LINKED_DIRS = ["skills", "commands", "agents", "workflows", "bin", "mcp"]
 const REPO_RULES_HEADER = ["origin_glob", "action", "pattern", "rule_id", "message"]
 const LINK_CHECK_TIMEOUT_SECONDS = 60
+const CONTRACT_MISS_CAP = 20
+const CONTRACT_MISS_WINDOW_DAYS = 2
 const EMPTY_DATA_DIR_KINDS = new Set(["link-missing", "copy-missing", "settings-drift"])
 const EMPTY_DATA_DIR_CLAUDE_MD = ["claude-md-drift", "generated CLAUDE.md is missing"]
 
@@ -162,6 +165,21 @@ export function checkFiresRuleIds(ctx: SmokeContext): Assertion[] {
   const unknown = [...new Set(records.filter((record) => !validIds.has(record["rule_id"] as string)).map((record) => displayText(record["rule_id"])))].sort()
   if (unknown.length > 0) return [assertion("fires-rule-ids", "all", FAIL, "unknown rule_ids: " + unknown.join(", "))]
   return [assertion("fires-rule-ids", "all", PASS, `${records.length} fires lines`)]
+}
+
+export function checkContractMisses(ctx: SmokeContext): Assertion[] {
+  const since = addDays(ctx.today, 1 - CONTRACT_MISS_WINDOW_DAYS)
+  const { records } = readJsonl(path.join(ctx.dataDir, "logs", "keel-fires.jsonl"))
+  const misses = records.filter((record) => record["outcome"] === "contract-miss" && isWithinWindow(record, since))
+  const summary = `${misses.length} in the last ${CONTRACT_MISS_WINDOW_DAYS} days (cap ${CONTRACT_MISS_CAP})`
+  if (misses.length <= CONTRACT_MISS_CAP) return [assertion("contract-miss-cap", "all", PASS, summary)]
+  const perHook = new Map<string, number>()
+  for (const miss of misses) {
+    const hook = displayText(miss["hook"])
+    perHook.set(hook, (perHook.get(hook) ?? 0) + 1)
+  }
+  const counts = [...perHook].sort(([left], [right]) => compareCodePoints(left, right)).map(([hook, count]) => `${hook} ${count}`)
+  return [assertion("contract-miss-cap", "all", FAIL, `${summary}: ${firstItems(counts)}`)]
 }
 
 function repoRuleIds(overlayDir: string): Set<string> {

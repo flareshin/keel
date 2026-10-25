@@ -45,6 +45,19 @@ describe("measure run", () => {
     assert.equal(result.count, 1)
   })
 
+  it("run_skipsWarnLines_becauseTheHookLetTheActionThroughWithoutADecision", () => {
+    givenKeelRows(ledgerRow("C-demo", { grace_until: PAST }))
+    box.fire("C-demo", NOW_TS, "warn")
+    box.fire("C-demo", NOW_TS, "warn")
+    let [completed, result] = box.runJson("run", ["C-demo"])
+    assert.deepEqual([completed.status, result.count, result.status], [1, 0, "FAIL"])
+    box.fire("C-demo", NOW_TS, "deny")
+    box.fire("C-demo", NOW_TS, "pass")
+    box.fire("C-demo", NOW_TS, "record")
+    ;[completed, result] = box.runJson("run", ["C-demo"])
+    assert.deepEqual([completed.status, result.count, result.status], [0, 3, "PASS"])
+  })
+
   it("run_includesOlderFires_whenSinceIsGiven", () => {
     givenKeelRows(ledgerRow("C-demo"))
     box.fire("C-demo", "2020-01-02T00:00:00Z")

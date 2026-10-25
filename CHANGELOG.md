@@ -312,6 +312,17 @@ Codex adapter (`codex/`) drop their Python emulation and run on plain Node behav
   `agent_transcript_path` when the field is absent; a field that is present still wins. It no longer logs a K2
   `contract-miss` for the missing field when that text is found, when the report was handed back this turn, or when
   the agent answered with `StructuredOutput`, and a `StructuredOutput` agent no longer logs `no final text to judge`.
+- A `fires:<rule_id>` metric no longer counts `warn` lines, alongside `error` and `contract-miss`: a warn records a
+  hook that let the action through without judging it (for K2, `no final text to judge`), so 2,552 such lines had
+  made K2 look exercised. Every keel and overlay `fires:` row that logged warn lines on the owner's machine also
+  logs deny, pass or record lines, so none drops to zero.
+
+### Added
+- `measure/smoke` check `contract-miss-cap`: more than 20 `contract-miss` fires lines dated today or yesterday FAILs,
+  with the count per hook, so a Claude Code payload change shows up within a day instead of in a later review. Every
+  `contract-miss` line logged so far came from the `last_assistant_message` drift fixed above; ship-gate has logged
+  none, so 20 over two days leaves room for a stray miss and still catches drift, which logged 96 to 1,046 a day.
+  The check reads red on a machine until the `report-gate` fix above is linked and two days have passed.
 
 ### Removed
 - The hook module `hooks/lib/hookkit/pyruntime.ts`, its Python error-class table and the `pythonList` and `stripChars`

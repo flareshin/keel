@@ -19,7 +19,7 @@ export const DEFAULT_WINDOW_DAYS = 60
 const RUNNER_TIMEOUT_SECONDS = 120
 const ISO_DATE_LENGTH = 10
 const STDERR_EXCERPT_CHARS = 200
-const NON_DECISION_OUTCOMES = new Set(["error", "contract-miss"])
+const NON_DECISION_OUTCOMES = new Set(["error", "contract-miss", "warn"])
 
 export class MetricError extends Error {}
 
@@ -73,7 +73,7 @@ function evalItems(evalId: string, since: string): MetricItems {
   return [items.length, items]
 }
 
-function isWithinWindow(record: JsonObject, since: string): boolean {
+export function isWithinWindow(record: JsonObject, since: string): boolean {
   const timestamp = record["ts"]
   return typeof timestamp === "string" && timestamp.slice(0, ISO_DATE_LENGTH) >= since
 }

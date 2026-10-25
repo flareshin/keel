@@ -138,17 +138,15 @@ class AgentTranscript {
         for (const block of blocks) {
           this.readToolUse(textOrEmpty(getField(block, "name"), "tool name").toLowerCase(), getField(block, "input"));
         }
-        this.readFinalText(blocks.length > 0 ? null : textOf(contentOf(entry)));
+        if (blocks.length > 0) this.finalText = null;
+        else this.appendFinalText(textOf(contentOf(entry)));
       }
     }
   }
 
-  private readFinalText(text: string | null): void {
-    if (text === null) {
-      this.finalText = null;
-    } else if (trimSpace(text) !== "") {
-      this.finalText = this.finalText === null ? text : `${this.finalText}\n${text}`;
-    }
+  private appendFinalText(text: string | null): void {
+    if (text === null || trimSpace(text) === "") return;
+    this.finalText = this.finalText === null ? text : `${this.finalText}\n${text}`;
   }
 
   private readBrief(brief: string): void {
@@ -260,7 +258,8 @@ function judgeStop(payload: Payload, fires: FireLog): number {
   const missing = missingFields(payload, "agent_id", "agent_transcript_path", "last_assistant_message");
   const agentTranscript = textField(payload, "agent_transcript_path");
   const transcript = agentTranscript && existsSync(agentTranscript) ? whileDeciding(() => readAgentTranscript(agentTranscript)) : null;
-  const report = withoutReportMarkers(textOf(getField(payload, "last_assistant_message")) ?? transcript?.finalText ?? null);
+  const payloadReport = missing.includes("last_assistant_message") ? null : textOf(getField(payload, "last_assistant_message"));
+  const report = withoutReportMarkers(payloadReport ?? transcript?.finalText ?? null);
   const reportedElsewhere = handedBack || transcript?.usedStructuredOutput === true;
   const unrecovered = report !== null || reportedElsewhere ? missing.filter((field) => field !== "last_assistant_message") : missing;
   if (unrecovered.length > 0) fires.append("K2", OUTCOME, { detail: missDetail(payload, unrecovered) });

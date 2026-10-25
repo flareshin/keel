@@ -457,6 +457,29 @@ describe("SubagentStopTest", () => {
     assert.deepEqual(contractMisses(), []);
   });
 
+  it("stop_blocksWithK2_whenPayloadLastAssistantMessageIsEmptyAndTranscriptEndsWithAnUnprovenReport", () => {
+    const path = withFinalText(sandbox.agentTranscript(`[SCOPE] ${scope}\nDo the task.`, [editIn(scope, "a.py")]), "Changed it.");
+    const result = stop("", { agentTranscript: path });
+    assert.equal(result.json().decision, "block");
+    assert.ok(result.json().reason.startsWith("[K2] report-gate: "), result.json().reason);
+    assert.deepEqual(contractMisses(), []);
+  });
+
+  it("stop_logsTheContractMiss_whenTheOnlyTextAfterTheLastToolUseIsWhitespace", () => {
+    const path = withFinalText(sandbox.agentTranscript(`[SCOPE] ${scope}\nDo the task.`, [editIn(scope, "a.py")]), " \n\t");
+    assert.equal(stop(null, { agentTranscript: path }).stdout, "");
+    assert.deepEqual(sandbox.stubCalls("keel"), []);
+    assert.equal(contractMisses().length, 1);
+  });
+
+  it("stop_keepsTheFinalText_whenALaterAssistantEntryHasNoReadableContent", () => {
+    const path = withFinalText(sandbox.agentTranscript(`[SCOPE] ${scope}\nDo the task.`, [editIn(scope, "a.py")]), "Changed it.");
+    sandbox.write(path, readFileSync(path, "utf8") + JSON.stringify({ type: "assistant", message: { role: "assistant" } }) + "\n");
+    const result = stop(null, { agentTranscript: path });
+    assert.equal(result.json().decision, "block");
+    assert.deepEqual(contractMisses(), []);
+  });
+
   it("stop_writesEvidenceFromTheTranscriptsFinalText_whenPayloadLacksLastAssistantMessage", () => {
     const path = withFinalText(sandbox.agentTranscript(`[SCOPE] ${scope}\nDo the task.`), FRAMED_PASS_REPORT);
     assert.equal(stop(null, { agentTranscript: path }).code, 0);

@@ -35,6 +35,10 @@ describe("seed ledger", () => {
     assert.ok(lines.every((line) => line.split("\t").length === LEDGER_COLUMNS.length))
   })
 
+  it("seedLedger_givesEveryRowTheSeedGraceDate_soNoRowFailsBeforeTheOthers", () => {
+    for (const rowId of SEED_IDS) assert.equal(seedRow(rowId)["grace_until"], SEED_GRACE_UNTIL, rowId)
+  })
+
   it("seedLedger_passesFormatUniquenessAndCaps", () => {
     const [, result] = box.runJson("smoke", ["--json-only"])
     const relevant = result.assertions.filter((item: { check: string }) => ["ledger-format", "id-unique", "caps"].includes(item.check))

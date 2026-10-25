@@ -51,6 +51,15 @@ function editIn(directory: string, name: string): ToolUse {
   return ["Edit", { file_path: join(directory, name) }];
 }
 
+function withFinalText(path: string, text: string): string {
+  sandbox.write(path, readFileSync(path, "utf8") + JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text }] } }) + "\n");
+  return path;
+}
+
+function appendToolUse(path: string, [name, input]: ToolUse): void {
+  sandbox.write(path, readFileSync(path, "utf8") + JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_2", name, input }] } }) + "\n");
+}
+
 describe("HandbackEvidenceTest", () => {
   it("handback_deniesWithK2_whenVerdictReportHasNoEvidenceToken", () => {
     const result = handback(UNPROVEN_REPORT);
@@ -438,6 +447,52 @@ describe("SubagentStopTest", () => {
   it("stop_logsNoContractMiss_whenPayloadIsComplete", () => {
     stop(PROVEN_REPORT);
     assert.deepEqual(contractMisses(), []);
+  });
+
+  it("stop_blocksWithK2_whenPayloadLacksLastAssistantMessageAndTranscriptEndsWithAnUnprovenReport", () => {
+    const path = withFinalText(sandbox.agentTranscript(`[SCOPE] ${scope}\nDo the task.`, [editIn(scope, "a.py")]), "Changed it.");
+    const result = stop(null, { agentTranscript: path });
+    assert.equal(result.json().decision, "block");
+    assert.ok(result.json().reason.startsWith("[K2] report-gate: "), result.json().reason);
+    assert.deepEqual(contractMisses(), []);
+  });
+
+  it("stop_writesEvidenceFromTheTranscriptsFinalText_whenPayloadLacksLastAssistantMessage", () => {
+    const path = withFinalText(sandbox.agentTranscript(`[SCOPE] ${scope}\nDo the task.`), FRAMED_PASS_REPORT);
+    assert.equal(stop(null, { agentTranscript: path }).code, 0);
+    const requests = keelRequests();
+    assert.equal(requests.length, 1);
+    assert.deepEqual([requests[0].verdict, requests[0].source.via], ["PASS", "SubagentStop"]);
+    assert.deepEqual(contractMisses(), []);
+  });
+
+  it("stop_ignoresTextBeforeTheLastToolUse_whenPayloadLacksLastAssistantMessage", () => {
+    const path = withFinalText(sandbox.agentTranscript(`[SCOPE] ${scope}\nDo the task.`), PASS_REPORT);
+    appendToolUse(path, editIn(scope, "a.py"));
+    const result = stop(null, { agentTranscript: path });
+    assert.equal(result.stdout, "");
+    assert.deepEqual(sandbox.stubCalls("keel"), []);
+    assertFired(sandbox, "K2", "warn", "report-gate");
+    assert.equal(contractMisses().length, 1);
+  });
+
+  it("stop_logsNoContractMiss_whenPayloadLacksLastAssistantMessageAfterAHandback", () => {
+    handback(PASS_REPORT);
+    assert.equal(stop(null).stdout, "");
+    assert.deepEqual(contractMisses(), []);
+  });
+
+  it("stop_logsNoWarnOrContractMiss_whenPayloadLacksLastAssistantMessageAndAgentUsedStructuredOutput", () => {
+    const result = stop(null, { toolUses: [editIn(scope, "a.py"), ["StructuredOutput", { x: 1 }]] });
+    assert.equal(result.stdout, "");
+    assert.deepEqual(sandbox.fires().filter((fire) => fire.outcome === "warn"), []);
+    assert.deepEqual(contractMisses(), []);
+  });
+
+  it("stop_prefersThePayloadMessage_whenBothThePayloadAndTheTranscriptCarryFinalText", () => {
+    const path = withFinalText(sandbox.agentTranscript(`[SCOPE] ${scope}\nDo the task.`, [editIn(scope, "a.py")]), PROVEN_REPORT);
+    const result = stop("Changed it.", { agentTranscript: path });
+    assert.equal(result.json().decision, "block");
   });
 
   it("stop_passes_whenAgentTranscriptNeverWritten", () => {

@@ -123,6 +123,7 @@ class AgentTranscript {
   needsEvidence = false;
   editedFiles = false;
   usedStructuredOutput = false;
+  finalText: string | null = null;
 
   constructor(path: string | null) {
     let briefSeen = false;
@@ -133,10 +134,20 @@ class AgentTranscript {
         this.readBrief(textOf(contentOf(entry)) ?? "");
       }
       if (role === "assistant") {
-        for (const block of toolUses(entry)) {
+        const blocks = toolUses(entry);
+        for (const block of blocks) {
           this.readToolUse(textOrEmpty(getField(block, "name"), "tool name").toLowerCase(), getField(block, "input"));
         }
+        this.readFinalText(blocks.length > 0 ? null : textOf(contentOf(entry)));
       }
+    }
+  }
+
+  private readFinalText(text: string | null): void {
+    if (text === null) {
+      this.finalText = null;
+    } else if (trimSpace(text) !== "") {
+      this.finalText = this.finalText === null ? text : `${this.finalText}\n${text}`;
     }
   }
 
@@ -247,23 +258,24 @@ function judgeStop(payload: Payload, fires: FireLog): number {
     state.save();
   }
   const missing = missingFields(payload, "agent_id", "agent_transcript_path", "last_assistant_message");
-  if (missing.length > 0) fires.append("K2", OUTCOME, { detail: missDetail(payload, missing) });
   const agentTranscript = textField(payload, "agent_transcript_path");
-  const report = withoutReportMarkers(textOf(getField(payload, "last_assistant_message")));
-  if (!agentTranscript || !existsSync(agentTranscript)) {
+  const transcript = agentTranscript && existsSync(agentTranscript) ? whileDeciding(() => readAgentTranscript(agentTranscript)) : null;
+  const report = withoutReportMarkers(textOf(getField(payload, "last_assistant_message")) ?? transcript?.finalText ?? null);
+  const reportedElsewhere = handedBack || transcript?.usedStructuredOutput === true;
+  const unrecovered = report !== null || reportedElsewhere ? missing.filter((field) => field !== "last_assistant_message") : missing;
+  if (unrecovered.length > 0) fires.append("K2", OUTCOME, { detail: missDetail(payload, unrecovered) });
+  if (transcript === null) {
     if (report && verdictOf(report) && hasEvidenceLine(report)) fires.append("K1", "warn", { detail: NO_TRANSCRIPT });
     return protocol.EXIT_PASS;
   }
-  const transcript = whileDeciding(() => readAgentTranscript(agentTranscript));
 
   const fresh = flagScopeViolations(transcript, state, fires);
   if (fresh.length > 0) return protocol.blockStop(scopeMessage(fresh));
-  if (handedBack) return protocol.EXIT_PASS;
+  if (reportedElsewhere) return protocol.EXIT_PASS;
   if (!report || trimSpace(report) === "") {
     if (transcript.needsEvidence) fires.append("K2", "warn", { detail: "no final text to judge" });
     return protocol.EXIT_PASS;
   }
-  if (transcript.usedStructuredOutput) return protocol.EXIT_PASS;
   if (lacksEvidence(report, transcript.needsEvidence, fires)) return protocol.blockStop(evidenceMessage());
   writeReviewEvidence(report, payload, agentTranscript, transcript, "SubagentStop", fires);
   return protocol.EXIT_PASS;

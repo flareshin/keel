@@ -307,6 +307,11 @@ Codex adapter (`codex/`) drop their Python emulation and run on plain Node behav
 - `env-preflight` (`[S-jdk]`) accepts a `java_home` lookup that names a patch release of the required major, such as
   `-v 17.0.20` or `--version=17.0.2`; it already accepted `-v 17` and `-v 17.0`. An open range (`17.0.20+`), a wildcard
   (`17.0.*`), a trailing dot or another major is still denied.
+- `report-gate` on `SubagentStop` judges the subagent's final text again. Claude Code no longer sends
+  `last_assistant_message`, so the hook reads the text the agent wrote after its last tool use from
+  `agent_transcript_path` when the field is absent; a field that is present still wins. It no longer logs a K2
+  `contract-miss` for the missing field when that text is found, when the report was handed back this turn, or when
+  the agent answered with `StructuredOutput`, and a `StructuredOutput` agent no longer logs `no final text to judge`.
 
 ### Removed
 - The hook module `hooks/lib/hookkit/pyruntime.ts`, its Python error-class table and the `pythonList` and `stripChars`

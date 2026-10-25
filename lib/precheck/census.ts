@@ -6,7 +6,7 @@ import { diffEntries } from '../evidence/gitcmd.ts';
 import { materializeTree, runBaseline } from './baseline.ts';
 import type { Baseline } from './baseline.ts';
 import { bindPrecheck, DELETED_BLOB } from './binding.ts';
-import { addedLinesByPath, findConsumers } from './consumers.ts';
+import { addedLinesByPath, findConsumers, SCRIPT_FILE } from './consumers.ts';
 import type { ChangedName } from './consumers.ts';
 import { generateMutants } from './mutants.ts';
 import type { Operator } from './mutants.ts';
@@ -51,6 +51,7 @@ const HOOK_DIFF_MAX_PRIORITY = 3;
 const SNIPPET_LIMIT = 40;
 const ELLIPSIS = '…';
 const MASKED_TEXT = `'${ELLIPSIS}'`;
+const MASKED_PATTERN = `/${ELLIPSIS}/`;
 const REMOVALS = new Set(['', ';']);
 const TEXT_TOKENS = new Set([
   ts.SyntaxKind.StringLiteral,
@@ -58,6 +59,24 @@ const TEXT_TOKENS = new Set([
   ts.SyntaxKind.TemplateHead,
   ts.SyntaxKind.TemplateMiddle,
   ts.SyntaxKind.TemplateTail,
+]);
+const SLASH_TOKENS = new Set([ts.SyntaxKind.SlashToken, ts.SyntaxKind.SlashEqualsToken]);
+const OPERAND_ENDS = new Set([
+  ts.SyntaxKind.Identifier,
+  ts.SyntaxKind.NumericLiteral,
+  ts.SyntaxKind.BigIntLiteral,
+  ts.SyntaxKind.StringLiteral,
+  ts.SyntaxKind.NoSubstitutionTemplateLiteral,
+  ts.SyntaxKind.TemplateTail,
+  ts.SyntaxKind.RegularExpressionLiteral,
+  ts.SyntaxKind.CloseParenToken,
+  ts.SyntaxKind.CloseBracketToken,
+  ts.SyntaxKind.CloseBraceToken,
+  ts.SyntaxKind.ThisKeyword,
+  ts.SyntaxKind.SuperKeyword,
+  ts.SyntaxKind.TrueKeyword,
+  ts.SyntaxKind.FalseKeyword,
+  ts.SyntaxKind.NullKeyword,
 ]);
 const TRIVIA_TOKENS = new Set([
   ts.SyntaxKind.WhitespaceTrivia,
@@ -85,7 +104,7 @@ async function runMutation(repo: string, target: CensusTarget, sourcePaths: stri
   try {
     const baseline = await runBaseline(directory, candidateTests(directory, sourcePaths), BASELINE_TIMEOUT_SECONDS);
     if (baseline.outcome !== 'green') return { outcome: 'stopped', baseline };
-    const sources = new Map(sourcePaths.map((path) => [path, readFileSync(join(directory, path), 'utf8')]));
+    const sources = new Map(sourcePaths.filter((path) => SCRIPT_FILE.test(path)).map((path) => [path, readFileSync(join(directory, path), 'utf8')]));
     const targets = mutantTargets(sources, addedLinesByPath(repo, target.reviewBase, target.tree));
     const hookDiff = sourcePaths.some((path) => path.startsWith(HOOK_DIRECTORY));
     const runnable = hookDiff ? targets.filter((each) => each.mutant.priority <= HOOK_DIFF_MAX_PRIORITY) : targets;
@@ -128,8 +147,11 @@ function codeSnippet(code: string): string {
   let braces = 0;
   let snippet = '';
   let spaced = false;
+  let previous = ts.SyntaxKind.Unknown;
   for (let kind = scanner.scan(); kind !== ts.SyntaxKind.EndOfFileToken; kind = scanner.scan()) {
-    if (kind === ts.SyntaxKind.CloseBraceToken && templateBraces.at(-1) === braces) {
+    if (SLASH_TOKENS.has(kind) && !OPERAND_ENDS.has(previous)) {
+      kind = scanner.reScanSlashToken();
+    } else if (kind === ts.SyntaxKind.CloseBraceToken && templateBraces.at(-1) === braces) {
       kind = scanner.reScanTemplateToken(false);
       if (kind === ts.SyntaxKind.TemplateTail) templateBraces.pop();
     } else if (kind === ts.SyntaxKind.OpenBraceToken) {
@@ -142,8 +164,15 @@ function codeSnippet(code: string): string {
       spaced = snippet !== '';
       continue;
     }
-    snippet += (spaced ? ' ' : '') + (TEXT_TOKENS.has(kind) ? MASKED_TEXT : scanner.getTokenText());
+    snippet += (spaced ? ' ' : '') + tokenText(kind, scanner);
     spaced = false;
+    previous = kind;
   }
   return snippet.length > SNIPPET_LIMIT ? snippet.slice(0, SNIPPET_LIMIT - ELLIPSIS.length) + ELLIPSIS : snippet;
+}
+
+function tokenText(kind: ts.SyntaxKind, scanner: ts.Scanner): string {
+  if (TEXT_TOKENS.has(kind)) return MASKED_TEXT;
+  if (kind === ts.SyntaxKind.RegularExpressionLiteral) return MASKED_PATTERN;
+  return scanner.getTokenText();
 }

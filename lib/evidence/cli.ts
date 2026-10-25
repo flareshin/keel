@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import { InvalidUtf8Error } from '../../measure/lib/measurekit/files.ts';
 import { compareCodePoints, isJsonObject, parseJsonKeepingIntegers, stringifySorted } from '../../measure/lib/measurekit/json.ts';
 import type { JsonValue } from '../../measure/lib/measurekit/json.ts';
@@ -37,9 +38,9 @@ const EVIDENCE_OPTIONS = new Set(['--repo', '--run', '--root', '--audits', '--ve
 const PRECHECK_BIND_OPTIONS = new Set(['--repo', '--base', '--end', '--tree']);
 const PRECHECK_RUN_OPTIONS = new Set(['--repo', '--base']);
 const PRECHECK_LOG = 'keel-precheck.jsonl';
-const MISSING_TYPESCRIPT = "'typescript'";
+const MODULE_NOT_FOUND = 'MODULE_NOT_FOUND';
 
-export const seams = { print: printResult, loadCensus: () => import('../precheck/census.ts') };
+export const seams = { print: printResult, loadCensus: () => import('../precheck/census.ts'), typescriptResolves };
 
 export async function main(argv: string[]): Promise<number> {
   try {
@@ -108,8 +109,17 @@ async function loadCensus(): ReturnType<typeof seams.loadCensus> {
   try {
     return await seams.loadCensus();
   } catch (error) {
-    const missing = (error as NodeJS.ErrnoException).code === 'ERR_MODULE_NOT_FOUND' && String((error as Error).message).includes(MISSING_TYPESCRIPT);
-    if (missing) throw new writers.Refused('keel precheck run needs typescript; run npm ci in the keel checkout');
+    if (!seams.typescriptResolves()) throw new writers.Refused('keel precheck run needs typescript; run npm ci in the keel checkout');
+    throw error;
+  }
+}
+
+function typescriptResolves(): boolean {
+  try {
+    createRequire(import.meta.url).resolve('typescript');
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === MODULE_NOT_FOUND) return false;
     throw error;
   }
 }

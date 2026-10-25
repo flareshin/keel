@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { execFileSync, spawnSync } from "node:child_process"
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs"
+import { mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { after, afterEach, beforeEach, describe, it } from "node:test"
@@ -118,13 +118,37 @@ describe("runCensus", { skip: typescriptInstalled ? false : "typescript is not i
     assert.deepEqual([...new Set(result.mutation.notRun.map((each) => each.operator))].sort(), ["boundary", "return-constant"])
   })
 
+  it("runCensus_countsChangedTestPathsApartFromSourcePaths", async () => {
+    const { census: result } = await census({ "lib/a.ts": PICK, "tests/a.test.ts": PICK_TEST }, { "lib/a.ts": CHANGED_PICK, "tests/a.test.ts": PICK_TEST + "// grown\n" })
+
+    assert.deepEqual(result.paths, { source: 1, test: 1 })
+  })
+
+  it("runCensus_keepsADirectorySymlinkInTheBlobs_andMutatesOnlyScriptFiles", async () => {
+    const root = committedRepo({ "lib/a.ts": PICK, "tests/a.test.ts": PICK_TEST })
+    roots.push(root)
+    writeFiles(root, { "lib/a.ts": CHANGED_PICK })
+    symlinkSync("lib", join(root, "linkdir"))
+    const tree = snapshotTree(root)
+
+    const result = await runCensus(root, { base: "main", reviewBase: git(root, "rev-parse", "HEAD"), tree })
+
+    assert.deepEqual(Object.keys(result.blobs).sort(), ["lib/a.ts", "linkdir"])
+    assert.equal(result.mutation.outcome, "ran")
+    if (result.mutation.outcome !== "ran") return
+    assert.deepEqual([...new Set(result.mutation.results.map((each) => each.path))], ["lib/a.ts"])
+  })
+
   it("runCensus_describesAChangeWithoutQuotingStringTemplateOrCommentText", async () => {
     const changed = [
       "export function pick(flag: boolean): number {",
       "  note(/* we fixed */ 'tests pass') // done",
       "  note(`${flag} works fine`)",
+      "  note(String(/tests pass/.test('x')))",
+      "  note(`${{ on: flag }.on} works ${flag} fine`)",
+      "  note(String([flag, flag, flag, flag, flag, flag, flag, flag]))",
       "  const help = 'Run it. Then stop.'",
-      "  return help.length - 17",
+      "  return help.length / 18",
       "}",
       "function note(text: string): void {}",
       "",
@@ -137,8 +161,11 @@ describe("runCensus", { skip: typescriptInstalled ? false : "typescript is not i
     const changes = result.mutation.results.map((each) => `${each.line} ${each.operator} ${each.change}`)
     assert.ok(changes.includes("2 call-removal note( '…') removed"), changes.join("\n"))
     assert.ok(changes.includes("3 call-removal note('…'flag'…') removed"), changes.join("\n"))
-    assert.ok(changes.includes("4 text-removal text removed"), changes.join("\n"))
-    assert.ok(changes.includes("5 return-constant help.length - 17 → null"), changes.join("\n"))
+    assert.ok(changes.includes("4 call-removal note(String(/…/.test('…'))) removed"), changes.join("\n"))
+    assert.ok(changes.includes("5 call-removal note('…'{ on: flag }.on'…'flag'…') removed"), changes.join("\n"))
+    assert.ok(changes.includes("6 call-removal note(String([flag, flag, flag, flag, fl… removed"), changes.join("\n"))
+    assert.ok(changes.includes("7 text-removal text removed"), changes.join("\n"))
+    assert.ok(changes.includes("8 return-constant help.length / 18 → null"), changes.join("\n"))
     assert.doesNotMatch(changes.join("\n"), /tests pass|fixed|works|Run it/)
   })
 })
@@ -193,17 +220,17 @@ describe("keel precheck run", { skip: typescriptInstalled ? false : "typescript 
     assert.match(unknownBase.stderr, /no-such-ref has no merge base with HEAD/)
   })
 
-  it("keelPrecheckRun_refusesOnlyAMissingTypescript_andTreatsOtherLoadFailuresAsInternal", async (t) => {
+  it("keelPrecheckRun_refusesALoadFailureWhenTypescriptDoesNotResolve_andTreatsItAsInternalOtherwise", async (t) => {
+    assert.equal(cli.seams.typescriptResolves(), true)
     const root = committedRepo({ "lib/a.ts": PICK })
     roots.push(root)
-    const loadFailure = (message: string, code: string) => Object.assign(new Error(message), { code })
-    const statusWhenLoadingFails = async (error: Error): Promise<number> => {
-      t.mock.method(cli.seams, "loadCensus", () => Promise.reject(error))
+    const statusWhenLoadingFails = async (resolves: boolean): Promise<number> => {
+      t.mock.method(cli.seams, "loadCensus", () => Promise.reject(new Error("load failed")))
+      t.mock.method(cli.seams, "typescriptResolves", () => resolves)
       return cli.main(["precheck", "run", "--repo", root, "--base", "HEAD"])
     }
 
-    assert.equal(await statusWhenLoadingFails(loadFailure("Cannot find package 'typescript' imported from lib/precheck/mutants.ts", "ERR_MODULE_NOT_FOUND")), 3)
-    assert.equal(await statusWhenLoadingFails(loadFailure("Cannot find package 'left-pad' imported from lib/precheck/mutants.ts", "ERR_MODULE_NOT_FOUND")), 70)
-    assert.equal(await statusWhenLoadingFails(loadFailure("Cannot find package 'typescript' imported from lib/precheck/mutants.ts", "ERR_UNKNOWN")), 70)
+    assert.equal(await statusWhenLoadingFails(false), 3)
+    assert.equal(await statusWhenLoadingFails(true), 70)
   })
 })

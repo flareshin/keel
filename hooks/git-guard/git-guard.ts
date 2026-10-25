@@ -15,7 +15,8 @@ import {
 import { globMatches } from "../../lib/evidence/glob.ts";
 import { parseJson, parseJsonReadingNonFiniteNumbersAsZero, parsePayload } from "../lib/hookkit/json.ts";
 import { isDirectory, isFile, resolveSymlinksKeepingMissingTail } from "../lib/hookkit/files.ts";
-import { AttributeError, describeError, pythonErrorName, pythonList, pythonTypeName, readStdin, RecursionError, ValueError } from "../lib/hookkit/pyruntime.ts";
+import { AttributeError, describeError, errorName, pythonTypeName, RecursionError, ValueError } from "../lib/hookkit/errors.ts";
+import { readStdin } from "../lib/hookkit/stdio.ts";
 import { currentBranch, findRepoKey, findToplevel, git, gitOutput, isCommit } from "../lib/hookkit/repo.ts";
 import {
   ghSubcommandArgv, gitDirectory, gitSubcommandIndex, isConfigRead, readPushArguments, resolveDirectory, steps, writeTargets,
@@ -185,7 +186,7 @@ function fillIn(template: string, value: string): string {
 
 function editedText(toolArgs: Payload): string {
   const parts: unknown[] = ["content", "new_string", "new_source"].map((key) => getField(toolArgs, key));
-  for (const edit of pythonList(getField(toolArgs, "edits"))) parts.push(isRecord(edit) ? getField(edit, "new_string") : null);
+  for (const edit of listOrEmpty(getField(toolArgs, "edits"), "edits")) parts.push(isRecord(edit) ? getField(edit, "new_string") : null);
   return parts.filter((part): part is string => typeof part === "string").join("\n");
 }
 
@@ -477,13 +478,13 @@ export function scanStagedSecrets(toplevel: string, repoKey: string | null, time
     result = run([boundaryScanner(), "--staged", "--generic-only"], timeoutSeconds, { cwd: toplevel });
   } catch (error) {
     if (!(error instanceof OSError || error instanceof TimeoutExpired)) throw error;
-    throw new GuardError(`boundary scanner did not run: ${pythonErrorName(error)}`);
+    throw new GuardError(`boundary scanner did not run: ${errorName(error)}`);
   }
   if (result.returncode === BOUNDARY_EXIT_CLEAN) return [];
   if (result.returncode !== BOUNDARY_EXIT_HITS) throw new GuardError(`boundary scanner exit ${result.returncode}`);
   const report = parseJson(result.stdout);
   if (!isRecord(report)) throw noGet(report);
-  const described = pythonList(getField(report, "hits")).map((hit) => {
+  const described = listOrEmpty(getField(report, "hits"), "hits").map((hit) => {
     if (!isRecord(hit)) throw noGet(hit);
     return `${pythonStr(getField(hit, "file"))}:${pythonStr(getField(hit, "line"))} (${pythonStr(getField(hit, "rule"))})`;
   });
@@ -491,6 +492,12 @@ export function scanStagedSecrets(toplevel: string, repoKey: string | null, time
     ruleId: F_SECRETS, repo: repoKey,
     text: `Staged lines match a secret or private-address pattern: ${protocol.listed(described)}. Unstage or redact them.`,
   }];
+}
+
+function listOrEmpty(value: unknown, field: string): unknown[] {
+  if (!isTruthy(value)) return [];
+  if (Array.isArray(value)) return value;
+  throw new TypeError(`${field} is not a list: '${pythonTypeName(value)}'`);
 }
 
 function noGet(value: unknown): AttributeError {
@@ -609,7 +616,7 @@ function failClosed(raw: string, error: unknown): number {
   new FireLog(HOOK, session).append(F_ATTRIBUTION, "error", { detail: describeError(error) });
   if (!(error instanceof RecursionError) && !testCaseFolded(LOOKS_GUARDED_RE, raw)) return protocol.EXIT_PASS;
   const bullet: protocol.Bullet = [
-    F_ATTRIBUTION, `The guard could not check this commit, push, PR text or protected write (${pythonErrorName(error)}).`,
+    F_ATTRIBUTION, `The guard could not check this commit, push, PR text or protected write (${errorName(error)}).`,
   ];
   const nextStep = command ? protocol.runYourself(command) : protocol.ASK_USER;
   return protocol.deny(protocol.formatMessage(HOOK, "internal error on a guarded command; refusing it", [bullet], nextStep));

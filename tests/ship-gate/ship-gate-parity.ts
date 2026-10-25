@@ -46,15 +46,19 @@ const UTF8_WORDING_ON_A_DENY = ["extra-0539", "extra-0540", "extra-0602"];
 const JSON_QUOTING_ON_A_DENY = ["extra-0549", "extra-0560", "extra-0562", "extra-0563", "extra-0565", "extra-0604", "extra-0605",
   "python-keel-0119", "ts-keel-0119"];
 const JSON_QUOTING_ON_A_PASS = ["extra-0561", "extra-0564"];
+const SYSTEM_ERROR_WORDING_ON_A_DENY = ["extra-0543", "extra-0544", "extra-0545", "extra-0548", "extra-0634", "extra-0635", "extra-0637",
+  ...["python-keel", "ts-keel"].flatMap((suite) => ["0027", "0028", "0029", "0030", "0031", "0046", "0047"].map((number) => `${suite}-${number}`))];
+const SYSTEM_ERROR_WORDING_ON_A_PASS = ["extra-0610", "extra-0632", "python-keel-0033", "ts-keel-0033"];
 
 export const EXPECTED_DIVERGENCES: ReadonlyMap<string, number> = new Map([
   ...OVER_BOUND_NESTINGS.flatMap((depth) => OVER_BOUND_KINDS.map((kind): [string, number] => [`${kind}-nested-${depth}`, DENY_EXIT_CODE])),
   ...COMMAND_DIVERGENT_NESTINGS.map((depth): [string, number] => [`command-list-nested-${depth}`, DENY_EXIT_CODE]),
   ...PYTHON_COMMENT_DELETION_SUITES.flatMap((suite) => PYTHON_COMMENT_DELETION_TESTS.map((number): [string, number] => [`py-comment-deletion-${suite}-${number}`, DENY_EXIT_CODE])),
-  ...[...GH_NUMBER_PAST_PYTHON_DIGIT_LIMIT, ...READ_PAST_PYTHON_DIGIT_LIMIT_ON_A_NON_PUSH, ...NON_FINITE_NON_PUSH_PAYLOADS, ...JSON_QUOTING_ON_A_PASS]
+  ...[...GH_NUMBER_PAST_PYTHON_DIGIT_LIMIT, ...READ_PAST_PYTHON_DIGIT_LIMIT_ON_A_NON_PUSH, ...NON_FINITE_NON_PUSH_PAYLOADS, ...JSON_QUOTING_ON_A_PASS,
+    ...SYSTEM_ERROR_WORDING_ON_A_PASS]
     .map((id): [string, number] => [id, PASS_EXIT_CODE]),
   ...[NON_FINITE_PUSH_PAYLOAD, NON_FINITE_GH_ANSWER_ON_A_PASSING_MERGE, ...READ_PAST_PYTHON_DIGIT_LIMIT_ON_A_PUSH, ...NON_FINITE_GH_ANSWERS_ON_A_DENIED_MERGE,
-    ...UTF8_WORDING_ON_A_DENY, ...JSON_QUOTING_ON_A_DENY].map((id): [string, number] => [id, DENY_EXIT_CODE]),
+    ...UTF8_WORDING_ON_A_DENY, ...JSON_QUOTING_ON_A_DENY, ...SYSTEM_ERROR_WORDING_ON_A_DENY].map((id): [string, number] => [id, DENY_EXIT_CODE]),
 ]);
 
 export const DECISION_PATH_CHANGED: ReadonlySet<string> = new Set([

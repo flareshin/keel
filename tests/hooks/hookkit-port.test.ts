@@ -8,7 +8,7 @@ import * as env from "../../hooks/lib/hookkit/env.ts";
 import { FireLog } from "../../hooks/lib/hookkit/fires.ts";
 import * as protocol from "../../hooks/lib/hookkit/protocol.ts";
 import { JsonSyntaxError, parsePayload } from "../../hooks/lib/hookkit/json.ts";
-import { RecursionError, ValueError } from "../../hooks/lib/hookkit/pyruntime.ts";
+import { RecursionError, ValueError } from "../../hooks/lib/hookkit/errors.ts";
 import * as pycompat from "../../hooks/lib/hookkit/pycompat.ts";
 import * as repo from "../../hooks/lib/hookkit/repo.ts";
 import { readTsv } from "../../hooks/lib/hookkit/overlay.ts";

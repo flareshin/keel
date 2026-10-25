@@ -73,11 +73,15 @@ describe("ship-gate parity listed divergences", () => {
       "extra-0018", "extra-0025", "extra-0026", "extra-0030", "extra-0031", "extra-0035", "extra-0514", "extra-0517", "extra-0518",
       "extra-0539", "extra-0540", "extra-0549", "extra-0560", "extra-0562", "extra-0563", "extra-0565", "extra-0602", "extra-0604", "extra-0605",
       "python-keel-0119", "ts-keel-0119",
+      "extra-0543", "extra-0544", "extra-0545", "extra-0548", "extra-0634", "extra-0635", "extra-0637",
+      "python-keel-0027", "python-keel-0028", "python-keel-0029", "python-keel-0030", "python-keel-0031", "python-keel-0046", "python-keel-0047",
+      "ts-keel-0027", "ts-keel-0028", "ts-keel-0029", "ts-keel-0030", "ts-keel-0031", "ts-keel-0046", "ts-keel-0047",
     ].sort());
     assert.deepEqual(rowsRequiring(0), [
       "extra-0019", "extra-0020", "extra-0036", "extra-0037", "extra-0041", "extra-0042", "extra-0046", "extra-0062",
       "extra-0526", "extra-0527", "extra-0531", "extra-0532", "extra-0536", "extra-0561", "extra-0564",
-    ]);
+      "extra-0610", "extra-0632", "python-keel-0033", "ts-keel-0033",
+    ].sort());
   });
 
   it("accepts a listed row only when node gives the required exit, whatever python did", () => {

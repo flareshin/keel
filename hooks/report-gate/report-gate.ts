@@ -10,7 +10,9 @@ import {
   testCaseFolded, WORD_BOUNDARY,
 } from "../lib/hookkit/pycompat.ts";
 import { NonFiniteJsonNumber, parseFiniteJson, parseJson, parsePayload } from "../lib/hookkit/json.ts";
-import { AttributeError, describeError, pythonErrorName, pythonList, pythonTypeName, readStdin, stripChars, RecursionError, ValueError } from "../lib/hookkit/pyruntime.ts";
+import { AttributeError, describeError, errorName, pythonTypeName, RecursionError, ValueError } from "../lib/hookkit/errors.ts";
+import { readStdin } from "../lib/hookkit/stdio.ts";
+import { trimCharacters } from "../lib/hookkit/text.ts";
 import { OSError, run, TimeoutExpired } from "../lib/hookkit/subprocess.ts";
 import type { CompletedProcess } from "../lib/hookkit/subprocess.ts";
 import { commandWritesFiles } from "../lib/hookkit/shell.ts";
@@ -90,7 +92,7 @@ class TurnState {
       return;
     }
     if (!isRecord(data)) throw new AttributeError(`'${pythonTypeName(data)}' object has no attribute 'get'`);
-    this.flaggedPaths = pythonList(getField(data, "paths")) as string[];
+    this.flaggedPaths = flaggedPathsOf(getField(data, "paths"));
     this.evidenceDenied = isTruthy(getField(data, "ev"));
     this.handedBack = isTruthy(getField(data, "hb"));
   }
@@ -101,6 +103,11 @@ class TurnState {
     const state = { paths: this.flaggedPaths, ev: this.evidenceDenied, hb: this.handedBack };
     writeFileSync(this.path, dumpsAscii(state), "utf8");
   }
+}
+
+function flaggedPathsOf(stored: unknown): string[] {
+  if (Array.isArray(stored)) return stored as string[];
+  return isRecord(stored) ? Object.keys(stored) : [];
 }
 
 function isReadFailure(error: unknown): boolean {
@@ -135,7 +142,7 @@ class AgentTranscript {
     if (brief.includes(EVIDENCE_MARKER)) this.needsEvidence = true;
     for (const match of brief.matchAll(SCOPE_RE)) {
       for (const raw of (match[1] ?? "").split(SCOPE_SEPARATOR_RE)) {
-        const token = stripChars(raw, "`'\"<>;");
+        const token = trimCharacters(raw, "`'\"<>;");
         if (token.startsWith("/") || token.startsWith("~")) this.scopes.push(normalize(token));
       }
     }
@@ -383,7 +390,7 @@ function sendToCli(evidenceLine: string, verdict: string, source: Record<string,
     result = run([keelCli(), "evidence", "write-review"], CLI_TIMEOUT_SECONDS, { input: request });
   } catch (error) {
     if (!(error instanceof OSError || error instanceof TimeoutExpired)) throw error;
-    fires.append("K1", "warn", { detail: `keel evidence write-review did not run: ${pythonErrorName(error)}` });
+    fires.append("K1", "warn", { detail: `keel evidence write-review did not run: ${errorName(error)}` });
     return;
   }
   if (result.returncode !== 0) {
@@ -413,7 +420,7 @@ export function withoutReportMarkers(report: string | null): string | null {
 
 function comparableLines(text: string): string[] {
   const trimmedLines = text.split("\n").map((line) => line.replace(new RegExp(`${SPACE_CLASS}+$`), ""));
-  return stripChars(trimmedLines.join("\n"), "\n").split("\n");
+  return trimCharacters(trimmedLines.join("\n"), "\n").split("\n");
 }
 
 function verdictOf(report: string): string | null {
@@ -457,7 +464,7 @@ export function evidenceMessage(): string {
 }
 
 function normalize(path: unknown): string {
-  return normalizePath(expandUser(stripChars(strip(pythonStr(path)), "'\"")));
+  return normalizePath(expandUser(trimCharacters(strip(pythonStr(path)), "'\"")));
 }
 
 function inScope(path: unknown, scopes: readonly string[]): boolean {

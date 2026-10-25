@@ -4,7 +4,8 @@ import { getField, isTruthy, joinPath, PY_SPACE, PY_WORD, pythonStr } from "../l
 import { readFileSync } from "node:fs";
 import { isFile } from "../lib/hookkit/files.ts";
 import { parsePayload } from "../lib/hookkit/json.ts";
-import { describeError, readStdin, RecursionError, ValueError } from "../lib/hookkit/pyruntime.ts";
+import { describeError, RecursionError, ValueError } from "../lib/hookkit/errors.ts";
+import { readStdin } from "../lib/hookkit/stdio.ts";
 import * as protocol from "../lib/hookkit/protocol.ts";
 import type { Payload } from "../lib/hookkit/protocol.ts";
 

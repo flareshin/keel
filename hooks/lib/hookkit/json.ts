@@ -1,5 +1,5 @@
 import { MAX_JSON_DEPTH, nestsPastMaxJsonDepth } from "../../../measure/lib/measurekit/json.ts";
-import { RecursionError, ValueError } from "./pyruntime.ts";
+import { RecursionError, ValueError } from "./errors.ts";
 
 const NON_FINITE_TOKENS = ["-Infinity", "Infinity", "NaN"];
 const VALUE_STARTERS = "[{:,";

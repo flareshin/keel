@@ -1,22 +1,12 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { join } from "node:path";
 import { describe, it } from "node:test";
 import { JsonSyntaxError, NonFiniteJsonNumber, parseFiniteJson, parseJson, parseJsonReadingNonFiniteNumbersAsZero, parsePayload, parseTranscriptLine } from "../../hooks/lib/hookkit/json.ts";
 import { MAX_JSON_DEPTH } from "../../hooks/lib/hookkit/pycompat.ts";
-import { RecursionError, ValueError } from "../../hooks/lib/hookkit/pyruntime.ts";
+import { RecursionError, ValueError } from "../../hooks/lib/hookkit/errors.ts";
 
 function nestedArrays(depth: number): string {
   return "[".repeat(depth) + "]".repeat(depth);
 }
-
-describe("json module", () => {
-  it("loads_whenTheRuntimeModuleIsImportedFirst", () => {
-    const script = 'await import("./hooks/lib/hookkit/pyruntime.ts"); await import("./hooks/lib/hookkit/json.ts");';
-    const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], { cwd: join(import.meta.dirname, "..", ".."), encoding: "utf8" });
-    assert.equal(result.status, 0, result.stderr);
-  });
-});
 
 describe("parseJson", () => {
   it("parseJson_readsADocument_nestedExactlyToTheLimit", () => {

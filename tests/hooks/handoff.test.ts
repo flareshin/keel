@@ -81,7 +81,8 @@ describe("AutoSnapshotTest", () => {
     sandbox.write(join(sandbox.data, "handoff"), "not a dir");
     const result = auto();
     assert.equal(result.code, 0);
-    assertFired(sandbox, "C-handoff", "error", "handoff");
+    const [fire] = assertFired(sandbox, "C-handoff", "error", "handoff");
+    assert.match(fire?.detail ?? "", /^Error: EEXIST: file already exists, mkdir '.*handoff'$/);
   });
 
   it("auto_usesProcessCwd_whenPayloadUnparseable", () => {

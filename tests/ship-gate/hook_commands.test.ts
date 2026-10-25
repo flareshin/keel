@@ -634,6 +634,8 @@ describe('HookBehaviorTest', () => {
     assert.equal(run.rc, 2, run.stderr + run.stdout);
     assert.ok(run.stderr.includes('failing closed'), run.stderr);
     assert.ok(run.stderr.includes('keel-fires.jsonl'), run.stderr);
+    assert.ok(run.stderr.includes('- [K1] Error: EACCES: permission denied, open '), run.stderr);
+    assert.ok(!run.stderr.includes('PermissionError'), run.stderr);
     assert.ok(!run.stderr.includes('Traceback'), run.stderr);
     assert.ok(run.stderr.includes('Run it yourself in your terminal: git push origin main'), run.stderr);
   });
@@ -667,7 +669,7 @@ describe('HookBehaviorTest', () => {
     sandbox.makeLogsUnwritable();
     const run = sandbox.push(repo, 'gh pr create --title t --body b');
     assert.equal(run.rc, 0, run.stderr + run.stdout);
-    assert.ok(run.stderr.includes('internal error on a command that is not a push or merge'), run.stderr);
+    assert.ok(run.stderr.includes('internal error on a command that is not a push or merge: Error: EACCES: permission denied, open '), run.stderr);
   });
 
   test('hook_failsClosed_whenPayloadIsUnreadableAndNamesAPush', (t) => {

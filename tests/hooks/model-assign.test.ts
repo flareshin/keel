@@ -127,7 +127,8 @@ describe("FailureTest", () => {
     chmodSync(path, 0);
     const result = workflow({ scriptPath: path });
     assert.equal(result.code, 0);
-    assertFired(sandbox, "C-dispatch", "error", "model-assign");
+    const [fire] = assertFired(sandbox, "C-dispatch", "error", "model-assign");
+    assert.match(fire?.detail ?? "", /^Error: EACCES: permission denied, open '.*unreadable\.js'$/);
   });
 
   it("modelAssign_ignoresOtherTools", () => {

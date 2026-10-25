@@ -160,9 +160,9 @@ Codex adapter (`codex/`) drop their Python emulation and run on plain Node behav
   - Wording: `JsonSyntaxError` with the `JSON.parse` message for unreadable JSON, `InvalidUtf8Error: <source> is not
     valid UTF-8`, `RecursionError: JSON nesting is deeper than 10000 levels`, `EvidenceTooDeepError`, and `JSON.stringify`
     quoting (`"bogus"`, `["gh","pr","view"]`) in `RegistryError`, `GateError` and `TimeoutExpired` text. Numbers in messages
-    render as JavaScript does (`1.0` is `1`). A system error outside `ENOENT`, `EPERM`, `EACCES`, `EEXIST`, `ENOTDIR` and
-    `EISDIR` prints as `Error: <Node message>` (for example `Error: ELOOP: too many symbolic links encountered, open '<path>'`)
-    instead of the Python `OSError: [Errno N] <text>` form.
+    render as JavaScript does (`1.0` is `1`). A system error prints as `Error: <Node message>` (for example `Error: ENOENT: no such file or directory, open '<path>'`
+    or `Error: ELOOP: too many symbolic links encountered, open '<path>'`) instead of the Python
+    `FileNotFoundError: [Errno 2] No such file or directory: '<path>'` or `OSError: [Errno N] <text>` form.
   - `keel-fires.jsonl` lines are compact sorted-key JSON (`stringifySorted`) with non-ASCII characters written as is.
   - `stringifySorted` and `parseJsonKeepingIntegers` (`measure/lib/measurekit/json.ts`) handle the full 10,000 level nesting
     without running out of stack, except text nested past about two thousand levels that also holds an integer beyond
@@ -204,6 +204,30 @@ Codex adapter (`codex/`) drop their Python emulation and run on plain Node behav
   - `tests/hooks/hook-parity.test.ts` compares the recorded Python runs with the decode error message masked on both sides
     (`JSONDecodeError` reads as `JsonSyntaxError`) and lists 31 more payloads whose outcome changed: the non-finite
     numbers above and the integers of more than 4,300 digits, which the hooks now judge like any other payload.
+  - Error text in every hook (`describeError`, the `detail` of an `error` fire and the `internal error` line a hook
+    prints) is `<name>: <message>` with Node's own message, and the errno-to-Python-class table is gone. What stays the
+    same: the exit codes, the `[ID]` tags, which calls are denied, passed or failed closed, and the class names
+    `ValueError`, `RecursionError`, `AttributeError`, `JsonSyntaxError` and `GuardError`. What differs:
+    `FileExistsError: [Errno 17] File exists: '<path>'` is `Error: EEXIST: file already exists, mkdir '<path>'`,
+    `PermissionError: [Errno 13] Permission denied: '<path>'` is `Error: EACCES: permission denied, open '<path>'`,
+    `IsADirectoryError: [Errno 21] Is a directory: '<path>'` is `Error: EISDIR: illegal operation on a directory, read`,
+    and `FileNotFoundError: [Errno 2] No such file or directory: '<path>'` is `Error: ENOENT: no such file or directory, <call> '<path>'`.
+    A scanner or `keel` command that cannot start is named by its class: `boundary scanner did not run: OSError` (it was
+    `FileNotFoundError`) in git-guard's `error` fire and `keel evidence write-review did not run: OSError` in report-gate's
+    `warn` fire. The deny line of git-guard (`The guard could not check this commit, push, PR text or protected write (<name>)`)
+    names a raw system error `Error` where it named `FileNotFoundError` or `PermissionError`. A non-`Error` value that is thrown prints as its own text and is named `Error`, not `Exception`.
+  - `git-guard`: an `edits` field of a `MultiEdit` call, or a `hits` field in the boundary scanner's report, that holds a
+    non-empty string or object is an internal error (`TypeError: edits is not a list: 'str'`; a guarded command fails closed).
+    Python's `list()` read a string as its characters and an object as its keys, so a string or object `edits` used to
+    pass unread (a `hits` one already failed closed, with an `AttributeError`). A number or `true` was already an internal
+    error. A missing, empty, `null`, `0` or `false` value is still an empty list.
+  - `report-gate`: a turn-state file whose `paths` is a string, number or `true` is read as no flagged paths, so an
+    outside edit is flagged again (a string was read as its characters and a number as an error, which passed). An object
+    still reads as its keys.
+  - `tests/hooks/hook-parity.test.ts` lists the four recorded runs whose fire text changed with this wording
+    (`EXPECTED_DIVERGENCES`, each with the exit code the hook must give and the start of the new detail). Everything else
+    of those runs, stderr, stdout and every written file, is still compared, and the test fails on a recorded Python
+    deny that passes in node. `tests/ship-gate/ship-gate-parity.test.ts` lists 25 more rows the same way.
 
 ### Fixed
 - `env-preflight` (`[S-jdk]`) accepts a `java_home` lookup that names a patch release of the required major, such as
@@ -211,6 +235,12 @@ Codex adapter (`codex/`) drop their Python emulation and run on plain Node behav
   (`17.0.*`), a trailing dot or another major is still denied.
 
 ### Removed
+- The hook module `hooks/lib/hookkit/pyruntime.ts`, its Python error-class table and the `pythonList` and `stripChars`
+  helpers. The error classes and `describeError` moved to `hooks/lib/hookkit/errors.ts`, `readStdin`, `printLine` and
+  `writeStderr` to `hooks/lib/hookkit/stdio.ts` unchanged, and `trimCharacters` (the old `stripChars`) to
+  `hooks/lib/hookkit/text.ts`. `tests/hooks/pyhook-compat.test.ts` keeps its `pycompat` tests and loses the `pyruntime`
+  ones, which `tests/hooks/errors.test.ts` replaces; the import-order test for `pyruntime` in `tests/hooks/json.test.ts` went
+  with it, as `errors.ts` imports nothing.
 - The hook module `hooks/lib/hookkit/pyjson.ts` and its tests in `tests/hooks/pyhook-compat.test.ts`. Its place is taken by
   `parseJson`, `parsePayload`, `parseTranscriptLine` and `parseJsonReadingNonFiniteNumbersAsZero` in `hooks/lib/hookkit/json.ts`;
   `dumpsAscii` moved to `hooks/lib/hookkit/pycompat.ts` unchanged.
@@ -245,7 +275,7 @@ Codex adapter (`codex/`) drop their Python emulation and run on plain Node behav
 - The byte-for-byte Python recordings of the evidence code (`tests/fixtures/python/ship-gate-{cross-impl,cross-impl-codex,parity}.json`)
   and `tests/ship-gate/parity.test.ts`. The outcomes they recorded live on in `tests/fixtures/evidence/{cross-impl,helper-outcomes}.json`
   and in `tests/ship-gate/{cross_impl,cross_impl_codex,helper_outcomes,native_input}.test.ts`; the cases whose outcome changed are
-  tested with explicit expectations. `ship-gate-strerror.json` stays for the errno wording the hook still prints.
+  tested with explicit expectations.
 
 ### Upgrading
 - Codex: run `codex/bin/link --check`. When it lists `hooks.json` or the state file, the old files hold a non-ASCII

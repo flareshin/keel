@@ -262,6 +262,28 @@ describe("HookSkipTest", () => {
     assertDenied(edit("Write", { file_path: writeSettings(), content: '{"disableAllHooks": true}' }), "F-hookskip");
   });
 
+  it("multiEdit_denied_whenAnEditsEntryOnAClaudeSettingsFileSetsDisableAllHooks", () => {
+    const edits = [{ new_string: "{}" }, "not an edit", { new_string: '{"disableAllHooks": true}' }];
+    assertDenied(edit("MultiEdit", { file_path: writeSettings(), edits }), "F-hookskip");
+  });
+
+  it("multiEdit_passes_whenEditsIsAbsentEmptyOrNull", () => {
+    for (const toolArgs of [{}, { edits: [] }, { edits: null }, { edits: 0 }, { edits: "" }]) {
+      assertPassed(edit("MultiEdit", { file_path: writeSettings(), ...toolArgs }));
+    }
+    assert.deepEqual(sandbox.fires(), []);
+  });
+
+  it("multiEdit_deniedFailClosed_whenEditsIsNotAList", () => {
+    for (const edits of ["text", { new_string: "text" }, 5, true]) {
+      const result = edit("MultiEdit", { file_path: writeSettings(), content: '{"disableAllHooks": true}', edits });
+      assert.equal(result.code, 2, JSON.stringify(edits));
+      assert.ok(result.stderr.includes("[F-attribution]"), result.stderr);
+    }
+    const detail = sandbox.fires().at(-1)?.detail;
+    assert.equal(detail, "TypeError: edits is not a list: 'bool'");
+  });
+
   it("bash_denied_whenItWritesDisableAllHooksIntoAClaudeSettingsFile", () => {
     const target = writeSettings();
     const commands = [
@@ -799,6 +821,16 @@ describe("SecretsTest", () => {
   it("commit_deniedFailClosed_whenBoundaryMissing", () => {
     sandbox.env["KEEL_BOUNDARY"] = join(sandbox.root, "no-such-scanner");
     assert.equal(guard('git commit -m "Add config"', repo).code, 2);
+    assert.equal(sandbox.fires().at(-1)?.detail, "GuardError: boundary scanner did not run: OSError");
+  });
+
+  it("commit_deniedFailClosed_whenTheBoundaryReportHitsAreNotAList", () => {
+    for (const hits of ['"abc"', '{"file": "x"}', "5"]) {
+      sandbox.env["KEEL_BOUNDARY"] = sandbox.stub("boundary-odd", { stdout: `{"scanned": 1, "hits": ${hits}}`, exitCode: 1 });
+      const result = guard('git commit -m "Add config"', repo);
+      assert.equal(result.code, 2, hits);
+      assert.ok(result.stderr.includes("internal error"), result.stderr);
+    }
   });
 });
 

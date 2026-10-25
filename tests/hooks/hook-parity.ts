@@ -24,6 +24,22 @@ const DECODE_ERROR_NAME = "(JsonSyntaxError)";
 const PYTHON_DECODE_DETAIL = /\b(JSONDecodeError: |payload is not JSON: )(?:[^"\\]|\\.)*?: line \d+ column \d+ \(char \d+\)/g;
 const NODE_DECODE_DETAIL = /\b(JsonSyntaxError: |payload is not JSON: )(?!hook payload is not a JSON object)(?:[^"\\]|\\.)*/g;
 const DECODE_MESSAGE = "<JSON syntax error message>";
+const FIRE_DETAIL = /("detail": ")(?:[^"\\]|\\.)*(")/g;
+const FIRE_DETAIL_MASKED = "$1<detail>$2";
+const DENY_EXIT_CODE = 2;
+const PASS_EXIT_CODE = 0;
+
+export interface ListedDivergence {
+  code: number;
+  detailStartsWith: string;
+}
+
+export const EXPECTED_DIVERGENCES: ReadonlyMap<string, ListedDivergence> = new Map([
+  ["0194", { code: DENY_EXIT_CODE, detailStartsWith: "GuardError: boundary scanner did not run: OSError" }],
+  ["0205", { code: PASS_EXIT_CODE, detailStartsWith: "Error: EEXIST: file already exists, mkdir '" }],
+  ["0232", { code: PASS_EXIT_CODE, detailStartsWith: "Error: EACCES: permission denied, open '" }],
+  ["0277", { code: PASS_EXIT_CODE, detailStartsWith: "Error: EISDIR: illegal operation on a directory, read" }],
+]);
 
 interface Case {
   id: string;
@@ -36,6 +52,7 @@ interface Case {
   root: string;
   prepare: (root: string) => void;
   divergence?: TsOutcome;
+  listed?: ListedDivergence;
   expected?: ObservedDelta;
 }
 
@@ -65,16 +82,18 @@ export interface ParityReport {
   cases: number;
   adversarial: number;
   divergences: number;
+  denyToPass: number;
   mismatches: number;
   perHook: Map<string, number>;
   details: string[];
+  listedIds: string[];
 }
 
 export function runParity(): ParityReport {
   const base = realpathSync(mkdtempSync(join(tmpdir(), "keel-parity-")));
   const adversarial = buildAdversarialSet();
   try {
-    const report: ParityReport = { cases: 0, adversarial: 0, divergences: 0, mismatches: 0, perHook: new Map(), details: [] };
+    const report: ParityReport = { cases: 0, adversarial: 0, divergences: 0, denyToPass: 0, mismatches: 0, perHook: new Map(), details: [], listedIds: [] };
     const store = JSON.parse(readFileSync(join(FIXTURE_DIRECTORY, "snapshots.json"), "utf8")) as RecordedStore;
     const sandboxRoot = paddedRoot(realpathSync(tmpdir()), store.rootLength);
     for (const testCase of recordedCases(store, sandboxRoot)) replay(testCase, report);
@@ -82,6 +101,7 @@ export function runParity(): ParityReport {
       replay(testCase, report);
       report.adversarial += 1;
     }
+    reportUnseenDivergences(report);
     return report;
   } finally {
     adversarial.sandbox.close();
@@ -89,16 +109,37 @@ export function runParity(): ParityReport {
   }
 }
 
+function reportUnseenDivergences(report: ParityReport): void {
+  const seen = new Set(report.listedIds);
+  for (const id of EXPECTED_DIVERGENCES.keys()) {
+    if (seen.has(id)) continue;
+    report.mismatches += 1;
+    report.details.push(`expected divergence ${id} was not replayed`);
+  }
+}
+
 function replay(testCase: Case, report: ParityReport): void {
   const run = observe(testCase);
-  const differences = testCase.divergence ? unmetOutcome(testCase.divergence, run.observation) : compareWithRecorded(testCase, run);
-  if (testCase.divergence) report.divergences += 1;
+  const differences = differencesOf(testCase, run);
+  if (testCase.divergence || testCase.listed) report.divergences += 1;
+  if (testCase.listed) report.listedIds.push(testCase.id);
+  if (isDenyToPass(testCase.expected, run.observation)) report.denyToPass += 1;
   report.cases += 1;
   report.perHook.set(testCase.script, (report.perHook.get(testCase.script) ?? 0) + 1);
   if (differences.length > 0) {
     report.mismatches += 1;
     report.details.push(`case ${testCase.id} (${testCase.test}) ${testCase.script}:\n  ${differences.join("\n  ")}`);
   }
+}
+
+function differencesOf(testCase: Case, run: Run): string[] {
+  if (testCase.divergence) return unmetOutcome(testCase.divergence, run.observation);
+  if (testCase.listed) return listedDifferences(testCase.listed, testCase.expected, run, testCase.root);
+  return compareWithRecorded(testCase, run);
+}
+
+export function isDenyToPass(expected: ObservedDelta | undefined, actual: Observation): boolean {
+  return expected?.code === DENY_EXIT_CODE && actual.code !== DENY_EXIT_CODE;
 }
 
 function recordedCases(store: RecordedStore, sandboxRoot: string): Case[] {
@@ -109,6 +150,7 @@ function recordedCases(store: RecordedStore, sandboxRoot: string): Case[] {
       id: recorded.id, test: recorded.test, script: recorded.script, args: recorded.args, cwd: restored(recorded.cwd, sandboxRoot),
       stdin: restored(recorded.stdin, sandboxRoot), env: envFromTemplate(store.envs[recorded.env] as Record<string, string>, sandboxRoot),
       root: sandboxRoot, prepare: (root) => materialize(store, recorded.snapshot, root), expected: recorded.expected,
+      listed: EXPECTED_DIVERGENCES.get(recorded.id),
     };
   });
 }
@@ -226,6 +268,30 @@ function compareWithRecorded(testCase: Case, run: Run): string[] {
   return differencesFromRecorded(withDecodeWordingAsNode(testCase.expected), withDecodeMessageMasked(run), testCase.root);
 }
 
+export function listedDifferences(listed: ListedDivergence, expected: ObservedDelta | undefined, run: Run, root: string): string[] {
+  if (expected === undefined) return ["no recorded Python outcome for this listed case"];
+  const problems: string[] = [];
+  if (run.observation.code !== listed.code) problems.push(`listed divergence: code node ${run.observation.code}, required ${listed.code}`);
+  const fires = run.observation.files.get(FIRES_PATH) ?? "";
+  if (!fires.includes(`"detail": "${listed.detailStartsWith}`)) {
+    problems.push(`listed divergence: fires ${excerpt(fires)} lack a detail starting ${excerpt(listed.detailStartsWith)}`);
+  }
+  return [...problems, ...differencesFromRecorded(withFireDetailsMasked(expected), withFireDetailsMaskedInRun(run), root)];
+}
+
+function withFireDetailsMasked(expected: ObservedDelta): ObservedDelta {
+  const fires = expected.set[FIRES_PATH];
+  if (fires === undefined) return expected;
+  return { ...expected, set: { ...expected.set, [FIRES_PATH]: fires.replace(FIRE_DETAIL, FIRE_DETAIL_MASKED) } };
+}
+
+function withFireDetailsMaskedInRun(run: Run): Run {
+  const fires = run.observation.files.get(FIRES_PATH);
+  if (fires === undefined) return run;
+  const files = new Map(run.observation.files).set(FIRES_PATH, fires.replace(FIRE_DETAIL, FIRE_DETAIL_MASKED));
+  return { ...run, observation: { ...run.observation, files } };
+}
+
 function withDecodeWordingAsNode(expected: ObservedDelta): ObservedDelta {
   const fires = expected.set[FIRES_PATH];
   const set = fires === undefined ? expected.set : { ...expected.set, [FIRES_PATH]: maskedDecodeDetail(fires) };
@@ -246,7 +312,7 @@ function withDecodeMessageMasked(run: Run): Run {
 }
 
 export function summary(report: ParityReport): string {
-  return `parity: ${report.cases - report.adversarial} recorded + ${report.adversarial} adversarial cases (${report.divergences} listed divergences), ${report.mismatches} mismatches`;
+  return `parity: ${report.cases - report.adversarial} recorded + ${report.adversarial} adversarial cases (${report.divergences} listed divergences), ${report.mismatches} mismatches, deny-to-pass ${report.denyToPass}`;
 }
 
 if (import.meta.main) {
@@ -254,5 +320,5 @@ if (import.meta.main) {
   for (const detail of report.details.slice(0, MAX_MISMATCHES_SHOWN)) console.log(detail);
   console.log(JSON.stringify({ perHook: Object.fromEntries(report.perHook) }));
   console.log(summary(report));
-  process.exitCode = report.mismatches === 0 ? 0 : 1;
+  process.exitCode = report.mismatches === 0 && report.denyToPass === 0 ? 0 : 1;
 }

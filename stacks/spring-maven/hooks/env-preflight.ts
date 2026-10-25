@@ -7,7 +7,8 @@ import { getField, isTruthy, joinPath, normalizePath, expandUser, partition, pyt
 import { globMatches } from "../../../lib/evidence/glob.ts";
 import { parsePayload } from "../../../hooks/lib/hookkit/json.ts";
 import { isDirectory } from "../../../hooks/lib/hookkit/files.ts";
-import { describeError, readStdin, ValueError } from "../../../hooks/lib/hookkit/pyruntime.ts";
+import { describeError, ValueError } from "../../../hooks/lib/hookkit/errors.ts";
+import { readStdin } from "../../../hooks/lib/hookkit/stdio.ts";
 import { findRepoKey, findSuperproject, findToplevel } from "../../../hooks/lib/hookkit/repo.ts";
 import { parseCommands, unwrap } from "../../../hooks/lib/hookkit/shell.ts";
 import type { Invocation, SimpleCommand } from "../../../hooks/lib/hookkit/shell.ts";

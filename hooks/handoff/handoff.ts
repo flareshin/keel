@@ -9,7 +9,9 @@ import {
 } from "../lib/hookkit/pycompat.ts";
 import { parsePayload } from "../lib/hookkit/json.ts";
 import { isDirectory, isFile } from "../lib/hookkit/files.ts";
-import { describeError, printLine, readStdin, stripChars, RecursionError, ValueError, writeStderr } from "../lib/hookkit/pyruntime.ts";
+import { describeError, RecursionError, ValueError } from "../lib/hookkit/errors.ts";
+import { printLine, readStdin, writeStderr } from "../lib/hookkit/stdio.ts";
+import { trimCharacters } from "../lib/hookkit/text.ts";
 import { findToplevel, findUpstream, gitOutput } from "../lib/hookkit/repo.ts";
 
 const HOOK = "handoff";
@@ -143,7 +145,7 @@ function resumeNote(path: string): string {
     else if (line === LOCATION_HEADING) inside = false;
     else if (inside && !line.startsWith(AUTO_PREFIX)) noteLines.push(line);
   }
-  return stripChars(noteLines.join("\n"), "\n") + "\n";
+  return trimCharacters(noteLines.join("\n"), "\n") + "\n";
 }
 
 function hasResumePoint(path: string): boolean {

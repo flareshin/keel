@@ -1,7 +1,7 @@
 import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import type { Dirent } from "node:fs";
 import { userInfo } from "node:os";
-import { RecursionError, ValueError } from "./pyruntime.ts";
+import { RecursionError, ValueError } from "./errors.ts";
 import { MAX_JSON_DEPTH } from "../../../measure/lib/measurekit/json.ts";
 import { OSError, run, TimeoutExpired } from "./subprocess.ts";
 import type { CompletedProcess } from "./subprocess.ts";

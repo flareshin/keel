@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { dumpsAscii, MAX_JSON_DEPTH, pythonJsonDumps, pythonStr } from "../../hooks/lib/hookkit/pycompat.ts";
-import { describeError, pythonErrorName, RecursionError, ValueError } from "../../hooks/lib/hookkit/pyruntime.ts";
+import { RecursionError, ValueError } from "../../hooks/lib/hookkit/errors.ts";
 
 const DEEP_LEVELS = [3000, 9999];
 const PAST_THE_BOUND = [10001, 140000, 1000000];
@@ -85,22 +85,5 @@ describe("dumpsAscii", () => {
 
   it("keepsNonAsciiText_unlessAsked", () => {
     assert.equal(pythonJsonDumps({ k: "é" }), '{"k": "é"}');
-  });
-});
-
-describe("pyruntime", () => {
-  it("describeError_spellsPythonsOsErrorClassAndMessage", () => {
-    const missing = Object.assign(new Error("ENOENT: no such file or directory, open '/nonexistent/f'"), { code: "ENOENT", path: "/nonexistent/f" });
-    assert.equal(describeError(missing), "FileNotFoundError: [Errno 2] No such file or directory: '/nonexistent/f'");
-    const exists = Object.assign(new Error("EEXIST"), { code: "EEXIST", path: "/data/handoff" });
-    assert.equal(describeError(exists), "FileExistsError: [Errno 17] File exists: '/data/handoff'");
-  });
-
-  it("pythonErrorName_mapsErrnoCodesAndKeepsOwnClassNames", () => {
-    assert.equal(pythonErrorName(Object.assign(new Error("x"), { code: "EACCES" })), "PermissionError");
-    assert.equal(pythonErrorName(Object.assign(new Error("x"), { code: "EISDIR" })), "IsADirectoryError");
-    assert.equal(pythonErrorName(Object.assign(new Error("x"), { code: "ENOTDIR" })), "NotADirectoryError");
-    assert.equal(pythonErrorName(new ValueError("v")), "ValueError");
-    assert.equal(describeError(new ValueError("v")), "ValueError: v");
   });
 });

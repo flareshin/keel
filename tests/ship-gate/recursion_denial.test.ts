@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, test } from 'node:test';
 import type { TestContext } from 'node:test';
 import { parseJson } from '../../hooks/lib/hookkit/json.ts';
-import { RecursionError as HookRecursionError, ValueError } from '../../hooks/lib/hookkit/pyruntime.ts';
+import { RecursionError as HookRecursionError, ValueError } from '../../hooks/lib/hookkit/errors.ts';
 import { isRecursionError } from '../../hooks/ship-gate/ship-gate.ts';
 import { EvidenceError, EvidenceTooDeepError } from '../../lib/evidence/store.ts';
 import { LOGIC_WITH_TEST, Sandbox } from './helpers.ts';

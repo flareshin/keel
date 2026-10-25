@@ -129,6 +129,24 @@ describe("TurnStateFileTest", () => {
     assert.equal(handback(PROVEN_REPORT, { toolUses: [editIn(scope, "a.py")] }).code, 0);
     assert.deepEqual(sandbox.fires().filter((fire) => fire.outcome === "error"), []);
   });
+
+  it("handback_flagsAnOutsideEditOnce_whenStateFilePathsIsADictKeyedByThePath", () => {
+    const state = join(sandbox.data, "state", "keel", "report-gate", `${SESSION_ID}-${AGENT_ID}.json`);
+    const outside = join(sandbox.root, "elsewhere", "b.py");
+    sandbox.write(state, `{"paths": ${JSON.stringify({ [outside]: 1 })}, "ev": false, "hb": false}`);
+    assert.equal(handback(PROVEN_REPORT, { toolUses: [["Write", { file_path: outside, content: "x" }]] }).code, 0);
+  });
+
+  it("handback_flagsAnOutsideEditAgain_whenStateFilePathsIsNeitherAListNorADict", () => {
+    const state = join(sandbox.data, "state", "keel", "report-gate", `${SESSION_ID}-${AGENT_ID}.json`);
+    const outside = join(sandbox.root, "elsewhere", "b.py");
+    for (const paths of [JSON.stringify(outside), "5", "true"]) {
+      sandbox.write(state, `{"paths": ${paths}, "ev": false, "hb": false}`);
+      const result = handback(PROVEN_REPORT, { toolUses: [["Write", { file_path: outside, content: "x" }]] });
+      assert.equal(result.code, 2, paths);
+      assert.ok(result.stderr.includes("[K5]"), result.stderr);
+    }
+  });
 });
 
 describe("HandbackScopeTest", () => {
@@ -437,7 +455,8 @@ describe("SubagentStopTest", () => {
     mkdirSync(unreadable);
     const result = stop("Changed it.", { agentTranscript: unreadable });
     assert.equal(result.code, 0);
-    assertFired(sandbox, "K2", "error", "report-gate");
+    const [fire] = assertFired(sandbox, "K2", "error", "report-gate");
+    assert.match(fire?.detail ?? "", /^Error: EISDIR: illegal operation on a directory, read$/);
   });
 
   it("reportGate_passesAndLogsError_whenPayloadIsNotJson", () => {

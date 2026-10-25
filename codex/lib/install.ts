@@ -1,6 +1,7 @@
 import { readdirSync, unlinkSync } from "node:fs";
 import { basename, dirname } from "node:path";
-import { expandUser, isSystemError, sortedByCodePoint } from "../../hooks/lib/hookkit/pycompat.ts";
+import { expandUser, isSystemError } from "../../hooks/lib/hookkit/pycompat.ts";
+import { compareCodePoints } from "../../measure/lib/measurekit/json.ts";
 import { noPositionals, parseCommandLine, usageError } from "../../measure/lib/measurekit/cli.ts";
 import type { CommandSpec } from "../../measure/lib/measurekit/cli.ts";
 import { shlexQuote } from "../../measure/lib/measurekit/shlex.ts";
@@ -122,7 +123,7 @@ export function buildSkillLinks(home: string, overlay: string, keelRoot: string 
   const links = new Map<string, ManagedFile>();
   for (const root of [childPath(keelRoot, "skills"), childPath(overlay, "skills"), childPath(keelRoot, "codex/skills")]) {
     if (!isDirectory(root)) continue;
-    for (const name of sortedByCodePoint(readdirSync(root))) {
+    for (const name of readdirSync(root).sort(compareCodePoints)) {
       const skill = childPath(root, name);
       if (!isFile(childPath(skill, "SKILL.md"))) continue;
       const target = childPath(home, `.agents/skills/${name}`);

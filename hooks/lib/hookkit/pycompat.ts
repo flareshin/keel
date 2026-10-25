@@ -3,21 +3,14 @@ import type { Dirent } from "node:fs";
 import { userInfo } from "node:os";
 import { RecursionError, ValueError } from "./errors.ts";
 import { MAX_JSON_DEPTH } from "../../../measure/lib/measurekit/json.ts";
+import { SPACE_CHARS } from "./text.ts";
 import { OSError, run, TimeoutExpired } from "./subprocess.ts";
 import type { CompletedProcess } from "./subprocess.ts";
 
-export const PY_SPACE = String.raw`\t-\r\x1c-\x20\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000`;
-export const PY_WORD = String.raw`\p{L}\p{N}_`;
-export const SPACE_CLASS = `[${PY_SPACE}]`;
-export const WORD_CLASS = `[${PY_WORD}]`;
-export const WORD_BOUNDARY = `(?:(?<=${WORD_CLASS})(?!${WORD_CLASS})|(?<!${WORD_CLASS})(?=${WORD_CLASS}))`;
-
-const LEADING_SPACE = new RegExp(`^[${PY_SPACE}]+`);
-const TRAILING_SPACE = new RegExp(`[${PY_SPACE}]+$`);
+const LEADING_SPACE = new RegExp(`^[${SPACE_CHARS}]+`);
+const TRAILING_SPACE = new RegExp(`[${SPACE_CHARS}]+$`);
 const SPLITLINES_BREAK = /\r\n|[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]/;
-const UNIVERSAL_NEWLINE = /\r\n|[\r\n]/;
 const ENVIRONMENT_VARIABLE = /\$([A-Za-z0-9_]+|\{[^}]*\}?)/g;
-const DOTTED_OR_DOTLESS_I = /[İı]/g;
 const NON_DECIMAL_DIGITS = String.raw`\u00b2\u00b3\u00b9\u1369-\u1371\u19da\u2070\u2074-\u2079\u2080-\u2089\u2460-\u2468` +
   String.raw`\u2474-\u247c\u2488-\u2490\u24ea\u24f5-\u24fd\u24ff\u2776-\u277e\u2780-\u2788\u278a-\u2792` +
   String.raw`\u{10a40}-\u{10a43}\u{10e60}-\u{10e68}\u{11052}-\u{1105a}\u{1f100}-\u{1f10a}`;
@@ -38,18 +31,6 @@ export function getField(record: Record<string, unknown>, key: string): unknown 
   return Object.hasOwn(record, key) ? record[key] : null;
 }
 
-export function hasField(record: Record<string, unknown>, key: string): boolean {
-  return Object.hasOwn(record, key);
-}
-
-export function foldDottedAndDotlessI(text: string): string {
-  return text.replace(DOTTED_OR_DOTLESS_I, "i");
-}
-
-export function testCaseFolded(pattern: RegExp, text: string): boolean {
-  return pattern.test(foldDottedAndDotlessI(text));
-}
-
 export function codePointLength(text: string): number {
   let length = 0;
   for (const _ of text) length += 1;
@@ -63,30 +44,8 @@ export function truncate(text: string, count: number): string {
   return characters.slice(0, end).join("");
 }
 
-export function compareCodePoints(left: string, right: string): number {
-  const leftPoints = Array.from(left, (character) => character.codePointAt(0) ?? 0);
-  const rightPoints = Array.from(right, (character) => character.codePointAt(0) ?? 0);
-  const shared = Math.min(leftPoints.length, rightPoints.length);
-  for (let index = 0; index < shared; index += 1) {
-    const difference = (leftPoints[index] ?? 0) - (rightPoints[index] ?? 0);
-    if (difference !== 0) return difference;
-  }
-  return leftPoints.length - rightPoints.length;
-}
-
-export function sortedByCodePoint(items: Iterable<string>): string[] {
-  return Array.from(items).sort(compareCodePoints);
-}
-
 export function splitlines(text: string): string[] {
   const lines = text.split(SPLITLINES_BREAK);
-  if (lines[lines.length - 1] === "") lines.pop();
-  return lines;
-}
-
-export function universalNewlineLines(path: string): string[] {
-  const text = readFileSync(path, "utf8");
-  const lines = text.split(UNIVERSAL_NEWLINE);
   if (lines[lines.length - 1] === "") lines.pop();
   return lines;
 }
@@ -386,8 +345,6 @@ export function expandVars(path: string): string {
     return environmentValue(variable) ?? whole;
   });
 }
-
-export { MAX_JSON_DEPTH };
 
 function pythonReprText(value: string): string {
   const quote = value.includes("'") && !value.includes('"') ? '"' : "'";

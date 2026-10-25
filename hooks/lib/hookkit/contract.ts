@@ -1,7 +1,8 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { dataDir } from "./env.ts";
-import { getField, isRecord, isSystemError, isTruthy, joinPath, pythonStr, sortedByCodePoint, strip } from "./pycompat.ts";
+import { getField, isRecord, isSystemError, isTruthy, joinPath, pythonStr, strip } from "./pycompat.ts";
+import { compareCodePoints } from "../../../measure/lib/measurekit/json.ts";
 import type { Payload } from "./protocol.ts";
 import { OSError, run, TimeoutExpired } from "./subprocess.ts";
 
@@ -20,7 +21,7 @@ export function missingFields(payload: Payload, ...names: string[]): string[] {
 }
 
 export function missDetail(payload: Payload, missing: readonly string[]): string {
-  const keys = sortedByCodePoint(Object.keys(payload)).join(",");
+  const keys = Object.keys(payload).sort(compareCodePoints).join(",");
   return `contract-miss: missing ${missing.join(",")}; keys=${keys}; cc_version=${ccVersion(getField(payload, "session_id"))}`;
 }
 

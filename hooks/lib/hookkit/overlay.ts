@@ -1,5 +1,6 @@
-import { statSync } from "node:fs";
-import { arraysEqual, universalNewlineLines, isSystemError, strip } from "./pycompat.ts";
+import { readFileSync, statSync } from "node:fs";
+import { splitLines } from "../../../measure/lib/measurekit/files.ts";
+import { arraysEqual, isSystemError, strip } from "./pycompat.ts";
 
 export class OverlayDataError extends Error {
   override name = "OverlayDataError";
@@ -19,7 +20,7 @@ export function readTsv(path: string, header: readonly string[], optional: reado
   const withOptional = [...header, ...optional];
   const rows: Array<Record<string, string>> = [];
   let columns: string[] | null = null;
-  universalNewlineLines(path).forEach((line, index) => {
+  splitLines(readFileSync(path, "utf8")).forEach((line, index) => {
     const number = index + 1;
     if (strip(line) === "" || line.startsWith("#")) return;
     const cells = line.split("\t");

@@ -3,7 +3,10 @@ import { FireLog } from "../../../hooks/lib/hookkit/fires.ts";
 import { readTsv } from "../../../hooks/lib/hookkit/overlay.ts";
 import * as protocol from "../../../hooks/lib/hookkit/protocol.ts";
 import type { Payload } from "../../../hooks/lib/hookkit/protocol.ts";
-import { getField, isTruthy, joinPath, normalizePath, expandUser, partition, pythonStr, strip, arraysEqual, PY_SPACE, testCaseFolded } from "../../../hooks/lib/hookkit/pycompat.ts";
+import {
+  getField, isTruthy, joinPath, normalizePath, expandUser, partition, pythonStr, strip, arraysEqual,
+} from "../../../hooks/lib/hookkit/pycompat.ts";
+import { SPACE_CHARS, testCaseFolded } from "../../../hooks/lib/hookkit/text.ts";
 import { globMatches } from "../../../lib/evidence/glob.ts";
 import { parsePayload } from "../../../hooks/lib/hookkit/json.ts";
 import { isDirectory } from "../../../hooks/lib/hookkit/files.ts";
@@ -170,8 +173,8 @@ function pinsJdk(build: MavenBuild, major: string): boolean {
 
 function namesJdk(value: string, major: string): boolean {
   const escaped = major.replace(SYNTAX_CHARACTERS, "\\$&");
-  const space = `[${PY_SPACE}]`;
-  const lookup = new RegExp(`java_home${space}+(?:-v${space}*|--version[${PY_SPACE}=]+)${escaped}(?:\\.[0-9]+)*(?![0-9.+*])`, "u");
+  const space = `[${SPACE_CHARS}]`;
+  const lookup = new RegExp(`java_home${space}+(?:-v${space}*|--version[${SPACE_CHARS}=]+)${escaped}(?:\\.[0-9]+)*(?![0-9.+*])`, "u");
   const path = new RegExp(`${JDK_VENDOR_WORDS}[-_.@/]?${escaped}(?![0-9])`, "iu");
   return lookup.test(value) || testCaseFolded(path, value);
 }

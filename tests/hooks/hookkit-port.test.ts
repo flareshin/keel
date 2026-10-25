@@ -13,6 +13,7 @@ import * as pycompat from "../../hooks/lib/hookkit/pycompat.ts";
 import * as repo from "../../hooks/lib/hookkit/repo.ts";
 import { readTsv } from "../../hooks/lib/hookkit/overlay.ts";
 import * as transcript from "../../hooks/lib/hookkit/transcript.ts";
+import { compareCodePoints } from "../../measure/lib/measurekit/json.ts";
 import { KEEL_HOME, Sandbox, withEnv } from "./helpers.ts";
 
 const FIRST_LINE = /^\[[A-Za-z0-9-]+\] (ship-gate|git-guard|report-gate|model-assign|env-preflight): \S/;
@@ -47,17 +48,6 @@ describe("python string behaviors", () => {
     assert.deepEqual(pycompat.splitlines("\n"), [""]);
     assert.deepEqual(pycompat.splitlines(""), []);
     assert.deepEqual(pycompat.splitlines("a\n\n"), ["a", ""]);
-  });
-
-  it("universalNewlineLines_splitsOnCarriageReturnAndLineFeed_notOnOtherUnicodeBreaks", () => {
-    const sandbox = new Sandbox();
-    try {
-      const path = sandbox.write(join(sandbox.root, "lines.txt"), "a\r\nb\rc\nd\x0be\u2028f\n");
-
-      assert.deepEqual(pycompat.universalNewlineLines(path), ["a", "b", "c", "d\x0be\u2028f"]);
-    } finally {
-      sandbox.close();
-    }
   });
 
   it("strip_removesPythonWhitespace_notTheByteOrderMark", () => {
@@ -181,7 +171,7 @@ describe("python glob", () => {
   afterEach(() => sandbox.close());
 
   function matches(pattern: string): string[] {
-    return pycompat.sortedByCodePoint(pycompat.glob(join(sandbox.root, pattern)).map((path) => path.slice(sandbox.root.length + 1)));
+    return pycompat.glob(join(sandbox.root, pattern)).map((path) => path.slice(sandbox.root.length + 1)).sort(compareCodePoints);
   }
 
   it("glob_readsDoubleStarAsStar_withoutRecursion", () => {
@@ -390,6 +380,11 @@ describe("overlay and transcript files", () => {
   it("iterEntries_skipsBlankMalformedAndNonObjectLines", () => {
     const path = sandbox.write(join(sandbox.root, "t.jsonl"), '{"a": 1}\n\nnot json\n[1]\n  {"b": 2}  \n');
     assert.deepEqual(Array.from(transcript.iterEntries(path)), [{ a: 1 }, { b: 2 }]);
+  });
+
+  it("iterEntries_splitsOnCarriageReturnAndLineFeed_notOnOtherUnicodeBreaks", () => {
+    const path = sandbox.write(join(sandbox.root, "breaks.jsonl"), '{"a": 1}\r{"b": 2}\r\n{"t": "x\u2028y\x85z"}\n');
+    assert.deepEqual(Array.from(transcript.iterEntries(path)), [{ a: 1 }, { b: 2 }, { t: "x\u2028y\x85z" }]);
   });
 
   it("iterEntries_readsADeeplyNestedLine_likePython", () => {

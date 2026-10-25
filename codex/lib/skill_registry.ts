@@ -2,7 +2,8 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { isSystemError, sortedByCodePoint } from "../../hooks/lib/hookkit/pycompat.ts";
+import { isSystemError } from "../../hooks/lib/hookkit/pycompat.ts";
+import { compareCodePoints } from "../../measure/lib/measurekit/json.ts";
 import { OSError } from "../../hooks/lib/hookkit/subprocess.ts";
 import { readJson, writeAtomic } from "./files.ts";
 import type { ManagedFile } from "./files.ts";
@@ -227,7 +228,7 @@ function registerSkill(plan: SkillPlan, path: string, target: string, profile: s
     record = { target, managed: !exists, profiles: [] };
     plan.records.set(name, record);
   }
-  record.profiles = sortedByCodePoint(new Set([...record.profiles, profile]));
+  record.profiles = [...new Set([...record.profiles, profile])].sort(compareCodePoints);
   if (!exists) {
     plan.create.set(path, target);
     record.managed = true;

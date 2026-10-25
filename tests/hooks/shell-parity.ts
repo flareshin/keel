@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { isDeepStrictEqual } from "node:util";
 import { join } from "node:path";
 import * as shell from "../../hooks/lib/hookkit/shell.ts";
-import { sortedByCodePoint } from "../../hooks/lib/hookkit/pycompat.ts";
+import { compareCodePoints } from "../../measure/lib/measurekit/json.ts";
 import { recordedAnswers } from "../recorded.ts";
 import { ADVERSARIAL_SPELLINGS } from "./shell-parity-corpus.ts";
 
@@ -76,9 +76,9 @@ function indexes(commands: shell.SimpleCommand[]): Map<shell.SimpleCommand, numb
 function invocationView(invocation: shell.Invocation): Json {
   return {
     argv: invocation.argv, assignments: invocation.assignments.map((item) => [...item]), clears_env: invocation.clearsEnv,
-    removed_names: sortedByCodePoint(invocation.removedNames), unattributable_options: invocation.unattributableOptions,
+    removed_names: [...invocation.removedNames].sort(compareCodePoints), unattributable_options: invocation.unattributableOptions,
     moves_directory: invocation.movesDirectory,
-    drops_inherited: sortedByCodePoint(new Set([...invocation.removedNames, ...PROBED_VARIABLES]))
+    drops_inherited: [...new Set([...invocation.removedNames, ...PROBED_VARIABLES])].sort(compareCodePoints)
       .map((name) => [name, invocation.dropsInherited(name)]),
   };
 }
@@ -170,7 +170,7 @@ function fixtureCommands(): string[] {
 
 export function buildCorpus(): string[] {
   const [literals] = recordedAnswers<string, string[]>("shell-parity-literals", ["python tests"]) as [string[]];
-  return sortedByCodePoint(new Set([...literals, ...fixtureCommands(), ...ADVERSARIAL_SPELLINGS]));
+  return [...new Set([...literals, ...fixtureCommands(), ...ADVERSARIAL_SPELLINGS])].sort(compareCodePoints);
 }
 
 function textCalls(corpus: string[]): Call[] {

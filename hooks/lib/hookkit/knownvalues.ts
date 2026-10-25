@@ -1,16 +1,18 @@
-import { basename, codePointLength, environmentValue, expandUser, foldDottedAndDotlessI, glob, PY_SPACE, PY_WORD, sortedByCodePoint, splitlines, tryReadText } from "./pycompat.ts";
+import { basename, codePointLength, environmentValue, expandUser, glob, splitlines, tryReadText } from "./pycompat.ts";
+import { SPACE_CHARS, WORD_CHARS, foldDottedAndDotlessI } from "./text.ts";
+import { compareCodePoints } from "../../../measure/lib/measurekit/json.ts";
 import { OverlayDataError, readTsv } from "./overlay.ts";
 
 export const HEADER = ["source", "pattern"] as const;
 export const SOURCE_FILE = "file";
 export const SOURCE_ENV = "env";
 export const MIN_LENGTH = 6;
-const SPACE = `[${PY_SPACE}]`;
+const SPACE = `[${SPACE_CHARS}]`;
 const SECRET_KEY_RE = /pass|pwd|secret|token|key|credential|auth/iu;
 const KEY_VALUE_RE = new RegExp(
-  `^${SPACE}*(?:export${SPACE}+)?["']?([A-Za-z_][${PY_WORD}.-]*)["']?${SPACE}*[:=]${SPACE}*["']?([^\\n]+?)["']?${SPACE}*,?${SPACE}*$`, "u");
+  `^${SPACE}*(?:export${SPACE}+)?["']?([A-Za-z_][${WORD_CHARS}.-]*)["']?${SPACE}*[:=]${SPACE}*["']?([^\\n]+?)["']?${SPACE}*,?${SPACE}*$`, "u");
 const TRAILING_COMMENT_RE = new RegExp(`${SPACE}+#[^\\n]*$`, "u");
-const HUNK_RE = new RegExp(`^@@ -[^${PY_SPACE}]+ \\+([0-9]+)`, "u");
+const HUNK_RE = new RegExp(`^@@ -[^${SPACE_CHARS}]+ \\+([0-9]+)`, "u");
 
 export type Line = readonly [path: string, number: number, text: string];
 
@@ -44,7 +46,7 @@ export function load(path: string): KnownValue[] {
     if (source === SOURCE_ENV) {
       values.push({ value: environmentValue(pattern) ?? "", key: pattern, origin: SOURCE_ENV });
     } else if (source === SOURCE_FILE) {
-      for (const file of sortedByCodePoint(glob(expandUser(pattern)))) values.push(...fileValues(file));
+      for (const file of glob(expandUser(pattern)).sort(compareCodePoints)) values.push(...fileValues(file));
     } else {
       throw new OverlayDataError(`${path}: source must be ${SOURCE_FILE} or ${SOURCE_ENV}, not '${source}'`);
     }

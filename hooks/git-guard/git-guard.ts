@@ -9,9 +9,10 @@ import { readTsv } from "../lib/hookkit/overlay.ts";
 import * as protocol from "../lib/hookkit/protocol.ts";
 import type { Payload } from "../lib/hookkit/protocol.ts";
 import {
-  basename, expandUser, getField, isRecord, isTruthy, joinPath, normalizePath, partition, PY_SPACE, pythonStr, sortedByCodePoint,
-  SPACE_CLASS, splitlines, strip, testCaseFolded, truncate, WORD_BOUNDARY,
+  basename, expandUser, getField, isRecord, isTruthy, joinPath, normalizePath, partition, pythonStr, splitlines, strip, truncate,
 } from "../lib/hookkit/pycompat.ts";
+import { SPACE_CHARS, SPACE_CLASS, WORD_BOUNDARY, testCaseFolded } from "../lib/hookkit/text.ts";
+import { compareCodePoints } from "../../measure/lib/measurekit/json.ts";
 import { globMatches } from "../../lib/evidence/glob.ts";
 import { parseJson, parseJsonReadingNonFiniteNumbersAsZero, parsePayload } from "../lib/hookkit/json.ts";
 import { isDirectory, isFile, resolveSymlinksKeepingMissingTail } from "../lib/hookkit/files.ts";
@@ -66,7 +67,7 @@ const LIVE_MOVING_SUBCOMMANDS: ReadonlySet<string> = new Set([
 ]);
 const HOOKS_PATH_KEY = "core.hookspath";
 const DISABLE_HOOKS_KEY = "disableAllHooks";
-const DISABLE_HOOKS_RE = new RegExp(`"?disableAllHooks"?[${PY_SPACE}]*[:=][${PY_SPACE}]*true`, "u");
+const DISABLE_HOOKS_RE = new RegExp(`"?disableAllHooks"?[${SPACE_CHARS}]*[:=][${SPACE_CHARS}]*true`, "u");
 const SETTINGS_OPTIONS = ["--settings"];
 const DISALLOWED_TOOLS_OPTIONS = ["--disallowedTools", "--disallowed-tools"];
 const AGENT_WRITE_TOOLS = ["Bash", "Edit", "Write"];
@@ -82,7 +83,7 @@ const ATTRIBUTION_RE = new RegExp(
   `co-authored-by:${SPACE_CLASS}*${AI_TOOLS}` +
   `|(generated|created|written|authored|co-authored|assisted|aided|helped|powered|built|made|developed` +
   `|drafted|produced|crafted|implemented|reviewed)${SPACE_CLASS}+(with|by|using|via)${SPACE_CLASS}[^\\n]{0,24}${AI_TOOLS}` +
-  `|${AI_TOOLS}[${PY_SPACE}._-]+(generated|assisted|authored|written|created|powered)` +
+  `|${AI_TOOLS}[${SPACE_CHARS}._-]+(generated|assisted|authored|written|created|powered)` +
   `|(help|assistance|thanks)${SPACE_CLASS}+(of|from|to)${SPACE_CLASS}[^\\n]{0,16}${AI_TOOLS}` +
   `|(https?://|//|@)(anthropic|claude)\\.(com|ai)|(anthropic|claude)\\.(com|ai)/` +
   "|\u{1F916}",
@@ -91,7 +92,7 @@ const ATTRIBUTION_RE = new RegExp(
 const LOOKS_GUARDED_RE = new RegExp(
   `${WORD_BOUNDARY}git${WORD_BOUNDARY}[^\\n]*${WORD_BOUNDARY}(commit|push)${WORD_BOUNDARY}` +
   `|${WORD_BOUNDARY}gh${WORD_BOUNDARY}[^\\n]*${WORD_BOUNDARY}pr${WORD_BOUNDARY}[^\\n]*${WORD_BOUNDARY}(create|edit|merge)${WORD_BOUNDARY}` +
-  `|${WORD_BOUNDARY}keel[${PY_SPACE}"'\\\\]+(approve|evidence)${WORD_BOUNDARY}|state/keel` +
+  `|${WORD_BOUNDARY}keel[${SPACE_CHARS}"'\\\\]+(approve|evidence)${WORD_BOUNDARY}|state/keel` +
   `|no-verify|hooksPath|disableAllHooks|keel-fires`,
   "iu",
 );
@@ -320,7 +321,7 @@ function childClaudeDisablesHooks(args: readonly string[]): boolean {
   const inlineSettings = optionValues(args, SETTINGS_OPTIONS).filter((value) => strip(value).startsWith("{"));
   if (!inlineSettings.some(settingsDisableHooks)) return false;
   const disallowed = new Set(optionValues(args, DISALLOWED_TOOLS_OPTIONS).flatMap(
-    (value) => value.split(new RegExp(`[,${PY_SPACE}]+`)).filter((tool) => tool !== "")));
+    (value) => value.split(new RegExp(`[,${SPACE_CHARS}]+`)).filter((tool) => tool !== "")));
   return !AGENT_WRITE_TOOLS.every((tool) => disallowed.has(tool));
 }
 
@@ -434,7 +435,7 @@ function checkPush(args: readonly string[], repoDirectory: string): Violation[] 
 
 function leasedProtectedBranches(push: PushRequest, repoKey: string | null): string[] {
   const protectedNames = new Set(protectedBranches(repoKey));
-  return sortedByCodePoint(Array.from(push.destinations).filter((name) => protectedNames.has(name)));
+  return Array.from(push.destinations).filter((name) => protectedNames.has(name)).sort(compareCodePoints);
 }
 
 function pushedRanges(toplevel: string, push: PushRequest): Array<[revisions: string[], label: string]> {
@@ -451,7 +452,7 @@ function checkPushRange(toplevel: string, repoKey: string | null, revisions: rea
     });
   }
   const names = strip(gitOutput(["log", "--name-only", "--pretty=", ...revisions], toplevel) || "").split(new RegExp(`${SPACE_CLASS}+`));
-  const paths = sortedByCodePoint(new Set(names.filter((name) => name !== "")));
+  const paths = [...new Set(names.filter((name) => name !== ""))].sort(compareCodePoints);
   return [...violations, ...repoRuleViolations(repoKey, paths, [ACTION_DENY_PATH])];
 }
 

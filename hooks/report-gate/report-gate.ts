@@ -5,14 +5,12 @@ import { dataDir, keelCli } from "../lib/hookkit/env.ts";
 import { FireLog } from "../lib/hookkit/fires.ts";
 import * as protocol from "../lib/hookkit/protocol.ts";
 import type { Payload } from "../lib/hookkit/protocol.ts";
-import {
-  dumpsAscii, expandUser, getField, isRecord, isTruthy, joinPath, MAX_JSON_DEPTH, normalizePath, PY_SPACE, PY_WORD, pythonStr, sortedByCodePoint, SPACE_CLASS, strip,
-  testCaseFolded, WORD_BOUNDARY,
-} from "../lib/hookkit/pycompat.ts";
+import { dumpsAscii, expandUser, getField, isRecord, isTruthy, joinPath, normalizePath, pythonStr, strip } from "../lib/hookkit/pycompat.ts";
+import { compareCodePoints, MAX_JSON_DEPTH } from "../../measure/lib/measurekit/json.ts";
 import { NonFiniteJsonNumber, parseFiniteJson, parseJson, parsePayload } from "../lib/hookkit/json.ts";
 import { AttributeError, describeError, errorName, pythonTypeName, RecursionError, ValueError } from "../lib/hookkit/errors.ts";
 import { readStdin } from "../lib/hookkit/stdio.ts";
-import { trimCharacters } from "../lib/hookkit/text.ts";
+import { SPACE_CHARS, SPACE_CLASS, WORD_BOUNDARY, WORD_CHARS, testCaseFolded, trimCharacters } from "../lib/hookkit/text.ts";
 import { OSError, run, TimeoutExpired } from "../lib/hookkit/subprocess.ts";
 import type { CompletedProcess } from "../lib/hookkit/subprocess.ts";
 import { commandWritesFiles } from "../lib/hookkit/shell.ts";
@@ -29,7 +27,7 @@ const EVIDENCE_RE = new RegExp(
   `|${WORD_BOUNDARY}${DIGIT}+${SPACE_CLASS}*/${SPACE_CLASS}*${DIGIT}+${SPACE_CLASS}+(?:tests?${SPACE_CLASS}+|checks?${SPACE_CLASS}+)?pass(?:ed|ing)${WORD_BOUNDARY}` +
   `|${WORD_BOUNDARY}Ran ${DIGIT}+ tests?${WORD_BOUNDARY}|#${SPACE_CLASS}*pass${SPACE_CLASS}+${DIGIT}` +
   `|exit(?:ed)?(?:${SPACE_CLASS}+(?:with${SPACE_CLASS}+)?(?:code|status))?[:= ]*0${WORD_BOUNDARY}|\\$\\?${SPACE_CLASS}*=?${SPACE_CLASS}*0` +
-  `|grep${SPACE_CLASS}+-c|wc${SPACE_CLASS}+-[lc]|diff --git|files? changed|[${PY_WORD}./~-]+\\.[A-Za-z]{1,5}:${DIGIT}+` +
+  `|grep${SPACE_CLASS}+-c|wc${SPACE_CLASS}+-[lc]|diff --git|files? changed|[${WORD_CHARS}./~-]+\\.[A-Za-z]{1,5}:${DIGIT}+` +
   `|UNVERIFIED${SPACE_CLASS}*:|NOT VERIFIED`,
   "iu",
 );
@@ -48,13 +46,13 @@ const KEEL_EVIDENCE_RE = new RegExp(`(?<![^\\n])${SPACE_CLASS}*KEEL-EVIDENCE: (\
 export const REPORT_START = "<<<KEEL-REPORT";
 export const REPORT_END = "KEEL-REPORT>>>";
 const SCOPE_RE = /\[SCOPE\][ \t]*([^\n]+)/g;
-const SCOPE_SEPARATOR_RE = new RegExp(`[,${PY_SPACE}]+`);
+const SCOPE_SEPARATOR_RE = new RegExp(`[,${SPACE_CHARS}]+`);
 const SCOPE_EXEMPT_PREFIXES: readonly string[] = ["/tmp/", "/private/tmp/", "/var/folders/"];
 const SCRATCH_PREFIXES: readonly string[] = [...SCOPE_EXEMPT_PREFIXES, ...(process.env["TMPDIR"] ? [process.env["TMPDIR"]] : [])];
 const PATH_EDIT_TOOLS: ReadonlySet<string> = new Set(["edit", "write", "notebookedit", "multiedit"]);
 const EVIDENCE_MARKER = "[EVIDENCE]";
 const NO_TRANSCRIPT = "review evidence skipped: no subagent transcript";
-const STATE_NAME_UNSAFE = new RegExp(`[^${PY_WORD}.-]`, "gu");
+const STATE_NAME_UNSAFE = new RegExp(`[^${WORD_CHARS}.-]`, "gu");
 
 const EVIDENCE_TEXT =
   "This report is under the evidence contract (the brief carries an [EVIDENCE] marker, the agent " +
@@ -316,7 +314,7 @@ function findHandbackTranscript(payload: Payload): string | null {
   if (!(isTruthy(mainPath) && isTruthy(sessionId) && isTruthy(agentId))) return null;
   const base = joinPath(dirname(expandUser(pythonStr(mainPath))), pythonStr(sessionId), "subagents");
   const found = filesNamedUnder(base, `agent-${pythonStr(agentId)}.jsonl`);
-  return sortedByCodePoint(found)[0] ?? null;
+  return found.toSorted(compareCodePoints)[0] ?? null;
 }
 
 function filesNamedUnder(directory: string, fileName: string): string[] {
@@ -444,7 +442,7 @@ function lacksEvidence(report: string, needsEvidence: boolean, fires: FireLog): 
 function flagScopeViolations(transcript: AgentTranscript, state: TurnState, fires: FireLog): string[] {
   const fresh = transcript.outOfScope.filter((path) => !state.flaggedPaths.includes(path));
   if (fresh.length > 0) {
-    state.flaggedPaths = sortedByCodePoint(new Set([...state.flaggedPaths, ...fresh]));
+    state.flaggedPaths = [...new Set([...state.flaggedPaths, ...fresh])].sort(compareCodePoints);
     state.save();
     fires.append("K5", "deny", { detail: `${fresh.length} path(s) outside [SCOPE]` });
   }

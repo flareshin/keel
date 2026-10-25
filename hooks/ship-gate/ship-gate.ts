@@ -4,9 +4,10 @@ import * as contract from "../lib/hookkit/contract.ts";
 import * as protocol from "../lib/hookkit/protocol.ts";
 import type { Payload } from "../lib/hookkit/protocol.ts";
 import {
-  arraysEqual, basename, getField, isRecord, isTruthy, joinPath, lstripChar, normalizePath, partition, PY_WORD, pythonStr, sortedByCodePoint, strip,
-  truncate,
+  arraysEqual, basename, getField, isRecord, isTruthy, joinPath, lstripChar, normalizePath, partition, pythonStr, strip, truncate,
 } from "../lib/hookkit/pycompat.ts";
+import { WORD_BOUNDARY, WORD_CHARS } from "../lib/hookkit/text.ts";
+import { compareCodePoints } from "../../measure/lib/measurekit/json.ts";
 import { isFile } from "../lib/hookkit/files.ts";
 import { decodeStrict, splitLines } from "../../measure/lib/measurekit/files.ts";
 import { shlexQuote } from "../../measure/lib/measurekit/shlex.ts";
@@ -28,13 +29,11 @@ import type { Decision, Reason } from "../../lib/evidence/verify.ts";
 const HOOK = "ship-gate";
 const FIRES_DETAIL_LIMIT = 200;
 const F_IRREVERSIBLE = "F-irreversible";
-const WORD = `[${PY_WORD}]`;
-const WORD_BOUNDARY = `(?:(?<=${WORD})(?!${WORD})|(?<!${WORD})(?=${WORD}))`;
 const DECISION_HINT = new RegExp(`${WORD_BOUNDARY}(git|gh|push|merge)${WORD_BOUNDARY}`, "u");
 const PUSH_OR_MERGE_WORD = new RegExp(`${WORD_BOUNDARY}(push|merge)${WORD_BOUNDARY}`, "u");
 const PUSH_OR_MERGE_WORDS: ReadonlySet<string> = new Set(["push", "merge"]);
 const PUSH_OR_MERGE_WITHOUT_THE_WORD = new RegExp(
-  `${WORD_BOUNDARY}send-pack${WORD_BOUNDARY}|(?<![${PY_WORD}.-])merges(?![${PY_WORD}.-])|(?<![${PY_WORD}.])git/refs${WORD_BOUNDARY}`,
+  `${WORD_BOUNDARY}send-pack${WORD_BOUNDARY}|(?<![${WORD_CHARS}.-])merges(?![${WORD_CHARS}.-])|(?<![${WORD_CHARS}.])git/refs${WORD_BOUNDARY}`,
   "u",
 );
 const PUSHES_OUTSIDE_GIT_PUSH: ReadonlySet<string> = new Set(["send-pack", "http-push"]);
@@ -704,7 +703,7 @@ function ghDefaultKey(repoRoot: string): string | null {
     const key = registry.normalizeRepoKey(gitcmd.remoteUrl(repoRoot, name));
     if (key !== null) named.add(key);
   }
-  const keys = sortedByCodePoint(named);
+  const keys = [...named].sort(compareCodePoints);
   if (keys.length <= 1) return keys[0] ?? null;
   const gated = keys.filter((key) => registry.isGated(registry.lookup(key)));
   if (gated.length > 0) {

@@ -1,6 +1,7 @@
 import { dataDir } from "../lib/hookkit/env.ts";
 import { FireLog } from "../lib/hookkit/fires.ts";
-import { getField, isTruthy, joinPath, PY_SPACE, PY_WORD, pythonStr } from "../lib/hookkit/pycompat.ts";
+import { getField, isTruthy, joinPath, pythonStr } from "../lib/hookkit/pycompat.ts";
+import { SPACE_CHARS, WORD_CHARS } from "../lib/hookkit/text.ts";
 import { readFileSync } from "node:fs";
 import { isFile } from "../lib/hookkit/files.ts";
 import { parsePayload } from "../lib/hookkit/json.ts";
@@ -13,13 +14,13 @@ const HOOK = "model-assign";
 const RULE = "C-dispatch";
 const FORK_TYPE = "fork";
 const READ_ONLY_TYPES: ReadonlySet<string> = new Set(["explore"]);
-const WORD_START = `(?<![${PY_WORD}])`;
-const WORD_END = `(?![${PY_WORD}])`;
+const WORD_START = `(?<![${WORD_CHARS}])`;
+const WORD_END = `(?![${WORD_CHARS}])`;
 const JUDGMENT_RE = new RegExp(`${WORD_START}(?:VERDICT|NEEDS_FIXES|review-lenses)${WORD_END}`, "u");
 const REQUIRED_SCRIPT_OPTIONS: ReadonlyArray<readonly [string, RegExp]> = ["model", "effort"].map((key) => [
-  key, new RegExp(`${WORD_START}${key}${WORD_END}["']?[${PY_SPACE}]*:`, "u"),
+  key, new RegExp(`${WORD_START}${key}${WORD_END}["']?[${SPACE_CHARS}]*:`, "u"),
 ]);
-const EFFORT_PIN_RE = new RegExp(`(?<![^\\n])effort[${PY_SPACE}]*:`);
+const EFFORT_PIN_RE = new RegExp(`(?<![^\\n])effort[${SPACE_CHARS}]*:`);
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
 const OPUS = "opus";
 const SONNET = "sonnet";

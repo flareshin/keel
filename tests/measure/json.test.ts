@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 
-import { MAX_JSON_DEPTH, nestsPastMaxJsonDepth, parseJsonKeepingIntegers, stringifySorted } from "../../measure/lib/measurekit/json.ts"
+import { compareCodePoints, MAX_JSON_DEPTH, nestsPastMaxJsonDepth, parseJsonKeepingIntegers, stringifySorted } from "../../measure/lib/measurekit/json.ts"
 
 const MIXED_KEYS = { "\u{1F600}": 1, "\uffff": 2, b: 3, "": 4 }
 
@@ -40,6 +40,14 @@ describe("json", () => {
     assert.equal(stringifySorted({ b: undefined, a: [undefined, () => 1, 2], c: {} }), '{"a":[null,null,2],"c":{}}')
     assert.equal(stringifySorted({ a: [], b: { c: [1] } }, 2), '{\n  "a": [],\n  "b": {\n    "c": [\n      1\n    ]\n  }\n}')
     assert.equal(stringifySorted(undefined), "null")
+  })
+
+  it("compareCodePoints_ordersByCodePoint_soAnAstralCharacterFollowsALateBmpOne_andAPrefixComesFirst", () => {
+    assert.ok(compareCodePoints("\uffff", "\u{1F600}") < 0)
+    assert.ok(compareCodePoints("ab", "abc") < 0)
+    assert.ok(compareCodePoints("b", "ab") > 0)
+    assert.equal(compareCodePoints("same", "same"), 0)
+    assert.deepEqual(["\u{1F600}", "\uffff", "b", ""].sort(compareCodePoints), ["", "b", "\uffff", "\u{1F600}"])
   })
 
   it("parseJsonKeepingIntegers_readsAWideArray", () => {

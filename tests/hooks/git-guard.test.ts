@@ -519,6 +519,15 @@ describe("KnownValuesTest", () => {
     assertPassed(edit("Write", { file_path: join(repo, "a.py"), content: "host = 'db.internal.example'\npin = 12345\n" }));
   });
 
+  it("multiEdit_deniedWithFSecretsNotFailClosed_whenEditsIsNotAListAndContentHoldsAKnownValue", () => {
+    for (const edits of ["text", { new_string: "text" }]) {
+      const result = edit("MultiEdit", { file_path: join(repo, "report.md"), content: `password was ${PASSWORD}\n`, edits });
+      assertDenied(result, "F-secrets");
+      assert.ok(!result.stderr.includes("[F-attribution]"), result.stderr);
+      assert.ok(!result.stderr.includes(PASSWORD));
+    }
+  });
+
   it("commit_denied_whenStagedLineHoldsAKnownValue", () => {
     sandbox.write(join(repo, "conf.py"), `x = 1\nPASS = '${PASSWORD}'\n`);
     sandbox.git(repo, "add", "conf.py");

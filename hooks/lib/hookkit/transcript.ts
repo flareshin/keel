@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
+import { splitLines } from "../../../measure/lib/measurekit/files.ts";
 import { JsonSyntaxError, parseTranscriptLine } from "./json.ts";
-import { universalNewlineLines, getField, hasField, isRecord, isTruthy, strip } from "./pycompat.ts";
+import { getField, isRecord, isTruthy, strip } from "./pycompat.ts";
 
 export type Entry = Record<string, unknown>;
 
@@ -8,8 +10,8 @@ export function textOf(content: unknown): string | null {
   if (isRecord(content)) {
     const text = getField(content, "text");
     if (typeof text === "string") return text;
-    if (hasField(content, "content")) return textOf(getField(content, "content"));
-    if (hasField(content, "message")) return textOf(getField(content, "message"));
+    if (Object.hasOwn(content, "content")) return textOf(getField(content, "content"));
+    if (Object.hasOwn(content, "message")) return textOf(getField(content, "message"));
     return null;
   }
   if (Array.isArray(content)) {
@@ -24,7 +26,7 @@ export function textOf(content: unknown): string | null {
 }
 
 export function* iterEntries(path: string): Generator<Entry> {
-  for (const line of universalNewlineLines(path)) {
+  for (const line of splitLines(readFileSync(path, "utf8"))) {
     let entry: unknown;
     try {
       entry = parseTranscriptLine(strip(line));

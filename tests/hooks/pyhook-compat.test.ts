@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { dumpsAscii, MAX_JSON_DEPTH, pythonJsonDumps, pythonStr } from "../../hooks/lib/hookkit/pycompat.ts";
+import { dumpsAscii, pythonJsonDumps, pythonStr } from "../../hooks/lib/hookkit/pycompat.ts";
+import { MAX_JSON_DEPTH } from "../../measure/lib/measurekit/json.ts";
 import { RecursionError, ValueError } from "../../hooks/lib/hookkit/errors.ts";
 
 const DEEP_LEVELS = [3000, 9999];

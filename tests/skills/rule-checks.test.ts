@@ -4,7 +4,7 @@ import { mkdirSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { isTestPath as riskIsTestPath, TEST_BASENAME_GLOBS as riskTestBasenameGlobs, TEST_SEGMENTS as riskTestSegments } from "../../lib/evidence/risk.ts";
-import { foldDottedAndDotlessI as hookkitFold } from "../../hooks/lib/hookkit/pycompat.ts";
+import { foldDottedAndDotlessI as hookkitFold } from "../../hooks/lib/hookkit/text.ts";
 import { foldDottedAndDotlessI, isTestPath, TEST_BASENAME_GLOBS, TEST_SEGMENTS } from "../../skills/readable-code/scripts/rule-checks.ts";
 import { Isolated, RULE_CHECKS } from "./helpers.ts";
 

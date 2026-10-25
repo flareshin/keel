@@ -1,7 +1,7 @@
 import {
-  arraysEqual, basename, codePointLength, environmentValue, expandUser, expandVars, isDigits, joinPath, lstripChar, normalizePath, partition,
-  PY_SPACE, PY_WORD, rstripChar,
+  arraysEqual, basename, codePointLength, environmentValue, expandUser, expandVars, isDigits, joinPath, lstripChar, normalizePath, partition, rstripChar,
 } from "./pycompat.ts";
+import { SPACE_CHARS, WORD_CHARS } from "./text.ts";
 
 export const SHELLS: ReadonlySet<string> = new Set(["bash", "sh", "zsh", "dash", "ksh"]);
 export const SEPARATOR_OPS: readonly string[] = ["&&", "||", "|&", ";;", ";", "|", "&", "(", ")"];
@@ -58,7 +58,7 @@ const CONFIG_WRITE_OPTIONS: ReadonlySet<string> = new Set([
 ]);
 const CONFIG_VALUE_OPTIONS: ReadonlySet<string> =
   new Set(["-f", "--file", "--blob", "-t", "--type", "--default", "--comment", "--value"]);
-const VARIABLE_RE = new RegExp(String.raw`\$\{([${PY_WORD}]+)\}|\$([${PY_WORD}]+)`, "gu");
+const VARIABLE_RE = new RegExp(String.raw`\$\{([${WORD_CHARS}]+)\}|\$([${WORD_CHARS}]+)`, "gu");
 const VALUE_OPTIONS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ["cp", new Set(["-t", "-S"])],
   ["mv", new Set(["-t", "-S"])],
@@ -68,8 +68,8 @@ const VALUE_OPTIONS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ["sed", new Set(["-e", "-f"])],
   ["perl", new Set(["-e", "-E", "-M", "-I"])],
 ]);
-const NOT_WORD_BEFORE = `(?<![${PY_WORD}])`;
-const SPACE = `[${PY_SPACE}]`;
+const NOT_WORD_BEFORE = `(?<![${WORD_CHARS}])`;
+const SPACE = `[${SPACE_CHARS}]`;
 const INLINE_WRITE_RE = new RegExp(
   String.raw`${NOT_WORD_BEFORE}open\((?:[^()\n]|\([^()\n]*\))*,${SPACE}*(?:mode${SPACE}*=${SPACE}*)?['"][wax][tb+]*['"]` +
   String.raw`|\.open\(${SPACE}*(?:mode${SPACE}*=${SPACE}*)?['"][wax][tb+]*['"]` +

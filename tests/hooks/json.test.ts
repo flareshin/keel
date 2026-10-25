@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { JsonSyntaxError, NonFiniteJsonNumber, parseFiniteJson, parseJson, parseJsonReadingNonFiniteNumbersAsZero, parsePayload, parseTranscriptLine } from "../../hooks/lib/hookkit/json.ts";
-import { MAX_JSON_DEPTH } from "../../hooks/lib/hookkit/pycompat.ts";
+import { MAX_JSON_DEPTH } from "../../measure/lib/measurekit/json.ts";
 import { RecursionError, ValueError } from "../../hooks/lib/hookkit/errors.ts";
 
 function nestedArrays(depth: number): string {

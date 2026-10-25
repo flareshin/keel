@@ -842,3 +842,137 @@ test('lensReview_scopesCommentCleanupAndRequiresExecutableEvidence_inReadableLen
   assert.match(prompt, /explanatory-comment-only change cannot establish a behavior fix/)
   assert.match(prompt, /Tool-consumed directive changes are behavior changes and require failing reproduction and passing tool verification/)
 })
+
+const PRECHECK_TREE = 'e'.repeat(40)
+const SOURCE_BLOB = '1'.repeat(40)
+const OTHER_BLOB = '2'.repeat(40)
+const DESIGN_EXAMPLE_PRECHECK = `precheck tree 4f1c9e2a7b3d58e60c1f9a2b7d4e3c5a6b8d9e0f · base origin/develop · 7 paths (5 source, 2 test) · census (all candidates ran)
+blobs     src/main/java/…/DispatchService.java 9a1e…(40hex) · src/main/java/…/VehicleRequest.java 2c7b…(40hex) · … (repo-relative, non-test paths only)
+baseline  4 test files · 118 pass / 0 fail · coverage collected
+mutants   candidates 38 · killed 31 · survived 3 · no test reaches 1 · invalid 3 · timeout 0 · 6m12s
+survived
+  DispatchService.java:71  side-effect  lockExisting call removed   ran: AssignRaceTest (3 pass)
+no test reaches
+  VehicleRequest.java:141  drop-term    a || b → a
+consumers  5 changed symbols · 9 consumers outside the diff
+  findByRequesterOrDriver  RequestQueryService.java:58, MyRequestsController.java:33`
+
+function precheckText({ tree = PRECHECK_TREE, blobs = `src/cart.ts ${SOURCE_BLOB}`, tail = '' } = {}) {
+  return `precheck tree ${tree} · base origin/main · 2 paths (1 source, 1 test) · census (all candidates ran)\nblobs     ${blobs}\nmutants   candidates 4 · killed 3 · survived 1 · no test reaches 0 · invalid 0 · timeout 0 · 9s\nsurvived\n  cart.ts:7  boundary  < → <=   ran: cart.test.ts (2 pass)${tail}`
+}
+
+function boundPrepared(binding) {
+  const target = { ...JSON.parse(preparedLine()), precheck_binding: binding }
+  return { diff_outputs: [JSON.stringify(target)], run_id_output: DERIVED_RUN_ID, lenses_output: '' }
+}
+
+function binding({ blobs = { 'src/cart.ts': SOURCE_BLOB }, testChange = { lines_removed: false, lines_added: false } } = {}) {
+  return { blobs, test_change: testChange }
+}
+
+async function runWithPrecheck(precheck, prepare) {
+  const rt = createRuntime({ respond: responder({ prepare }) })
+  const result = await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES, precheck })
+  return { rt, result, target: rt.record.workflows[0]?.args.target }
+}
+
+test('lensReview_attachesThePrecheckAsAnAuthorCensus_whenItsNonTestBlobsMatchTheSnapshot', async () => {
+  const precheck = precheckText()
+  const { result, target } = await runWithPrecheck(precheck, boundPrepared(binding()))
+  assert.equal(result.verdict, 'PASS')
+  assert.ok(target.endsWith(`\nAuthor's precheck census (claims to check against the code, not evidence):\n${precheck}`), target)
+  assert.deepEqual(result.precheck, { status: 'bound', tree: PRECHECK_TREE, reason: null, survivorsOpen: false })
+  assert.deepEqual(linesStartingWith(result.report, 'Precheck'), [`Precheck: bound to tree ${PRECHECK_TREE}`])
+  assert.equal(result.report.split('\n\n')[2], `Precheck: bound to tree ${PRECHECK_TREE}`)
+})
+
+test('lensReview_bindsAnEmptyBlobsList_whenTheDiffChangesOnlyTestPaths', async () => {
+  const { result } = await runWithPrecheck(precheckText({ blobs: 'none' }), boundPrepared(binding({ blobs: {} })))
+  assert.equal(result.precheck.status, 'bound')
+})
+
+const STALE_PRECHECKS = [
+  ['a recorded blob differs', precheckText(), binding({ blobs: { 'src/cart.ts': OTHER_BLOB } }), 'src/cart.ts changed after the precheck'],
+  ['a changed non-test path is not recorded', precheckText(), binding({ blobs: { 'src/cart.ts': SOURCE_BLOB, 'src/tax.ts': OTHER_BLOB } }), 'src/tax.ts changed in the diff but is not in the precheck blobs'],
+  ['a recorded path is not changed', precheckText({ blobs: `src/cart.ts ${SOURCE_BLOB} · src/tax.ts ${OTHER_BLOB}` }), binding(), 'src/tax.ts is in the precheck blobs but not changed in the diff'],
+  ['the paths match only by basename', precheckText({ blobs: `lib/cart.ts ${SOURCE_BLOB}` }), binding(), 'src/cart.ts changed in the diff but is not in the precheck blobs'],
+  ['existing test lines changed', precheckText(), binding({ testChange: { lines_removed: true, lines_added: true } }), 'existing test lines changed or were removed after the precheck; rerun the whole precheck'],
+  ['the precheck tree is unknown', precheckText(), binding({ testChange: null }), `precheck tree ${PRECHECK_TREE} is not in /work/app`],
+  ['no binding came back', precheckText(), null, 'the snapshot blobs could not be read'],
+  ['the binding has a non-text blob', precheckText(), binding({ blobs: { 'src/cart.ts': 7 } }), 'the snapshot blobs could not be read'],
+  ['the first line is not the tree line', `census\n${precheckText()}`, binding(), 'the first line is not "precheck tree <40-hex tree id>"'],
+  ['the tree id is short', precheckText({ tree: 'e'.repeat(39) }), binding(), 'the first line is not "precheck tree <40-hex tree id>"'],
+  ['the tree id is long', precheckText({ tree: 'e'.repeat(41) }), binding(), 'the first line is not "precheck tree <40-hex tree id>"'],
+  ['the tree line has a prefix', `my ${precheckText()}`, binding(), 'the first line is not "precheck tree <40-hex tree id>"'],
+  ['there is no blobs line', precheckText().replace(/\nblobs[^\n]*/, ''), binding(), 'no "blobs" line'],
+  ['a blobs entry has no blob id', precheckText({ blobs: `src/cart.ts ${SOURCE_BLOB} · src/tax.ts` }), binding(), 'a "blobs" entry is not "<repo-relative path> <40-hex blob id>"'],
+]
+
+for (const [name, precheck, bindingValue, reason] of STALE_PRECHECKS) {
+  test(`lensReview_dropsThePrecheckAsStale_when${name.replace(/(^|\s)(\w)/g, (m, s, c) => c.toUpperCase())}`, async () => {
+    const { result, target } = await runWithPrecheck(precheck, boundPrepared(bindingValue))
+    assert.equal(result.verdict, 'PASS')
+    assert.equal(result.precheck.status, 'stale')
+    assert.equal(result.precheck.reason, reason)
+    assert.ok(target.endsWith(`\nStale precheck (${reason}): the author's precheck census was dropped and is not part of this review.`), target)
+    assert.doesNotMatch(target, /census \(all candidates ran\)|Author's precheck census/)
+    assert.deepEqual(linesStartingWith(result.report, 'Precheck'), [`Precheck: stale precheck (${reason})`])
+  })
+}
+
+test('lensReview_keepsPriorSurvivorsOpen_whenTestsWereAddedAfterThePrecheckWithoutASurvivorRerun', async () => {
+  const added = binding({ testChange: { lines_removed: false, lines_added: true } })
+  const open = await runWithPrecheck(precheckText(), boundPrepared(added))
+  const rerun = await runWithPrecheck(precheckText({ tail: '\nrerun: survivors · 1 killed · 0 survived' }), boundPrepared(added))
+  assert.equal(open.result.precheck.survivorsOpen, true)
+  assert.match(open.target, /\nTests were added after the precheck tree and no "rerun: survivors" result is attached: treat each survived and no-test-reaches line above as open\.$/)
+  assert.deepEqual(linesStartingWith(open.result.report, 'Precheck'), [`Precheck: bound to tree ${PRECHECK_TREE}; tests were added after it with no "rerun: survivors" result, so its survived and no-test-reaches lines stay open`])
+  assert.equal(rerun.result.precheck.survivorsOpen, false)
+  assert.doesNotMatch(rerun.target, /Tests were added after the precheck tree/)
+})
+
+test('lensReview_addsNoPrecheckLineOrField_whenNoPrecheckIsGiven', async () => {
+  const { result, target } = await runWithPrecheck(undefined)
+  assert.equal(result.precheck, null)
+  assert.deepEqual(linesStartingWith(result.report, 'Precheck'), [])
+  assert.doesNotMatch(target, /precheck/i)
+})
+
+test('lensReview_asksThePrepareStepForTheBinding_onlyWhenAPrecheckTreeIsReadable', async () => {
+  const snapshot = await runWithPrecheck(precheckText())
+  const malformed = await runWithPrecheck('census only')
+  const none = await runWithPrecheck(undefined)
+  const rt = createRuntime({ respond: responder() })
+  await rt.run('lens-review', { auditMode: 'split', diffs: [{ ...ROOT_DIFF, head: 'feature/x' }], lenses: CALLER_LENSES, precheck: precheckText() })
+  const bindStep = `binding=$( (cd "\${KEEL_DATA_DIR:-$HOME/.claude}" && bin/keel precheck bind --repo "$root" --base "$base" --end `
+  const snapshotCommand = preparePromptCommands(snapshot.rt.record.agents[0].prompt).diffs[0]
+  assert.ok(snapshotCommand.includes(`${bindStep}"$tree" --tree ${PRECHECK_TREE}) 2>/dev/null || echo null) && jq -cn `), snapshotCommand)
+  assert.ok(snapshotCommand.endsWith(`--argjson p "$binding" '{repo_root:$r, review_base:$b, head:null, snapshot_tree:$t, diff_stat:$s, precheck_binding:$p}'`), snapshotCommand)
+  const headCommand = preparePromptCommands(rt.record.agents[0].prompt).diffs[0]
+  assert.ok(headCommand.includes(`${bindStep}"$head" --tree ${PRECHECK_TREE})`), headCommand)
+  for (const run of [malformed, none]) assert.doesNotMatch(preparePromptCommands(run.rt.record.agents[0].prompt).diffs[0], /precheck|binding/)
+  assert.equal(malformed.result.precheck.status, 'stale')
+})
+
+test('lensReview_acceptsThePrecheckOutputFormat_withoutTrippingTheAuthorClaimCheck', async () => {
+  for (const precheck of [DESIGN_EXAMPLE_PRECHECK, precheckText({ tail: '\nrerun: survivors · 1 killed · 0 survived\nunobservable: cart.ts:9 logs only' })]) {
+    const { result } = await runWithPrecheck(precheck, boundPrepared(binding()))
+    assert.notEqual(result.verdict, 'ERROR', result.error)
+  }
+})
+
+const INVALID_PRECHECK_ARGS = [
+  ['a non-text precheck', { diffs: [ROOT_DIFF], precheck: { tree: PRECHECK_TREE } }, /args\.precheck is text/],
+  ['a claim in an unobservable reason', { diffs: [ROOT_DIFF], precheck: precheckText({ tail: '\nunobservable: cart.ts:9 the tests pass either way' }) }, /args\.precheck claims "tests pass"/],
+  ['a precheck over two repos', { diffs: [ROOT_DIFF, { repo: '/work/lib', base: 'main' }], precheck: precheckText() }, /args\.precheck binds one repo/],
+]
+
+for (const [name, scriptArgs, expected] of INVALID_PRECHECK_ARGS) {
+  test(`lensReview_failsWithoutAnyAgent_whenArgsHave${name.replace(/(^|\s)(\w)/g, (m, s, c) => c.toUpperCase())}`, async () => {
+    const rt = createRuntime({ respond: () => { throw new Error('no agent expected') } })
+    const result = await rt.run('lens-review', scriptArgs)
+    assert.equal(result.verdict, 'ERROR')
+    assert.match(result.error, expected)
+    assert.equal(rt.record.agents.length, 0)
+  })
+}

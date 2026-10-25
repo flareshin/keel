@@ -23,8 +23,8 @@ const RULE_CHECKS_KEY = 'rule-checks'
 const BLOCKING_IMPACT = ['high', 'medium']
 const PRE_EXISTING = 'pre-existing'
 const NEEDS_FIXES_ROUND_CAP = 3
-const AUTHOR_TEXT_ARGS = ['readingGuide', 'guardrails']
-const KNOWN_ARGS = ['diffs', 'lenses', 'guardrails', 'requirement', 'readingGuide', 'priorFindings', 'runId', 'rootRunId', 'maxFindingsPerLens', 'model', 'effort', 'mechanicalModel', 'auditMode', 'prepared']
+const AUTHOR_TEXT_ARGS = ['readingGuide', 'guardrails', 'precheck']
+const KNOWN_ARGS = ['diffs', 'lenses', 'guardrails', 'requirement', 'readingGuide', 'precheck', 'priorFindings', 'runId', 'rootRunId', 'maxFindingsPerLens', 'model', 'effort', 'mechanicalModel', 'auditMode', 'prepared']
 const AUTHOR_CLAIMS = [
   /\btests? (?:all |now )?(?:pass|passes|passed|passing)\b/i,
   /\b(?:all|is|are|now) green\b/i,
@@ -53,6 +53,12 @@ const EVIDENCE_PREFIX = 'KEEL-EVIDENCE: '
 const EVIDENCE_LINE = /^\s*KEEL-EVIDENCE:/
 const LINE_BREAKS = /\s*[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]+\s*/g
 const JOINED_LINES = ' / '
+const PRECHECK_HEADER = /^precheck tree ([0-9a-f]{40})(?: ·|$)/
+const PRECHECK_BLOBS = /^blobs\s+(.+)$/m
+const BLOB_ENTRY = /^(.+) ([0-9a-f]{40})$/
+const BLOB_SEPARATOR = ' · '
+const NO_BLOBS = 'none'
+const RERUN_SURVIVORS = /^rerun: survivors\b/m
 const DELTA_NOTE = 'A `since` diff is a delta review: the branch passed review at that tree, so judge only the change after it (read the surrounding code for context, and say so if the change breaks something the earlier PASS relied on).'
 const FIX_DELTA_NOTE = 'A `since` diff is a delta review of a fix: the review at that tree returned NEEDS_FIXES with the merge-blocking findings below, so judge only the change after it (read the surrounding code for context). Each finding below that the change leaves unresolved is a finding again, impact high, at its file:line.\nPrior merge-blocking findings:'
 const REVIEW_GUARDRAILS = 'Review rules: a finding is valid only as a failure scenario (input leads to wrong output, an exception or a broken caller) with file:line evidence; style or impression critique is void; nothing outside the request. Impact high or medium = merge-blocking (wrong behavior, data loss, security, a broken caller or contract, fake-green tests); low = non-blocking. A merge-blocking finding needs a repro: a command or input with the observed and the expected result, or `static: <caller|contract|security|concurrency|rule> at file:line` when nothing can be run; without one it is reported as non-blocking. K5.14 exception: a retained comment outside its three allowed categories is a rule-contract violation, not style; report it at impact medium with `static: rule at file:line`, naming the comment and why no category applies. Test obligation: changed logic with no test that would fail if the change were reverted is impact high, never low. Origin: set origin pre-existing only when the failing lines and the failure they cause are already present at the review base (read them with the review base command); otherwise introduced. A prior merge-blocking finding is introduced.'
@@ -80,19 +86,23 @@ if (argsProblem) {
   return failed(argsProblem)
 }
 
+const PRECHECK = A.precheck === undefined ? null : parsePrecheck(A.precheck)
+
 phase('Prepare')
 const prepared = await prepareReview()
 if (prepared.error) return failed(prepared.error)
 const { runId, rootRunId, reviewed, lensSet, priorNeedsFixesRounds, effort } = prepared
 log(`audit effort: ${effort}`)
+const precheck = PRECHECK && bindPrecheck(PRECHECK, reviewed[0])
+if (precheck) log(`precheck: ${describePrecheck(precheck)}`)
 
-const audit = await runAudit(reviewed, lensSet, effort)
+const audit = await runAudit(reviewed, lensSet, effort, precheck)
 if (audit.error) return failed(audit.error)
 
 const outcome = judge(audit, lensSet, reviewed.length, priorNeedsFixesRounds)
 log(`${outcome.verdict}: ${outcome.blocking.length} merge-blocking, ${outcome.nonBlocking.length} non-blocking, ${audit.unverified.length} unverified, ${outcome.failedLenses.length} lens(es) not run, ${audit.refuted.length} refuted`)
 const evidenceLines = reviewed.map((target) => buildEvidenceLine(target, runId, rootRunId))
-const expectedReport = buildReport(outcome, audit, reviewed, evidenceLines)
+const expectedReport = buildReport(outcome, audit, reviewed, evidenceLines, precheck)
 
 phase('Report')
 const handBack = await handBackWithOneRetry(expectedReport, evidenceLines)
@@ -114,6 +124,7 @@ return {
   effort,
   unverified: audit.unverified,
   refutedCount: audit.refuted.length,
+  precheck,
 }
 
 function readArgs() {
@@ -139,6 +150,7 @@ function findArgsProblem() {
   const deltaCount = DIFFS.filter((d) => d.since).length
   if (deltaCount > 0 && deltaCount < DIFFS.length) return 'one run is either a root review or a delta review: give since on every diff or on none'
   if (PRIOR_FINDINGS !== undefined && (deltaCount === 0 || !isFindingList(PRIOR_FINDINGS))) return 'priorFindings is a non-empty list of finding texts, given only with since diffs'
+  if (A.precheck !== undefined && DIFFS.length !== 1) return 'args.precheck binds one repo: give it with exactly one diff'
   return findAuthorClaimProblem() || findRunIdProblem(deltaCount > 0)
 }
 
@@ -191,6 +203,17 @@ async function prepareReview() {
   return { runId, rootRunId: A.rootRunId || runId, reviewed: reviewed.targets, lensSet, priorNeedsFixesRounds: resolvePriorRounds(output.needs_fixes_rounds), effort: resolveEffort(output.risk_class) }
 }
 
+function parsePrecheck(text) {
+  const header = PRECHECK_HEADER.exec(text.split('\n')[0])
+  if (!header) return { problem: 'the first line is not "precheck tree <40-hex tree id>"' }
+  const blobsLine = PRECHECK_BLOBS.exec(text)
+  if (!blobsLine) return { problem: 'no "blobs" line' }
+  const listed = blobsLine[1].trim()
+  const entries = listed === NO_BLOBS ? [] : listed.split(BLOB_SEPARATOR).map((entry) => BLOB_ENTRY.exec(entry.trim()))
+  if (entries.some((entry) => !entry)) return { problem: 'a "blobs" entry is not "<repo-relative path> <40-hex blob id>"' }
+  return { tree: header[1], blobs: new Map(entries.map((entry) => [entry[1], entry[2]])), hasSurvivorRerun: RERUN_SURVIVORS.test(text) }
+}
+
 function buildPreparePrompt() {
   const steps = DIFFS.map((d, i) => `diff ${i}:\n${buildPrepareCommand(d)}`)
   const runIdStep = A.runId === undefined ? `run id:\n${DERIVE_RUN_ID_COMMAND}` : 'run id: none, return ""'
@@ -207,11 +230,24 @@ ${lensesStep}`
 function buildPrepareCommand(d) {
   const root = `root=$(git -C '${d.repo}' rev-parse --show-toplevel)`
   if (d.head) {
-    return `${root} && head=$(git -C "$root" rev-parse --verify '${d.head}^{commit}') && base=$(git -C "$root" merge-base '${d.base}' "$head") && stat=$(git -C "$root" diff --stat "$base" "$head" | tail -n 1) && jq -cn --arg r "$root" --arg b "$base" --arg h "$head" --arg s "$stat" '{repo_root:$r, review_base:$b, head:$h, snapshot_tree:null, diff_stat:$s}'`
+    return `${root} && head=$(git -C "$root" rev-parse --verify '${d.head}^{commit}') && base=$(git -C "$root" merge-base '${d.base}' "$head") && stat=$(git -C "$root" diff --stat "$base" "$head" | tail -n 1) && ${buildBindingStep('"$head"')}jq -cn --arg r "$root" --arg b "$base" --arg h "$head" --arg s "$stat"${bindingJq().arg} '{repo_root:$r, review_base:$b, head:$h, snapshot_tree:null, diff_stat:$s${bindingJq().field}}'`
   }
   const from = d.since ? `'${d.since}'` : '"$base"'
   const sinceCheck = d.since ? `{ [ "$(git -C "$root" cat-file -t '${d.since}' 2>/dev/null)" = tree ] || { echo "since ${d.since} is not a tree id: pass the snapshot_tree the earlier review named (for a commit, <commit>^{tree})" >&2; false; }; } && ` : ''
-  return `${root} && ${sinceCheck}base=$(git -C "$root" merge-base '${d.base}' HEAD) && tree=$(cd ${DATA_DIR} && bin/keel snapshot "$root" | jq -r .tree) && stat=$(git -C "$root" diff --stat ${from} "$tree" | tail -n 1) && jq -cn --arg r "$root" --arg b "$base" --arg t "$tree" --arg s "$stat" '{repo_root:$r, review_base:$b, head:null, snapshot_tree:$t, diff_stat:$s}'`
+  return `${root} && ${sinceCheck}base=$(git -C "$root" merge-base '${d.base}' HEAD) && tree=$(cd ${DATA_DIR} && bin/keel snapshot "$root" | jq -r .tree) && stat=$(git -C "$root" diff --stat ${from} "$tree" | tail -n 1) && ${buildBindingStep('"$tree"')}jq -cn --arg r "$root" --arg b "$base" --arg t "$tree" --arg s "$stat"${bindingJq().arg} '{repo_root:$r, review_base:$b, head:null, snapshot_tree:$t, diff_stat:$s${bindingJq().field}}'`
+}
+
+function buildBindingStep(end) {
+  if (!isPrecheckBindable()) return ''
+  return `binding=$( (cd ${DATA_DIR} && bin/keel precheck bind --repo "$root" --base "$base" --end ${end} --tree ${PRECHECK.tree}) 2>/dev/null || echo null) && `
+}
+
+function bindingJq() {
+  return isPrecheckBindable() ? { arg: ' --argjson p "$binding"', field: ', precheck_binding:$p' } : { arg: '', field: '' }
+}
+
+function isPrecheckBindable() {
+  return Boolean(PRECHECK && PRECHECK.tree)
 }
 
 function parseReviewedTargets(diffOutputs) {
@@ -232,6 +268,41 @@ function parseReviewedTarget(line, diff) {
   } catch (e) {
     return null
   }
+}
+
+function bindPrecheck(parsed, target) {
+  if (parsed.problem) return stalePrecheck(null, parsed.problem)
+  const binding = target.precheck_binding
+  if (!isBindingShaped(binding)) return stalePrecheck(parsed.tree, 'the snapshot blobs could not be read')
+  if (binding.test_change === null) return stalePrecheck(parsed.tree, `precheck tree ${parsed.tree} is not in ${target.repo_root}`)
+  const mismatch = findBlobMismatch(parsed.blobs, binding.blobs)
+  if (mismatch) return stalePrecheck(parsed.tree, mismatch)
+  if (binding.test_change.lines_removed) return stalePrecheck(parsed.tree, 'existing test lines changed or were removed after the precheck; rerun the whole precheck')
+  return { status: 'bound', tree: parsed.tree, reason: null, survivorsOpen: binding.test_change.lines_added && !parsed.hasSurvivorRerun }
+}
+
+function stalePrecheck(tree, reason) {
+  return { status: 'stale', tree, reason, survivorsOpen: false }
+}
+
+function isBindingShaped(b) {
+  if (!b || typeof b.blobs !== 'object' || b.blobs === null || Object.values(b.blobs).some((blob) => typeof blob !== 'string')) return false
+  return b.test_change === null || (typeof b.test_change === 'object' && typeof b.test_change.lines_removed === 'boolean' && typeof b.test_change.lines_added === 'boolean')
+}
+
+function findBlobMismatch(recorded, current) {
+  for (const [path, blob] of Object.entries(current)) {
+    if (!recorded.has(path)) return `${path} changed in the diff but is not in the precheck blobs`
+    if (recorded.get(path) !== blob) return `${path} changed after the precheck`
+  }
+  const unchanged = [...recorded.keys()].find((path) => !Object.hasOwn(current, path))
+  return unchanged ? `${unchanged} is in the precheck blobs but not changed in the diff` : null
+}
+
+function describePrecheck(precheck) {
+  if (precheck.status === 'stale') return `stale precheck (${precheck.reason})`
+  const open = precheck.survivorsOpen ? '; tests were added after it with no "rerun: survivors" result, so its survived and no-test-reaches lines stay open' : ''
+  return `bound to tree ${precheck.tree}${open}`
 }
 
 function isPreparedShaped(p) {
@@ -311,10 +382,10 @@ function buildRuleChecksLens(reviewed) {
   }
 }
 
-async function runAudit(reviewed, lensSet, effort) {
+async function runAudit(reviewed, lensSet, effort, precheck) {
   try {
     const audit = await workflow('adversarial-audit', {
-      target: buildTarget(reviewed),
+      target: buildTarget(reviewed, precheck),
       lenses: lensSet.lenses,
       guardrails: `${REVIEW_GUARDRAILS}\n${lensSet.guardrails}`,
       maxFindingsPerLens: A.maxFindingsPerLens,
@@ -329,11 +400,18 @@ async function runAudit(reviewed, lensSet, effort) {
   }
 }
 
-function buildTarget(reviewed) {
+function buildTarget(reviewed, precheck) {
   const commands = reviewed.flatMap((target) => [buildLensDiffCommand(target), buildReviewBaseCommand(target)]).join('\n')
   const delta = reviewed.some((target) => target.since) ? `\n${describeDelta()}` : ''
   const requirement = A.requirement ? `\nRequirement (the request as stated, not a claim that the diff meets it):\n${A.requirement}` : ''
-  return `the code diff from these commands; review only what it introduces or changes, judge new and changed lines; existing-comment cleanup is a separate requested task. Read file content at the reviewed end with \`git show <end>:<path>\`, never from the live working tree, which may have moved on:\n${commands}${delta}${requirement}`
+  const census = precheck ? `\n${buildPrecheckBlock(precheck)}` : ''
+  return `the code diff from these commands; review only what it introduces or changes, judge new and changed lines; existing-comment cleanup is a separate requested task. Read file content at the reviewed end with \`git show <end>:<path>\`, never from the live working tree, which may have moved on:\n${commands}${delta}${requirement}${census}`
+}
+
+function buildPrecheckBlock(precheck) {
+  if (precheck.status === 'stale') return `Stale precheck (${precheck.reason}): the author's precheck census was dropped and is not part of this review.`
+  const open = precheck.survivorsOpen ? '\nTests were added after the precheck tree and no "rerun: survivors" result is attached: treat each survived and no-test-reaches line above as open.' : ''
+  return `Author's precheck census (claims to check against the code, not evidence):\n${A.precheck}${open}`
 }
 
 function buildLensDiffCommand(target) {
@@ -405,10 +483,11 @@ function buildEvidenceLine(target, runId, rootRunId) {
   return `${EVIDENCE_PREFIX}${JSON.stringify(evidence)}`
 }
 
-function buildReport(outcome, audit, reviewed, evidenceLines) {
+function buildReport(outcome, audit, reviewed, evidenceLines, precheck) {
   return [
     `VERDICT: ${outcome.verdict}`,
     `Diff: ${reviewed.map((target) => `${target.repo_root}: ${toOneLine(target.diff_stat).trim() || '0 files changed'}`).join('; ')}`,
+    ...(precheck ? [`Precheck: ${toOneLine(describePrecheck(precheck))}`] : []),
     `Lenses fired: ${toOneLine(outcome.lensesFired.join(', '))}`,
     describeFindings('Merge-blocking', outcome.blocking),
     describeFindings('Non-blocking', outcome.nonBlocking),

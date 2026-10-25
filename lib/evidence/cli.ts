@@ -1,6 +1,7 @@
 import { InvalidUtf8Error } from '../../measure/lib/measurekit/files.ts';
 import { compareCodePoints, isJsonObject, parseJsonKeepingIntegers, stringifySorted } from '../../measure/lib/measurekit/json.ts';
 import type { JsonValue } from '../../measure/lib/measurekit/json.ts';
+import { bindPrecheck } from '../precheck/binding.ts';
 import { buildChains } from './chain.ts';
 import * as codexLenses from './codex_lenses.ts';
 import * as codexReview from './codex_review.ts';
@@ -20,6 +21,7 @@ const USAGE = `usage:
   keel approve <root_run_id> [--read]
   keel snapshot <repo>
   keel review prepare                 (stdin: workflow args; stdout: prepared metadata)
+  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>
   keel evidence write-review          (stdin: {"keel_evidence":{…},"verdict":…,"source":{…}})
   keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]
   keel evidence show [--repo <path>] [--root <root_run_id>]
@@ -31,6 +33,7 @@ const EXIT_USAGE = 2;
 const EXIT_REFUSED = 3;
 const EXIT_INTERNAL = 70;
 const EVIDENCE_OPTIONS = new Set(['--repo', '--run', '--root', '--audits', '--verifiers']);
+const PRECHECK_BIND_OPTIONS = new Set(['--repo', '--base', '--end', '--tree']);
 
 export const seams = { print: printResult };
 
@@ -54,7 +57,7 @@ export async function main(argv: string[]): Promise<number> {
 async function dispatch(argv: string[]): Promise<number> {
   if (argv.length === 0) throw new writers.Usage('missing command');
   const commands: Record<string, (rest: string[]) => number | Promise<number>> = {
-    test: runTest, approve, snapshot, evidence, review,
+    test: runTest, approve, snapshot, evidence, review, precheck,
   };
   const command = Object.hasOwn(commands, argv[0]!) ? commands[argv[0]!] : undefined;
   if (command === undefined) throw new writers.Usage('unknown command ' + argv[0]);
@@ -69,6 +72,15 @@ function runTest(rest: string[]): Promise<number> {
 function review(rest: string[]): number {
   if (rest.length !== 1 || rest[0] !== 'prepare') throw new writers.Usage('keel review prepare reads workflow args from stdin');
   seams.print(prepare.review(stdinJson()));
+  return EXIT_OK;
+}
+
+function precheck(rest: string[]): number {
+  const options = rest[0] === 'bind' ? parseOptions(rest.slice(1), PRECHECK_BIND_OPTIONS) : {};
+  if (Object.keys(options).length !== PRECHECK_BIND_OPTIONS.size) throw new writers.Usage('keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>');
+  const repoRoot = gitcmd.toplevel(options['--repo']!);
+  if (repoRoot === null) throw new writers.Usage(`${options['--repo']} is not inside a git repository`);
+  seams.print(bindPrecheck(repoRoot, options['--base']!, options['--end']!, options['--tree']!));
   return EXIT_OK;
 }
 

@@ -153,10 +153,11 @@ export function createSandbox() {
   return { root, env, git, bash }
 }
 
-// Stands in for the ship-gate track's `keel snapshot` (Interfaces (e)): temp-index snapshot, real index untouched.
+// Stands in for the ship-gate track's `keel snapshot` (Interfaces (e)): temp-index snapshot, real index untouched. `keel precheck` runs the real CLI.
 function writeKeelSnapshotStub(path) {
   writeFileSync(path, `#!/bin/bash
 set -e
+[ "$1" = precheck ] && exec '${join(KEEL_HOME, 'bin', 'keel')}' "$@"
 [ "$1" = snapshot ] || exit 2
 root=$(git -C "$2" rev-parse --show-toplevel)
 tmp=$(mktemp -d)

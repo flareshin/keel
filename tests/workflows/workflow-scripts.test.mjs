@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import {
@@ -278,4 +278,50 @@ test('lensReview_failsInPrepareNamingTheTree_whenSinceIsACommit', async () => {
   assert.equal(result.verdict, 'ERROR')
   assert.match(result.error, new RegExp(`prepare failed for diffs\\[0\\] [\\s\\S]*since ${commit} is not a tree id`))
   assert.deepEqual(rt.record.agents.map((call) => call.opts.label), ['prepare'])
+})
+
+function precheckRepo(box) {
+  const repo = join(box.root, 'app')
+  execFileSync('git', ['init', '-q', repo], { env: box.env })
+  mkdirSync(join(repo, 'src'))
+  mkdirSync(join(repo, 'tests'))
+  writeFileSync(join(repo, 'src', 'cart.ts'), 'export const a = 1\n')
+  writeFileSync(join(repo, 'tests', 'cart.test.ts'), 'one\n')
+  box.git(repo, 'add', '-A')
+  box.git(repo, 'commit', '-qm', 'base')
+  writeFileSync(join(repo, 'src', 'cart.ts'), 'export const a = 2\n')
+  const precheckTree = box.bash(`cd "${box.env.KEEL_DATA_DIR}" && bin/keel snapshot '${repo}' | jq -r .tree`)
+  const blob = box.git(repo, 'rev-parse', `${precheckTree}:src/cart.ts`)
+  writeFileSync(join(repo, 'tests', 'cart.test.ts'), 'one\ntwo\n')
+  const precheck = `precheck tree ${precheckTree} · base main · 2 paths (1 source, 1 test) · census (all candidates ran)\nblobs     src/cart.ts ${blob}\nrerun: survivors · 1 killed · 0 survived`
+  return { repo, precheckTree, precheck }
+}
+
+test('lensReview_bindsAPrecheckThroughThePrepareCommand_whenOnlyTestsGrewAfterIt', async () => {
+  const box = createSandbox()
+  const { repo, precheckTree, precheck } = precheckRepo(box)
+  const rt = createRuntime({ respond: shellResponder(box) })
+
+  const result = await rt.run('lens-review', { auditMode: 'split', diffs: [{ repo, base: 'main' }], precheck })
+
+  assert.equal(result.verdict, 'PASS')
+  assert.deepEqual(result.precheck, { status: 'bound', tree: precheckTree, reason: null, survivorsOpen: false })
+  writeFileSync(join(repo, 'src', 'cart.ts'), 'export const a = 3\n')
+  const moved = await createRuntime({ respond: shellResponder(box) }).run('lens-review', { auditMode: 'split', diffs: [{ repo, base: 'main' }], precheck })
+  assert.deepEqual(moved.precheck, { status: 'stale', tree: precheckTree, reason: 'src/cart.ts changed after the precheck', survivorsOpen: false })
+})
+
+test('lensReview_bindsAPrecheckFromCliPreparedMetadata_withoutAPrepareAgent', async () => {
+  const box = createSandbox()
+  const { repo, precheckTree, precheck } = precheckRepo(box)
+  const request = { diffs: [{ repo, base: 'main' }], precheck }
+  const prepared = JSON.parse(execFileSync(join(KEEL_HOME, 'bin', 'keel'), ['review', 'prepare'], {
+    env: box.env, input: JSON.stringify(request), encoding: 'utf8',
+  }))
+  const rt = createRuntime({ respond: shellResponder(box) })
+
+  const result = await rt.run('lens-review', { ...request, auditMode: 'split', prepared })
+
+  assert.ok(!rt.record.agents.some(({ opts }) => opts.label === 'prepare'))
+  assert.deepEqual(result.precheck, { status: 'bound', tree: precheckTree, reason: null, survivorsOpen: false })
 })

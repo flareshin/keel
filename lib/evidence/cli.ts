@@ -21,7 +21,6 @@ const USAGE = `usage:
   keel approve <root_run_id> [--read]
   keel snapshot <repo>
   keel review prepare                 (stdin: workflow args; stdout: prepared metadata)
-  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>
   keel evidence write-review          (stdin: {"keel_evidence":{…},"verdict":…,"source":{…}})
   keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]
   keel evidence show [--repo <path>] [--root <root_run_id>]

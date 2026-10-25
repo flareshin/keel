@@ -61,6 +61,18 @@ describe("runCensus", { skip: typescriptInstalled ? false : "typescript is not i
     assert.deepEqual(result.consumers.map((name) => name.name), ["pick"])
   })
 
+  it("runCensus_recordsADeletedSourceFileAsZeros_withoutMutatingIt", async () => {
+    const { root, reviewBase } = changedRepo({ "lib/a.ts": PICK, "lib/old.ts": "export const old = 1\n", "tests/a.test.ts": PICK_TEST }, { "lib/a.ts": CHANGED_PICK })
+    git(root, "rm", "-q", "lib/old.ts")
+
+    const result = await runCensus(root, { base: "main", reviewBase, tree: snapshotTree(root) })
+
+    assert.equal(result.blobs["lib/old.ts"], "0".repeat(40))
+    assert.equal(result.mutation.outcome, "ran")
+    if (result.mutation.outcome !== "ran") return
+    assert.ok(result.mutation.results.every((each) => each.path === "lib/a.ts"))
+  })
+
   it("runCensus_runsHigherPriorityMutantsFirst_acrossChangedFiles", async () => {
     const { census: result } = await census(
       { "lib/a.ts": PICK, "lib/b.ts": "export const b = (x: number): number => x\n", "tests/a.test.ts": PICK_TEST },
@@ -109,7 +121,7 @@ describe("runCensus", { skip: typescriptInstalled ? false : "typescript is not i
   it("runCensus_describesAChangeWithoutQuotingStringTemplateOrCommentText", async () => {
     const changed = [
       "export function pick(flag: boolean): number {",
-      "  note('tests pass') // we fixed",
+      "  note(/* we fixed */ 'tests pass') // done",
       "  note(`${flag} works fine`)",
       "  const help = 'Run it. Then stop.'",
       "  return help.length - 17",
@@ -123,7 +135,7 @@ describe("runCensus", { skip: typescriptInstalled ? false : "typescript is not i
     assert.equal(result.mutation.outcome, "ran")
     if (result.mutation.outcome !== "ran") return
     const changes = result.mutation.results.map((each) => `${each.line} ${each.operator} ${each.change}`)
-    assert.ok(changes.includes("2 call-removal note('…') removed"), changes.join("\n"))
+    assert.ok(changes.includes("2 call-removal note( '…') removed"), changes.join("\n"))
     assert.ok(changes.includes("3 call-removal note('…'flag'…') removed"), changes.join("\n"))
     assert.ok(changes.includes("4 text-removal text removed"), changes.join("\n"))
     assert.ok(changes.includes("5 return-constant help.length - 17 → null"), changes.join("\n"))

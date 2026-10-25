@@ -170,23 +170,27 @@ function checkEdit(toolArgs: Payload, cwd: string): Violation[] {
   if (!isTruthy(target)) return [];
   const shown = pythonStr(target);
   const path = normalizePath(joinPath(cwd, expandUser(shown)));
-  const text = editedText(toolArgs);
+  const edits = getField(toolArgs, "edits");
+  const editsAreMalformed = isTruthy(edits) && !Array.isArray(edits);
+  const text = editedText(toolArgs, Array.isArray(edits) ? edits : []);
   const violations: Violation[] = [];
   const rule = new ProtectedStore().ruleFor(path);
   if (rule) violations.push({ ruleId: rule, text: fillIn(PROTECTED_TEXT[rule] ?? "", shown) });
   const liveRoot = new LiveCheckouts().rootOf(path);
   if (liveRoot) violations.push(liveViolation(shown, liveRoot));
   if (isClaudeSettingsFile(path) && DISABLE_HOOKS_RE.test(text)) violations.push(disableHooksViolation(shown));
-  return [...violations, ...knownValueViolations(() => knownvalues.numberedLines(shown, text))];
+  const found = [...violations, ...knownValueViolations(() => knownvalues.numberedLines(shown, text))];
+  if (editsAreMalformed && found.length === 0) throw new TypeError(`edits is not a list: '${pythonTypeName(edits)}'`);
+  return found;
 }
 
 function fillIn(template: string, value: string): string {
   return template.replace("%s", () => value);
 }
 
-function editedText(toolArgs: Payload): string {
+function editedText(toolArgs: Payload, edits: readonly unknown[]): string {
   const parts: unknown[] = ["content", "new_string", "new_source"].map((key) => getField(toolArgs, key));
-  for (const edit of listOrEmpty(getField(toolArgs, "edits"), "edits")) parts.push(isRecord(edit) ? getField(edit, "new_string") : null);
+  for (const edit of edits) parts.push(isRecord(edit) ? getField(edit, "new_string") : null);
   return parts.filter((part): part is string => typeof part === "string").join("\n");
 }
 

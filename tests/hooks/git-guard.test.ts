@@ -90,6 +90,14 @@ describe("ProtectedEditTest", () => {
     assertDenied(edit("Write", { file_path: target, content: "{}" }), "K1");
   });
 
+  it("multiEdit_denied_whenEditsIsNotAListAndTheTargetIsInsideTheProtectedStore", () => {
+    for (const edits of ["text", { new_string: "text" }, 5, true]) {
+      const result = edit("MultiEdit", { file_path: join(data, "state", "keel", "x.json"), edits });
+      assertDenied(result, "K1");
+      assert.ok(!result.stderr.includes("F-attribution"), result.stderr);
+    }
+  });
+
   it("notebookEdit_denied_whenNotebookPathIsProtected", () => {
     const target = join(data, "state", "keel", "x.ipynb");
     assertDenied(edit("NotebookEdit", { notebook_path: target, new_source: "" }), "K1");
@@ -274,14 +282,25 @@ describe("HookSkipTest", () => {
     assert.deepEqual(sandbox.fires(), []);
   });
 
-  it("multiEdit_deniedFailClosed_whenEditsIsNotAList", () => {
-    for (const edits of ["text", { new_string: "text" }, 5, true]) {
-      const result = edit("MultiEdit", { file_path: writeSettings(), content: '{"disableAllHooks": true}', edits });
+  it("multiEdit_deniedFailClosed_whenEditsIsNotAListAndNothingElseDecides", () => {
+    const expected = new Map<unknown, string>([["text", "str"], [{ new_string: "text" }, "dict"], [5, "int"], [true, "bool"]]);
+    for (const [edits, typeName] of expected) {
+      const result = edit("MultiEdit", { file_path: join(sandbox.root, "notes.md"), content: "no-verify", edits });
       assert.equal(result.code, 2, JSON.stringify(edits));
       assert.ok(result.stderr.includes("[F-attribution]"), result.stderr);
+      assert.equal(sandbox.fires().at(-1)?.detail, `TypeError: edits is not a list: '${typeName}'`);
     }
-    const detail = sandbox.fires().at(-1)?.detail;
-    assert.equal(detail, "TypeError: edits is not a list: 'bool'");
+  });
+
+  it("multiEdit_passesWithTheErrorLogged_whenEditsIsNotAListAndTheCallLooksHarmless", () => {
+    assertPassed(edit("MultiEdit", { file_path: join(sandbox.root, "notes.md"), content: "x", edits: "text" }));
+    assert.equal(sandbox.fires().at(-1)?.detail, "TypeError: edits is not a list: 'str'");
+  });
+
+  it("multiEdit_deniedByTheSettingsRule_whenEditsIsNotAListAndContentSetsDisableAllHooks", () => {
+    for (const edits of ["text", { new_string: "text" }]) {
+      assertDenied(edit("MultiEdit", { file_path: writeSettings(), content: '{"disableAllHooks": true}', edits }), "F-hookskip");
+    }
   });
 
   it("bash_denied_whenItWritesDisableAllHooksIntoAClaudeSettingsFile", () => {
@@ -406,6 +425,16 @@ describe("LiveCheckoutTest", () => {
 
   it("write_passes_whenTargetIsInsideAWorktree", () => {
     assertPassed(edit("Write", { file_path: join(worktree, "PRINCIPLES.md"), content: "x" }));
+  });
+
+  it("multiEdit_denied_whenEditsIsNotAListAndTheTargetIsInsideLiveKeelOrTheOverlay", () => {
+    for (const target of [join(live, "PRINCIPLES.md"), join(sandbox.overlay, "ledger.tsv")]) {
+      for (const edits of ["text", { new_string: "text" }, 5, true]) {
+        const result = edit("MultiEdit", { file_path: target, edits });
+        assertDenied(result, "C-isolation");
+        assert.ok(!result.stderr.includes("F-attribution"), result.stderr);
+      }
+    }
   });
 
   it("edit_denied_whenTargetIsInsideLiveOverlay", () => {
@@ -825,11 +854,13 @@ describe("SecretsTest", () => {
   });
 
   it("commit_deniedFailClosed_whenTheBoundaryReportHitsAreNotAList", () => {
-    for (const hits of ['"abc"', '{"file": "x"}', "5"]) {
+    const typeNames = new Map([['"abc"', "str"], ['{"file": "x"}', "dict"], ["5", "int"]]);
+    for (const [hits, typeName] of typeNames) {
       sandbox.env["KEEL_BOUNDARY"] = sandbox.stub("boundary-odd", { stdout: `{"scanned": 1, "hits": ${hits}}`, exitCode: 1 });
       const result = guard('git commit -m "Add config"', repo);
       assert.equal(result.code, 2, hits);
       assert.ok(result.stderr.includes("internal error"), result.stderr);
+      assert.equal(sandbox.fires().at(-1)?.detail, `TypeError: hits is not a list: '${typeName}'`);
     }
   });
 });

@@ -215,19 +215,25 @@ Codex adapter (`codex/`) drop their Python emulation and run on plain Node behav
     A scanner or `keel` command that cannot start is named by its class: `boundary scanner did not run: OSError` (it was
     `FileNotFoundError`) in git-guard's `error` fire and `keel evidence write-review did not run: OSError` in report-gate's
     `warn` fire. The deny line of git-guard (`The guard could not check this commit, push, PR text or protected write (<name>)`)
-    names a raw system error `Error` where it named `FileNotFoundError` or `PermissionError`. A non-`Error` value that is thrown prints as its own text and is named `Error`, not `Exception`.
+    names a raw system error `Error` where it named `FileNotFoundError` or `PermissionError`. A non-`Error` value that is thrown prints as its own text and is named `Error`, not `Exception` (the hooks throw only
+    `Error` subclasses, so this keeps the `<name>: <text>` shape of the line and is not reachable today).
   - `git-guard`: an `edits` field of a `MultiEdit` call, or a `hits` field in the boundary scanner's report, that holds a
     non-empty string or object is an internal error (`TypeError: edits is not a list: 'str'`; a guarded command fails closed).
-    Python's `list()` read a string as its characters and an object as its keys, so a string or object `edits` used to
-    pass unread (a `hits` one already failed closed, with an `AttributeError`). A number or `true` was already an internal
-    error. A missing, empty, `null`, `0` or `false` value is still an empty list.
+    For `edits` the path checks still decide first: a call aimed at the live checkout, the overlay or `state/keel` is denied
+    with `[C-isolation]` or `[K1]` as before, and so is one whose `content` sets `disableAllHooks` in a Claude settings
+    file (`[F-hookskip]`); the error applies only when nothing else denies the call. Python's `list()` read a string as its
+    characters and an object as its keys, so a string or object `edits` used to pass unread (a `hits` one already failed
+    closed, with an `AttributeError`). A number or `true` `edits` used to raise before the path checks ran, so a call aimed
+    at the live checkout or the overlay passed; it is now denied like the string. A missing, empty, `null`, `0` or `false`
+    value is still an empty list.
   - `report-gate`: a turn-state file whose `paths` is a string, number or `true` is read as no flagged paths, so an
     outside edit is flagged again (a string was read as its characters and a number as an error, which passed). An object
     still reads as its keys.
   - `tests/hooks/hook-parity.test.ts` lists the four recorded runs whose fire text changed with this wording
     (`EXPECTED_DIVERGENCES`, each with the exit code the hook must give and the start of the new detail). Everything else
     of those runs, stderr, stdout and every written file, is still compared, and the test fails on a recorded Python
-    deny that passes in node. `tests/ship-gate/ship-gate-parity.test.ts` lists 25 more rows the same way.
+    deny that passes in node. Its adversarial set adds four `MultiEdit` payloads with a string or object `edits` aimed at the
+    overlay and at `state/keel`, with the outcome of the previous release's hook recorded for them. `tests/ship-gate/ship-gate-parity.test.ts` lists 25 more rows the same way.
 
 ### Fixed
 - `env-preflight` (`[S-jdk]`) accepts a `java_home` lookup that names a patch release of the required major, such as
@@ -238,7 +244,8 @@ Codex adapter (`codex/`) drop their Python emulation and run on plain Node behav
 - The hook module `hooks/lib/hookkit/pyruntime.ts`, its Python error-class table and the `pythonList` and `stripChars`
   helpers. The error classes and `describeError` moved to `hooks/lib/hookkit/errors.ts`, `readStdin`, `printLine` and
   `writeStderr` to `hooks/lib/hookkit/stdio.ts` unchanged, and `trimCharacters` (the old `stripChars`) to
-  `hooks/lib/hookkit/text.ts`. `tests/hooks/pyhook-compat.test.ts` keeps its `pycompat` tests and loses the `pyruntime`
+  `hooks/lib/hookkit/text.ts`. The unread recording `tests/fixtures/python/ship-gate-strerror.json` is deleted with it.
+  `tests/hooks/pyhook-compat.test.ts` keeps its `pycompat` tests and loses the `pyruntime`
   ones, which `tests/hooks/errors.test.ts` replaces; the import-order test for `pyruntime` in `tests/hooks/json.test.ts` went
   with it, as `errors.ts` imports nothing.
 - The hook module `hooks/lib/hookkit/pyjson.ts` and its tests in `tests/hooks/pyhook-compat.test.ts`. Its place is taken by

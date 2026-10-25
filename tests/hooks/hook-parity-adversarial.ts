@@ -42,6 +42,7 @@ export function buildAdversarialSet(): AdversarialSet {
   sandbox.write(join(sandbox.data, "state", "keel", "report-gate", `${DICT_STATE_SESSION}-${AGENT_ID}.json`), DICT_STATE);
   const cases = [
     ...gitGuardCases(repo),
+    ...gitGuardMalformedEditsCases(sandbox),
     ...reportGateCases(sandbox),
     ...envPreflightCases(repo),
     ...modelAssignCases(sandbox.root),
@@ -95,6 +96,16 @@ function gitGuardCases(repo: string): AdversarialCase[] {
     ...commands.flatMap((command, index) => casesFor(`git-guard command ${index}`, GIT_GUARD, repo, bash(command, repo))),
     ...unparseable.map((raw, index) => rawCase(`git-guard unparseable ${index}`, GIT_GUARD, repo, raw)),
   ];
+}
+
+function gitGuardMalformedEditsCases(sandbox: HookSandbox): AdversarialCase[] {
+  const targets: Array<[string, string]> = [
+    ["overlay", join(sandbox.overlay, "ledger.tsv")],
+    ["protected store", join(sandbox.data, "state", "keel", "x.json")],
+  ];
+  const malformedEdits: Array<[string, unknown]> = [["string", "text"], ["object", { new_string: "text" }]];
+  return targets.flatMap(([targetName, target]) => malformedEdits.flatMap(([editsName, edits]) =>
+    casesFor(`git-guard multiedit ${editsName} edits on ${targetName}`, GIT_GUARD, sandbox.root, preToolUse("MultiEdit", { file_path: target, edits }, sandbox.root))));
 }
 
 function reportGateCases(sandbox: HookSandbox): AdversarialCase[] {

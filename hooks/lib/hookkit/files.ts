@@ -1,4 +1,4 @@
-import { lstatSync, readlinkSync, statSync } from "node:fs";
+import { lstatSync, readFileSync, readlinkSync, statSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
 
 export function isFile(path: string): boolean {
@@ -69,4 +69,18 @@ function resolveLinks(start: string, relative: string, seen: Map<string, string 
     seen.set(linked, path);
   }
   return { path, resolved: true };
+}
+
+export function isSystemError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && typeof (error as NodeJS.ErrnoException).code === "string" &&
+    typeof (error as NodeJS.ErrnoException).errno === "number";
+}
+
+export function tryReadText(path: string): string | null {
+  try {
+    return readFileSync(path, "utf8");
+  } catch (error) {
+    if (isSystemError(error)) return null;
+    throw error;
+  }
 }

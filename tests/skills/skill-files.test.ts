@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { gatedRepos } from "../../lib/evidence/registry.ts";
-import { splitlines } from "../../hooks/lib/hookkit/pycompat.ts";
+import { splitlines } from "../../hooks/lib/hookkit/text.ts";
 import { bulletTags, GENERATED_HEADER, K5_SUB_IDS, KEEL_HOME, PRINCIPLES, read, rulesSection, SKILLS_DIR, skillPaths, VALID_IDS } from "./helpers.ts";
 
 const EXPECTED_SKILLS = new Set(["prompt-refine", "readable-code", "descend", "improve"]);

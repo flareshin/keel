@@ -41,6 +41,7 @@ const STOP_BLOCKED: TsOutcome = { code: 0, stdoutIncludes: '"decision": "block"'
 const LOGGED_AND_PASSED: TsOutcome = { code: 0, firesInclude: RECURSION };
 const FAILED_CLOSED_DENY: TsOutcome = { code: 2, stderrIncludes: "internal error on a guarded command", firesInclude: RECURSION };
 const FAILED_CLOSED_DENY_WITH_LONG_COMMAND: TsOutcome = { code: 2, firesInclude: RECURSION };
+const LIST_COMMAND_REFUSED: TsOutcome = { code: 2, stderrIncludes: "internal error on a guarded command", firesInclude: "FieldTypeError: command must be a string, not list" };
 const NOT_AN_OBJECT = "hook payload is not a JSON object";
 const ATTRIBUTION_DENIED: TsOutcome = { code: 2, stderrIncludes: "AI-tool attribution in the commit message" };
 const PASSED_SILENTLY: TsOutcome = { code: 0, stdoutEmpty: true };
@@ -172,7 +173,8 @@ function gitGuardListCommandCases(repo: string): AdversarialCase[] {
   const payload = JSON.stringify(bash(PLACEHOLDER, repo));
   const stages: Stage[] = [{ wrappers: 2, outcome: FAILED_CLOSED_DENY_WITH_LONG_COMMAND }];
   return [3, 3000, MAX_JSON_DEPTH - 2, MAX_JSON_DEPTH + 1, 140000].map((depth) =>
-    jsonCase(`git-guard command nested in ${depth} lists`, GIT_GUARD, repo, payload.replace(`"${PLACEHOLDER}"`, "[".repeat(depth) + command + "]".repeat(depth)), [], divergenceFor(depth, stages)));
+    jsonCase(`git-guard command nested in ${depth} lists`, GIT_GUARD, repo, payload.replace(`"${PLACEHOLDER}"`, "[".repeat(depth) + command + "]".repeat(depth)), [],
+      divergenceFor(depth, stages) ?? LIST_COMMAND_REFUSED));
 }
 
 function reportGateEvidenceLineCases(sandbox: HookSandbox): AdversarialCase[] {

@@ -276,14 +276,14 @@ describe("HookSkipTest", () => {
   });
 
   it("multiEdit_passes_whenEditsIsAbsentEmptyOrNull", () => {
-    for (const toolArgs of [{}, { edits: [] }, { edits: null }, { edits: 0 }, { edits: "" }]) {
+    for (const toolArgs of [{}, { edits: [] }, { edits: null }]) {
       assertPassed(edit("MultiEdit", { file_path: writeSettings(), ...toolArgs }));
     }
     assert.deepEqual(sandbox.fires(), []);
   });
 
   it("multiEdit_deniedFailClosed_whenEditsIsNotAListAndNothingElseDecides", () => {
-    const expected = new Map<unknown, string>([["text", "str"], [{ new_string: "text" }, "dict"], [5, "int"], [true, "bool"]]);
+    const expected = new Map<unknown, string>([["text", "str"], [{ new_string: "text" }, "dict"], [5, "int"], [true, "bool"], [0, "int"], [false, "bool"], ["", "str"], [{}, "dict"]]);
     for (const [edits, typeName] of expected) {
       const result = edit("MultiEdit", { file_path: join(sandbox.root, "notes.md"), content: "no-verify", edits });
       assert.equal(result.code, 2, JSON.stringify(edits));
@@ -870,6 +870,40 @@ describe("SecretsTest", () => {
       assert.equal(result.code, 2, hits);
       assert.ok(result.stderr.includes("internal error"), result.stderr);
       assert.equal(sandbox.fires().at(-1)?.detail, `TypeError: hits is not a list: '${typeName}'`);
+    }
+  });
+
+  it("commit_deniedFailClosed_whenTheBoundaryReportHitsAreFalsyButNotAList", () => {
+    const typeNames = new Map([["false", "bool"], ["0", "int"], ['""', "str"], ["{}", "dict"]]);
+    for (const [hits, typeName] of typeNames) {
+      sandbox.env["KEEL_BOUNDARY"] = sandbox.stub("boundary-falsy", { stdout: `{"scanned": 1, "hits": ${hits}}`, exitCode: 1 });
+      const result = guard('git commit -m "Add config"', repo);
+      assert.equal(result.code, 2, hits);
+      assert.ok(result.stderr.includes("internal error"), result.stderr);
+      assert.equal(sandbox.fires().at(-1)?.detail, `TypeError: hits is not a list: '${typeName}'`);
+    }
+  });
+
+  it("commit_deniedWithFSecrets_whenTheBoundaryReportHasNoHitsMember", () => {
+    for (const report of ['{"scanned": 1}', '{"scanned": 1, "hits": null}']) {
+      sandbox.env["KEEL_BOUNDARY"] = sandbox.stub("boundary-bare", { stdout: report, exitCode: 1 });
+      assertDenied(guard('git commit -m "Add config"', repo), "F-secrets");
+    }
+  });
+
+  it("commit_deniedFailClosed_whenAHitFieldIsNotTextOrANumber", () => {
+    const hits = new Map([
+      ['{"file": ["x"], "line": 1, "rule": "r"}', "hit file must be a string or number, not list"],
+      ['{"file": "f", "line": null, "rule": "r"}', "hit line must be a string or number, not null"],
+      ['{"file": "f", "line": 1}', "hit rule must be a string or number, not null"],
+      ['{"file": "f", "line": true, "rule": "r"}', "hit line must be a string or number, not boolean"],
+    ]);
+    for (const [hit, message] of hits) {
+      sandbox.env["KEEL_BOUNDARY"] = sandbox.stub("boundary-hit-odd", { stdout: `{"scanned": 1, "hits": [${hit}]}`, exitCode: 1 });
+      const result = guard('git commit -m "Add config"', repo);
+      assert.equal(result.code, 2, hit);
+      assert.ok(result.stderr.includes("internal error"), result.stderr);
+      assert.equal(sandbox.fires().at(-1)?.detail, `FieldTypeError: ${message}`);
     }
   });
 });

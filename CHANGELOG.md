@@ -76,14 +76,19 @@ Codex adapter (`codex/`) drop their Python emulation and run on plain Node behav
     Integers beyond 2^53 are rounded to the nearest double in the hook payload and relayed that way to the guards, as
     `1e400` becomes `null` there; a registry or state file keeps its integers exact when `link` writes it back.
   - A `cwd` that is not a string is refused (`keel Codex guard: cwd must be a string`) instead of being turned into a
-    directory name with Python's `str`; an empty, zero, `false`, `[]`, `{}` or missing `cwd` still means the process directory.
+    directory name with Python's `str`; a missing, `null` or empty `cwd` still means the process directory, but `0`, `false`, `[]`
+    and `{}` are refused too (they were read as no `cwd`).
   - A path holding a NUL character or an unpaired surrogate is refused, including the `\udc80`-`\udcff` escapes that Python read
     as raw bytes. A symlink met while resolving a path is refused when its target is not valid UTF-8; Python read such a
     target with surrogate escapes and kept resolving. A `..` still follows the physical directory after a symlink, and
     resolution still stops after 40 links.
   - `apply_patch` text and guard output are still split and trimmed with Python's `splitlines` and `strip` (`\r`, `\v`, `\f`,
     U+001C-U+001E, U+0085, U+2028 and U+2029 break a line; U+00A0, U+1680, U+2000-U+200A, U+202F, U+205F and U+3000 are
-    space, U+FEFF is not) from `hooks/lib/hookkit/pycompat.ts`, which this change does not touch.
+    space, U+FEFF is not): `splitlines` and `trimSpace` in `hooks/lib/hookkit/text.ts`.
+  - `keel_partial` and `replace_all` in an `Edit` or `Write` of `config.toml` are read as booleans. A `keel_partial` that is
+    anything but `false`, `null` or absent refuses the edit as a partial patch (`0`, `""`, `[]` and `{}` used to pass as unset),
+    and `replace_all` replaces every match only when it is `true` (`"yes"`, `1`, `[1]` and `{"k": 1}` used to count, so an
+    edit that matched more than once went on to be validated; it is now refused as ambiguous).
   - Registry and state files: a key such as `"2"` inside the skill registry is written in ascending order before the other
     keys; a `version` of `true` or `1.0` is still accepted.
   - Command lines: option prefixes and stacked short options are no longer expanded (`--wr`, `--fil x`, `-hh` and `--he` exit
@@ -91,10 +96,10 @@ Codex adapter (`codex/`) drop their Python emulation and run on plain Node behav
     exited 2); a value that starts with `-` after `--home` or `--file` (`--home -5`) exits 2, it was read as a value when it
     looked like a number.
   - The files and tests that checked the Python emulation are replaced by comparisons with the recorded Python runs that
-    accept the listed changes: the hook corpus lists 71 payloads whose outcome changed and counts the denials worded
+    accept the listed changes: the hook corpus lists 71 payloads whose outcome changed (99 once the wrong-type fields below are counted) and counts the denials worded
     differently, the link and config scenarios skip the steps whose arguments changed, and
     `codex/tests/boundary.test.ts` pins 823 input boundaries (line breaks, Unicode spaces, number forms, invalid UTF-8,
-    symlink chains, sort order, command lines) against the outcomes the old adapter gave and lists the 58 that differ.
+    symlink chains, sort order, command lines) against the outcomes the old adapter gave and lists the 58 that differ (65 with the `cwd` values `0`, `false`, `[]` and `{}`).
 - `keel` (`bin/keel`, `lib/evidence`), what stays the same: the exit codes (0, 2 usage, 3 refused, 4 for a green run
   with no recognized tests, 70 internal error, otherwise the test command's own code), the `keel` subcommands and flags,
   the field names and values of every evidence record under `state/keel/evidence`, of `keel-tests.jsonl`, of the
@@ -224,16 +229,75 @@ Codex adapter (`codex/`) drop their Python emulation and run on plain Node behav
     file (`[F-hookskip]`); the error applies only when nothing else denies the call. Python's `list()` read a string as its
     characters and an object as its keys, so a string or object `edits` used to pass unread (a `hits` one already failed
     closed, with an `AttributeError`). A number or `true` `edits` used to raise before the path checks ran, so a call aimed
-    at the live checkout or the overlay passed; it is now denied like the string. A missing, empty, `null`, `0` or `false`
-    value is still an empty list.
+    at the live checkout or the overlay passed; it is now denied like the string. A missing, `null` or `[]` value is still an
+    empty list (`0`, `false`, `""` and `{}` are no longer one, see the wrong-type fields below).
   - `report-gate`: a turn-state file whose `paths` is a string, number or `true` is read as no flagged paths, so an
     outside edit is flagged again (a string was read as its characters and a number as an error, which passed). An object
     still reads as its keys.
+  - Fields of the wrong type. The hooks no longer use Python's truthiness (`isTruthy`) or `str()` (`pythonStr`) on payload, state or
+    `gh` fields. Each field has one type and is read as that type (`textField`, `textOrEmpty` and `isNonEmptyString` in
+    `hooks/lib/hookkit/fields.ts`): a missing or `null` text reads as empty, a value of any other type raises `FieldTypeError`
+    (a `TypeError`), and a flag that relaxes a gate counts only when it is exactly `true` (or a non-empty string for an id). A
+    wrong-typed value never turns a deny into a pass: where raising would pass (the fail-open hooks), the hook denies, refuses
+    or judges the strict reading instead. What changes, hook by hook (the old reading is in brackets):
+    - `git-guard`: a `command` that is not text is an internal error: a payload that looks guarded is denied
+      (`internal error on a guarded command`), any other passes with an `error` fire [it was rendered with Python's `str()` and
+      judged as text; `["git", "commit", "-m", "..."]` passed, and a nested list holding a quote was judged on its repr].
+      A `cwd` that is not text is judged as the process directory and raises only when nothing denied [a number, `true`, a list
+      or an object became a relative directory named after its repr; `0`, `false`, `[]` and `{}` were the process directory].
+      A `file_path` or `notebook_path` that is not text is judged as the call's `cwd` and raises when nothing denied, so a call
+      from the live checkout, the overlay or `state/keel` is still denied, shown as `(a path that is not text)` [`0`, `false`, `[]`
+      and `{}` read as no path and passed; the others were judged as a path named after their repr]; `null` and `""` still fall
+      back to `notebook_path`. An `edits` of `0`, `false`, `""` or `{}` is malformed like a string [an empty list]. A boundary
+      report whose `hits` is `false`, `0`, `""` or `{}` fails closed like any other non-list [it was an empty list], and a hit
+      whose `file`, `line` or `rule` is neither a string nor a number fails closed [it was printed with `str()`]. A `tool_name`
+      that is not text names no tool, as before.
+    - `ship-gate`: a `command` that is not text fails closed: a push or merge, judged on the payload text, is denied (a
+      list `["git", "push", "origin", "main"]` used to pass, and a list nested 3,000 deep was judged on its `str()` text), any other command passes with a line on stderr. A `cwd` that
+      is not text fails closed [only a truthy one did; `0`, `false`, `[]` and `{}` were the process directory]. A `session_id` that is
+      not text reads as `-` [the value itself was logged and named a state file]. In a `gh pr view` answer
+      `baseRefName` must be non-empty text, `statusCheckRollup` a list or `null` [`0`, `false`, `""` and `{}` were no checks, and
+      a string or object was read per character or key], and a check's `conclusion`, `status` and `state` text or `null`
+      [`1` and `true` read as not blocking and `0` and `false` as absent, so a merge could go through]. A check whose `name` is not
+      text is shown as `?` (or by its `context`).
+    - `report-gate`: a `session_id`, `agent_id`, `transcript_path` or `agent_transcript_path` that is not text, a
+      `tool_input.message` that is not text, and a transcript entry whose `message.role`, tool name, Bash `command` or edited
+      path is not text, are refused as unreadable (a handback is denied, a stop is blocked, `could not read this report`, K2) [they
+      were read through `str()`; `0`, `false`, `[]` and `{}` as absent, so an agent whose id was `0` was not checked at all].
+      A `stop_hook_active`, or a stored `ev` or `hb`, excuses the report only as exactly `true` [`"yes"`, `1`, `[1]` and `{"k": 1}`
+      counted]. A fire's `session` is `-` unless it is non-empty text.
+    - `model-assign`: `resumeFromRunId` skips the workflow check only as a non-empty string [`true`, a number, a list or an
+      object did, so a script without a model passed]; a `scriptPath` that is not text is left out of the deny message. A
+      `subagent_type`, `prompt`, `description`, `model` or `effort` of an `Agent` or `Task` call that is not text logs an `error`
+      fire and rewrites nothing [it was read through `str()`].
+    - `env-preflight`: a `command` that is not text logs an `error` fire and passes; a `cwd` that is not text is the process
+      directory, so a `mvn` without the JDK pin is denied there [a number, `true`, a list or an object named a directory that
+      does not exist, and the build passed].
+    - `handoff`: a `trigger` or `transcript_path` that is not text is written as `?`, and a `cwd` that is not text is the process
+      directory [the repr of the value was written, or the snapshot was skipped].
+    - Codex adapter (`keel_partial`, `replace_all`, `cwd`): see the Codex section above.
+    - `expandUser` expands `~`, `~/...` and `~<name>` only for the current account (`~root/x` stays `~root/x` and is joined to
+      the working directory); it no longer asks directory services or `/etc/passwd` for other accounts. `shell-parity` lists the
+      six `resolve_directory` calls this changes.
   - `tests/hooks/hook-parity.test.ts` lists the four recorded runs whose fire text changed with this wording
     (`EXPECTED_DIVERGENCES`, each with the exit code the hook must give and the start of the new detail). Everything else
     of those runs, stderr, stdout and every written file, is still compared, and the test fails on a recorded Python
     deny that passes in node. Its adversarial set adds four `MultiEdit` payloads with a string or object `edits` aimed at the
     overlay and at `state/keel`, with the outcome of the previous release's hook recorded for them. `tests/ship-gate/ship-gate-parity.test.ts` lists 25 more rows the same way.
+    The wrong-type payloads (476 in `tests/hooks/hook-parity-wrong-types.ts` for `git-guard`, `ship-gate`, `env-preflight`,
+    `model-assign`, `handoff` and `report-gate`: each field that holds text or a flag, set to an object, a list, a number,
+    `true`, `false`, `0`, `[]`, `{}` or `null`) are recorded from the hooks as they were before the typed readers. 317 end
+    differently and are listed in `tests/hooks/hook-parity-wrong-type-divergences.ts` with the exit and a text the hook must give
+    (every unchanged one is compared in full, and none of the 476 lets a recorded deny pass). The three `git-guard command nested
+    in N lists` payloads below the depth bound are listed too: a command that is a list used to be judged on its Python `str()`
+    text, in which a quote inside an element let the rest of the element run as shell words (`F-hookskip` denied it), and it is
+    now refused as an internal error. The run reports 344 recorded + 766 adversarial cases, 457 listed divergences (137 before),
+    0 mismatches, deny-to-pass 0; fire logs written with compact JSON (`ship-gate`) now have their `ts` masked as well.
+    `tests/ship-gate/ship-gate-parity.test.ts` lists 61 more rows (146 in all): a `command`, `cwd` or `session_id` that is not
+    text, and `gh` answers whose `statusCheckRollup`, a check or `baseRefName` has the wrong type; 1,757 cases, 0 mismatches,
+    deny-to-pass 0. `codex/tests/hook-parity-corpus.ts` adds 42 wrong-type payloads (recorded from the adapter as it was) and lists
+    28 changed ones (587 cases, 99 listed). `tests/hooks/shell-parity.test.ts` gains a listed-divergence set of its own for the
+    six `resolve_directory` calls on `~root`.
 
 ### Fixed
 - `env-preflight` (`[S-jdk]`) accepts a `java_home` lookup that names a patch release of the required major, such as
@@ -245,12 +309,20 @@ Codex adapter (`codex/`) drop their Python emulation and run on plain Node behav
   helpers. The error classes and `describeError` moved to `hooks/lib/hookkit/errors.ts`, `readStdin`, `printLine` and
   `writeStderr` to `hooks/lib/hookkit/stdio.ts` unchanged, and `trimCharacters` (the old `stripChars`) to
   `hooks/lib/hookkit/text.ts`. The unread recording `tests/fixtures/python/ship-gate-strerror.json` is deleted with it.
-  `tests/hooks/pyhook-compat.test.ts` keeps its `pycompat` tests and loses the `pyruntime`
+  `tests/hooks/pyhook-compat.test.ts` (now `tests/hooks/jsonout.test.ts`) keeps its `pycompat` tests and loses the `pyruntime`
   ones, which `tests/hooks/errors.test.ts` replaces; the import-order test for `pyruntime` in `tests/hooks/json.test.ts` went
   with it, as `errors.ts` imports nothing.
-- The hook module `hooks/lib/hookkit/pyjson.ts` and its tests in `tests/hooks/pyhook-compat.test.ts`. Its place is taken by
+- The hook module `hooks/lib/hookkit/pyjson.ts` and its tests in `tests/hooks/pyhook-compat.test.ts` (now `tests/hooks/jsonout.test.ts`). Its place is taken by
   `parseJson`, `parsePayload`, `parseTranscriptLine` and `parseJsonReadingNonFiniteNumbersAsZero` in `hooks/lib/hookkit/json.ts`;
-  `dumpsAscii` moved to `hooks/lib/hookkit/pycompat.ts` unchanged.
+  `dumpsAscii` moved to `hooks/lib/hookkit/jsonout.ts` unchanged.
+- The hook module `hooks/lib/hookkit/pycompat.ts`. `isTruthy` and `pythonStr` are gone (see the wrong-type fields above); `strip` is
+  `trimSpace`. What stays moved to modules without a Python name, unchanged: `splitlines`, `trimSpace`, `truncate`,
+  `codePointLength`, `rstripChar`, `lstripChar`, `partition`, `isDigits` and `arraysEqual` to `hooks/lib/hookkit/text.ts`;
+  `basename`, `joinPath`, `normalizePath`, `splitPath`, `glob`, `expandVars`, `environmentValue` and `expandUser` (now the
+  current account only) to `hooks/lib/hookkit/paths.ts`; `isSystemError` and `tryReadText` to `hooks/lib/hookkit/files.ts`;
+  `isRecord` and `getField` to `hooks/lib/hookkit/fields.ts`; `pythonJsonDumps` and `dumpsAscii` to `hooks/lib/hookkit/jsonout.ts`
+  (without the `str()` rendering that `pythonStr` shared with them). The directory-services and `/etc/passwd` lookups of
+  `expandUser` and their `dscl` tests are removed.
 - The hook modules `hooks/lib/hookkit/{pyfnmatch,pypath}.ts`. Their place is taken by `globMatches` from
   `lib/evidence/glob.ts`, `shlexQuote` from `measure/lib/measurekit/shlex.ts`, `node:path` `dirname`, `readFileSync` and
   `realpathSync`, and `isFile`, `isDirectory` and `resolveSymlinksKeepingMissingTail` in the new

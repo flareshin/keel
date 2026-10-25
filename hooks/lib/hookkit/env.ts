@@ -1,6 +1,6 @@
 import { realpathSync } from "node:fs";
 import { dirname } from "node:path";
-import { expandUser, joinPath } from "./pycompat.ts";
+import { expandUser, joinPath } from "./paths.ts";
 
 export function dataDir(): string {
   return expandUser(process.env["KEEL_DATA_DIR"] || "~/.claude");

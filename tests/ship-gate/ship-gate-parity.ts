@@ -49,20 +49,31 @@ const JSON_QUOTING_ON_A_PASS = ["extra-0561", "extra-0564"];
 const SYSTEM_ERROR_WORDING_ON_A_DENY = ["extra-0543", "extra-0544", "extra-0545", "extra-0548", "extra-0634", "extra-0635", "extra-0637",
   ...["python-keel", "ts-keel"].flatMap((suite) => ["0027", "0028", "0029", "0030", "0031", "0046", "0047"].map((number) => `${suite}-${number}`))];
 const SYSTEM_ERROR_WORDING_ON_A_PASS = ["extra-0610", "extra-0632", "python-keel-0033", "ts-keel-0033"];
+const rowIds = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_unused, index) => `extra-${String(from + index).padStart(4, "0")}`);
+const COMMAND_NOT_TEXT_FAILS_CLOSED = ["extra-0063", "extra-0066", "extra-0070"];
+const COMMAND_NOT_TEXT_ON_A_DENIED_PUSH = ["extra-0051", "extra-0052"];
+const COMMAND_NOT_TEXT_ON_A_NON_PUSH = ["extra-0064", "extra-0068", "extra-0069"];
+const CWD_NOT_TEXT_WORDING = ["extra-0077", "extra-0078", "extra-0086", "extra-0087"];
+const SESSION_NOT_TEXT_LOGGED_AS_DASH_ON_A_DENY = ["extra-0097", "extra-0100", "extra-0103", "extra-0115", "extra-0118"];
+const SESSION_NOT_TEXT_LOGGED_AS_DASH_ON_A_PASS = ["extra-0098", "extra-0099", "extra-0101", "extra-0102", "extra-0104", "extra-0105", "extra-0116", "extra-0117", "extra-0119", "extra-0120", "extra-0558", "extra-0559"];
+const GH_ANSWER_NOT_TEXT_WORDING_ON_A_DENY = [...rowIds(449, 456), ...rowIds(465, 468), ...rowIds(479, 482), "extra-0493", "extra-0494", "extra-0497", "extra-0498", ...rowIds(503, 506)];
+const GH_ANSWER_NOT_TEXT_NOW_DENIED = [...rowIds(469, 472), ...rowIds(489, 492)];
 
 export const EXPECTED_DIVERGENCES: ReadonlyMap<string, number> = new Map([
   ...OVER_BOUND_NESTINGS.flatMap((depth) => OVER_BOUND_KINDS.map((kind): [string, number] => [`${kind}-nested-${depth}`, DENY_EXIT_CODE])),
   ...COMMAND_DIVERGENT_NESTINGS.map((depth): [string, number] => [`command-list-nested-${depth}`, DENY_EXIT_CODE]),
   ...PYTHON_COMMENT_DELETION_SUITES.flatMap((suite) => PYTHON_COMMENT_DELETION_TESTS.map((number): [string, number] => [`py-comment-deletion-${suite}-${number}`, DENY_EXIT_CODE])),
   ...[...GH_NUMBER_PAST_PYTHON_DIGIT_LIMIT, ...READ_PAST_PYTHON_DIGIT_LIMIT_ON_A_NON_PUSH, ...NON_FINITE_NON_PUSH_PAYLOADS, ...JSON_QUOTING_ON_A_PASS,
-    ...SYSTEM_ERROR_WORDING_ON_A_PASS]
+    ...SYSTEM_ERROR_WORDING_ON_A_PASS, ...COMMAND_NOT_TEXT_ON_A_NON_PUSH, ...SESSION_NOT_TEXT_LOGGED_AS_DASH_ON_A_PASS]
     .map((id): [string, number] => [id, PASS_EXIT_CODE]),
   ...[NON_FINITE_PUSH_PAYLOAD, NON_FINITE_GH_ANSWER_ON_A_PASSING_MERGE, ...READ_PAST_PYTHON_DIGIT_LIMIT_ON_A_PUSH, ...NON_FINITE_GH_ANSWERS_ON_A_DENIED_MERGE,
-    ...UTF8_WORDING_ON_A_DENY, ...JSON_QUOTING_ON_A_DENY, ...SYSTEM_ERROR_WORDING_ON_A_DENY].map((id): [string, number] => [id, DENY_EXIT_CODE]),
+    ...UTF8_WORDING_ON_A_DENY, ...JSON_QUOTING_ON_A_DENY, ...SYSTEM_ERROR_WORDING_ON_A_DENY, ...COMMAND_NOT_TEXT_FAILS_CLOSED, ...COMMAND_NOT_TEXT_ON_A_DENIED_PUSH,
+    ...CWD_NOT_TEXT_WORDING, ...SESSION_NOT_TEXT_LOGGED_AS_DASH_ON_A_DENY, ...GH_ANSWER_NOT_TEXT_WORDING_ON_A_DENY, ...GH_ANSWER_NOT_TEXT_NOW_DENIED]
+    .map((id): [string, number] => [id, DENY_EXIT_CODE]),
 ]);
 
 export const DECISION_PATH_CHANGED: ReadonlySet<string> = new Set([
-  ...NON_FINITE_NON_PUSH_PAYLOADS, ...READ_PAST_PYTHON_DIGIT_LIMIT_ON_A_PUSH,
+  ...NON_FINITE_NON_PUSH_PAYLOADS, ...READ_PAST_PYTHON_DIGIT_LIMIT_ON_A_PUSH, ...COMMAND_NOT_TEXT_ON_A_DENIED_PUSH, ...COMMAND_NOT_TEXT_ON_A_NON_PUSH,
   "extra-0036", "extra-0037", "extra-0041", "extra-0042", "extra-0046",
   "stdin-push-nested-10001", "command-list-nested-9999", "command-list-nested-10001",
   ...PYTHON_COMMENT_DELETION_SUITES.flatMap((suite) => ["0470", "0477"].map((number) => `py-comment-deletion-${suite}-${number}`)),

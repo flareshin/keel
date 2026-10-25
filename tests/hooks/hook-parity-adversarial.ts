@@ -3,6 +3,8 @@ import {
   AGENT_ID, basePayload, bash, ENV_PREFLIGHT, GIT_GUARD, HANDOFF, HookSandbox, KEEL_EVIDENCE_LINE, MODEL_ASSIGN, preToolUse, REPORT_GATE, SESSION_ID,
 } from "./helpers.ts";
 import { jsonLimitCases } from "./hook-parity-json-limits.ts";
+import { wrongTypeCases } from "./hook-parity-wrong-types.ts";
+import { WRONG_TYPE_DIVERGENCES } from "./hook-parity-wrong-type-divergences.ts";
 import type { TsOutcome } from "./hook-parity-json-limits.ts";
 
 const DOTTED_I = "İ";
@@ -48,6 +50,7 @@ export function buildAdversarialSet(): AdversarialSet {
     ...modelAssignCases(sandbox.root),
     ...handoffCases(repo),
     ...jsonLimitCases(sandbox, repo),
+    ...wrongTypeCases(sandbox, repo, (family, label) => WRONG_TYPE_DIVERGENCES.get(`${family} ${label}`)),
   ];
   const divergences = new Map(cases.flatMap((adversarialCase): Array<[string, TsOutcome]> => (adversarialCase.divergence ? [[adversarialCase.name, adversarialCase.divergence]] : [])));
   return { sandbox, cases, divergences };

@@ -1,7 +1,10 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { dataDir } from "./env.ts";
-import { getField, isRecord, isSystemError, isTruthy, joinPath, pythonStr, strip } from "./pycompat.ts";
+import { getField, isNonEmptyString, isRecord } from "./fields.ts";
+import { isSystemError } from "./files.ts";
+import { joinPath } from "./paths.ts";
+import { trimSpace } from "./text.ts";
 import { compareCodePoints } from "../../../measure/lib/measurekit/json.ts";
 import type { Payload } from "./protocol.ts";
 import { OSError, run, TimeoutExpired } from "./subprocess.ts";
@@ -26,7 +29,7 @@ export function missDetail(payload: Payload, missing: readonly string[]): string
 }
 
 export function ccVersion(session: unknown): string {
-  const sessionName = pythonStr(isTruthy(session) ? session : "-").replace(UNSAFE_FILENAME_CHARACTER, "_");
+  const sessionName = (isNonEmptyString(session) ? session : "-").replace(UNSAFE_FILENAME_CHARACTER, "_");
   const cache = joinPath(dataDir(), "state", "keel", "sessions", `${sessionName}.cc-version`);
   const cached = tryReadCachedVersion(cache);
   if (cached !== null) return cached;
@@ -37,7 +40,7 @@ export function ccVersion(session: unknown): string {
 
 function tryReadCachedVersion(cache: string): string | null {
   try {
-    return strip(readFileSync(cache, "utf8")) || UNKNOWN_VERSION;
+    return trimSpace(readFileSync(cache, "utf8")) || UNKNOWN_VERSION;
   } catch (error) {
     if (isSystemError(error)) return null;
     throw error;

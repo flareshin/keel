@@ -1,4 +1,4 @@
-import { codePointLength } from "../../hooks/lib/hookkit/pycompat.ts";
+import { codePointLength } from "../../hooks/lib/hookkit/text.ts";
 import { Refusal } from "./refusal.ts";
 
 export type TomlTable = Map<string, TomlValue>;

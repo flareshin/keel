@@ -14,6 +14,7 @@ export const FIXTURE_DIRECTORY = join(import.meta.dirname, "fixtures", "hook-par
 export const RUN_TIMEOUT_MS = 60_000;
 const MAX_MISMATCHES_SHOWN = 12;
 const FIRES_TIMESTAMP = /^(\{"ts": ")[^"]*(")/;
+const COMPACT_FIRES_TIMESTAMP = /("ts":")\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ(")/g;
 const HANDOFF_TIMESTAMP = /^(> Generated )\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ /m;
 const UNREADABLE = "<unreadable>";
 const GIT_DIRECTORY = ".git";
@@ -240,7 +241,7 @@ function readOrMark(path: string): string {
 
 function normalized(key: string, content: string): string {
   if (key === FIRES_PATH) {
-    return content.split("\n").map((line) => line.replace(FIRES_TIMESTAMP, "$1<ts>$2")).join("\n");
+    return content.split("\n").map((line) => line.replace(FIRES_TIMESTAMP, "$1<ts>$2").replace(COMPACT_FIRES_TIMESTAMP, "$1<ts>$2")).join("\n");
   }
   if (key.startsWith(join("data", "handoff") + "/")) return content.replace(HANDOFF_TIMESTAMP, "$1<ts> ");
   return content;

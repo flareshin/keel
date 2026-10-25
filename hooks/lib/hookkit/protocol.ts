@@ -1,5 +1,7 @@
 import { writeSync } from "node:fs";
-import { codePointLength, getField, isRecord, isTruthy, pythonJsonDumps, pythonStr, truncate } from "./pycompat.ts";
+import { codePointLength, truncate } from "./text.ts";
+import { getField, isNonEmptyString, isRecord } from "./fields.ts";
+import { pythonJsonDumps } from "./jsonout.ts";
 
 export const EXIT_PASS = 0;
 export const EXIT_DENY = 2;
@@ -16,7 +18,12 @@ export type Bullet = readonly [ruleId: string, text: string];
 
 export function toolName(payload: Payload): string {
   const name = getField(payload, "tool_name");
-  return pythonStr(isTruthy(name) ? name : "").toLowerCase();
+  return typeof name === "string" ? name.toLowerCase() : "";
+}
+
+export function cwdOrProcessDirectory(payload: Payload): string {
+  const cwd = getField(payload, "cwd");
+  return isNonEmptyString(cwd) ? cwd : process.cwd();
 }
 
 export function toolInput(payload: Payload): Payload {
@@ -25,7 +32,7 @@ export function toolInput(payload: Payload): Payload {
 }
 
 export function isSubagent(payload: Payload): boolean {
-  return isTruthy(getField(payload, "agent_id"));
+  return isNonEmptyString(getField(payload, "agent_id"));
 }
 
 export function formatMessage(hook: string, summary: string, bullets: readonly Bullet[], nextStep: string = ASK_USER): string {
@@ -51,8 +58,8 @@ export function runYourself(command: string): string {
   return RUN_YOURSELF + command;
 }
 
-export function listed(items: readonly unknown[]): string {
-  let shown = items.slice(0, LIST_LIMIT).map(pythonStr).join(", ");
+export function listed(items: readonly string[]): string {
+  let shown = items.slice(0, LIST_LIMIT).join(", ");
   if (items.length > LIST_LIMIT) shown += `, …and ${items.length - LIST_LIMIT} more`;
   return shown;
 }

@@ -14,6 +14,22 @@ const CWD_NOT_STRING: DenyDivergence = { kind: "deny", reason: /^keel Codex guar
 const NOT_JSON: DenyDivergence = { kind: "deny", reason: /^keel Codex guard: invalid JSON: / };
 const UNPAIRED_SURROGATE: DenyDivergence = { kind: "deny", reason: /^keel Codex guard: path holds a NUL character or an unpaired surrogate$/ };
 const FALSY_LITERALS = ["0.0", "-0.0"];
+const TWO_MATCHES = "[features]\nhooks = true\nx = true\n";
+const NOT_TEXT: ReadonlyArray<[string, unknown]> = [
+  ["object", { k: "v" }], ["list", ["x"]], ["number", 5], ["zero", 0], ["true", true], ["false", false], ["empty list", []], ["empty object", {}], ["null", null],
+];
+const NOT_FLAG: ReadonlyArray<[string, unknown]> = [
+  ["true", true], ["false", false], ["string", "yes"], ["empty string", ""], ["object", { k: 1 }], ["empty object", {}], ["number", 1],
+  ["zero", 0], ["list", [1]], ["empty list", []], ["null", null],
+];
+const KEEL_PARTIAL_REFUSED: DenyDivergence = { kind: "deny", reason: /^keel Codex guard: partial config patches cannot be verified; / };
+const REPLACE_ALL_NOT_TRUE: DenyDivergence = { kind: "deny", reason: /^keel Codex guard: config replacement does not identify an unambiguous result$/ };
+const FALSY_NOT_FALSE = ["zero", "empty string", "empty object", "empty list"];
+const WRONG_TYPE_DIVERGENCES: ReadonlyMap<string, DenyDivergence> = new Map([
+  ...["zero", "false", "empty list", "empty object"].map((label): [string, DenyDivergence] => [`cwd ${label}`, CWD_NOT_STRING]),
+  ...FALSY_NOT_FALSE.flatMap((label): Array<[string, DenyDivergence]> => [[`keel_partial edit ${label}`, KEEL_PARTIAL_REFUSED], [`keel_partial write ${label}`, KEEL_PARTIAL_REFUSED]]),
+  ...["string", "object", "number", "list"].map((label): [string, DenyDivergence] => [`replace_all ${label}`, REPLACE_ALL_NOT_TRUE]),
+]);
 
 function isValidUtf8(bytes: Buffer): boolean {
   try {
@@ -386,7 +402,7 @@ export function hookCases(paths: Paths): HookCase[] {
   const FLOAT_LITERALS = ["1.0", "100.0", "-0.0", "0.0", "1e16", "1E22", "0.5", "2.5", "1e400", "-1e400"];
   const withCwd = (cwd: string): string => `{"tool_name": "Write", "tool_input": {"file_path": "hj", "content": "x"}, "cwd": ${cwd}}`;
   for (const literal of FLOAT_LITERALS) {
-    add(`float cwd ${literal}`, withCwd(literal), FALSY_LITERALS.includes(literal) ? {} : { divergence: CWD_NOT_STRING });
+    add(`float cwd ${literal}`, withCwd(literal), { divergence: CWD_NOT_STRING });
     add(`float cwd ${literal} in a list`, withCwd(`[${literal}]`), { divergence: CWD_NOT_STRING });
     add(`float tool_name ${literal}`, `{"tool_name": ${literal}, "tool_input": {}, "cwd": ${JSON.stringify(repo)}}`);
     add(`float tool_name ${literal} in a list`, `{"tool_name": [${literal}, "x"], "tool_input": {}, "cwd": ${JSON.stringify(repo)}}`);
@@ -396,8 +412,8 @@ export function hookCases(paths: Paths): HookCase[] {
     add(`float payload ${literal}`, literal);
     add(`float Bash command ${literal}`, `{"tool_name": "Bash", "tool_input": {"command": ${literal}}, "cwd": ${JSON.stringify(repo)}}`);
     add(`float apply_patch command ${literal}`, `{"tool_name": "apply_patch", "tool_input": {"command": ${literal}}, "cwd": ${JSON.stringify(repo)}}`);
-    add(`float keel_partial ${literal}`, `{"tool_name": "Edit", "tool_input": {"file_path": ${JSON.stringify(`${profile}/config.toml`)}, "old_string": "true", "new_string": "false", "keel_partial": ${literal}}, "cwd": ${JSON.stringify(repo)}}`);
-    add(`float replace_all ${literal}`, `{"tool_name": "Edit", "tool_input": {"file_path": ${JSON.stringify(`${profile}/config.toml`)}, "old_string": "e", "new_string": "E", "replace_all": ${literal}}, "cwd": ${JSON.stringify(repo)}}`);
+    add(`float keel_partial ${literal}`, `{"tool_name": "Edit", "tool_input": {"file_path": ${JSON.stringify(`${profile}/config.toml`)}, "old_string": "true", "new_string": "false", "keel_partial": ${literal}}, "cwd": ${JSON.stringify(repo)}}`, FALSY_LITERALS.includes(literal) ? { divergence: KEEL_PARTIAL_REFUSED } : {});
+    add(`float replace_all ${literal}`, `{"tool_name": "Edit", "tool_input": {"file_path": ${JSON.stringify(`${profile}/config.toml`)}, "old_string": "e", "new_string": "E", "replace_all": ${literal}}, "cwd": ${JSON.stringify(repo)}}`, FALSY_LITERALS.includes(literal) ? {} : { divergence: REPLACE_ALL_NOT_TRUE });
     add(`float beside force push ${literal}`, `{"tool_name": "Bash", "tool_input": {"command": "git push --force origin main"}, "cwd": ${JSON.stringify(repo)}, "extra": [${literal}, {"k": ${literal}}]}`);
   }
   add("integral float cwd beside a decoy integer directory", withCwd("1.0"), { divergence: CWD_NOT_STRING });
@@ -430,6 +446,18 @@ export function hookCases(paths: Paths): HookCase[] {
   for (const [inputName, stdin] of textInputs) {
     const valid = isValidUtf8(stdin);
     add(`stdin ${inputName} with default`, stdin, valid ? {} : { divergence: INVALID_UTF8 });
+  }
+
+  const listed = (key: string): Partial<HookCase> => {
+    const divergence = WRONG_TYPE_DIVERGENCES.get(key);
+    return divergence === undefined ? {} : { divergence };
+  };
+  for (const [label, value] of NOT_TEXT) bash(`wrong-type cwd ${label}`, "git status", { cwd: value }, listed(`cwd ${label}`));
+  for (const [label, value] of NOT_FLAG) {
+    const config = `${profile}/config.toml`;
+    edit(`wrong-type keel_partial on an edit ${label}`, config, { old_string: "true", new_string: "true", keel_partial: value }, listed(`keel_partial edit ${label}`));
+    add(`wrong-type keel_partial on a write ${label}`, payload("Write", { file_path: config, content: NORMAL_CONFIG, keel_partial: value }, { cwd: repo }), listed(`keel_partial write ${label}`));
+    edit(`wrong-type replace_all ${label}`, config, { old_string: "true", new_string: "true", replace_all: value }, { config: TWO_MATCHES, ...listed(`replace_all ${label}`) });
   }
 
   return cases;

@@ -1,14 +1,18 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { Observation, ObservedDelta, Run } from "../recorded-cases.ts";
-import { GIT_GUARD, HANDOFF, MODEL_ASSIGN, REPORT_GATE, ENV_PREFLIGHT } from "./helpers.ts";
-import { EXPECTED_DIVERGENCES, isDenyToPass, listedDifferences, runParity, summary } from "./hook-parity.ts";
-import type { ListedDivergence } from "./hook-parity.ts";
+import { GIT_GUARD, HANDOFF, MODEL_ASSIGN, REPORT_GATE, ENV_PREFLIGHT, SHIP_GATE } from "./helpers.ts";
+import { adversarialInputDigest, EXPECTED_DIVERGENCES, FIXTURE_DIRECTORY, isDenyToPass, listedDifferences, runParity, summary } from "./hook-parity.ts";
+import type { ListedDivergence, RecordedAdversarial } from "./hook-parity.ts";
+import { buildAdversarialSet } from "./hook-parity-adversarial.ts";
 
 const MIN_RECORDED_CASES = 300;
 const MIN_ADVERSARIAL_CASES = 50;
+const MIN_WRONG_TYPE_CASES = 400;
 const PARITY_TIMEOUT_MS = 30 * 60_000;
-const HOOK_ENTRIES = [GIT_GUARD, HANDOFF, MODEL_ASSIGN, REPORT_GATE, ENV_PREFLIGHT];
+const HOOK_ENTRIES = [GIT_GUARD, HANDOFF, MODEL_ASSIGN, REPORT_GATE, ENV_PREFLIGHT, SHIP_GATE];
 const DENY = 2;
 const ROOT = "/root";
 const FIRES = "data/logs/keel-fires.jsonl";
@@ -85,5 +89,21 @@ describe("hook parity recorded divergences", () => {
     assert.equal(isDenyToPass(denied, run(DENY, "x", "").observation), false);
     assert.equal(isDenyToPass(recorded(0, "", ""), run(DENY, "x", "").observation), false);
     assert.equal(isDenyToPass(undefined, run(0, "", "").observation), false);
+  });
+});
+
+describe("hook parity wrong-type payloads", () => {
+  it("records the outcome of the hook before the typed readers for every wrong-type payload, listed or not, so a deny that passes is counted", () => {
+    const adversarial = buildAdversarialSet();
+    try {
+      const recorded = JSON.parse(readFileSync(join(FIXTURE_DIRECTORY, "adversarial.json"), "utf8")) as Record<string, RecordedAdversarial>;
+      const wrongType = adversarial.cases.filter((adversarialCase) => adversarialCase.name.includes("wrong-type"));
+      assert.ok(wrongType.length >= MIN_WRONG_TYPE_CASES, `${wrongType.length} wrong-type payloads`);
+      for (const adversarialCase of wrongType) {
+        assert.equal(recorded[adversarialCase.name]?.input, adversarialInputDigest(adversarialCase, adversarial.sandbox.root), adversarialCase.name);
+      }
+    } finally {
+      adversarial.sandbox.close();
+    }
   });
 });

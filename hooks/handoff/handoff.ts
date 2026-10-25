@@ -4,14 +4,14 @@ import { dataDir } from "../lib/hookkit/env.ts";
 import { FireLog, utcNow } from "../lib/hookkit/fires.ts";
 import * as protocol from "../lib/hookkit/protocol.ts";
 import type { Payload } from "../lib/hookkit/protocol.ts";
-import {
-  basename, dumpsAscii, getField, isTruthy, joinPath, pythonStr, rstripChar, splitlines, strip,
-} from "../lib/hookkit/pycompat.ts";
+import { basename, joinPath } from "../lib/hookkit/paths.ts";
+import { dumpsAscii } from "../lib/hookkit/jsonout.ts";
+import { getField, isNonEmptyString } from "../lib/hookkit/fields.ts";
 import { parsePayload } from "../lib/hookkit/json.ts";
 import { isDirectory, isFile } from "../lib/hookkit/files.ts";
 import { describeError, RecursionError, ValueError } from "../lib/hookkit/errors.ts";
 import { printLine, readStdin, writeStderr } from "../lib/hookkit/stdio.ts";
-import { trimCharacters } from "../lib/hookkit/text.ts";
+import { rstripChar, splitlines, trimCharacters, trimSpace } from "../lib/hookkit/text.ts";
 import { findToplevel, findUpstream, gitOutput } from "../lib/hookkit/repo.ts";
 
 const HOOK = "handoff";
@@ -82,7 +82,7 @@ function snapshotBeforeCompaction(raw: string): number {
   const session = getField(payload, "session_id") as string | null;
   const fires = new FireLog(HOOK, session);
   try {
-    const cwd = pythonStr(isTruthy(getField(payload, "cwd")) ? getField(payload, "cwd") : process.cwd());
+    const cwd = protocol.cwdOrProcessDirectory(payload);
     const toplevel = isDirectory(cwd) ? findToplevel(cwd) : null;
     if (toplevel === null) return protocol.EXIT_PASS;
     const place = new RepoPlace(toplevel);
@@ -101,7 +101,7 @@ function snapshotBeforeCompaction(raw: string): number {
 }
 
 function textOrQuestionMark(value: unknown): string {
-  return isTruthy(value) ? pythonStr(value) : "?";
+  return isNonEmptyString(value) ? value : "?";
 }
 
 function writeHandoff(place: RepoPlace, note: string, session: string | null): void {
@@ -150,7 +150,7 @@ function resumeNote(path: string): string {
 
 function hasResumePoint(path: string): boolean {
   if (!isFile(path)) return false;
-  const first = splitlines(resumeNote(path)).find((line) => strip(line) !== "") ?? "";
+  const first = splitlines(resumeNote(path)).find((line) => trimSpace(line) !== "") ?? "";
   return first !== "" && !first.startsWith(AUTO_PREFIX) && !first.startsWith(NOT_GIVEN_PREFIX);
 }
 
@@ -176,7 +176,7 @@ function upstreamPositionOf(toplevel: string): string | null {
   const upstream = findUpstream(toplevel, "HEAD");
   const counts = upstream && gitOutput(["rev-list", "--left-right", "--count", `${upstream}...HEAD`], toplevel);
   if (!upstream || !counts) return null;
-  const [behind, ahead] = strip(counts).split(/\s+/);
+  const [behind, ahead] = trimSpace(counts).split(/\s+/);
   return `${behind} behind / ${ahead} ahead (vs ${upstream})`;
 }
 

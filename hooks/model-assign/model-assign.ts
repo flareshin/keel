@@ -1,6 +1,7 @@
 import { dataDir } from "../lib/hookkit/env.ts";
 import { FireLog } from "../lib/hookkit/fires.ts";
-import { getField, isTruthy, joinPath, pythonStr } from "../lib/hookkit/pycompat.ts";
+import { getField, isNonEmptyString, textField } from "../lib/hookkit/fields.ts";
+import { joinPath } from "../lib/hookkit/paths.ts";
 import { SPACE_CHARS, WORD_CHARS } from "../lib/hookkit/text.ts";
 import { readFileSync } from "node:fs";
 import { isFile } from "../lib/hookkit/files.ts";
@@ -57,11 +58,11 @@ function assignDispatch(payload: Payload, fires: FireLog): number {
   const toolArgs = protocol.toolInput(payload);
   if (name === "workflow") return checkWorkflowScript(toolArgs, fires);
   if (name !== "agent" && name !== "task") return protocol.EXIT_PASS;
-  const agentType = textOf(toolArgs, "subagent_type").toLowerCase();
-  const judgment = JUDGMENT_RE.test(`${textOf(toolArgs, "prompt")} ${textOf(toolArgs, "description")}`);
+  const agentType = textField(toolArgs, "subagent_type").toLowerCase();
+  const judgment = JUDGMENT_RE.test(`${textField(toolArgs, "prompt")} ${textField(toolArgs, "description")}`);
   const choices: Array<[string, Choice | null]> = agentType === FORK_TYPE ? [] : [
-    ["model", resolveModel(getField(toolArgs, "model"), agentType, judgment)],
-    ["effort", resolveEffort(getField(toolArgs, "effort"), agentType, judgment)],
+    ["model", resolveModel(textField(toolArgs, "model"), agentType, judgment)],
+    ["effort", resolveEffort(textField(toolArgs, "effort"), agentType, judgment)],
   ];
   const assigned = choices.flatMap(([key, choice]) => (choice ? [[key, choice] as const] : []));
   if (assigned.length === 0) {
@@ -74,16 +75,8 @@ function assignDispatch(payload: Payload, fires: FireLog): number {
   return protocol.rewriteInput({ ...toolArgs, ...values }, note);
 }
 
-function textOf(toolArgs: Payload, key: string): string {
-  return textValue(getField(toolArgs, key));
-}
-
-function textValue(value: unknown): string {
-  return pythonStr(isTruthy(value) ? value : "");
-}
-
-function resolveModel(model: unknown, agentType: string, judgment: boolean): Choice | null {
-  const named = textValue(model).toLowerCase();
+function resolveModel(model: string, agentType: string, judgment: boolean): Choice | null {
+  const named = model.toLowerCase();
   const tier = [OPUS, SONNET, HAIKU, ABOVE_BAND].find((candidate) => named.includes(candidate));
   if (tier === OPUS || tier === SONNET) return null;
   if (tier === ABOVE_BAND) return [OPUS, "ceiling"];
@@ -93,13 +86,13 @@ function resolveModel(model: unknown, agentType: string, judgment: boolean): Cho
   return readOnly ? [HAIKU, "read-only type"] : [SONNET, "default"];
 }
 
-function resolveEffort(effort: unknown, agentType: string, judgment: boolean): Choice | null {
-  if (isTruthy(effort) || typePinsEffort(agentType)) return null;
+function resolveEffort(effort: string, agentType: string, judgment: boolean): Choice | null {
+  if (effort !== "" || typePinsEffort(agentType)) return null;
   return judgment ? ["high", "judgment marker"] : ["medium", "default"];
 }
 
 function checkWorkflowScript(toolArgs: Payload, fires: FireLog): number {
-  if (isTruthy(getField(toolArgs, "resumeFromRunId"))) return protocol.EXIT_PASS;
+  if (isNonEmptyString(getField(toolArgs, "resumeFromRunId"))) return protocol.EXIT_PASS;
   const script = workflowScript(toolArgs);
   if (!script || !script.includes("agent(")) return protocol.EXIT_PASS;
   const missing = REQUIRED_SCRIPT_OPTIONS.filter(([, pattern]) => !pattern.test(script)).map(([key]) => key);
@@ -110,7 +103,7 @@ function checkWorkflowScript(toolArgs: Payload, fires: FireLog): number {
   fires.append(RULE, "deny", { detail: `workflow script names no ${missing.join("/")}` });
   let text = `The agent() calls name no opts.${missing.join(" / opts.")}, so every agent inherits main's. ${WORKFLOW_GUIDE}`;
   const scriptPath = getField(toolArgs, "scriptPath");
-  if (isTruthy(scriptPath)) text += ` Edit ${pythonStr(scriptPath)} and invoke it again.`;
+  if (isNonEmptyString(scriptPath)) text += ` Edit ${scriptPath} and invoke it again.`;
   return protocol.deny(protocol.formatMessage(HOOK, "workflow agents need a model and an effort", [[RULE, text]]));
 }
 

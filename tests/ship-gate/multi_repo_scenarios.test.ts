@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { describe, test } from 'node:test';
-import { splitlines } from '../../hooks/lib/hookkit/pycompat.ts';
+import { splitlines } from '../../hooks/lib/hookkit/text.ts';
 import { Sandbox } from './helpers.ts';
 import type { Repo } from './helpers.ts';
 

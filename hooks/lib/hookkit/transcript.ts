@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { splitLines } from "../../../measure/lib/measurekit/files.ts";
 import { JsonSyntaxError, parseTranscriptLine } from "./json.ts";
-import { getField, isRecord, isTruthy, strip } from "./pycompat.ts";
+import { getField, isRecord, textOrEmpty } from "./fields.ts";
+import { trimSpace } from "./text.ts";
 
 export type Entry = Record<string, unknown>;
 
@@ -29,7 +30,7 @@ export function* iterEntries(path: string): Generator<Entry> {
   for (const line of splitLines(readFileSync(path, "utf8"))) {
     let entry: unknown;
     try {
-      entry = parseTranscriptLine(strip(line));
+      entry = parseTranscriptLine(trimSpace(line));
     } catch (error) {
       if (error instanceof JsonSyntaxError) continue;
       throw error;
@@ -44,8 +45,8 @@ function messageOf(entry: Entry): Entry {
 }
 
 export function roleOf(entry: Entry): unknown {
-  const role = getField(messageOf(entry), "role");
-  return isTruthy(role) ? role : getField(entry, "type");
+  const role = textOrEmpty(getField(messageOf(entry), "role"), "message.role");
+  return role !== "" ? role : getField(entry, "type");
 }
 
 export function contentOf(entry: Entry): unknown {

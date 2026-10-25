@@ -1,15 +1,19 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
+import { userInfo } from "node:os";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { delimiter, join } from "node:path";
+import { join } from "node:path";
 import { missingFields } from "../../hooks/lib/hookkit/contract.ts";
 import * as env from "../../hooks/lib/hookkit/env.ts";
 import { FireLog } from "../../hooks/lib/hookkit/fires.ts";
 import * as protocol from "../../hooks/lib/hookkit/protocol.ts";
 import { JsonSyntaxError, parsePayload } from "../../hooks/lib/hookkit/json.ts";
 import { RecursionError, ValueError } from "../../hooks/lib/hookkit/errors.ts";
-import * as pycompat from "../../hooks/lib/hookkit/pycompat.ts";
+import { isSystemError } from "../../hooks/lib/hookkit/files.ts";
+import { pythonJsonDumps } from "../../hooks/lib/hookkit/jsonout.ts";
+import { basename, expandUser, expandVars, glob, joinPath, normalizePath } from "../../hooks/lib/hookkit/paths.ts";
+import { isDigits, splitlines, trimSpace, truncate } from "../../hooks/lib/hookkit/text.ts";
 import * as repo from "../../hooks/lib/hookkit/repo.ts";
 import { readTsv } from "../../hooks/lib/hookkit/overlay.ts";
 import * as transcript from "../../hooks/lib/hookkit/transcript.ts";
@@ -19,14 +23,6 @@ import { KEEL_HOME, Sandbox, withEnv } from "./helpers.ts";
 const FIRST_LINE = /^\[[A-Za-z0-9-]+\] (ship-gate|git-guard|report-gate|model-assign|env-preflight): \S/;
 const BULLET = /^- \[[A-Za-z0-9-]+\] \S/;
 const EMIT = join(import.meta.dirname, "protocol-emit.ts");
-
-function directoryServicesOnlyAccount(): string | null {
-  if (process.platform !== "darwin") return null;
-  const listed = spawnSync("dscl", [".", "-list", "/Users"], { encoding: "utf8" });
-  if (listed.status !== 0) return null;
-  const passwdNames = new Set(readFileSync("/etc/passwd", "utf8").split("\n").map((line) => line.split(":")[0]));
-  return listed.stdout.split("\n").find((name) => name !== "" && !name.startsWith("_") && !passwdNames.has(name)) ?? null;
-}
 
 function captured(body: () => unknown): unknown {
   try {
@@ -42,125 +38,91 @@ function emit(name: string, ...args: unknown[]) {
   return { code: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
-describe("python string behaviors", () => {
+describe("text helpers", () => {
   it("splitlines_breaksOnEveryUnicodeLineBreak_andDropsTheTrailingEmptyElement", () => {
-    assert.deepEqual(pycompat.splitlines("a\r\nb\rc\x0bd\x0ce\x1cf\x85g\u2028h\u2029i\n"), ["a", "b", "c", "d", "e", "f", "g", "h", "i"]);
-    assert.deepEqual(pycompat.splitlines("\n"), [""]);
-    assert.deepEqual(pycompat.splitlines(""), []);
-    assert.deepEqual(pycompat.splitlines("a\n\n"), ["a", ""]);
+    assert.deepEqual(splitlines("a\r\nb\rc\x0bd\x0ce\x1cf\x85g\u2028h\u2029i\n"), ["a", "b", "c", "d", "e", "f", "g", "h", "i"]);
+    assert.deepEqual(splitlines("\n"), [""]);
+    assert.deepEqual(splitlines(""), []);
+    assert.deepEqual(splitlines("a\n\n"), ["a", ""]);
   });
 
-  it("strip_removesPythonWhitespace_notTheByteOrderMark", () => {
-    assert.equal(pycompat.strip("\x1cx\x85"), "x");
-    assert.equal(pycompat.strip("\ufeffx"), "\ufeffx");
+  it("trimSpace_removesTheHookkitSpaceCharacters_notTheByteOrderMark", () => {
+    assert.equal(trimSpace("\x1cx\x85"), "x");
+    assert.equal(trimSpace("\ufeffx"), "\ufeffx");
   });
 
   it("isDigits_acceptsSuperscriptsAndDecimalDigits_butNotLettersOrEmpty", () => {
-    assert.deepEqual(["²", "5", "٣", "x", ""].map(pycompat.isDigits), [true, true, true, false, false]);
+    assert.deepEqual(["²", "5", "٣", "x", ""].map(isDigits), [true, true, true, false, false]);
   });
 
   it("truncate_countsCodePoints_andANegativeCountDropsFromTheEnd", () => {
-    assert.equal(pycompat.truncate("😀😀😀", 2), "😀😀");
-    assert.equal(pycompat.truncate("abcdef", -2), "abcd");
-    assert.equal(pycompat.truncate("ab", 5), "ab");
-  });
-
-  it("pythonStr_spellsPythonValues", () => {
-    assert.deepEqual([null, true, false, "s", 7, ["a", 1], { k: "v" }].map(pycompat.pythonStr), ["None", "True", "False", "s", "7", "['a', 1]", "{'k': 'v'}"]);
-  });
-
-  it("pythonStr_spellsNonFiniteNumbersLikePythonFloat", () => {
-    assert.deepEqual([NaN, Infinity, -Infinity, [NaN], { a: Infinity }].map(pycompat.pythonStr), ["nan", "inf", "-inf", "[nan]", "{'a': inf}"]);
+    assert.equal(truncate("😀😀😀", 2), "😀😀");
+    assert.equal(truncate("abcdef", -2), "abcd");
+    assert.equal(truncate("ab", 5), "ab");
   });
 });
 
-describe("python path behaviors", () => {
+describe("path helpers", () => {
   it("normalizePath_dropsTrailingSlash_keepsTwoLeadingSlashes", () => {
     const cases: Array<[string, string]> = [["/a/", "/a"], ["//x", "//x"], ["///x", "/x"], ["a/../..", ".."], ["", "."], ["/..", "/"], ["a//b/./c/", "a/b/c"], ["//", "//"]];
-    for (const [path, expected] of cases) assert.equal(pycompat.normalizePath(path), expected, path);
+    for (const [path, expected] of cases) assert.equal(normalizePath(path), expected, path);
   });
 
   it("joinPath_restartsAtAnAbsolutePart", () => {
-    assert.equal(pycompat.joinPath("a", "/b"), "/b");
-    assert.equal(pycompat.joinPath("a/", "b"), "a/b");
-    assert.equal(pycompat.joinPath("", "b"), "b");
-    assert.equal(pycompat.joinPath("a", ""), "a/");
+    assert.equal(joinPath("a", "/b"), "/b");
+    assert.equal(joinPath("a/", "b"), "a/b");
+    assert.equal(joinPath("", "b"), "b");
+    assert.equal(joinPath("a", ""), "a/");
   });
 
   it("basename_isEmpty_forATrailingSlash", () => {
-    assert.deepEqual(["git/", "/usr/bin/git", "git"].map(pycompat.basename), ["", "git", "git"]);
+    assert.deepEqual(["git/", "/usr/bin/git", "git"].map(basename), ["", "git", "git"]);
   });
 
   it("expandVars_replacesOnlyDefinedAsciiNames", () => {
     withEnv({ KEEL_T: "v" }, () => {
-      assert.equal(pycompat.expandVars("$KEEL_T/${KEEL_T}/$NOPE_X/é$KEEL_T"), "v/v/$NOPE_X/év");
+      assert.equal(expandVars("$KEEL_T/${KEEL_T}/$NOPE_X/é$KEEL_T"), "v/v/$NOPE_X/év");
     });
   });
 
   it("expandVars_keepsTheRestOfTheWord_afterAnUnclosedBrace", () => {
     withEnv({ KEEL_T: "v" }, () => {
-      assert.equal(pycompat.expandVars("${x$KEEL_T/a"), "${x$KEEL_T/a");
-      assert.equal(pycompat.expandVars("$KEEL_T/${x"), "v/${x");
-      assert.equal(pycompat.expandVars("${KEEL_Tx"), "${KEEL_Tx");
-      assert.equal(pycompat.expandVars("${KEEL_T"), "${KEEL_T");
+      assert.equal(expandVars("${x$KEEL_T/a"), "${x$KEEL_T/a");
+      assert.equal(expandVars("$KEEL_T/${x"), "v/${x");
+      assert.equal(expandVars("${KEEL_Tx"), "${KEEL_Tx");
+      assert.equal(expandVars("${KEEL_T"), "${KEEL_T");
     });
   });
 
-  it("expandUser_readsHomeAtCallTime_andLooksUpNamedAccounts", () => {
+  it("expandUser_readsHomeAtCallTime_andExpandsTheCurrentUserByName", () => {
     withEnv({ HOME: "/home/u/" }, () => {
-      assert.equal(pycompat.expandUser("~/x"), "/home/u/x");
-      assert.equal(pycompat.expandUser("~"), "/home/u");
+      assert.equal(expandUser("~/x"), "/home/u/x");
+      assert.equal(expandUser("~"), "/home/u");
     });
-    assert.equal(pycompat.expandUser("~nosuchuserzz/x"), "~nosuchuserzz/x");
+    const { username, homedir } = userInfo();
+    assert.equal(expandUser(`~${username}/x`), `${homedir.replace(/\/+$/, "")}/x`);
+    assert.equal(expandUser(`~${username}`), homedir.replace(/\/+$/, "") || "/");
   });
 
-  it("expandUser_resolvesAnAccountOnlyDirectoryServicesKnows_likePythonGetpwnam", (context) => {
-    const name = directoryServicesOnlyAccount();
-    if (name === null) return context.skip("no account outside /etc/passwd on this machine");
-
-    const home = spawnSync("dscl", [".", "-read", `/Users/${name}`, "NFSHomeDirectory"], { encoding: "utf8" });
-
-    assert.equal(home.status, 0, home.stderr);
-    const directory = /^NFSHomeDirectory: (\S+)$/m.exec(home.stdout)?.[1];
-    assert.ok(directory, home.stdout);
-    assert.equal(pycompat.expandUser(`~${name}/x`), `${directory.replace(/\/+$/, "")}/x`);
-  });
-
-  it("expandUser_spawnsTheDirectoryLookupOnce_perName", (context) => {
-    if (process.platform !== "darwin") return context.skip("directory services lookup is macOS only");
-    const sandbox = new Sandbox();
-    try {
-      const counter = join(sandbox.root, "dscl-calls");
-      const dscl = sandbox.write(join(sandbox.root, "stubs", "dscl"),
-        `#!/bin/bash\necho call >> '${counter}'\n[ "$4" = /Users/keelstubuser ] || exit 56\necho '<key>dsAttrTypeStandard:NFSHomeDirectory</key><array><string>/stub/h&amp;me/</string><string>/other</string></array>'\n`);
-      chmodSync(dscl, 0o755);
-      writeFileSync(counter, "");
-
-      withEnv({ PATH: join(sandbox.root, "stubs") + delimiter + (process.env["PATH"] ?? "") }, () => {
-        assert.equal(pycompat.expandUser("~keelstubuser/a"), "/stub/h&me/a");
-        assert.equal(pycompat.expandUser("~keelstubuser/b"), "/stub/h&me/b");
-        assert.equal(pycompat.expandUser("~keelmissinguser/a"), "~keelmissinguser/a");
-        assert.equal(pycompat.expandUser("~keelmissinguser/b"), "~keelmissinguser/b");
-      });
-
-      assert.equal(readFileSync(counter, "utf8"), "call\ncall\n");
-    } finally {
-      sandbox.close();
-    }
+  it("expandUser_keepsATildeNameThatIsNotTheCurrentUser", () => {
+    const { username } = userInfo();
+    assert.equal(expandUser("~nosuchuserzz/x"), "~nosuchuserzz/x");
+    assert.equal(expandUser(`~${username}x/a`), `~${username}x/a`);
+    assert.equal(expandUser(`x~${username}/a`), `x~${username}/a`);
   });
 });
 
 describe("isSystemError", () => {
   it("isSystemError_isTrueForFilesystemFailures_only", () => {
-    assert.equal(pycompat.isSystemError(captured(() => readFileSync("/nonexistent/keel"))), true);
-    assert.equal(pycompat.isSystemError(captured(() => readFileSync("/"))), true);
-    assert.equal(pycompat.isSystemError(captured(() => readFileSync("a\0b"))), false);
-    assert.equal(pycompat.isSystemError(new SyntaxError("bad")), false);
-    assert.equal(pycompat.isSystemError("ENOENT"), false);
+    assert.equal(isSystemError(captured(() => readFileSync("/nonexistent/keel"))), true);
+    assert.equal(isSystemError(captured(() => readFileSync("/"))), true);
+    assert.equal(isSystemError(captured(() => readFileSync("a\0b"))), false);
+    assert.equal(isSystemError(new SyntaxError("bad")), false);
+    assert.equal(isSystemError("ENOENT"), false);
   });
 });
 
-describe("python glob", () => {
+describe("glob", () => {
   let sandbox: Sandbox;
   beforeEach(() => {
     sandbox = new Sandbox();
@@ -171,7 +133,7 @@ describe("python glob", () => {
   afterEach(() => sandbox.close());
 
   function matches(pattern: string): string[] {
-    return pycompat.glob(join(sandbox.root, pattern)).map((path) => path.slice(sandbox.root.length + 1)).sort(compareCodePoints);
+    return glob(join(sandbox.root, pattern)).map((path) => path.slice(sandbox.root.length + 1)).sort(compareCodePoints);
   }
 
   it("glob_readsDoubleStarAsStar_withoutRecursion", () => {
@@ -219,7 +181,7 @@ describe("pythonJsonDumps", () => {
     };
     const expected = '{"ts": "2026-10-22T01:02:03Z", "detail": "héllo 日本語 \\"q\\" \\\\ \\n tab\\t ctl\\u0001 😀", "n": 3, "ok": true, ' +
       '"none": null, "nested": {"list": [1, "é", {"k": []}, {}], "empty": {}}, "arr": []}';
-    assert.equal(pycompat.pythonJsonDumps(fixture), expected);
+    assert.equal(pythonJsonDumps(fixture), expected);
   });
 });
 
@@ -227,7 +189,7 @@ describe("pythonJsonDumps semantic limits", () => {
   it("pythonJsonDumps_reordersIntegerLikeKeys_andPrintsWholeFloatsAsIntegers", () => {
     const parsed: unknown = JSON.parse('{"command":"ls","2":"x","timeout":1.0}');
 
-    assert.equal(pycompat.pythonJsonDumps(parsed), '{"2": "x", "command": "ls", "timeout": 1}');
+    assert.equal(pythonJsonDumps(parsed), '{"2": "x", "command": "ls", "timeout": 1}');
   });
 });
 

@@ -8,7 +8,7 @@ import {
   ARGV_FORWARDERS, callActions, GH_TIMEOUT_SECONDS, mayPushOrMerge, mergeTargetKey, pushSources,
 } from '../../hooks/ship-gate/ship-gate.ts';
 import type { Action, Merge, Push, Unattributable } from '../../hooks/ship-gate/ship-gate.ts';
-import { splitlines } from '../../hooks/lib/hookkit/pycompat.ts';
+import { splitlines } from '../../hooks/lib/hookkit/text.ts';
 import { shlexQuote } from '../../measure/lib/measurekit/shlex.ts';
 import { LOGIC_WITH_TEST, Sandbox, shipGateTimeout } from './helpers.ts';
 

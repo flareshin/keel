@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { userInfo } from "node:os";
 import { dirname } from "node:path";
-import { expandUser, glob, isTruthy, splitlines, strip } from "../../hooks/lib/hookkit/pycompat.ts";
+import { expandUser, glob } from "../../hooks/lib/hookkit/paths.ts";
+import { splitlines, trimSpace } from "../../hooks/lib/hookkit/text.ts";
 import { resolveDirectory, steps, writeTargets } from "../../hooks/lib/hookkit/shell.ts";
 import { run } from "../../hooks/lib/hookkit/subprocess.ts";
 import type { CompletedProcess } from "../../hooks/lib/hookkit/subprocess.ts";
@@ -117,7 +118,7 @@ export function protectAdapter(call: Call, accountHome: string = userInfo().home
 
 function workingDirectory(call: Call): string {
   const cwd = call["cwd"];
-  if (!isTruthy(cwd)) return process.cwd();
+  if (cwd === undefined || cwd === null || cwd === "") return process.cwd();
   if (typeof cwd !== "string") throw new Refusal("cwd must be a string");
   return cwd;
 }
@@ -171,8 +172,8 @@ function spawnGuard(command: readonly string[], input: string): CompletedProcess
 
 export function runGuard(name: string, call: Record<string, unknown>, runner: GuardRunner = spawnGuard): string[] {
   const completed = runner(guardCommand(name), asciiJson(call as JsonValue));
-  if (completed.returncode !== 0) throw new Refusal(strip(completed.stderr) || `${name} exited ${completed.returncode}`);
-  if (strip(completed.stdout) === "") return [];
+  if (completed.returncode !== 0) throw new Refusal(trimSpace(completed.stderr) || `${name} exited ${completed.returncode}`);
+  if (trimSpace(completed.stdout) === "") return [];
   const output = parseHookJson(completed.stdout);
   if (!isJsonObject(output)) throw new Refusal(`${name} returned a non-object response`);
   const specific = Object.hasOwn(output, "hookSpecificOutput") ? output["hookSpecificOutput"] : {};

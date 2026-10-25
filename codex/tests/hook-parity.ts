@@ -141,14 +141,14 @@ function snapshot(root: string): Record<string, string> {
   return Object.fromEntries(Object.entries(files).map(([key, value]) => [key, value.replace(TIMESTAMP, "<time>")]));
 }
 
-function observe(command: string[], testCase: HookCase, paths: Paths): Observation {
+export function observe(command: string[], testCase: HookCase, paths: Paths): Observation {
   buildSandbox(paths, testCase.config === undefined ? NORMAL_CONFIG : testCase.config);
   const before = testCase.divergence === undefined ? {} : snapshot(paths.root);
   const result = spawnSync(command[0] as string, command.slice(1), { input: testCase.stdin, env: environmentFor(paths, testCase.env), cwd: paths.repo, maxBuffer: 1 << 26 });
   return { status: result.status, stdout: result.stdout.toString("utf8"), stderr: result.stderr.toString("utf8"), files: snapshot(paths.root), before };
 }
 
-function questionText(content: string | Buffer | null | undefined): unknown {
+export function questionText(content: string | Buffer | null | undefined): unknown {
   if (content === undefined || content === null) return content ?? null;
   return typeof content === "string" ? content : { latin1: content.toString("latin1") };
 }

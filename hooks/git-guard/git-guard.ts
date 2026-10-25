@@ -8,10 +8,9 @@ import * as knownvalues from "../lib/hookkit/knownvalues.ts";
 import { readTsv } from "../lib/hookkit/overlay.ts";
 import * as protocol from "../lib/hookkit/protocol.ts";
 import type { Payload } from "../lib/hookkit/protocol.ts";
-import {
-  basename, expandUser, getField, isRecord, isTruthy, joinPath, normalizePath, partition, pythonStr, splitlines, strip, truncate,
-} from "../lib/hookkit/pycompat.ts";
-import { SPACE_CHARS, SPACE_CLASS, WORD_BOUNDARY, testCaseFolded } from "../lib/hookkit/text.ts";
+import { basename, expandUser, joinPath, normalizePath } from "../lib/hookkit/paths.ts";
+import { FieldTypeError, getField, isNonEmptyString, isRecord, jsonTypeName, textField } from "../lib/hookkit/fields.ts";
+import { partition, SPACE_CHARS, SPACE_CLASS, splitlines, testCaseFolded, trimSpace, truncate, WORD_BOUNDARY } from "../lib/hookkit/text.ts";
 import { compareCodePoints } from "../../measure/lib/measurekit/json.ts";
 import { globMatches } from "../../lib/evidence/glob.ts";
 import { parseJson, parseJsonReadingNonFiniteNumbersAsZero, parsePayload } from "../lib/hookkit/json.ts";
@@ -73,6 +72,7 @@ const DISALLOWED_TOOLS_OPTIONS = ["--disallowedTools", "--disallowed-tools"];
 const AGENT_WRITE_TOOLS = ["Bash", "Edit", "Write"];
 const FIRES_LOG = joinPath("logs", "keel-fires.jsonl");
 const KNOWN_VALUES_FILE = ["git-guard", "known-values.tsv"] as const;
+const NOT_TEXT_PATH = "(a path that is not text)";
 const PROTECTED_TEXT: Readonly<Record<string, string>> = {
   [K1]: "Evidence is written only by keel itself, never by a tool call: %s.",
   [F_HOOKSKIP]: "keel-fires.jsonl is written only by the hooks, never by a tool call: %s.",
@@ -143,36 +143,47 @@ function main(): number {
 function nextStepFor(payload: Payload): string {
   if (protocol.toolName(payload) !== "bash") return protocol.ASK_USER;
   const command = commandOf(protocol.toolInput(payload));
-  return protocol.runYourself(`cd ${shlexQuote(workingDirectory(payload))} && ${command}`);
+  return protocol.runYourself(`cd ${shlexQuote(protocol.cwdOrProcessDirectory(payload))} && ${command}`);
 }
 
 function commandOf(toolArgs: Payload): string {
-  const command = getField(toolArgs, "command");
-  return pythonStr(isTruthy(command) ? command : "");
-}
-
-function workingDirectory(payload: Payload): string {
-  const cwd = getField(payload, "cwd");
-  return pythonStr(isTruthy(cwd) ? cwd : process.cwd());
+  return textField(toolArgs, "command");
 }
 
 function findViolations(payload: Payload): Violation[] {
   const name = protocol.toolName(payload);
   const toolArgs = protocol.toolInput(payload);
-  const cwd = workingDirectory(payload);
-  if (EDIT_TOOLS.has(name)) return checkEdit(toolArgs, cwd);
-  if (name === "bash") return checkBash(commandOf(toolArgs), cwd);
-  return [];
+  const cwd = protocol.cwdOrProcessDirectory(payload);
+  const isEdit = EDIT_TOOLS.has(name);
+  if (!isEdit && name !== "bash") return [];
+  const found = isEdit ? checkEdit(toolArgs, cwd) : checkBash(commandOf(toolArgs), cwd);
+  if (found.length === 0) refuseNonTextCwd(payload);
+  return found;
+}
+
+function refuseNonTextCwd(payload: Payload): void {
+  textField(payload, "cwd");
+}
+
+interface EditTarget {
+  field: string;
+  value: unknown;
+}
+
+function editTarget(toolArgs: Payload): EditTarget {
+  const filePath = getField(toolArgs, "file_path");
+  if (filePath !== null && filePath !== "") return { field: "file_path", value: filePath };
+  return { field: "notebook_path", value: getField(toolArgs, "notebook_path") };
 }
 
 function checkEdit(toolArgs: Payload, cwd: string): Violation[] {
-  const filePath = getField(toolArgs, "file_path");
-  const target = isTruthy(filePath) ? filePath : getField(toolArgs, "notebook_path");
-  if (!isTruthy(target)) return [];
-  const shown = pythonStr(target);
-  const path = normalizePath(joinPath(cwd, expandUser(shown)));
+  const { field, value: target } = editTarget(toolArgs);
+  if (target === null || target === "") return [];
+  const targetIsText = typeof target === "string";
+  const shown = targetIsText ? target : NOT_TEXT_PATH;
+  const path = normalizePath(targetIsText ? joinPath(cwd, expandUser(shown)) : cwd);
   const edits = getField(toolArgs, "edits");
-  const editsAreMalformed = isTruthy(edits) && !Array.isArray(edits);
+  const editsAreMalformed = edits !== null && !Array.isArray(edits);
   const text = editedText(toolArgs, Array.isArray(edits) ? edits : []);
   const violations: Violation[] = [];
   const rule = new ProtectedStore().ruleFor(path);
@@ -181,7 +192,9 @@ function checkEdit(toolArgs: Payload, cwd: string): Violation[] {
   if (liveRoot) violations.push(liveViolation(shown, liveRoot));
   if (isClaudeSettingsFile(path) && DISABLE_HOOKS_RE.test(text)) violations.push(disableHooksViolation(shown));
   const found = [...violations, ...knownValueViolations(() => knownvalues.numberedLines(shown, text))];
-  if (editsAreMalformed && found.length === 0) throw new TypeError(`edits is not a list: '${pythonTypeName(edits)}'`);
+  if (found.length > 0) return found;
+  if (!targetIsText) throw new FieldTypeError(`${field} must be a string, not ${jsonTypeName(target)}`);
+  if (editsAreMalformed) throw new TypeError(`edits is not a list: '${pythonTypeName(edits)}'`);
   return found;
 }
 
@@ -318,7 +331,7 @@ function checkHookSkips(call: readonly Step[]): Violation[] {
 }
 
 function childClaudeDisablesHooks(args: readonly string[]): boolean {
-  const inlineSettings = optionValues(args, SETTINGS_OPTIONS).filter((value) => strip(value).startsWith("{"));
+  const inlineSettings = optionValues(args, SETTINGS_OPTIONS).filter((value) => trimSpace(value).startsWith("{"));
   if (!inlineSettings.some(settingsDisableHooks)) return false;
   const disallowed = new Set(optionValues(args, DISALLOWED_TOOLS_OPTIONS).flatMap(
     (value) => value.split(new RegExp(`[,${SPACE_CHARS}]+`)).filter((tool) => tool !== "")));
@@ -451,7 +464,7 @@ function checkPushRange(toplevel: string, repoKey: string | null, revisions: rea
       text: `AI-tool attribution in a commit message of ${label}; reword it (last commit: \`git commit --amend\`) before pushing.`,
     });
   }
-  const names = strip(gitOutput(["log", "--name-only", "--pretty=", ...revisions], toplevel) || "").split(new RegExp(`${SPACE_CLASS}+`));
+  const names = trimSpace(gitOutput(["log", "--name-only", "--pretty=", ...revisions], toplevel) || "").split(new RegExp(`${SPACE_CLASS}+`));
   const paths = [...new Set(names.filter((name) => name !== ""))].sort(compareCodePoints);
   return [...violations, ...repoRuleViolations(repoKey, paths, [ACTION_DENY_PATH])];
 }
@@ -491,7 +504,7 @@ export function scanStagedSecrets(toplevel: string, repoKey: string | null, time
   if (!isRecord(report)) throw noGet(report);
   const described = listOrEmpty(getField(report, "hits"), "hits").map((hit) => {
     if (!isRecord(hit)) throw noGet(hit);
-    return `${pythonStr(getField(hit, "file"))}:${pythonStr(getField(hit, "line"))} (${pythonStr(getField(hit, "rule"))})`;
+    return `${hitText(hit, "file")}:${hitText(hit, "line")} (${hitText(hit, "rule")})`;
   });
   return [{
     ruleId: F_SECRETS, repo: repoKey,
@@ -499,8 +512,15 @@ export function scanStagedSecrets(toplevel: string, repoKey: string | null, time
   }];
 }
 
+function hitText(hit: Record<string, unknown>, key: string): string {
+  const value = getField(hit, key);
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return String(value);
+  throw new FieldTypeError(`hit ${key} must be a string or number, not ${jsonTypeName(value)}`);
+}
+
 function listOrEmpty(value: unknown, field: string): unknown[] {
-  if (!isTruthy(value)) return [];
+  if (value === null) return [];
   if (Array.isArray(value)) return value;
   throw new TypeError(`${field} is not a list: '${pythonTypeName(value)}'`);
 }
@@ -638,7 +658,7 @@ function salvage(raw: string): { session: string | null; command: string | null 
   }
   if (!isRecord(payload)) return unknown;
   const command = getField(protocol.toolInput(payload), "command");
-  return { session: getField(payload, "session_id") as string | null, command: isTruthy(command) ? pythonStr(command) : null };
+  return { session: getField(payload, "session_id") as string | null, command: isNonEmptyString(command) ? command : null };
 }
 
 function commitMessageTexts(args: readonly string[], step: Step, callHeredocs: readonly string[]): string[] {
@@ -715,7 +735,7 @@ function readCommitOption(arg: string): CommitOption {
 
 function gitTextOrRaise(args: readonly string[], toplevel: string): string {
   const result = git(args, toplevel);
-  if (result.returncode !== 0) throw new GuardError(`git ${args[0]} failed: ${truncate(strip(result.stderr), 120)}`);
+  if (result.returncode !== 0) throw new GuardError(`git ${args[0]} failed: ${truncate(trimSpace(result.stderr), 120)}`);
   return result.stdout;
 }
 

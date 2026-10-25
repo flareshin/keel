@@ -15,10 +15,16 @@ const FIXTURE_PLACEHOLDERS: Array<[string, string]> = [["{repo}", "/work/repo"],
 const MAX_MISMATCHES_SHOWN = 10;
 const PROBED_VARIABLES = ["A", "HOME", "NOT_REMOVED"];
 const FIXED_ENVIRONMENT: Record<string, string> = { HOME: "/home/tester", PATH: "/usr/local/bin:/usr/bin:/bin", TMPDIR: "/tmp", USER: "tester" };
+const OTHER_ACCOUNT_TARGETS: Array<[target: string, now: string]> = [["~root", "/work/~root"], ["~root/", "/work/~root"], ["~root/x", "/work/~root/x"]];
 
 interface Call {
   fn: string;
   args: unknown[];
+}
+
+interface ListedDivergence {
+  call: Call;
+  now: unknown;
 }
 
 interface UnexecutedLine {
@@ -35,6 +41,7 @@ interface CompanionCoverage {
 export interface ParityReport {
   corpusSize: number;
   cases: number;
+  divergences: number;
   mismatches: number;
   details: string[];
   executableLines: number;
@@ -55,6 +62,9 @@ const UNREACHABLE_LINES: readonly UnreachableLine[] = [
 ];
 
 type Json = unknown;
+
+export const EXPECTED_DIVERGENCES: readonly ListedDivergence[] = OTHER_ACCOUNT_TARGETS.flatMap(([target, now]) =>
+  ENVIRONMENTS.map((environment): ListedDivergence => ({ call: { fn: "resolve_directory", args: [CWD, target, environment] }, now })));
 
 function mapPairs(map: Map<string, string>): Json {
   return Array.from(map.entries()).map(([key, value]) => [key, value]);
@@ -221,16 +231,25 @@ export function runParity(): ParityReport {
   const coverage = recordedAnswers<string, CompanionCoverage>("shell-parity-coverage", ["shell.py"])[0] as CompanionCoverage;
   const actual = runTypeScript(calls);
   const details: string[] = [];
+  const replayed = new Set<ListedDivergence>();
   let mismatches = 0;
   calls.forEach((call, index) => {
-    if (isDeepStrictEqual(JSON.parse(JSON.stringify(actual[index])), expected[index])) return;
+    const listed = EXPECTED_DIVERGENCES.find((divergence) => isDeepStrictEqual(divergence.call, call));
+    const now = JSON.parse(JSON.stringify(actual[index]));
+    if (listed !== undefined) replayed.add(listed);
+    const agrees = listed === undefined ? isDeepStrictEqual(now, expected[index]) : isDeepStrictEqual(now, listed.now) && !isDeepStrictEqual(expected[index], listed.now);
+    if (agrees) return;
     mismatches += 1;
     if (details.length < MAX_MISMATCHES_SHOWN) {
       details.push(`${call.fn}(${JSON.stringify(call.args)})\n  python:     ${JSON.stringify(expected[index])}\n  typescript: ${JSON.stringify(actual[index])}`);
     }
   });
+  for (const listed of EXPECTED_DIVERGENCES.filter((divergence) => !replayed.has(divergence))) {
+    mismatches += 1;
+    details.push(`listed divergence was not replayed: ${JSON.stringify(listed.call)}`);
+  }
   return {
-    corpusSize: corpus.length, cases: calls.length, mismatches, details,
+    corpusSize: corpus.length, cases: calls.length, divergences: replayed.size, mismatches, details,
     executableLines: coverage.executable, executedLines: coverage.executed,
     allowlistedLines: UNREACHABLE_LINES.length, coverageGaps: coverageGaps(coverage.unexecuted),
   };
@@ -250,7 +269,7 @@ if (import.meta.main) {
   const report = runParity();
   for (const detail of report.details) console.error(detail);
   for (const gap of report.coverageGaps) console.error(gap);
-  console.log(`parity: ${report.cases} cases, ${report.mismatches} mismatches`);
+  console.log(`parity: ${report.cases} cases (${report.divergences} listed divergences), ${report.mismatches} mismatches`);
   console.log(`coverage: ${report.executedLines}/${report.executableLines} executable lines of shell.py executed, ` +
     `${report.allowlistedLines} allowlisted, ${report.coverageGaps.length} gaps`);
   process.exit(report.mismatches === 0 && report.coverageGaps.length === 0 ? 0 : 1);

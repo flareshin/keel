@@ -3,10 +3,9 @@ import { dirname as pathDirname } from "node:path";
 import * as contract from "../lib/hookkit/contract.ts";
 import * as protocol from "../lib/hookkit/protocol.ts";
 import type { Payload } from "../lib/hookkit/protocol.ts";
-import {
-  arraysEqual, basename, getField, isRecord, isTruthy, joinPath, lstripChar, normalizePath, partition, pythonStr, strip, truncate,
-} from "../lib/hookkit/pycompat.ts";
-import { WORD_BOUNDARY, WORD_CHARS } from "../lib/hookkit/text.ts";
+import { basename, joinPath, normalizePath } from "../lib/hookkit/paths.ts";
+import { FieldTypeError, getField, isNonEmptyString, isRecord, jsonTypeName, textField } from "../lib/hookkit/fields.ts";
+import { arraysEqual, lstripChar, partition, trimSpace, truncate, WORD_BOUNDARY, WORD_CHARS } from "../lib/hookkit/text.ts";
 import { compareCodePoints } from "../../measure/lib/measurekit/json.ts";
 import { isFile } from "../lib/hookkit/files.ts";
 import { decodeStrict, splitLines } from "../../measure/lib/measurekit/files.ts";
@@ -144,14 +143,14 @@ export function pushSources(push: Push): string[] {
 }
 
 class Report {
-  readonly session: unknown;
-  readonly event: unknown;
+  readonly session: string;
+  readonly event: string;
   readonly blocks: string[] = [];
   readonly context: string[] = [];
 
-  constructor(payload: Payload, event: unknown) {
+  constructor(payload: Payload, event: string) {
     const session = getField(payload, "session_id");
-    this.session = isTruthy(session) ? session : "-";
+    this.session = isNonEmptyString(session) ? session : "-";
     this.event = event;
   }
 
@@ -196,7 +195,7 @@ class Report {
 
   emit(): number {
     if (this.blocks.length > 0) return protocol.deny(backslashReplaced(this.blocks.join("\n\n")));
-    if (this.context.length > 0) return protocol.warn(pythonStr(this.event), this.context.join("\n"));
+    if (this.context.length > 0) return protocol.warn(this.event, this.context.join("\n"));
     return protocol.EXIT_PASS;
   }
 
@@ -234,7 +233,7 @@ function dispatch(payload: unknown): number {
     throw new AttributeError(`'${pythonTypeName(payload)}' object has no attribute 'get'`);
   }
   const eventField = getField(payload, "hook_event_name");
-  const event = isTruthy(eventField) ? eventField : "";
+  const event = typeof eventField === "string" ? eventField : "";
   const report = new Report(payload, event);
   if (event === "PreToolUse" && getField(payload, "tool_name") === "Bash") guardBash(payload, report);
   return report.emit();
@@ -275,12 +274,13 @@ function bashCommandOf(raw: string): string {
   }
   if (!isRecord(payload)) return "";
   if (getField(payload, "hook_event_name") !== "PreToolUse" || getField(payload, "tool_name") !== "Bash") return "";
-  return commandOf(payload);
+  const command = getField(protocol.toolInput(payload), "command");
+  if (command === null) return "";
+  return typeof command === "string" ? command : raw;
 }
 
 function commandOf(payload: Payload): string {
-  const command = getField(protocol.toolInput(payload), "command");
-  return pythonStr(isTruthy(command) ? command : "");
+  return textField(protocol.toolInput(payload), "command");
 }
 
 function guardBash(payload: Payload, report: Report): void {
@@ -288,9 +288,7 @@ function guardBash(payload: Payload, report: Report): void {
   if (missing.length > 0) report.contractMiss(missing, payload);
   const command = commandOf(payload);
   if (!DECISION_HINT.test(command)) return;
-  const cwdField = getField(payload, "cwd");
-  const cwd = isTruthy(cwdField) ? cwdField : process.cwd();
-  if (typeof cwd !== "string") throw new TypeError(`expected string object, got '${pythonTypeName(cwd)}'`);
+  const cwd = textField(payload, "cwd") || process.cwd();
   const actions = callActions(command, cwd);
   for (const action of actions) judgeAction(action, report);
   if (actions.some((action) => action.kind === "push" || action.kind === "merge")) collectGarbageIfDue(report);
@@ -716,7 +714,7 @@ function ghDefaultKey(repoRoot: string): string | null {
 }
 
 function warnRegistryAbsentOnce(report: Report): void {
-  const stamp = joinPath(stateDir(), "sessions", `${pythonStr(report.session)}.registry-warned`);
+  const stamp = joinPath(stateDir(), "sessions", `${report.session}.registry-warned`);
   if (existsSync(stamp)) return;
   mkdirSync(pathDirname(stamp), { recursive: true });
   writeFileSync(stamp, "");
@@ -815,43 +813,44 @@ function fetchPullRequest(merge: Merge): Record<string, unknown> {
   const environment = merge.repoEnv ? { ...process.env, GH_REPO: merge.repoEnv } : undefined;
   const completed = runCaptured(argv, { cwd: merge.workdir, env: environment, timeoutSeconds: GH_TIMEOUT_SECONDS });
   if (completed.returncode !== 0) {
-    throw new GateError("gh pr view failed: " + strip(splitLines(decodeStrict(completed.stderr, "gh pr view stderr")).join("\n")));
+    throw new GateError("gh pr view failed: " + trimSpace(splitLines(decodeStrict(completed.stderr, "gh pr view stderr")).join("\n")));
   }
   const pullRequest: unknown = parseJson(decodeStrict(completed.stdout, "gh pr view output"));
-  if (!isRecord(pullRequest) || !isTruthy(pullRequest["baseRefName"])) throw new GateError("gh pr view returned no baseRefName");
+  if (!isRecord(pullRequest) || !isNonEmptyString(pullRequest["baseRefName"])) throw new GateError("gh pr view returned no baseRefName");
   return pullRequest;
 }
 
 export function checksNotGreen(pullRequest: Record<string, unknown>, auto: boolean): string[] {
   const notGreen: string[] = [];
-  for (const check of iterate(pullRequest["statusCheckRollup"])) {
+  for (const check of checkRollup(pullRequest["statusCheckRollup"])) {
     if (!isRecord(check)) throw new AttributeError(`'${pythonTypeName(check)}' object has no attribute 'get'`);
-    const outcome = firstTruthy("", getField(check, "conclusion"), getField(check, "status"), getField(check, "state"));
-    if (isBlocking(outcome, auto)) {
-      notGreen.push(`${pythonStr(firstTruthy("?", getField(check, "name"), getField(check, "context")))}=${pythonStr(outcome)}`);
-    }
+    const outcome = checkOutcome(check);
+    if (isBlocking(outcome, auto)) notGreen.push(`${checkLabel(check)}=${outcome}`);
   }
   return notGreen;
 }
 
-function iterate(value: unknown): unknown[] {
-  if (!isTruthy(value)) return [];
+function checkRollup(value: unknown): unknown[] {
+  if (value === null || value === undefined) return [];
   if (Array.isArray(value)) return value;
-  if (typeof value === "string") return Array.from(value);
-  if (isRecord(value)) return Object.keys(value);
-  throw new TypeError(`'${pythonTypeName(value)}' object is not iterable`);
+  throw new FieldTypeError(`statusCheckRollup must be a list, not ${jsonTypeName(value)}`);
 }
 
-function firstTruthy(fallback: unknown, ...values: unknown[]): unknown {
-  return values.find(isTruthy) ?? fallback;
-}
-
-function isBlocking(outcome: unknown, auto: boolean): boolean {
-  if (Array.isArray(outcome) || isRecord(outcome)) {
-    const type = pythonTypeName(outcome);
-    throw new TypeError(`cannot use '${type}' as a set element (unhashable type: '${type}')`);
+function checkOutcome(check: Record<string, unknown>): string {
+  for (const key of ["conclusion", "status", "state"]) {
+    const value = getField(check, key);
+    if (value === null || value === "") continue;
+    if (typeof value === "string") return value;
+    throw new FieldTypeError(`check ${key} must be a string, not ${jsonTypeName(value)}`);
   }
-  if (typeof outcome !== "string") return false;
+  return "";
+}
+
+function checkLabel(check: Record<string, unknown>): string {
+  return ["name", "context"].map((key) => getField(check, key)).find(isNonEmptyString) ?? "?";
+}
+
+function isBlocking(outcome: string, auto: boolean): boolean {
   return FAILED_CHECKS.has(outcome) || (!auto && PENDING_CHECKS.has(outcome));
 }
 

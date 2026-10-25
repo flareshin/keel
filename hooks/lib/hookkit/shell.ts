@@ -1,7 +1,5 @@
-import {
-  arraysEqual, basename, codePointLength, environmentValue, expandUser, expandVars, isDigits, joinPath, lstripChar, normalizePath, partition, rstripChar,
-} from "./pycompat.ts";
-import { SPACE_CHARS, WORD_CHARS } from "./text.ts";
+import { basename, environmentValue, expandUser, expandVars, joinPath, normalizePath } from "./paths.ts";
+import { arraysEqual, codePointLength, isDigits, lstripChar, partition, rstripChar, SPACE_CHARS, WORD_CHARS } from "./text.ts";
 
 export const SHELLS: ReadonlySet<string> = new Set(["bash", "sh", "zsh", "dash", "ksh"]);
 export const SEPARATOR_OPS: readonly string[] = ["&&", "||", "|&", ";;", ";", "|", "&", "(", ")"];

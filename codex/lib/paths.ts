@@ -1,7 +1,7 @@
 import { lstatSync, readlinkSync, statSync } from "node:fs";
 import type { Stats } from "node:fs";
 import { dirname } from "node:path";
-import { isSystemError } from "../../hooks/lib/hookkit/pycompat.ts";
+import { isSystemError } from "../../hooks/lib/hookkit/files.ts";
 import { decodeStrict } from "../../measure/lib/measurekit/files.ts";
 import { Refusal } from "./refusal.ts";
 

@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { isSystemError } from "../../hooks/lib/hookkit/pycompat.ts";
+import { isSystemError } from "../../hooks/lib/hookkit/files.ts";
 import { compareCodePoints } from "../../measure/lib/measurekit/json.ts";
 import { OSError } from "../../hooks/lib/hookkit/subprocess.ts";
 import { readJson, writeAtomic } from "./files.ts";

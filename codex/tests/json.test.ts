@@ -3,7 +3,6 @@ import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { isTruthy } from "../../hooks/lib/hookkit/pycompat.ts";
 import { asciiJson, parseHookJson, parseStateJson } from "../lib/json.ts";
 import { Refusal } from "../lib/refusal.ts";
 import { applySkillPlan, planSkills } from "../lib/skill_registry.ts";
@@ -54,13 +53,19 @@ describe("hook JSON", () => {
     assert.equal(asciiJson({ "é": "plain ~ text" }), '{"\\u00e9":"plain ~ text"}');
   });
 
-  it("isTruthy_treatsZeroEmptyAndNullAsFalse_likeTheValuesTheHookReads", () => {
-    const falsy = ["null", "false", "0", "0.0", "-0.0", "1e-400", '""', "[]", "{}"];
-    const truthy = ["true", "1", "-1", "0.5", "1e400", '"0"', '"false"', "[0]", "[[]]", '{"a": 0}', "12345678901234567890"];
-    assert.deepEqual(falsy.map((text) => isTruthy(parseHookJson(text))), falsy.map(() => false));
-    assert.deepEqual(truthy.map((text) => isTruthy(parseHookJson(text))), truthy.map(() => true));
-    assert.equal(isTruthy(parseStateJson("12345678901234567890")), true);
-    assert.equal(isTruthy(undefined), false);
+  it("parseHookJson_readsFalsyLookingLiteralsAsTheirOwnJsonType_notAsAbsent", () => {
+    const parsed = ["null", "false", "0", "0.0", "-0.0", "1e-400", '""', "[]", "{}"].map((text) => parseHookJson(text));
+    assert.deepEqual(parsed.slice(0, 2), [null, false]);
+    assert.deepEqual(parsed.slice(2, 6).map((value) => [typeof value, Object.is(value, -0)]), [["number", false], ["number", false], ["number", true], ["number", false]]);
+    assert.deepEqual(parsed.slice(6), ["", [], {}]);
+  });
+
+  it("parseHookJson_readsNumbersAndTextThatLookTruthyAsTheirOwnJsonType", () => {
+    assert.deepEqual(["true", "1", "-1", "0.5", '"0"', '"false"', "[0]", "[[]]", '{"a": 0}'].map((text) => parseHookJson(text)),
+      [true, 1, -1, 0.5, "0", "false", [0], [[]], { a: 0 }]);
+    assert.equal(parseHookJson("1e400"), Infinity);
+    assert.equal(parseHookJson("12345678901234567890"), 12345678901234567000);
+    assert.equal(typeof parseStateJson("12345678901234567890"), "object");
   });
 });
 

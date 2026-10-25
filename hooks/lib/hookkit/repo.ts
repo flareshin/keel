@@ -1,5 +1,6 @@
 import { statSync } from "node:fs";
-import { isSystemError, rstripChar, strip } from "./pycompat.ts";
+import { isSystemError } from "./files.ts";
+import { rstripChar, trimSpace } from "./text.ts";
 import { run } from "./subprocess.ts";
 import type { CompletedProcess } from "./subprocess.ts";
 
@@ -30,7 +31,7 @@ export function findToplevel(path: string): string | null {
 }
 
 export function normalizeRepoKey(url: string): string | null {
-  let trimmed = rstripChar(strip(url), "/");
+  let trimmed = rstripChar(trimSpace(url), "/");
   if (trimmed.endsWith(".git")) trimmed = trimmed.slice(0, -".git".length);
   const segments = trimmed.split(/[/:]/).filter((segment) => segment !== "");
   if (segments.length < 2) return null;

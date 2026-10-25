@@ -1,4 +1,4 @@
-import { isSystemError } from "../../hooks/lib/hookkit/pycompat.ts";
+import { isSystemError } from "../../hooks/lib/hookkit/files.ts";
 import { OSError, TimeoutExpired } from "../../hooks/lib/hookkit/subprocess.ts";
 import { InvalidUtf8Error } from "../../measure/lib/measurekit/files.ts";
 

@@ -1,5 +1,6 @@
-import { basename, codePointLength, environmentValue, expandUser, glob, splitlines, tryReadText } from "./pycompat.ts";
-import { SPACE_CHARS, WORD_CHARS, foldDottedAndDotlessI } from "./text.ts";
+import { basename, environmentValue, expandUser, glob } from "./paths.ts";
+import { tryReadText } from "./files.ts";
+import { codePointLength, foldDottedAndDotlessI, SPACE_CHARS, splitlines, WORD_CHARS } from "./text.ts";
 import { compareCodePoints } from "../../../measure/lib/measurekit/json.ts";
 import { OverlayDataError, readTsv } from "./overlay.ts";
 

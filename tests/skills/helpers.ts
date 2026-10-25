@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
-import { splitlines } from "../../hooks/lib/hookkit/pycompat.ts";
+import { splitlines } from "../../hooks/lib/hookkit/text.ts";
 
 export const KEEL_HOME = realpathSync(join(import.meta.dirname, "..", ".."));
 export const SKILLS_DIR = join(KEEL_HOME, "skills");

@@ -1,7 +1,11 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { dataDir } from "./env.ts";
-import { isSystemError, joinPath, pythonJsonDumps, pythonStr, truncate } from "./pycompat.ts";
+import { isSystemError } from "./files.ts";
+import { joinPath } from "./paths.ts";
+import { pythonJsonDumps } from "./jsonout.ts";
+import { textOrEmpty } from "./fields.ts";
+import { truncate } from "./text.ts";
 
 export const DETAIL_LIMIT = 200;
 
@@ -15,7 +19,7 @@ export class FireLog {
 
   constructor(hook: string, session: string | null | undefined) {
     this.hook = hook;
-    this.session = session || "-";
+    this.session = typeof session === "string" && session !== "" ? session : "-";
   }
 
   append(ruleId: string, outcome: string, optional: Record<string, unknown> = {}): void {
@@ -24,7 +28,7 @@ export class FireLog {
     };
     for (const [key, value] of Object.entries(optional)) {
       if (value === null || value === undefined) continue;
-      record[key] = key === "detail" ? truncate(pythonStr(value), DETAIL_LIMIT) : value;
+      record[key] = key === "detail" ? truncate(textOrEmpty(value, "detail"), DETAIL_LIMIT) : value;
     }
     const path = joinPath(dataDir(), "logs", "keel-fires.jsonl");
     try {

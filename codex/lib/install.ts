@@ -1,6 +1,7 @@
 import { readdirSync, unlinkSync } from "node:fs";
 import { basename, dirname } from "node:path";
-import { expandUser, isSystemError } from "../../hooks/lib/hookkit/pycompat.ts";
+import { expandUser } from "../../hooks/lib/hookkit/paths.ts";
+import { isSystemError } from "../../hooks/lib/hookkit/files.ts";
 import { compareCodePoints } from "../../measure/lib/measurekit/json.ts";
 import { noPositionals, parseCommandLine, usageError } from "../../measure/lib/measurekit/cli.ts";
 import type { CommandSpec } from "../../measure/lib/measurekit/cli.ts";

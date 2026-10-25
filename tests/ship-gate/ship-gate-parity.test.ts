@@ -5,6 +5,12 @@ import type { ObservedDelta, Observation, Run } from "../recorded-cases.ts";
 import { DECISION_PATH_CHANGED, EXPECTED_DIVERGENCES, isDenyToPass, judgeCase, runShipGateParity, summary, withoutCheckoutRepoKey } from "./ship-gate-parity.ts";
 
 const MIN_CASES = 600;
+const rowIds = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_unused, index) => `extra-${String(from + index).padStart(4, "0")}`);
+const GH_ANSWER_OR_PAYLOAD_NOW_DENIED_OR_REWORDED = [
+  "extra-0051", "extra-0052", "extra-0063", "extra-0066", "extra-0070", "extra-0077", "extra-0078", "extra-0086", "extra-0087",
+  "extra-0097", "extra-0100", "extra-0103", "extra-0115", "extra-0118",
+  ...rowIds(449, 456), ...rowIds(465, 472), ...rowIds(479, 482), ...rowIds(489, 494), "extra-0497", "extra-0498", ...rowIds(503, 506),
+];
 const PARITY_TIMEOUT_MS = 120 * 60_000;
 const DENY = 2;
 const ROOT = "/root";
@@ -74,6 +80,7 @@ describe("ship-gate parity listed divergences", () => {
       "extra-0539", "extra-0540", "extra-0549", "extra-0560", "extra-0562", "extra-0563", "extra-0565", "extra-0602", "extra-0604", "extra-0605",
       "python-keel-0119", "ts-keel-0119",
       "extra-0543", "extra-0544", "extra-0545", "extra-0548", "extra-0634", "extra-0635", "extra-0637",
+      ...GH_ANSWER_OR_PAYLOAD_NOW_DENIED_OR_REWORDED,
       "python-keel-0027", "python-keel-0028", "python-keel-0029", "python-keel-0030", "python-keel-0031", "python-keel-0046", "python-keel-0047",
       "ts-keel-0027", "ts-keel-0028", "ts-keel-0029", "ts-keel-0030", "ts-keel-0031", "ts-keel-0046", "ts-keel-0047",
     ].sort());
@@ -81,6 +88,8 @@ describe("ship-gate parity listed divergences", () => {
       "extra-0019", "extra-0020", "extra-0036", "extra-0037", "extra-0041", "extra-0042", "extra-0046", "extra-0062",
       "extra-0526", "extra-0527", "extra-0531", "extra-0532", "extra-0536", "extra-0561", "extra-0564",
       "extra-0610", "extra-0632", "python-keel-0033", "ts-keel-0033",
+      "extra-0064", "extra-0068", "extra-0069", "extra-0098", "extra-0099", "extra-0101", "extra-0102", "extra-0104", "extra-0105",
+      "extra-0116", "extra-0117", "extra-0119", "extra-0120", "extra-0558", "extra-0559",
     ].sort());
   });
 
@@ -97,6 +106,7 @@ describe("ship-gate parity listed divergences", () => {
       "command-list-nested-10001", "command-list-nested-9999",
       "extra-0019", "extra-0020", "extra-0025", "extra-0026", "extra-0030", "extra-0031", "extra-0035",
       "extra-0036", "extra-0037", "extra-0041", "extra-0042", "extra-0046",
+      "extra-0051", "extra-0052", "extra-0064", "extra-0068", "extra-0069",
       "py-comment-deletion-python-keel-0470", "py-comment-deletion-python-keel-0477",
       "py-comment-deletion-ts-keel-0470", "py-comment-deletion-ts-keel-0477", "stdin-push-nested-10001",
     ]);

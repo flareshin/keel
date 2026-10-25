@@ -1,4 +1,4 @@
-import { expandUser, isTruthy } from "../../hooks/lib/hookkit/pycompat.ts";
+import { expandUser } from "../../hooks/lib/hookkit/paths.ts";
 import { parseCommandLine, noPositionals, usageError } from "../../measure/lib/measurekit/cli.ts";
 import type { CommandSpec } from "../../measure/lib/measurekit/cli.ts";
 import { isCommandResult, parseOrExit, refuseEndOfOptions } from "./command.ts";
@@ -60,8 +60,12 @@ export function validateUpdate(current: string, candidate: string, callerFrames:
   }
 }
 
+function isPartialRequest(flag: unknown): boolean {
+  return flag !== undefined && flag !== null && flag !== false;
+}
+
 export function completeEdit(path: string, tool: Record<string, unknown>): string {
-  if (isTruthy(tool["keel_partial"])) {
+  if (isPartialRequest(tool["keel_partial"])) {
     throw new Refusal("partial config patches cannot be verified; use codex/bin/config --file <complete TOML>");
   }
   if (typeof tool["content"] === "string") return tool["content"];
@@ -72,7 +76,7 @@ export function completeEdit(path: string, tool: Record<string, unknown>): strin
     throw new Refusal("a complete config write or exact replacement is required");
   }
   const count = current.split(old).length - 1;
-  const replaceAll = isTruthy(tool["replace_all"]);
+  const replaceAll = tool["replace_all"] === true;
   if (count === 0 || (count !== 1 && !replaceAll)) throw new Refusal("config replacement does not identify an unambiguous result");
   if (replaceAll) return current.split(old).join(replacement);
   const at = current.indexOf(old);

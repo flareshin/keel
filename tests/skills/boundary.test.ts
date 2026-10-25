@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { readdirSync, realpathSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { splitlines } from "../../hooks/lib/hookkit/pycompat.ts";
+import { splitlines } from "../../hooks/lib/hookkit/text.ts";
 import { Isolated, KEEL_HOME, read } from "./helpers.ts";
 
 const TRACK_ROOTS = ["PRINCIPLES.md", "skills", "examples/skills", "tests/skills"];

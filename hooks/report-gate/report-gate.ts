@@ -5,12 +5,14 @@ import { dataDir, keelCli } from "../lib/hookkit/env.ts";
 import { FireLog } from "../lib/hookkit/fires.ts";
 import * as protocol from "../lib/hookkit/protocol.ts";
 import type { Payload } from "../lib/hookkit/protocol.ts";
-import { dumpsAscii, expandUser, getField, isRecord, isTruthy, joinPath, normalizePath, pythonStr, strip } from "../lib/hookkit/pycompat.ts";
+import { dumpsAscii } from "../lib/hookkit/jsonout.ts";
+import { expandUser, joinPath, normalizePath } from "../lib/hookkit/paths.ts";
+import { FieldTypeError, getField, isRecord, textField, textOrEmpty } from "../lib/hookkit/fields.ts";
 import { compareCodePoints, MAX_JSON_DEPTH } from "../../measure/lib/measurekit/json.ts";
 import { NonFiniteJsonNumber, parseFiniteJson, parseJson, parsePayload } from "../lib/hookkit/json.ts";
 import { AttributeError, describeError, errorName, pythonTypeName, RecursionError, ValueError } from "../lib/hookkit/errors.ts";
 import { readStdin } from "../lib/hookkit/stdio.ts";
-import { SPACE_CHARS, SPACE_CLASS, WORD_BOUNDARY, WORD_CHARS, testCaseFolded, trimCharacters } from "../lib/hookkit/text.ts";
+import { SPACE_CHARS, SPACE_CLASS, testCaseFolded, trimCharacters, trimSpace, WORD_BOUNDARY, WORD_CHARS } from "../lib/hookkit/text.ts";
 import { OSError, run, TimeoutExpired } from "../lib/hookkit/subprocess.ts";
 import type { CompletedProcess } from "../lib/hookkit/subprocess.ts";
 import { commandWritesFiles } from "../lib/hookkit/shell.ts";
@@ -64,6 +66,9 @@ const UNCHECKABLE_TEXT =
   `Reading the hook input, the turn state or the agent transcript held JSON the gate does not follow (nesting deeper than ${MAX_JSON_DEPTH} levels, ` +
   "or a NaN or Infinity number in an agent transcript line), " +
   "so it cannot tell whether the report is proven or the changes are in scope.";
+const UNREADABLE_TEXT =
+  "The hook input or the agent transcript holds a field of the wrong type (an id, a path, the report text or a tool call that is not text), " +
+  "so the gate cannot tell whether the report is proven or the changes are in scope.";
 const UNPARSED_EVENT = /"hook_event_name"\s*:\s*"(PreToolUse|SubagentStop)"/;
 const UNPARSED_HANDBACK_TOOL = /"tool_name"\s*:\s*"subagenthandback"/i;
 const UNPARSED_STOP_RETRY = /"stop_hook_active"\s*:\s*true/;
@@ -76,10 +81,10 @@ class TurnState {
   handedBack = false;
 
   constructor(payload: Payload) {
-    const sessionId = getField(payload, "session_id");
-    const agentId = getField(payload, "agent_id");
-    const name = `${pythonStr(sessionId)}-${pythonStr(agentId)}`.replace(STATE_NAME_UNSAFE, "_") + ".json";
-    this.path = isTruthy(sessionId) && isTruthy(agentId) ? joinPath(dataDir(), "state", "keel", "report-gate", name) : null;
+    const sessionId = textField(payload, "session_id");
+    const agentId = textField(payload, "agent_id");
+    const name = `${sessionId}-${agentId}`.replace(STATE_NAME_UNSAFE, "_") + ".json";
+    this.path = sessionId !== "" && agentId !== "" ? joinPath(dataDir(), "state", "keel", "report-gate", name) : null;
     if (this.path === null || !existsSync(this.path)) return;
     let data: unknown;
     try {
@@ -91,8 +96,8 @@ class TurnState {
     }
     if (!isRecord(data)) throw new AttributeError(`'${pythonTypeName(data)}' object has no attribute 'get'`);
     this.flaggedPaths = flaggedPathsOf(getField(data, "paths"));
-    this.evidenceDenied = isTruthy(getField(data, "ev"));
-    this.handedBack = isTruthy(getField(data, "hb"));
+    this.evidenceDenied = getField(data, "ev") === true;
+    this.handedBack = getField(data, "hb") === true;
   }
 
   save(): void {
@@ -129,8 +134,7 @@ class AgentTranscript {
       }
       if (role === "assistant") {
         for (const block of toolUses(entry)) {
-          const name = getField(block, "name");
-          this.readToolUse(pythonStr(isTruthy(name) ? name : "").toLowerCase(), getField(block, "input"));
+          this.readToolUse(textOrEmpty(getField(block, "name"), "tool name").toLowerCase(), getField(block, "input"));
         }
       }
     }
@@ -149,13 +153,12 @@ class AgentTranscript {
   private readToolUse(name: string, input: unknown): void {
     const toolArgs: Payload = isRecord(input) ? input : {};
     if (name === "structuredoutput") this.usedStructuredOutput = true;
-    const command = name === "bash" ? textValue(getField(toolArgs, "command")) : "";
+    const command = name === "bash" ? textField(toolArgs, "command") : "";
     const edits = PATH_EDIT_TOOLS.has(name);
     if (edits || commandWritesFiles(command)) this.needsEvidence = true;
     if (edits || commandWritesFiles(command, SCRATCH_PREFIXES)) this.editedFiles = true;
-    const filePath = getField(toolArgs, "file_path");
-    const target = isTruthy(filePath) ? filePath : getField(toolArgs, "notebook_path");
-    if (edits && isTruthy(target) && this.scopes.length > 0 && !inScope(target, this.scopes)
+    const target = edits ? editedPath(toolArgs) : "";
+    if (target !== "" && this.scopes.length > 0 && !inScope(target, this.scopes)
         && !this.outOfScope.includes(normalize(target))) {
       this.outOfScope.push(normalize(target));
     }
@@ -172,8 +175,8 @@ function readAgentTranscript(path: string | null): AgentTranscript {
   }
 }
 
-function textValue(value: unknown): string {
-  return pythonStr(isTruthy(value) ? value : "");
+function editedPath(toolArgs: Payload): string {
+  return textField(toolArgs, "file_path") || textField(toolArgs, "notebook_path");
 }
 
 function main(): number {
@@ -195,6 +198,7 @@ function main(): number {
     return protocol.EXIT_PASS;
   } catch (error) {
     if (error instanceof UncheckableReport) return refuseUncheckable(payload, error, fires);
+    if (error instanceof FieldTypeError) return refuseUnreadable(payload, error, fires);
     fires.append("K2", "error", { detail: describeError(error) });
     return protocol.EXIT_PASS;
   }
@@ -207,7 +211,7 @@ function judgeHandback(payload: Payload, fires: FireLog): number {
     fires.append("K2", OUTCOME, { detail: missDetail(payload, missing) });
     return protocol.EXIT_PASS;
   }
-  const report = withoutReportMarkers(pythonStr(getField(protocol.toolInput(payload), "message"))) ?? "";
+  const report = withoutReportMarkers(textField(protocol.toolInput(payload), "message")) ?? "";
   const state = whileDeciding(() => new TurnState(payload));
   state.handedBack = true;
   state.save();
@@ -235,14 +239,14 @@ function judgeStop(payload: Payload, fires: FireLog): number {
     state.evidenceDenied = false;
     state.save();
   }
-  if (isTruthy(getField(payload, "stop_hook_active"))) return protocol.EXIT_PASS;
+  if (isRetry(payload)) return protocol.EXIT_PASS;
   if (handedBack) {
     state.handedBack = false;
     state.save();
   }
   const missing = missingFields(payload, "agent_id", "agent_transcript_path", "last_assistant_message");
   if (missing.length > 0) fires.append("K2", OUTCOME, { detail: missDetail(payload, missing) });
-  const agentTranscript = getField(payload, "agent_transcript_path") as string | null;
+  const agentTranscript = textField(payload, "agent_transcript_path");
   const report = withoutReportMarkers(textOf(getField(payload, "last_assistant_message")));
   if (!agentTranscript || !existsSync(agentTranscript)) {
     if (report && verdictOf(report) && hasEvidenceLine(report)) fires.append("K1", "warn", { detail: NO_TRANSCRIPT });
@@ -253,7 +257,7 @@ function judgeStop(payload: Payload, fires: FireLog): number {
   const fresh = flagScopeViolations(transcript, state, fires);
   if (fresh.length > 0) return protocol.blockStop(scopeMessage(fresh));
   if (handedBack) return protocol.EXIT_PASS;
-  if (!report || strip(report) === "") {
+  if (!report || trimSpace(report) === "") {
     if (transcript.needsEvidence) fires.append("K2", "warn", { detail: "no final text to judge" });
     return protocol.EXIT_PASS;
   }
@@ -292,7 +296,18 @@ function refuseUnparsedPayload(raw: string, error: RecursionError): number {
 function refuseUncheckable(payload: Payload, error: UncheckableReport, fires: FireLog): number {
   fires.append("K2", "error", { detail: describeError(error.reason) });
   if (getField(payload, "hook_event_name") === "PreToolUse") return refuseHandback();
-  return refuseStop(isTruthy(getField(payload, "stop_hook_active")));
+  return refuseStop(isRetry(payload));
+}
+
+function refuseUnreadable(payload: Payload, error: FieldTypeError, fires: FireLog): number {
+  fires.append("K2", "error", { detail: describeError(error) });
+  const message = protocol.formatMessage(HOOK, "could not read this report; refusing it", [["K2", UNREADABLE_TEXT]]);
+  if (getField(payload, "hook_event_name") === "PreToolUse") return protocol.deny(message);
+  return isRetry(payload) ? protocol.EXIT_PASS : protocol.blockStop(message);
+}
+
+function isRetry(payload: Payload): boolean {
+  return getField(payload, "stop_hook_active") === true;
 }
 
 function refuseHandback(): number {
@@ -308,12 +323,12 @@ function refusalMessage(): string {
 }
 
 function findHandbackTranscript(payload: Payload): string | null {
-  const mainPath = getField(payload, "transcript_path");
-  const sessionId = getField(payload, "session_id");
-  const agentId = getField(payload, "agent_id");
-  if (!(isTruthy(mainPath) && isTruthy(sessionId) && isTruthy(agentId))) return null;
-  const base = joinPath(dirname(expandUser(pythonStr(mainPath))), pythonStr(sessionId), "subagents");
-  const found = filesNamedUnder(base, `agent-${pythonStr(agentId)}.jsonl`);
+  const mainPath = textField(payload, "transcript_path");
+  const sessionId = textField(payload, "session_id");
+  const agentId = textField(payload, "agent_id");
+  if (mainPath === "" || sessionId === "" || agentId === "") return null;
+  const base = joinPath(dirname(expandUser(mainPath)), sessionId, "subagents");
+  const found = filesNamedUnder(base, `agent-${agentId}.jsonl`);
   return found.toSorted(compareCodePoints)[0] ?? null;
 }
 
@@ -392,7 +407,7 @@ function sendToCli(evidenceLine: string, verdict: string, source: Record<string,
     return;
   }
   if (result.returncode !== 0) {
-    fires.append("K1", "warn", { detail: `write-review exit ${result.returncode}: ${strip(result.stderr)}` });
+    fires.append("K1", "warn", { detail: `write-review exit ${result.returncode}: ${trimSpace(result.stderr)}` });
     return;
   }
   fires.append("K1", "record", { detail: `review evidence ${evidenceIdOf(result.stdout)}` });
@@ -401,7 +416,8 @@ function sendToCli(evidenceLine: string, verdict: string, source: Record<string,
 function evidenceIdOf(stdout: string): string {
   try {
     const response = parseJson(stdout);
-    return isRecord(response) ? pythonStr(getField(response, "evidence_id")) : "(unparsed stdout)";
+    const evidenceId = isRecord(response) ? getField(response, "evidence_id") : null;
+    return typeof evidenceId === "string" ? evidenceId : "(unparsed stdout)";
   } catch (error) {
     if (error instanceof ValueError) return "(unparsed stdout)";
     throw error;
@@ -411,8 +427,8 @@ function evidenceIdOf(stdout: string): string {
 export function withoutReportMarkers(report: string | null): string | null {
   if (!report) return report;
   const lines = comparableLines(report);
-  const start = strip(lines[0] ?? "") === REPORT_START ? 1 : 0;
-  const end = lines.length > start && strip(lines[lines.length - 1] ?? "") === REPORT_END ? lines.length - 1 : lines.length;
+  const start = trimSpace(lines[0] ?? "") === REPORT_START ? 1 : 0;
+  const end = lines.length > start && trimSpace(lines[lines.length - 1] ?? "") === REPORT_END ? lines.length - 1 : lines.length;
   return lines.slice(start, end).join("\n");
 }
 
@@ -431,7 +447,7 @@ function hasEvidenceLine(report: string): boolean {
 }
 
 function lacksEvidence(report: string, needsEvidence: boolean, fires: FireLog): boolean {
-  const stripped = strip(report);
+  const stripped = trimSpace(report);
   const exempt = !(needsEvidence || VERDICT_RE.test(stripped)) || stripped.startsWith("{") || stripped.startsWith("[");
   if (exempt) return false;
   const hasToken = hasEvidenceToken(stripped);
@@ -461,11 +477,11 @@ export function evidenceMessage(): string {
   return protocol.formatMessage(HOOK, "report has no evidence token", [["K2", EVIDENCE_TEXT]], HANDBACK_TAIL);
 }
 
-function normalize(path: unknown): string {
-  return normalizePath(expandUser(trimCharacters(strip(pythonStr(path)), "'\"")));
+function normalize(path: string): string {
+  return normalizePath(expandUser(trimCharacters(trimSpace(path), "'\"")));
 }
 
-function inScope(path: unknown, scopes: readonly string[]): boolean {
+function inScope(path: string, scopes: readonly string[]): boolean {
   const target = normalize(path);
   return SCOPE_EXEMPT_PREFIXES.some((prefix) => target.startsWith(prefix)) || scopes.some(
     (scope) => target === scope || target.startsWith(scope.replace(/\/+$/, "") + "/"));

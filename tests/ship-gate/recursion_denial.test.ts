@@ -72,12 +72,14 @@ describe('RecursionDenialTest', () => {
     assert.ok(!run.stderr.includes('Traceback'), run.stderr.slice(0, 400));
   });
 
-  test('push_judgesTheRenderedCommand_whenCommandIsAListNested3000Deep', (t) => {
+  test('push_failsClosed_whenCommandIsAListNestedBelowTheBound', (t) => {
     const [sandbox, repo] = featureRepo(t);
-    const run = listCommandPush(sandbox, repo, 3000);
-    assert.equal(run.rc, 2, run.stderr.slice(0, 400));
-    assert.ok(run.stderr.includes('no review evidence'), run.stderr.slice(0, 400));
-    assert.equal(listCommandPush(sandbox, repo, 9998).rc, 2);
+    for (const depth of [3000, 9998]) {
+      const run = listCommandPush(sandbox, repo, depth);
+      assert.equal(run.rc, 2, run.stderr.slice(0, 400));
+      assert.ok(run.stderr.includes(DENY_TAIL), run.stderr.slice(0, 400));
+      assert.ok(!run.stderr.includes('no review evidence'), run.stderr.slice(0, 400));
+    }
     const tooDeepForJson = listCommandPush(sandbox, repo, 9999);
     assert.equal(tooDeepForJson.rc, 2, tooDeepForJson.stderr.slice(0, 400));
   });

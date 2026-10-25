@@ -5,7 +5,7 @@ import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, writeFi
 import { dirname, join } from 'node:path';
 import { describe, test } from 'node:test';
 import type { TestContext } from 'node:test';
-import { splitlines } from '../../hooks/lib/hookkit/pycompat.ts';
+import { splitlines } from '../../hooks/lib/hookkit/text.ts';
 import { KEEL_HOME, LOGIC_WITH_TEST, Repo, Sandbox } from './helpers.ts';
 
 const OVERLAY_REGISTRY = ['acme/overlay\tcode\tmain\toverlay\trequired'];

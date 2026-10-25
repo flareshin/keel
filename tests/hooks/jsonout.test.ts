@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { dumpsAscii, pythonJsonDumps, pythonStr } from "../../hooks/lib/hookkit/pycompat.ts";
+import { dumpsAscii, pythonJsonDumps } from "../../hooks/lib/hookkit/jsonout.ts";
 import { MAX_JSON_DEPTH } from "../../measure/lib/measurekit/json.ts";
 import { RecursionError, ValueError } from "../../hooks/lib/hookkit/errors.ts";
 
@@ -49,33 +49,11 @@ describe("dumpsAscii", () => {
   it("dumpsAndRendersPastTheDepthBound_throwRecursionErrors_thatAreNotValueErrors", () => {
     for (const depth of PAST_THE_BOUND) {
       const arrays = loadsDeep(depth);
-      for (const render of [pythonJsonDumps, dumpsAscii, pythonStr, (value: unknown) => pythonStr([value])]) {
+      for (const render of [pythonJsonDumps, dumpsAscii]) {
         assert.throws(() => render(arrays), (error: Error) => error instanceof RecursionError && !(error instanceof ValueError), `${depth}`);
       }
     }
     assert.doesNotThrow(() => pythonJsonDumps(loadsDeep(MAX_JSON_DEPTH)));
-    assert.doesNotThrow(() => pythonStr(loadsDeep(MAX_JSON_DEPTH)));
-  });
-
-  it("pythonStr_rendersDeepListsAndDicts_asPythonDoes", () => {
-    for (const depth of DEEP_LEVELS) {
-      assert.equal(pythonStr(loadsDeep(depth)), nestedArrays(depth), `${depth}`);
-      assert.equal(pythonStr(JSON.parse(`{"k": ${nestedArrays(depth)}}`)), `{'k': ${nestedArrays(depth)}}`, `${depth}`);
-    }
-    assert.equal(pythonStr(JSON.parse(nestedObjects(3000))), "{'a': ".repeat(3000) + "1" + "}".repeat(3000));
-    const sample = [["x", null, true, 1.5, NaN, Infinity], { k: "it's" }, ["a'b\"c"], {}, []];
-    assert.equal(pythonStr(sample), `[['x', None, True, 1.5, nan, inf], {'k': "it's"}, ['a\\'b"c'], {}, []]`);
-  });
-
-  it("pythonStr_printsEllipsis_forAContainerThatHoldsItself", () => {
-    const list: unknown[] = [];
-    list.push(list);
-    const dict: Record<string, unknown> = {};
-    dict["a"] = dict;
-    assert.equal(pythonStr(list), "[[...]]");
-    assert.equal(pythonStr([list]), "[[[...]]]");
-    assert.equal(pythonStr(dict), "{'a': {...}}");
-    assert.equal(pythonStr({ k: [dict] }), "{'k': [{'a': {...}}]}");
   });
 
   it("raisesValueError_forAContainerThatHoldsItself", () => {

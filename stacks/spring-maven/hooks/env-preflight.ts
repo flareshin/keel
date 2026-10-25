@@ -3,10 +3,9 @@ import { FireLog } from "../../../hooks/lib/hookkit/fires.ts";
 import { readTsv } from "../../../hooks/lib/hookkit/overlay.ts";
 import * as protocol from "../../../hooks/lib/hookkit/protocol.ts";
 import type { Payload } from "../../../hooks/lib/hookkit/protocol.ts";
-import {
-  getField, isTruthy, joinPath, normalizePath, expandUser, partition, pythonStr, strip, arraysEqual,
-} from "../../../hooks/lib/hookkit/pycompat.ts";
-import { SPACE_CHARS, testCaseFolded } from "../../../hooks/lib/hookkit/text.ts";
+import { getField, textField } from "../../../hooks/lib/hookkit/fields.ts";
+import { expandUser, joinPath, normalizePath } from "../../../hooks/lib/hookkit/paths.ts";
+import { arraysEqual, partition, SPACE_CHARS, testCaseFolded, trimSpace } from "../../../hooks/lib/hookkit/text.ts";
 import { globMatches } from "../../../lib/evidence/glob.ts";
 import { parsePayload } from "../../../hooks/lib/hookkit/json.ts";
 import { isDirectory } from "../../../hooks/lib/hookkit/files.ts";
@@ -104,10 +103,9 @@ function main(): number {
 }
 
 function checkMavenJdk(payload: Payload, fires: FireLog): number {
-  const command = getField(protocol.toolInput(payload), "command");
-  const commandLine = pythonStr(isTruthy(command) ? command : "");
+  const commandLine = textField(protocol.toolInput(payload), "command");
   if (protocol.toolName(payload) !== "bash" || !commandLine.includes("mvn")) return protocol.EXIT_PASS;
-  const cwd = pythonStr(isTruthy(getField(payload, "cwd")) ? getField(payload, "cwd") : process.cwd());
+  const cwd = protocol.cwdOrProcessDirectory(payload);
   const builds = findMavenBuilds(parseCommands(commandLine), cwd);
   for (const build of builds) {
     const required = requiredJdk(build.directory);
@@ -181,7 +179,7 @@ function namesJdk(value: string, major: string): boolean {
 
 function retryCommand(commandLine: string, build: MavenBuild, major: string, cwd: string): string | null {
   const pin = javaHomePin(major);
-  const line = strip(commandLine);
+  const line = trimSpace(commandLine);
   const candidates = [`${JAVA_HOME}=${pin} ${line}`, `export ${JAVA_HOME}=${pin}; ${line}`];
   for (const [name, value] of build.invocation.assignments) {
     if (name === JAVA_HOME) candidates.push(line.replace(`${JAVA_HOME}=${value}`, () => `${JAVA_HOME}=${pin}`));

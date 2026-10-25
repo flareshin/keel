@@ -15,7 +15,6 @@ const DOTTED_OR_DOTLESS_I = '[i\\u0130\\u0131]';
 const PROTECTED = new RegExp(
   PROTECTED_KEYWORDS.replaceAll('i', DOTTED_OR_DOTLESS_I).replace('<space>', SPACE_EITHER_WAY.replace(']', '-]')), 'iu');
 const SUPPORTED_SUFFIXES = ['.js', '.ts', '.java'];
-const REGULAR_FILE_MODES = ['100644', '100755'];
 const FORBIDDEN_CHARS = ['\0', '\ufeff', '\u2028', '\u2029'];
 type Span = [start: number, end: number, body: string];
 
@@ -26,7 +25,7 @@ export type Content = [mode: string, blob: string | null];
 
 export function matchesContent(repo: string, path: string, reviewed: Content | null, current: Content | null): boolean {
   if (sameContent(reviewed, current)) return true;
-  if (!reviewed || !current || reviewed[0] !== current[0] || !REGULAR_FILE_MODES.includes(current[0])) return false;
+  if (!reviewed || !current || reviewed[0] !== current[0] || !gitcmd.REGULAR_FILE_MODES.includes(current[0])) return false;
   if (!hasSupportedSuffix(path)) return false;
   return blobCommentDeletions(repo, path, reviewed[1]!, current[1]!);
 }

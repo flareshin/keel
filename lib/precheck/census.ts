@@ -2,7 +2,7 @@ import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import ts from 'typescript';
-import { diffEntries } from '../evidence/gitcmd.ts';
+import { diffEntries, REGULAR_FILE_MODES } from '../evidence/gitcmd.ts';
 import { materializeTree, runBaseline } from './baseline.ts';
 import type { Baseline } from './baseline.ts';
 import { bindPrecheck, DELETED_BLOB } from './binding.ts';
@@ -70,24 +70,26 @@ const TRIVIA_TOKENS = new Set([
 
 export async function runCensus(repo: string, target: CensusTarget): Promise<Census> {
   const blobs = bindPrecheck(repo, target.reviewBase, target.tree, target.tree).blobs;
-  const changedCount = diffEntries(repo, target.reviewBase, target.tree).length;
+  const entries = diffEntries(repo, target.reviewBase, target.tree);
+  const regularFiles = new Set(entries.filter((entry) => REGULAR_FILE_MODES.includes(entry.mode)).map((entry) => entry.path));
   const sourcePaths = Object.keys(blobs);
+  const scriptFiles = sourcePaths.filter((path) => regularFiles.has(path) && SCRIPT_FILE.test(path));
   return {
     tree: target.tree,
     base: target.base,
-    paths: { source: sourcePaths.length, test: changedCount - sourcePaths.length },
+    paths: { source: sourcePaths.length, test: entries.length - sourcePaths.length },
     blobs,
-    mutation: await runMutation(repo, target, sourcePaths.filter((path) => blobs[path] !== DELETED_BLOB)),
+    mutation: await runMutation(repo, target, sourcePaths.filter((path) => blobs[path] !== DELETED_BLOB), scriptFiles),
     consumers: findConsumers(repo, target.reviewBase, target.tree),
   };
 }
 
-async function runMutation(repo: string, target: CensusTarget, sourcePaths: string[]): Promise<MutationCensus> {
+async function runMutation(repo: string, target: CensusTarget, sourcePaths: string[], scriptFiles: string[]): Promise<MutationCensus> {
   const directory = materializeTree(repo, target.tree);
   try {
     const baseline = await runBaseline(directory, candidateTests(directory, sourcePaths), BASELINE_TIMEOUT_SECONDS);
     if (baseline.outcome !== 'green') return { outcome: 'stopped', baseline };
-    const sources = new Map(sourcePaths.filter((path) => SCRIPT_FILE.test(path)).map((path) => [path, readFileSync(join(directory, path), 'utf8')]));
+    const sources = new Map(scriptFiles.map((path) => [path, readFileSync(join(directory, path), 'utf8')]));
     const targets = mutantTargets(sources, addedLinesByPath(repo, target.reviewBase, target.tree));
     const hookDiff = sourcePaths.some((path) => path.startsWith(HOOK_DIRECTORY));
     const runnable = hookDiff ? targets.filter((each) => each.mutant.priority <= HOOK_DIFF_MAX_PRIORITY) : targets;

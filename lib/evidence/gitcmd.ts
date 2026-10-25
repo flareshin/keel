@@ -212,6 +212,8 @@ export function fetch(repo: string, args: string[]): void {
   run(repo, ['fetch', '--quiet', ...args], { timeoutSeconds: FETCH_TIMEOUT_SECONDS });
 }
 
+export const REGULAR_FILE_MODES = ['100644', '100755'];
+
 export function diffEntries(repo: string, oldTree: string, newTree: string): PathEntry[] {
   const fields = splitOnNul(run(repo, ['diff-tree', '-r', '-z', '--no-renames', '--no-abbrev',
     '--ignore-submodules=none', oldTree, newTree]).stdout);

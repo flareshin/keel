@@ -124,16 +124,18 @@ describe("runCensus", { skip: typescriptInstalled ? false : "typescript is not i
     assert.deepEqual(result.paths, { source: 1, test: 1 })
   })
 
-  it("runCensus_keepsADirectorySymlinkInTheBlobs_andMutatesOnlyScriptFiles", async () => {
+  it("runCensus_keepsSymlinksInTheBlobs_andMutatesOnlyRegularScriptFiles", async () => {
     const root = committedRepo({ "lib/a.ts": PICK, "tests/a.test.ts": PICK_TEST })
     roots.push(root)
     writeFiles(root, { "lib/a.ts": CHANGED_PICK })
     symlinkSync("lib", join(root, "linkdir"))
+    symlinkSync("lib", join(root, "lib.js"))
+    symlinkSync("../shared/x.ts", join(root, "lib", "x.ts"))
     const tree = snapshotTree(root)
 
     const result = await runCensus(root, { base: "main", reviewBase: git(root, "rev-parse", "HEAD"), tree })
 
-    assert.deepEqual(Object.keys(result.blobs).sort(), ["lib/a.ts", "linkdir"])
+    assert.deepEqual(Object.keys(result.blobs).sort(), ["lib.js", "lib/a.ts", "lib/x.ts", "linkdir"])
     assert.equal(result.mutation.outcome, "ran")
     if (result.mutation.outcome !== "ran") return
     assert.deepEqual([...new Set(result.mutation.results.map((each) => each.path))], ["lib/a.ts"])

@@ -7,8 +7,8 @@ All notable changes to keel are recorded here. The format follows
 ## [Unreleased]
 
 `measure`, `bin/link`, `lib/evidence` (the `keel` command, the evidence store and the verdict the ship-gate reads) and the
-Codex adapter (`codex/`) drop their Python emulation and run on plain Node behavior: `JSON.parse` and `JSON.stringify`,
-`node:path`, `node:fs`, `RegExp`, a fatal `TextDecoder` and `node:util` `parseArgs`. The hooks' shared kit (`hooks/lib/hookkit`) loses its Python runtime modules too (see Removed); the hooks keep a few Python spellings on purpose, such as the JSON spacing and the error class names.
+Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node behavior: `JSON.parse` and `JSON.stringify`,
+`node:path`, `node:fs`, `RegExp`, a fatal `TextDecoder` and `node:util` `parseArgs`. The hooks' shared kit (`hooks/lib/hookkit`) loses its Python runtime modules too (see Removed). Some Python semantics stay on purpose: the `splitlines` and `strip` character sets (`hooks/lib/hookkit/text.ts`, `apply_patch` text and guard output), CPython's recursion limit in the Codex TOML reader (`codex/lib/toml.ts`), the hooks' JSON spacing and error class names, and the exception names `rule-checks.ts` prints.
 
 ### Changed
 - What stays the same: exit codes for every documented outcome, the field names and values of every JSON and JSONL

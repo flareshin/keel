@@ -466,6 +466,15 @@ describe("SubagentStopTest", () => {
     assert.deepEqual(contractMisses(), []);
   });
 
+  it("stop_joinsEveryTextEntryAfterTheLastToolUse_whenPayloadLacksLastAssistantMessage", () => {
+    const split = FRAMED_PASS_REPORT.indexOf("No findings");
+    const path = withFinalText(withFinalText(sandbox.agentTranscript(`[SCOPE] ${scope}\nDo the task.`), FRAMED_PASS_REPORT.slice(0, split - 1)), FRAMED_PASS_REPORT.slice(split));
+    assert.equal(stop(null, { agentTranscript: path }).code, 0);
+    const requests = keelRequests();
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].verdict, "PASS");
+  });
+
   it("stop_ignoresTextBeforeTheLastToolUse_whenPayloadLacksLastAssistantMessage", () => {
     const path = withFinalText(sandbox.agentTranscript(`[SCOPE] ${scope}\nDo the task.`), PASS_REPORT);
     appendToolUse(path, editIn(scope, "a.py"));

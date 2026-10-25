@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url"
 import { afterEach, beforeEach, describe, it } from "node:test"
 
 import { CoverageFormatError, readCoverage } from "../../lib/precheck/coverage.ts"
+import { executedLineNumbers } from "./fixture.ts"
 
 type RangeJson = { startOffset: number, endOffset: number, count: number }
 
@@ -32,7 +33,7 @@ describe("readCoverage", () => {
     })
     assert.equal(result.status, 0, result.stderr)
   }
-  const executed = (relative: string): number[] => [...readCoverage(coverageDir, repo).executedLines.get(relative) ?? []].sort((a, b) => a - b)
+  const executed = (relative: string): number[] => executedLineNumbers(path.join(repo, relative), readCoverage(coverageDir, repo).executedSpans.get(relative) ?? [])
 
   it("readCoverage_marksTheTakenBranchExecuted_andLeavesTheUntakenElseBodyOut", () => {
     write("src/branch.js", [

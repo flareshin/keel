@@ -6,7 +6,7 @@ import { join } from "node:path"
 import { after, describe, it } from "node:test"
 import { GitError, snapshotTree } from "../../lib/evidence/gitcmd.ts"
 import { materializeTree, runBaseline } from "../../lib/precheck/baseline.ts"
-import { committedRepo, writeFiles as write } from "./fixture.ts"
+import { committedRepo, executedLineNumbers, writeFiles as write } from "./fixture.ts"
 
 const EXECUTABLE_BITS = 0o111
 const TIMEOUT_SECONDS = 60
@@ -123,8 +123,7 @@ describe("precheck baseline", () => {
     assert.equal(file?.passed, 1)
     assert.ok((file?.durationMs ?? 0) > 0)
     assert.ok(file?.coverage.seen.has("lib/a.ts"))
-    assert.ok(file?.coverage.executedLines.get("lib/a.ts")?.has(2))
-    assert.equal(file?.coverage.executedLines.get("lib/a.ts")?.has(3), false)
+    assert.deepEqual(executedLineNumbers(join(directory, "lib", "a.ts"), file?.coverage.executedSpans.get("lib/a.ts") ?? []), [1, 2, 4])
   })
 
   it("runBaseline_keepsEachTestFilesCoverageApart", async () => {

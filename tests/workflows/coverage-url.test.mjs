@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
 
 import { readCoverage } from '../../lib/precheck/coverage.ts'
+import { executedLineNumbers } from '../precheck/fixture.ts'
 
 const HELPERS_URL = new URL('./helpers.mjs', import.meta.url).href
 const FIXTURE = [
@@ -43,6 +44,6 @@ describe('compileWorkflowFile coverage', () => {
 
     const coverage = readCoverage(coverageDir, root)
     assert.ok(coverage.seen.has('fixture.js'), `seen: ${[...coverage.seen]}`)
-    assert.deepEqual([...coverage.executedLines.get('fixture.js')].sort((a, b) => a - b), [1, 2, 3, 4, 10])
+    assert.deepEqual(executedLineNumbers(workflowFile, coverage.executedSpans.get('fixture.js')), [1, 2, 3, 4, 10])
   })
 })

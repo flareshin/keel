@@ -1,14 +1,13 @@
-import fs from "node:fs"
 import path from "node:path"
 
 import { SCRIPT_FILE } from "../../lib/precheck/consumers.ts"
 import { isTestPath } from "../../lib/evidence/risk.ts"
+import * as store from "../../lib/evidence/store.ts"
 import * as env from "../lib/measurekit/env.ts"
 import { dateOption, parseCommandLine, printJson, runMain, stringOption, EXIT_OK } from "../lib/measurekit/cli.ts"
 import type { CommandSpec } from "../lib/measurekit/cli.ts"
 import { readJsonl } from "../lib/measurekit/datafiles.ts"
-import { isDir, readUtf8 } from "../lib/measurekit/files.ts"
-import { compareCodePoints, isJsonObject, parseJson } from "../lib/measurekit/json.ts"
+import { compareCodePoints, isJsonObject } from "../lib/measurekit/json.ts"
 import type { JsonObject } from "../lib/measurekit/json.ts"
 
 const COMMAND: CommandSpec = {
@@ -61,7 +60,7 @@ function coveredFirstReviewsByRun(since: string): Map<string, FirstReview[]> {
       createdAt: review["created_at"] as string,
       repo: review["repo"] as string,
       verdict: review["verdict"] as string,
-      tree: review["snapshot_tree"] as string,
+      tree: review["reviewed_tree"] as string,
       transcript: transcriptPath(review),
     }])
   }
@@ -69,15 +68,7 @@ function coveredFirstReviewsByRun(since: string): Map<string, FirstReview[]> {
 }
 
 function reviewEvidence(): JsonObject[] {
-  const evidenceDir = path.join(env.dataDir(), "state", "keel", "evidence", "review")
-  if (!isDir(evidenceDir)) return []
-  return fs.readdirSync(evidenceDir).sort().flatMap((repoDir) => {
-    const directory = path.join(evidenceDir, repoDir)
-    if (!isDir(directory)) return []
-    return fs.readdirSync(directory).filter((name) => name.endsWith(".json")).sort()
-      .map((name) => parseJson(readUtf8(path.join(directory, name))))
-      .filter(isJsonObject)
-  })
+  return store.repoKeys("review").flatMap((repoKey) => store.listFiles("review", repoKey).map((file) => store.readFile(file) as JsonObject))
 }
 
 function isCoveredFirstReview(review: JsonObject, since: string): boolean {
@@ -116,14 +107,13 @@ function summarize(runId: string, repos: FirstReview[], prechecked: Set<string>)
 function mutationShapedTestsFindings(transcript: string | null): number | null {
   const report = transcript === null ? null : lastAssistantText(transcript)
   if (report === null || !report.includes(BLOCKING_HEADING)) return null
-  const block = (report.split(BLOCKING_HEADING, 2)[1] as string).split(BLOCK_END)[0] as string
+  const block = report.slice(report.indexOf(BLOCKING_HEADING) + BLOCKING_HEADING.length).split(BLOCK_END)[0] as string
   return [...block.matchAll(BLOCKING_FINDING)]
     .filter(([, , lens, text]) => TESTS_LENSES.has(lens as string) && MUTATION_SHAPED.test(text as string))
     .length
 }
 
 function lastAssistantText(transcript: string): string | null {
-  if (!fs.existsSync(transcript)) return null
   let last: string | null = null
   for (const record of readJsonl(transcript).records) {
     const message = record["message"]

@@ -12,12 +12,14 @@ const OTHER_TREE = "2".repeat(40)
 const THREE_SOURCES = ["lib/a.ts", "lib/b.ts", "hooks/c.mjs", "tests/a.test.ts", "docs/a.md"]
 
 const NEEDS_FIXES_REPORT = [
-  "VERDICT: NEEDS_FIXES",
+  "VERDICT: NEEDS_FIXES (4 Merge-blocking)",
   "",
-  "Merge-blocking (3):",
+  "Merge-blocking (4):",
   "- [high] tests/T1: Deleting the guard in lib/a.ts keeps every test green.",
   "  At: lib/a.ts:3",
   "- [medium] tests/T2: The new branch has no test at all.",
+  "- [medium] tests/T4: The new limit has no assertion.",
+  "  Repro: reverting the limit to 100 keeps the suite green.",
   "- [medium] contract/C1: The caller in hooks/c.mjs still reads the old key; removing that read keeps every test green.",
   "",
   "Non-blocking:",
@@ -38,6 +40,7 @@ interface ReviewFields {
   verdict?: string
   paths?: string[]
   tree?: string
+  head?: string
   transcript?: string | null
 }
 
@@ -59,8 +62,11 @@ describe("C-precheck runner", () => {
       repo,
       since: fields.since ?? null,
       created_at: fields.createdAt ?? NOW_TS,
+      expires_at: addDays(TODAY, 14) + "T00:00:00Z",
       verdict: fields.verdict ?? "PASS",
-      snapshot_tree: fields.tree ?? TREE,
+      head: fields.head ?? null,
+      snapshot_tree: fields.head === undefined ? fields.tree ?? TREE : null,
+      reviewed_tree: fields.tree ?? TREE,
       paths: (fields.paths ?? THREE_SOURCES).map((changed) => ({ path: changed, blob: "0".repeat(40), mode: "100644" })),
       source: { agent_transcript_path: fields.transcript ?? null },
     }))
@@ -93,8 +99,22 @@ describe("C-precheck runner", () => {
     assert.equal(result.status, "PASS")
     assert.equal(result.count, 1)
     assert.deepEqual(result.items, [{
-      run_id: "rv-a", created_at: NOW_TS, repos: ["flareshin/keel"], verdict: "NEEDS_FIXES", prechecked: true, mutation_tests_findings: 1,
+      run_id: "rv-a", created_at: NOW_TS, repos: ["flareshin/keel"], verdict: "NEEDS_FIXES", prechecked: true, mutation_tests_findings: 2,
     }])
+  })
+
+  it("reviewOfACommittedHead_matchesThePrecheckOfItsReviewedTree", () => {
+    givenReview({ runId: "rv-a", head: "3".repeat(40) })
+    givenPrecheck()
+    const result = runMetric()
+    assert.deepEqual([result.count, result.items[0].prechecked], [1, true])
+  })
+
+  it("blockingFindingThatEndsTheReport_isReadToTheEndOfItsLastLine", () => {
+    const report = "VERDICT: NEEDS_FIXES\n\nMerge-blocking (1):\n- [high] tests/T1: The new check has no test.\n  Reverting it still passes."
+    givenReview({ runId: "rv-a", verdict: "NEEDS_FIXES", transcript: givenReport(report) })
+    const result = runMetric()
+    assert.equal(result.items[0].mutation_tests_findings, 1)
   })
 
   it("firstReviewWithoutAPrecheckOfItsTree_isListedButNotCounted", () => {

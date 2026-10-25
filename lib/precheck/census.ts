@@ -53,30 +53,13 @@ const ELLIPSIS = '…';
 const MASKED_TEXT = `'${ELLIPSIS}'`;
 const MASKED_PATTERN = `/${ELLIPSIS}/`;
 const REMOVALS = new Set(['', ';']);
-const TEXT_TOKENS = new Set([
-  ts.SyntaxKind.StringLiteral,
-  ts.SyntaxKind.NoSubstitutionTemplateLiteral,
-  ts.SyntaxKind.TemplateHead,
-  ts.SyntaxKind.TemplateMiddle,
-  ts.SyntaxKind.TemplateTail,
-]);
-const SLASH_TOKENS = new Set([ts.SyntaxKind.SlashToken, ts.SyntaxKind.SlashEqualsToken]);
-const OPERAND_ENDS = new Set([
-  ts.SyntaxKind.Identifier,
-  ts.SyntaxKind.NumericLiteral,
-  ts.SyntaxKind.BigIntLiteral,
-  ts.SyntaxKind.StringLiteral,
-  ts.SyntaxKind.NoSubstitutionTemplateLiteral,
-  ts.SyntaxKind.TemplateTail,
-  ts.SyntaxKind.RegularExpressionLiteral,
-  ts.SyntaxKind.CloseParenToken,
-  ts.SyntaxKind.CloseBracketToken,
-  ts.SyntaxKind.CloseBraceToken,
-  ts.SyntaxKind.ThisKeyword,
-  ts.SyntaxKind.SuperKeyword,
-  ts.SyntaxKind.TrueKeyword,
-  ts.SyntaxKind.FalseKeyword,
-  ts.SyntaxKind.NullKeyword,
+const MASKED_KINDS = new Map<ts.SyntaxKind, string>([
+  [ts.SyntaxKind.StringLiteral, MASKED_TEXT],
+  [ts.SyntaxKind.NoSubstitutionTemplateLiteral, MASKED_TEXT],
+  [ts.SyntaxKind.TemplateHead, MASKED_TEXT],
+  [ts.SyntaxKind.TemplateMiddle, MASKED_TEXT],
+  [ts.SyntaxKind.TemplateTail, MASKED_TEXT],
+  [ts.SyntaxKind.RegularExpressionLiteral, MASKED_PATTERN],
 ]);
 const TRIVIA_TOKENS = new Set([
   ts.SyntaxKind.WhitespaceTrivia,
@@ -142,37 +125,31 @@ function changeText(original: string, operator: Operator, replacement: string): 
 }
 
 function codeSnippet(code: string): string {
+  const masks = maskedSpans(code);
   const scanner = ts.createScanner(ts.ScriptTarget.Latest, false, ts.LanguageVariant.Standard, code);
-  const templateBraces: number[] = [];
-  let braces = 0;
   let snippet = '';
   let spaced = false;
-  let previous = ts.SyntaxKind.Unknown;
   for (let kind = scanner.scan(); kind !== ts.SyntaxKind.EndOfFileToken; kind = scanner.scan()) {
-    if (SLASH_TOKENS.has(kind) && !OPERAND_ENDS.has(previous)) {
-      kind = scanner.reScanSlashToken();
-    } else if (kind === ts.SyntaxKind.CloseBraceToken && templateBraces.at(-1) === braces) {
-      kind = scanner.reScanTemplateToken(false);
-      if (kind === ts.SyntaxKind.TemplateTail) templateBraces.pop();
-    } else if (kind === ts.SyntaxKind.OpenBraceToken) {
-      braces++;
-    } else if (kind === ts.SyntaxKind.CloseBraceToken) {
-      braces--;
-    }
-    if (kind === ts.SyntaxKind.TemplateHead) templateBraces.push(braces);
     if (TRIVIA_TOKENS.has(kind)) {
       spaced = snippet !== '';
       continue;
     }
-    snippet += (spaced ? ' ' : '') + tokenText(kind, scanner);
+    const mask = masks.find((span) => span.start <= scanner.getTokenStart() && scanner.getTokenStart() < span.end);
+    snippet += (spaced ? ' ' : '') + (mask?.text ?? scanner.getTokenText());
     spaced = false;
-    previous = kind;
+    if (mask !== undefined) scanner.resetTokenState(mask.end);
   }
   return snippet.length > SNIPPET_LIMIT ? snippet.slice(0, SNIPPET_LIMIT - ELLIPSIS.length) + ELLIPSIS : snippet;
 }
 
-function tokenText(kind: ts.SyntaxKind, scanner: ts.Scanner): string {
-  if (TEXT_TOKENS.has(kind)) return MASKED_TEXT;
-  if (kind === ts.SyntaxKind.RegularExpressionLiteral) return MASKED_PATTERN;
-  return scanner.getTokenText();
+function maskedSpans(code: string): { start: number; end: number; text: string }[] {
+  const file = ts.createSourceFile('snippet.ts', code, ts.ScriptTarget.Latest);
+  const spans: { start: number; end: number; text: string }[] = [];
+  const visit = (node: ts.Node): void => {
+    const text = MASKED_KINDS.get(node.kind);
+    if (text === undefined) ts.forEachChild(node, visit);
+    else spans.push({ start: node.getStart(file), end: node.end, text });
+  };
+  visit(file);
+  return spans;
 }

@@ -147,6 +147,9 @@ describe("runCensus", { skip: typescriptInstalled ? false : "typescript is not i
       "  note(String(/tests pass/.test('x')))",
       "  note(`${{ on: flag }.on} works ${flag} fine`)",
       "  note(String([flag, flag, flag, flag, flag, flag, flag, flag]))",
+      "  note(String(flag! / 2) + 'tests pass')",
+      "  let count = 0",
+      "  note(String(count++ / 2) + 'works fine')",
       "  const help = 'Run it. Then stop.'",
       "  return help.length / 18",
       "}",
@@ -164,8 +167,10 @@ describe("runCensus", { skip: typescriptInstalled ? false : "typescript is not i
     assert.ok(changes.includes("4 call-removal note(String(/…/.test('…'))) removed"), changes.join("\n"))
     assert.ok(changes.includes("5 call-removal note('…'{ on: flag }.on'…'flag'…') removed"), changes.join("\n"))
     assert.ok(changes.includes("6 call-removal note(String([flag, flag, flag, flag, fl… removed"), changes.join("\n"))
-    assert.ok(changes.includes("7 text-removal text removed"), changes.join("\n"))
-    assert.ok(changes.includes("8 return-constant help.length / 18 → null"), changes.join("\n"))
+    assert.ok(changes.includes("7 call-removal note(String(flag! / 2) + '…') removed"), changes.join("\n"))
+    assert.ok(changes.includes("9 call-removal note(String(count++ / 2) + '…') removed"), changes.join("\n"))
+    assert.ok(changes.includes("10 text-removal text removed"), changes.join("\n"))
+    assert.ok(changes.includes("11 return-constant help.length / 18 → null"), changes.join("\n"))
     assert.doesNotMatch(changes.join("\n"), /tests pass|fixed|works|Run it/)
   })
 })
@@ -220,8 +225,19 @@ describe("keel precheck run", { skip: typescriptInstalled ? false : "typescript 
     assert.match(unknownBase.stderr, /no-such-ref has no merge base with HEAD/)
   })
 
-  it("keelPrecheckRun_refusesALoadFailureWhenTypescriptDoesNotResolve_andTreatsItAsInternalOtherwise", async (t) => {
+  it("typescriptResolves_answersFalseOnlyForAModuleNotFound_andRethrowsOtherResolveErrors", (t) => {
+    const resolveFailure = (code: string) => () => {
+      throw Object.assign(new Error("resolve failed"), { code })
+    }
+
     assert.equal(cli.seams.typescriptResolves(), true)
+    t.mock.method(cli.seams, "resolveTypescript", resolveFailure("ERR_MODULE_NOT_FOUND"))
+    assert.equal(cli.seams.typescriptResolves(), false)
+    t.mock.method(cli.seams, "resolveTypescript", resolveFailure("EACCES"))
+    assert.throws(() => cli.seams.typescriptResolves(), /resolve failed/)
+  })
+
+  it("keelPrecheckRun_refusesALoadFailureWhenTypescriptDoesNotResolve_andTreatsItAsInternalOtherwise", async (t) => {
     const root = committedRepo({ "lib/a.ts": PICK })
     roots.push(root)
     const statusWhenLoadingFails = async (resolves: boolean): Promise<number> => {

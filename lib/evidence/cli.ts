@@ -1,4 +1,3 @@
-import { createRequire } from 'node:module';
 import { InvalidUtf8Error } from '../../measure/lib/measurekit/files.ts';
 import { compareCodePoints, isJsonObject, parseJsonKeepingIntegers, stringifySorted } from '../../measure/lib/measurekit/json.ts';
 import type { JsonValue } from '../../measure/lib/measurekit/json.ts';
@@ -38,9 +37,9 @@ const EVIDENCE_OPTIONS = new Set(['--repo', '--run', '--root', '--audits', '--ve
 const PRECHECK_BIND_OPTIONS = new Set(['--repo', '--base', '--end', '--tree']);
 const PRECHECK_RUN_OPTIONS = new Set(['--repo', '--base']);
 const PRECHECK_LOG = 'keel-precheck.jsonl';
-const MODULE_NOT_FOUND = 'MODULE_NOT_FOUND';
+const MODULE_NOT_FOUND = 'ERR_MODULE_NOT_FOUND';
 
-export const seams = { print: printResult, loadCensus: () => import('../precheck/census.ts'), typescriptResolves };
+export const seams = { print: printResult, loadCensus: () => import('../precheck/census.ts'), resolveTypescript: () => import.meta.resolve('typescript'), typescriptResolves };
 
 export async function main(argv: string[]): Promise<number> {
   try {
@@ -116,7 +115,7 @@ async function loadCensus(): ReturnType<typeof seams.loadCensus> {
 
 function typescriptResolves(): boolean {
   try {
-    createRequire(import.meta.url).resolve('typescript');
+    seams.resolveTypescript();
     return true;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === MODULE_NOT_FOUND) return false;

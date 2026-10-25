@@ -160,10 +160,13 @@ Codex adapter (`codex/`) drop their Python emulation and run on plain Node behav
   - Wording: `JsonSyntaxError` with the `JSON.parse` message for unreadable JSON, `InvalidUtf8Error: <source> is not
     valid UTF-8`, `RecursionError: JSON nesting is deeper than 10000 levels`, `EvidenceTooDeepError`, and `JSON.stringify`
     quoting (`"bogus"`, `["gh","pr","view"]`) in `RegistryError`, `GateError` and `TimeoutExpired` text. Numbers in messages
-    render as JavaScript does (`1.0` is `1`).
+    render as JavaScript does (`1.0` is `1`). A system error outside `ENOENT`, `EPERM`, `EACCES`, `EEXIST`, `ENOTDIR` and
+    `EISDIR` prints as `Error: <Node message>` (for example `Error: ELOOP: too many symbolic links encountered, open '<path>'`)
+    instead of the Python `OSError: [Errno N] <text>` form.
   - `keel-fires.jsonl` lines are compact sorted-key JSON (`stringifySorted`) with non-ASCII characters written as is.
   - `stringifySorted` and `parseJsonKeepingIntegers` (`measure/lib/measurekit/json.ts`) handle the full 10,000 level nesting
-    without running out of stack.
+    without running out of stack, except text nested past about two thousand levels that also holds an integer beyond
+    2^53: parsing it runs out of stack, so an evidence file like that is an `EvidenceError` and stdin like that exits 70.
   - `tests/ship-gate/ship-gate-parity.test.ts` still replays the 1,757 recorded hook runs. It compares fires lines by
     content, masks the JSON decode wording, and lists each case whose wording or outcome changed with the exit code the
     hook must give (`EXPECTED_DIVERGENCES`). `codex/tests/hook-parity.ts` compares the fires lines it replays by content too.

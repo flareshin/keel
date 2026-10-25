@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-import { differencesFromRecorded, envFromTemplate, excerpt, materialize, paddedRoot, readFixtureFile, restored, runInSandbox } from "../recorded-cases.ts";
+import { deltaOf, differencesFromRecorded, envFromTemplate, excerpt, materialize, paddedRoot, readFixtureFile, restored, runInSandbox } from "../recorded-cases.ts";
 import type { Observation, ObservedDelta, Run, SnapshotStore } from "../recorded-cases.ts";
 import { normalizeRepoKey } from "../../lib/evidence/registry.ts";
 import { isJsonObject, stringifySorted } from "../../measure/lib/measurekit/json.ts";
@@ -27,6 +27,8 @@ const RECORDED_CHECKOUT_REPO_KEY = "flareshin/keel";
 const CHECKOUT_REPO_KEY = checkoutRepoKey();
 const GIT_STATE = new Set(["HEAD", "config", "packed-refs", "FETCH_HEAD", "refs"]);
 const UNREADABLE = "<unreadable>";
+const RULE_TAG = /\[[A-Za-z][\w.-]*\]/g;
+const FIRE_SHAPE_FIELDS = ["rule_id", "hook", "outcome"];
 const OVER_BOUND_NESTINGS = [10001, 200000];
 const OVER_BOUND_KINDS = ["gh-answer", "evidence-file", "stdin-push", "stdin-ls"];
 const COMMAND_DIVERGENT_NESTINGS = [9999, 10001];
@@ -53,6 +55,13 @@ export const EXPECTED_DIVERGENCES: ReadonlyMap<string, number> = new Map([
     .map((id): [string, number] => [id, PASS_EXIT_CODE]),
   ...[NON_FINITE_PUSH_PAYLOAD, NON_FINITE_GH_ANSWER_ON_A_PASSING_MERGE, ...READ_PAST_PYTHON_DIGIT_LIMIT_ON_A_PUSH, ...NON_FINITE_GH_ANSWERS_ON_A_DENIED_MERGE,
     ...UTF8_WORDING_ON_A_DENY, ...JSON_QUOTING_ON_A_DENY].map((id): [string, number] => [id, DENY_EXIT_CODE]),
+]);
+
+export const DECISION_PATH_CHANGED: ReadonlySet<string> = new Set([
+  ...NON_FINITE_NON_PUSH_PAYLOADS, ...READ_PAST_PYTHON_DIGIT_LIMIT_ON_A_PUSH,
+  "extra-0036", "extra-0037", "extra-0041", "extra-0042", "extra-0046",
+  "stdin-push-nested-10001", "command-list-nested-9999", "command-list-nested-10001",
+  ...PYTHON_COMMENT_DELETION_SUITES.flatMap((suite) => ["0470", "0477"].map((number) => `py-comment-deletion-${suite}-${number}`)),
 ]);
 
 export type Suite = (typeof SUITES)[number];
@@ -200,7 +209,8 @@ function comparableFiresLine(line: string): string {
   let record: unknown;
   try {
     record = JSON.parse(Buffer.from(masked, "latin1").toString("utf8"));
-  } catch {
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
     return masked;
   }
   if (!isJsonObject(record)) return masked;
@@ -228,8 +238,39 @@ export function judgeCase(label: string, expected: ObservedDelta, run: Run, root
   const required = EXPECTED_DIVERGENCES.get(label);
   const code = run.observation.code;
   if (required === undefined) return { listed: false, problems: differences };
-  if (code === required) return { listed: true, problems: [] };
-  return { listed: false, problems: [`listed divergence ${label} requires node exit ${required}, got ${code}`, ...differences] };
+  if (code !== required) return { listed: false, problems: [`listed divergence ${label} requires node exit ${required}, got ${code}`, ...differences] };
+  const shapeProblems = expected.code === required && !DECISION_PATH_CHANGED.has(label) ? shapeDifferences(comparableRecorded(expected), deltaOf(root, run)) : [];
+  return shapeProblems.length === 0 ? { listed: true, problems: [] } : { listed: false, problems: [...shapeProblems, ...differences] };
+}
+
+function shapeDifferences(expected: ObservedDelta, actual: ObservedDelta): string[] {
+  const problems: string[] = [];
+  const [expectedTags, actualTags] = [ruleTags(expected.stderr), ruleTags(actual.stderr)];
+  if (expectedTags !== actualTags) problems.push(`rule tags on stderr: python ${expectedTags} / node ${actualTags}`);
+  const [expectedFires, actualFires] = [fireShapes(expected), fireShapes(actual)];
+  if (expectedFires !== actualFires) problems.push(`fires rule, hook and outcome: python ${expectedFires} / node ${actualFires}`);
+  return problems;
+}
+
+function ruleTags(stderr: string): string {
+  return JSON.stringify(stderr.split("\n").map((line) => line.match(RULE_TAG) ?? []));
+}
+
+function fireShapes(delta: ObservedDelta): string {
+  const lines = Object.entries(delta.set).filter(([key]) => key.endsWith(FIRES_LOG_NAME)).flatMap(([, content]) => content.split("\n").filter((line) => line !== ""));
+  return JSON.stringify(lines.map(fireShape));
+}
+
+function fireShape(line: string): string {
+  let record: unknown;
+  try {
+    record = JSON.parse(line);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    return line;
+  }
+  if (!isJsonObject(record)) return line;
+  return FIRE_SHAPE_FIELDS.map((field) => String(record[field])).join(" ");
 }
 
 export function isDenyToPass(expected: ObservedDelta, actual: Observation): boolean {

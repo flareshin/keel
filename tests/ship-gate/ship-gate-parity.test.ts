@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { differencesFromRecorded } from "../recorded-cases.ts";
 import type { ObservedDelta, Observation, Run } from "../recorded-cases.ts";
-import { EXPECTED_DIVERGENCES, isDenyToPass, judgeCase, runShipGateParity, summary, withoutCheckoutRepoKey } from "./ship-gate-parity.ts";
+import { DECISION_PATH_CHANGED, EXPECTED_DIVERGENCES, isDenyToPass, judgeCase, runShipGateParity, summary, withoutCheckoutRepoKey } from "./ship-gate-parity.ts";
 
 const MIN_CASES = 600;
 const PARITY_TIMEOUT_MS = 120 * 60_000;
@@ -86,6 +86,32 @@ describe("ship-gate parity listed divergences", () => {
     const passed = judgeCase(label, recorded(DENY, "python text"), run(0, ""), ROOT);
     assert.equal(passed.listed, false);
     assert.ok(passed.problems[0]?.includes("requires node exit 2, got 0"), passed.problems.join("\n"));
+  });
+
+  it("waives the rule-tag and fires check only for listed rows whose decision path changed", () => {
+    assert.deepEqual([...DECISION_PATH_CHANGED].sort(), [
+      "command-list-nested-10001", "command-list-nested-9999",
+      "extra-0019", "extra-0020", "extra-0025", "extra-0026", "extra-0030", "extra-0031", "extra-0035",
+      "extra-0036", "extra-0037", "extra-0041", "extra-0042", "extra-0046",
+      "py-comment-deletion-python-keel-0470", "py-comment-deletion-python-keel-0477",
+      "py-comment-deletion-ts-keel-0470", "py-comment-deletion-ts-keel-0477", "stdin-push-nested-10001",
+    ]);
+    for (const row of DECISION_PATH_CHANGED) assert.ok(EXPECTED_DIVERGENCES.has(row), `${row} is not a listed divergence`);
+    const lostTag = judgeCase("extra-0019", recorded(0, "[K1] python text\n"), run(0, "node text\n"), ROOT);
+    assert.deepEqual(lostTag, { listed: true, problems: [] });
+  });
+
+  it("still holds a listed row whose recorded exit matches to the rule tags on stderr and the rule, hook and outcome of each fire", () => {
+    const fires = (rule: string) => `{"detail":"python","hook":"ship-gate","outcome":"deny","rule_id":"${rule}"}\n`;
+    const firesKey = "home/.claude/state/keel-fires.jsonl";
+    assert.deepEqual(judgeCase(label, recorded(DENY, "[K1] python text\n", { [firesKey]: fires("K1") }), run(DENY, "[K1] node text\n", [[firesKey, fires("K1").replace("python", "node")]]), ROOT),
+      { listed: true, problems: [] });
+    const lostTag = judgeCase(label, recorded(DENY, "[K1] python text\n"), run(DENY, "node text\n"), ROOT);
+    assert.equal(lostTag.listed, false);
+    assert.ok(lostTag.problems[0]?.includes("rule tags"), lostTag.problems.join("\n"));
+    const otherRule = judgeCase(label, recorded(DENY, "", { [firesKey]: fires("K1") }), run(DENY, "", [[firesKey, fires("K2")]]), ROOT);
+    assert.equal(otherRule.listed, false);
+    assert.ok(otherRule.problems[0]?.includes("fires"), otherRule.problems.join("\n"));
   });
 
   it("holds an unlisted row to the strict comparison", () => {

@@ -2,8 +2,8 @@ import { spawnSync } from "node:child_process";
 import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
-import { stringifySorted } from "../../measure/lib/measurekit/json.ts";
 import { recordedAnswers } from "../../tests/recorded.ts";
+import { canonicalText } from "../../tests/ship-gate/outcomes.ts";
 import { EXPECTED_DEPTH_DENY_REASON } from "./json-depth-policy.ts";
 import type { JsonDepthDivergence } from "./json-depth-policy.ts";
 
@@ -215,14 +215,7 @@ function sameFiresLog(key: string, recorded: string | undefined, now: string | u
 
 function comparableFires(snapshotText: string): string {
   const mode = FILE_SNAPSHOT_PREFIX.exec(snapshotText)?.[0] ?? "";
-  const lines = Buffer.from(snapshotText.slice(mode.length), "latin1").toString("utf8").split("\n");
-  return mode + lines.map((line) => {
-    try {
-      return line === "" ? line : stringifySorted(JSON.parse(line));
-    } catch {
-      return line;
-    }
-  }).join("\n");
+  return mode + canonicalText(Buffer.from(snapshotText.slice(mode.length), "latin1").toString("utf8"));
 }
 
 function denialReason(stdout: string): string | null {

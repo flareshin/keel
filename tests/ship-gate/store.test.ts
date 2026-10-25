@@ -42,4 +42,9 @@ describe('store.readFile', () => {
     const atTheBound = '{"expires_at": "2099-01-01T00:00:00Z", "n": ' + '['.repeat(9_999) + ']'.repeat(9_999) + '}';
     assert.doesNotThrow(() => readFile(evidenceFile('bound.json', atTheBound)));
   });
+
+  test('throwsEvidenceErrorForDeepNestingThatAlsoHoldsAnIntegerPastDoublePrecision', () => {
+    const nested = '{"expires_at": "2099-01-01T00:00:00Z", "n": ' + '['.repeat(5_000) + '9007199254740993' + ']'.repeat(5_000) + '}';
+    assert.throws(() => readFile(evidenceFile('deep-big.json', nested)), (error: Error) => error instanceof EvidenceError && error.message.includes('unreadable evidence'));
+  });
 });

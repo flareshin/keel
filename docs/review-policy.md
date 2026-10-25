@@ -36,6 +36,19 @@ owner to invoke it in a supported runtime; do not emulate its PR step. This appl
 to keel's own changes too. Local approved activation does not require a PR, and
 `/ship1` does not waive existing review, test or merge-approval gates.
 
+[C-precheck] For a TS/JS diff that changes three or more non-test source files,
+run `keel precheck run --repo <path> --base <review base>` after the tests are
+green and before `keel review prepare`; run it in the background while writing
+the reading guide. Skip it for smoke-only, docs-only and test-only diffs. After a
+NEEDS_FIXES with tests findings, run it again before the delta review. Kill each
+survived and no-test-reaches mutant with a test or write one line on why no test
+can observe it, and fix or note each consumer outside the diff. Pass the output
+verbatim as the lens-review `precheck` argument. It is an author claim for the
+tests and contract lenses to check, not evidence: it adds no evidence kind, and
+"all killed" is not a pass claim. The review reports the precheck as stale when a
+non-test path changed after it or an existing test line changed; rerun it then,
+and rerun it after adding tests so its survivors are not left open.
+
 ## Explain before requesting approval
 
 [K5] Before presenting an owner approval command, explain the candidate in the

@@ -43,6 +43,8 @@ this reference shapes only the behavior and interfaces the current task needs.
 For non-trivial changes, give a concise reading guide: Entry point, Flow, Changed,
 Unchanged, Decisions, Rejected, Read first. Explain a size signal or deliberate
 exception there. Keep unrelated structural cleanup separate from behavior changes.
+For a TS/JS diff of three or more non-test source files, write the guide while
+`keel precheck run` works in the background, per the shared review policy.
 
 Before presenting an approval command, explain the problem, concrete flow, why
 the structure and logic were chosen, tradeoffs, and verification limits in the

@@ -1001,7 +1001,7 @@
    "stdin": null,
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: missing command\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: missing command\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1010,7 +1010,7 @@
    "stdin": null,
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: unknown command bogus\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: unknown command bogus\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1020,7 +1020,7 @@
    "stdin": null,
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: keel test -- <command…>\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: keel test -- <command…>\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1030,7 +1030,7 @@
    "stdin": null,
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: keel test -- <command…>\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: keel test -- <command…>\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1039,7 +1039,7 @@
    "stdin": null,
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: keel approve <root_run_id> [--read]\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: keel approve <root_run_id> [--read]\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1049,7 +1049,7 @@
    "stdin": null,
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: root_run_id must match ^[A-Za-z0-9._-]{8,64}$\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: root_run_id must match ^[A-Za-z0-9._-]{8,64}$\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1070,7 +1070,7 @@
    "stdin": null,
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: keel approve <root_run_id> [--read]\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: keel approve <root_run_id> [--read]\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1079,7 +1079,7 @@
    "stdin": null,
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: keel snapshot <repo>\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: keel snapshot <repo>\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1089,7 +1089,7 @@
    "stdin": null,
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: {{ROOT}}/home is not inside a git repository\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: {{ROOT}}/home is not inside a git repository\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1098,7 +1098,7 @@
    "stdin": null,
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: keel evidence <write-review|write-smoke|show|gc>\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: keel evidence <write-review|write-smoke|show|gc>\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1108,7 +1108,7 @@
    "stdin": null,
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: unknown evidence subcommand bogus\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: unknown evidence subcommand bogus\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1119,7 +1119,7 @@
    "stdin": null,
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: unexpected argument --bogus\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: unexpected argument --bogus\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1130,7 +1130,7 @@
    "stdin": null,
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: --repo needs a value\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: --repo needs a value\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1142,7 +1142,7 @@
    "stdin": null,
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: {{ROOT}}/home is not a git repository with an origin remote\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: {{ROOT}}/home is not a git repository with an origin remote\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1154,7 +1154,7 @@
    "stdin": null,
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: compatibility inventories all repositories; it takes no options\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: compatibility inventories all repositories; it takes no options\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1164,7 +1164,7 @@
    "stdin": null,
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: registration requires --repo, --audits and optional --verifiers\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: registration requires --repo, --audits and optional --verifiers\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1176,7 +1176,7 @@
    "stdin": null,
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: registration requires --repo, --audits and optional --verifiers\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: registration requires --repo, --audits and optional --verifiers\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1200,7 +1200,7 @@
    "stdin": "",
    "rc": 2,
    "stdout": "",
-   "stderr": "usage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n",
+   "stderr": "usage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n",
    "stdinNotJson": true
   },
   {
@@ -1211,7 +1211,7 @@
    "stdin": "{\"a\":",
    "rc": 2,
    "stdout": "",
-   "stderr": "usage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n",
+   "stderr": "usage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n",
    "stdinNotJson": true
   },
   {
@@ -1222,7 +1222,7 @@
    "stdin": "[1]",
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: stdin must be a JSON object\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: stdin must be a JSON object\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1232,7 +1232,7 @@
    "stdin": "1.0",
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: stdin must be a JSON object\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: stdin must be a JSON object\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1242,7 +1242,7 @@
    "stdin": "[1.0, 2.5]",
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: stdin must be a JSON object\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: stdin must be a JSON object\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1252,7 +1252,7 @@
    "stdin": "-0.0",
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: stdin must be a JSON object\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: stdin must be a JSON object\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1262,7 +1262,7 @@
    "stdin": "1e400",
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: stdin must be a JSON object\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: stdin must be a JSON object\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1272,7 +1272,7 @@
    "stdin": "{\"keel_evidence\": 1.0, \"verdict\": \"PASS\"}",
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: keel_evidence must have exactly the keys v, repo_root, review_base, head, snapshot_tree, since, run_id, root_run_id, review_kind (plus optional no_test_reason)\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: keel_evidence must have exactly the keys v, repo_root, review_base, head, snapshot_tree, since, run_id, root_run_id, review_kind (plus optional no_test_reason)\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1282,7 +1282,7 @@
    "stdin": "{\"diffs\": [{\"repo\": 1.0}]}",
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: keel_evidence must have exactly the keys v, repo_root, review_base, head, snapshot_tree, since, run_id, root_run_id, review_kind (plus optional no_test_reason)\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: keel_evidence must have exactly the keys v, repo_root, review_base, head, snapshot_tree, since, run_id, root_run_id, review_kind (plus optional no_test_reason)\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1292,7 +1292,7 @@
    "stdin": "{\"a\":1}\r\n,",
    "rc": 2,
    "stdout": "",
-   "stderr": "usage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n",
+   "stderr": "usage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n",
    "stdinNotJson": true
   },
   {
@@ -1303,7 +1303,7 @@
    "stdin": "{\"keel_evidence\": {}}",
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: keel_evidence must have exactly the keys v, repo_root, review_base, head, snapshot_tree, since, run_id, root_run_id, review_kind (plus optional no_test_reason)\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: keel_evidence must have exactly the keys v, repo_root, review_base, head, snapshot_tree, since, run_id, root_run_id, review_kind (plus optional no_test_reason)\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1313,7 +1313,7 @@
    "stdin": "{\"keel_evidence\": 1, \"verdict\": \"PASS\"}",
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: keel_evidence must have exactly the keys v, repo_root, review_base, head, snapshot_tree, since, run_id, root_run_id, review_kind (plus optional no_test_reason)\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: keel_evidence must have exactly the keys v, repo_root, review_base, head, snapshot_tree, since, run_id, root_run_id, review_kind (plus optional no_test_reason)\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1348,7 +1348,7 @@
    "stdin": null,
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: keel review prepare reads workflow args from stdin\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: keel review prepare reads workflow args from stdin\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1358,7 +1358,7 @@
    "stdin": "{}",
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: review prepare needs a nonempty diffs list\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: review prepare needs a nonempty diffs list\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1368,7 +1368,7 @@
    "stdin": "{\"diffs\": [{\"repo\": \"/nonexistent\", \"base\": \"main\"}], \"lenses\": []}",
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: target needs a repository and base ref\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: target needs a repository and base ref\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1378,7 +1378,7 @@
    "stdin": "{\"diffs\": [{\"repo\": \"x\", \"extra\": 1}], \"lenses\": []}",
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: invalid review target\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: invalid review target\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [
@@ -1452,7 +1452,7 @@
    "stdin": null,
    "rc": 2,
    "stdout": "",
-   "stderr": "keel: keel test must run inside a git repository\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n"
+   "stderr": "keel: keel test must run inside a git repository\nusage:\n  keel test -- <command…>\n  keel approve <root_run_id> [--read]\n  keel snapshot <repo>\n  keel review prepare                 (stdin: workflow args; stdout: prepared metadata)\n  keel evidence write-review          (stdin: {\"keel_evidence\":{…},\"verdict\":…,\"source\":{…}})\n  keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]\n  keel evidence show [--repo <path>] [--root <root_run_id>]\n  keel evidence compatibility         (read-only retirement inventory across repos)\n  keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]\n  keel evidence gc\n  keel precheck run --repo <path> --base <ref>\n  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>\n"
   },
   {
    "args": [

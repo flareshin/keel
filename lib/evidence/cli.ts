@@ -28,7 +28,9 @@ const USAGE = `usage:
   keel evidence show [--repo <path>] [--root <root_run_id>]
   keel evidence compatibility         (read-only retirement inventory across repos)
   keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]
-  keel evidence gc`;
+  keel evidence gc
+  keel precheck run --repo <path> --base <ref>
+  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>`;
 const EXIT_OK = 0;
 const EXIT_USAGE = 2;
 const EXIT_REFUSED = 3;

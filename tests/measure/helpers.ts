@@ -115,6 +115,11 @@ export class MeasureSandbox {
     return file
   }
 
+  linkShippedRunners(): void {
+    fs.mkdirSync(path.join(this.keel, "measure"), { recursive: true })
+    fs.symlinkSync(path.join(MEASURE_DIR, "metrics"), path.join(this.keel, "measure", "metrics"))
+  }
+
   writeLedger(relativePath: string, rows: LedgerRowValues[]): string {
     const lines = [LEDGER_COLUMNS.join("\t"), ...rows.map((row) => LEDGER_COLUMNS.map((column) => row[column]).join("\t"))]
     return this.write(relativePath, lines.join("\n") + "\n")

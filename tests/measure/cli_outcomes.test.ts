@@ -90,6 +90,7 @@ function copySeedLedgerWithDatesNeverReached(box: EvalSandbox): void {
     return cells.join("\t")
   })
   box.write("keel/ledger.tsv", [header, ...postponed].join("\n") + "\n")
+  box.linkShippedRunners()
 }
 
 function ledgerBox(box: EvalSandbox, rows: ReturnType<typeof ledgerRow>[]): void {

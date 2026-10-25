@@ -19,6 +19,7 @@ describe("seed ledger", () => {
   beforeEach(() => {
     box = new MeasureSandbox()
     fs.copyFileSync(path.join(CHECKOUT, "ledger.tsv"), path.join(box.keel, "ledger.tsv"))
+    box.linkShippedRunners()
   })
   afterEach(() => box.cleanup())
 

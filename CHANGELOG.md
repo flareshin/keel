@@ -8,7 +8,7 @@ All notable changes to keel are recorded here. The format follows
 
 `measure`, `bin/link`, `lib/evidence` (the `keel` command, the evidence store and the verdict the ship-gate reads) and the
 Codex adapter (`codex/`) drop their Python emulation and run on plain Node behavior: `JSON.parse` and `JSON.stringify`,
-`node:path`, `node:fs`, `RegExp`, a fatal `TextDecoder` and `node:util` `parseArgs`.
+`node:path`, `node:fs`, `RegExp`, a fatal `TextDecoder` and `node:util` `parseArgs`. The hooks' shared kit (`hooks/lib/hookkit`) loses its Python runtime modules too (see Removed); the hooks keep a few Python spellings on purpose, such as the JSON spacing and the error class names.
 
 ### Changed
 - What stays the same: exit codes for every documented outcome, the field names and values of every JSON and JSONL
@@ -309,7 +309,8 @@ Codex adapter (`codex/`) drop their Python emulation and run on plain Node behav
   (`17.0.*`), a trailing dot or another major is still denied.
 - `report-gate` on `SubagentStop` judges the subagent's final text again. Claude Code no longer sends
   `last_assistant_message`, so the hook reads the text the agent wrote after its last tool use from
-  `agent_transcript_path` when the field is absent; a field that is present still wins. It no longer logs a K2
+  `agent_transcript_path` when the field is absent, `null` or empty; a non-empty field still wins. An assistant entry
+  after that text with nothing readable in it does not discard it. It no longer logs a K2
   `contract-miss` for the missing field when that text is found, when the report was handed back this turn, or when
   the agent answered with `StructuredOutput`, and a `StructuredOutput` agent no longer logs `no final text to judge`.
 - A `fires:<rule_id>` metric no longer counts `warn` lines, alongside `error` and `contract-miss`: a warn records a
@@ -321,7 +322,8 @@ Codex adapter (`codex/`) drop their Python emulation and run on plain Node behav
 - `measure/smoke` starts every `run:` metric runner of the ledger rows before it judges the rows, at most 6 at a time,
   instead of running them one after another inside the metrics check. On the owner's machine the 13 overlay runners took
   about 360 s in sequence (the slowest alone 55 s) and now finish together in about 70 s. Each runner keeps its 120 s
-  timeout, rows are judged in ledger order, and the `metrics` assertion and every error text are the ones a sequential
+  timeout, and a runner that passes it is killed with its whole process group, so a grandchild holding its output cannot keep
+  the check waiting; rows are judged in ledger order, and the `metrics` assertion and every error text are the ones a sequential
   run prints. `measure/run`, `measure/propose` and `measure/weekly` still run a runner when they need it.
 - `measure/metrics/C-review-command`, the runner behind the `C-review-command` row: it counts the distinct `run_id`s of
   review evidence whose `review_kind` is `codex-lens-review` and that were created in the window. The row's metric was
@@ -341,8 +343,8 @@ Codex adapter (`codex/`) drop their Python emulation and run on plain Node behav
   helpers. The error classes and `describeError` moved to `hooks/lib/hookkit/errors.ts`, `readStdin`, `printLine` and
   `writeStderr` to `hooks/lib/hookkit/stdio.ts` unchanged, and `trimCharacters` (the old `stripChars`) to
   `hooks/lib/hookkit/text.ts`. The unread recording `tests/fixtures/python/ship-gate-strerror.json` is deleted with it.
-  `tests/hooks/pyhook-compat.test.ts` (now `tests/hooks/jsonout.test.ts`) keeps its `pycompat` tests and loses the `pyruntime`
-  ones, which `tests/hooks/errors.test.ts` replaces; the import-order test for `pyruntime` in `tests/hooks/json.test.ts` went
+  `tests/hooks/pyhook-compat.test.ts` (now `tests/hooks/jsonout.test.ts`) loses its `pyruntime` tests, which
+  `tests/hooks/errors.test.ts` replaces; the import-order test for `pyruntime` in `tests/hooks/json.test.ts` went
   with it, as `errors.ts` imports nothing.
 - The hook module `hooks/lib/hookkit/pyjson.ts` and its tests in `tests/hooks/pyhook-compat.test.ts` (now `tests/hooks/jsonout.test.ts`). Its place is taken by
   `parseJson`, `parsePayload`, `parseTranscriptLine` and `parseJsonReadingNonFiniteNumbersAsZero` in `hooks/lib/hookkit/json.ts`;

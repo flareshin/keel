@@ -5,6 +5,12 @@ import { fileURLToPath } from 'node:url';
 export interface Coverage {
   seen: Set<string>;
   executedLines: Map<string, Set<number>>;
+  executedSpans: Map<string, Span[]>;
+}
+
+export interface Span {
+  start: number;
+  end: number;
 }
 
 interface Range {
@@ -33,7 +39,7 @@ const NOT_WHITESPACE = /\S/u;
 
 export function readCoverage(coverageDir: string, repoRoot: string): Coverage {
   const root = realpathSync(repoRoot);
-  const coverage: Coverage = { seen: new Set(), executedLines: new Map() };
+  const coverage: Coverage = { seen: new Set(), executedLines: new Map(), executedSpans: new Map() };
   for (const name of readdirSync(coverageDir).filter((entry) => COVERAGE_FILE.test(entry)).sort()) {
     for (const script of parseCoverageFile(join(coverageDir, name))) {
       const location = scriptLocation(script.url, root);
@@ -42,8 +48,10 @@ export function readCoverage(coverageDir: string, repoRoot: string): Coverage {
       coverage.seen.add(path);
       const lines = coverage.executedLines.get(path) ?? new Set<number>();
       const ranges = script.ranges.map((range) => shiftRange(range, prefix));
-      for (const line of executedLines(readFileSync(join(root, path), 'utf8'), ranges)) lines.add(line);
+      const executed = executedCode(readFileSync(join(root, path), 'utf8'), ranges);
+      for (const line of executed.lines) lines.add(line);
       coverage.executedLines.set(path, lines);
+      coverage.executedSpans.set(path, [...coverage.executedSpans.get(path) ?? [], ...executed.spans]);
     }
   }
   return coverage;
@@ -78,18 +86,25 @@ function shiftRange(range: Range, prefix: number): Range {
   return { ...range, startOffset: Math.max(0, range.startOffset - prefix), endOffset: Math.max(0, range.endOffset - prefix) };
 }
 
-function executedLines(source: string, ranges: Range[]): Set<number> {
+function executedCode(source: string, ranges: Range[]): { lines: Set<number>; spans: Span[] } {
   const counts = new Array<number>(source.length).fill(0);
   const outerFirst = [...ranges].sort((a, b) => a.startOffset - b.startOffset || b.endOffset - a.endOffset);
   for (const range of outerFirst) counts.fill(range.count, range.startOffset, Math.min(range.endOffset, source.length));
   const lines = new Set<number>();
+  const spans: Span[] = [];
+  let open: Span | null = null;
   let line = 1;
   for (let offset = 0; offset < source.length; offset++) {
     const char = source[offset] as string;
     if (char === '\n') line++;
-    else if ((counts[offset] as number) > 0 && NOT_WHITESPACE.test(char)) lines.add(line);
+    if ((counts[offset] as number) === 0) open = null;
+    else if (NOT_WHITESPACE.test(char)) {
+      lines.add(line);
+      if (open === null) spans.push(open = { start: offset, end: offset + 1 });
+      else open.end = offset + 1;
+    }
   }
-  return lines;
+  return { lines, spans };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

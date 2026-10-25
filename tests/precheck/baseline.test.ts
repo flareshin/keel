@@ -1,11 +1,12 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, lstatSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { dirname, join } from "node:path"
+import { join } from "node:path"
 import { after, describe, it } from "node:test"
 import { GitError, snapshotTree } from "../../lib/evidence/gitcmd.ts"
 import { materializeTree, runBaseline } from "../../lib/precheck/baseline.ts"
+import { committedRepo, writeFiles as write } from "./fixture.ts"
 
 const EXECUTABLE_BITS = 0o111
 const TIMEOUT_SECONDS = 60
@@ -15,19 +16,9 @@ const git = (directory: string, ...args: string[]): string => execFileSync("git"
 describe("precheck baseline", () => {
   const directories: string[] = []
   after(() => directories.forEach((directory) => rmSync(directory, { recursive: true, force: true })))
-  const write = (root: string, files: Record<string, string>): void => {
-    for (const [path, text] of Object.entries(files)) {
-      mkdirSync(dirname(join(root, path)), { recursive: true })
-      writeFileSync(join(root, path), text)
-    }
-  }
   const repo = (committed: Record<string, string>): string => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), "precheck-baseline-")))
+    const root = committedRepo(committed)
     directories.push(root)
-    execFileSync("git", ["init", "-q", root])
-    write(root, committed)
-    execFileSync("git", ["-C", root, "add", "-A"])
-    execFileSync("git", ["-C", root, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "fixture"])
     return root
   }
   const materialized = (files: Record<string, string>): string => {

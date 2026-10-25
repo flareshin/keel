@@ -1,13 +1,12 @@
 import assert from "node:assert/strict"
-import { execFileSync } from "node:child_process"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { dirname, join } from "node:path"
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
 import { after, describe, it } from "node:test"
 import { snapshotTree } from "../../lib/evidence/gitcmd.ts"
 import { materializeTree, runBaseline } from "../../lib/precheck/baseline.ts"
 import type { BaselineFile } from "../../lib/precheck/baseline.ts"
 import type { Mutant } from "../../lib/precheck/mutants.ts"
+import { committedRepo } from "./fixture.ts"
 
 const typescriptInstalled = await import("typescript").then(() => true, () => false)
 type RunModule = typeof import("../../lib/precheck/run.ts")
@@ -21,15 +20,8 @@ describe("runMutants", { skip: typescriptInstalled ? false : "typescript is not 
   const directories: string[] = []
   after(() => directories.forEach((directory) => rmSync(directory, { recursive: true, force: true })))
   const checkout = async (files: Record<string, string>, tests: string[]): Promise<{ directory: string; files: BaselineFile[] }> => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), "precheck-run-")))
+    const root = committedRepo(files)
     directories.push(root)
-    execFileSync("git", ["init", "-q", root])
-    for (const [path, text] of Object.entries(files)) {
-      mkdirSync(dirname(join(root, path)), { recursive: true })
-      writeFileSync(join(root, path), text)
-    }
-    execFileSync("git", ["-C", root, "add", "-A"])
-    execFileSync("git", ["-C", root, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "fixture"])
     const directory = materializeTree(root, snapshotTree(root))
     directories.push(directory)
     const baseline = await runBaseline(directory, tests, TIMEOUT_SECONDS)
@@ -68,6 +60,32 @@ describe("runMutants", { skip: typescriptInstalled ? false : "typescript is not 
     assert.deepEqual(run.results.map((result) => [result.coverage, result.verdict]), [["known", { outcome: "no test reaches" }]])
   })
 
+  it("runMutants_reportsNoTestReaches_forACatchBlockNoBaselineTestEntered_thoughItsLineStartsWithExecutedCode", async () => {
+    const load = "export function load(read: () => string): string {\n  try {\n    return read()\n  } catch (error) {\n    console.error('failed', error)\n    throw error\n  }\n}\n"
+    const { directory, files } = await checkout({
+      "lib/a.ts": load,
+      "tests/a.test.ts": "import assert from 'node:assert/strict'\nimport { it } from 'node:test'\nimport { load } from '../lib/a.ts'\nit('loads', () => assert.equal(load(() => 'x'), 'x'))\n",
+    }, ["tests/a.test.ts"])
+    const block = load.slice(load.indexOf("{\n    console"), load.indexOf("  }\n}") + 3)
+
+    const run = await runMutants(directory, files, [{ path: "lib/a.ts", mutant: mutantAt(load, block, "{}", 4) }])
+
+    assert.deepEqual(run.results.map((result) => [result.coverage, result.verdict]), [["known", { outcome: "no test reaches" }]])
+  })
+
+  it("runMutants_reportsNoTestReaches_forAnUnenteredCatchClause_whoseNeighboursRanRightUpToItsEdges", async () => {
+    const load = "export function load(read: () => string): string {\n  try {\n    return read()\n  }catch (error) {\n    throw error\n  }}\n"
+    const { directory, files } = await checkout({
+      "lib/a.ts": load,
+      "tests/a.test.ts": "import assert from 'node:assert/strict'\nimport { it } from 'node:test'\nimport { load } from '../lib/a.ts'\nit('loads', () => assert.equal(load(() => 'x'), 'x'))\n",
+    }, ["tests/a.test.ts"])
+    const clause = load.slice(load.indexOf("catch"), load.lastIndexOf("}"))
+
+    const run = await runMutants(directory, files, [{ path: "lib/a.ts", mutant: mutantAt(load, clause, "finally {}", 4) }])
+
+    assert.deepEqual(run.results.map((result) => result.verdict), [{ outcome: "no test reaches" }])
+  })
+
   it("runMutants_runsOnlyTheTestFilesThatExecutedTheMutatedLine", async () => {
     const { directory, files } = await checkout({
       "lib/a.ts": PICK,
@@ -85,14 +103,19 @@ describe("runMutants", { skip: typescriptInstalled ? false : "typescript is not 
 
   it("runMutants_runsEveryBaselineFile_whenTheMutatedFileNeverAppearedInCoverage", async () => {
     const script = "return 'ready'\n"
+    const compiling = "import assert from 'node:assert/strict'\nimport { readFileSync } from 'node:fs'\nimport { it } from 'node:test'\nit('compiles', () => assert.equal(new Function(readFileSync('lib/run.js', 'utf8'))(), 'ready'))\n"
     const { directory, files } = await checkout({
       "lib/run.js": script,
-      "tests/a.test.ts": "import assert from 'node:assert/strict'\nimport { readFileSync } from 'node:fs'\nimport { it } from 'node:test'\nit('compiles', () => assert.equal(new Function(readFileSync('lib/run.js', 'utf8'))(), 'ready'))\n",
-    }, ["tests/a.test.ts"])
+      "tests/a.test.ts": compiling,
+      "tests/b.test.ts": compiling,
+    }, ["tests/a.test.ts", "tests/b.test.ts"])
 
-    const run = await runMutants(directory, files, [{ path: "lib/run.js", mutant: mutantAt(script, "'ready'", "null", 1) }])
+    const run = await runMutants(directory, files, [{ path: "lib/run.js", mutant: mutantAt(script, "'ready'", "'rea' + 'dy'", 1) }])
 
-    assert.deepEqual(run.results.map((result) => [result.coverage, result.verdict]), [["unknown", { outcome: "killed", test: "tests/a.test.ts" }]])
+    const [result] = run.results
+    assert.equal(result?.coverage, "unknown")
+    assert.equal(result?.verdict.outcome, "survived")
+    assert.deepEqual(result?.verdict.outcome === "survived" ? [...result.verdict.ran].sort() : [], ["tests/a.test.ts", "tests/b.test.ts"])
   })
 
   it("runMutants_runsTheFastestBaselineFileFirst_andStopsAtTheFirstKill", async () => {
@@ -124,7 +147,20 @@ describe("runMutants", { skip: typescriptInstalled ? false : "typescript is not 
 
     const run = await runMutants(directory, files, [{ path: "lib/flag.ts", mutant: mutantAt(flag, "true", "false", 1) }])
 
-    assert.deepEqual(run.results[0]?.verdict, { outcome: "invalid", reason: "no tests ran", test: "tests/a.test.ts" })
+    assert.deepEqual(run.results[0]?.verdict, { outcome: "invalid", reason: "no tests ran", tests: ["tests/a.test.ts"] })
+  })
+
+  it("runMutants_movesPastAFileTheMutantLeftWithoutPasses_toAFileThatKillsIt", async () => {
+    const flag = "export const enabled = true\n"
+    const { directory, files } = await checkout({
+      "lib/flag.ts": flag,
+      "tests/a.test.ts": "import { describe, it } from 'node:test'\nimport { enabled } from '../lib/flag.ts'\ndescribe('gated', { skip: !enabled }, () => { it('runs', () => {}) })\n",
+      "tests/b.test.ts": "import assert from 'node:assert/strict'\nimport { it } from 'node:test'\nimport { enabled } from '../lib/flag.ts'\nit('enabled', async () => { await new Promise((resolve) => setTimeout(resolve, 1000)); assert.equal(enabled, true) })\n",
+    }, ["tests/a.test.ts", "tests/b.test.ts"])
+
+    const run = await runMutants(directory, files, [{ path: "lib/flag.ts", mutant: mutantAt(flag, "true", "false", 1) }])
+
+    assert.deepEqual(run.results[0]?.verdict, { outcome: "killed", test: "tests/b.test.ts" })
   })
 
   it("runMutants_reportsATimeoutForAMutantThatHangs_andRestoresTheFile", async () => {

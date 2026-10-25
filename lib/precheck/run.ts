@@ -16,7 +16,7 @@ export type MutantVerdict =
   | { outcome: 'survived'; ran: string[] }
   | { outcome: 'no test reaches' }
   | { outcome: 'invalid'; reason: 'syntax' }
-  | { outcome: 'invalid'; reason: 'no tests ran'; test: string }
+  | { outcome: 'invalid'; reason: 'no tests ran'; tests: string[] }
   | { outcome: 'timeout'; test: string };
 
 export interface MutantResult extends MutantTarget {
@@ -29,16 +29,16 @@ export interface MutationRun {
   notRun: MutantTarget[];
 }
 
-export const DEFAULT_BUDGET_MS = 15 * 60 * 1000;
+export const DEFAULT_START_BUDGET_MS = 15 * 60 * 1000;
 const TIMEOUT_FACTOR = 1.5;
 const TIMEOUT_SLACK_MS = 5000;
 
-export async function runMutants(directory: string, baseline: BaselineFile[], targets: MutantTarget[], budgetMs = DEFAULT_BUDGET_MS): Promise<MutationRun> {
+export async function runMutants(directory: string, baseline: BaselineFile[], targets: MutantTarget[], startBudgetMs = DEFAULT_START_BUDGET_MS): Promise<MutationRun> {
   const started = performance.now();
   const fastestFirst = [...baseline].sort((a, b) => a.durationMs - b.durationMs);
   const results: MutantResult[] = [];
   for (const [index, target] of targets.entries()) {
-    if (performance.now() - started >= budgetMs) return { results, notRun: targets.slice(index) };
+    if (performance.now() - started >= startBudgetMs) return { results, notRun: targets.slice(index) };
     results.push(await runMutant(directory, fastestFirst, target));
   }
   return { results, notRun: [] };
@@ -46,8 +46,12 @@ export async function runMutants(directory: string, baseline: BaselineFile[], ta
 
 async function runMutant(directory: string, files: BaselineFile[], target: MutantTarget): Promise<MutantResult> {
   const known = files.some((file) => file.coverage.seen.has(target.path));
-  const selected = known ? files.filter((file) => file.coverage.executedLines.get(target.path)?.has(target.mutant.line)) : files;
+  const selected = known ? files.filter((file) => reaches(file, target)) : files;
   return { ...target, coverage: known ? 'known' : 'unknown', verdict: await verdictFor(directory, selected, target) };
+}
+
+function reaches(file: BaselineFile, { path, mutant }: MutantTarget): boolean {
+  return (file.coverage.executedSpans.get(path) ?? []).some((span) => span.start < mutant.end && mutant.start < span.end);
 }
 
 async function verdictFor(directory: string, selected: BaselineFile[], target: MutantTarget): Promise<MutantVerdict> {
@@ -66,13 +70,14 @@ async function verdictFor(directory: string, selected: BaselineFile[], target: M
 
 async function firstFailure(directory: string, selected: BaselineFile[]): Promise<MutantVerdict> {
   const ran: string[] = [];
+  const withoutPasses: string[] = [];
   for (const file of selected) {
     const run = await runTestFile(directory, file.test, timeoutSecondsFor(file));
     if (run.outcome === 'timeout') return { outcome: 'timeout', test: file.test };
     if (run.returncode !== 0) return { outcome: 'killed', test: file.test };
-    if (run.passed === 0) return { outcome: 'invalid', reason: 'no tests ran', test: file.test };
-    ran.push(file.test);
+    (run.passed === 0 ? withoutPasses : ran).push(file.test);
   }
+  if (ran.length === 0) return { outcome: 'invalid', reason: 'no tests ran', tests: withoutPasses };
   return { outcome: 'survived', ran };
 }
 

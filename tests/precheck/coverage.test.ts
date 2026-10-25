@@ -74,6 +74,28 @@ describe("readCoverage", () => {
     assert.ok(!lines.includes(9), `line 9 never runs: ${lines}`)
   })
 
+  it("readCoverage_leavesAnUntakenCatchBlockOutOfTheExecutedSpans_thoughItsFirstLineRan", () => {
+    write("src/load.js", [
+      "function load(read) {",
+      "  try {",
+      "    return read()",
+      "  } catch (error) {",
+      "    throw error",
+      "  }",
+      "}",
+      "load(() => 'x')",
+    ])
+    runWithCoverage("src/load.js")
+    const source = fs.readFileSync(path.join(repo, "src/load.js"), "utf8")
+    const catchStart = source.indexOf("catch")
+    const catchEnd = source.indexOf("  }\n}") + 3
+    const spans = readCoverage(coverageDir, repo).executedSpans.get("src/load.js") ?? []
+
+    assert.ok(executed("src/load.js").includes(4))
+    assert.ok(spans.some((span) => span.start <= source.indexOf("return read()") && source.indexOf("read()\n") < span.end))
+    assert.deepEqual(spans.filter((span) => span.start < catchEnd && catchStart < span.end), [])
+  })
+
   it("readCoverage_includesLinesRunInASpawnedNodeChild_becauseTheChildInheritsTheCoverageDirectory", () => {
     write("src/child.js", [
       "const unused = () => 'never'",

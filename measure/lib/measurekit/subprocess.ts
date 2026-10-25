@@ -50,13 +50,19 @@ export function runProcess(command: string[] | string, options: RunOptions = {})
 export function runProcessAsync(command: string[], options: Pick<RunOptions, "timeoutSeconds" | "stdin"> = {}): Promise<RunResult> {
   const [program = "", ...args] = command
   return new Promise((resolve, reject) => {
-    const child = spawn(program, args, { stdio: [options.stdin ?? "inherit", "pipe", "pipe"] })
+    const child = spawn(program, args, { detached: true, stdio: [options.stdin ?? "inherit", "pipe", "pipe"] })
     let stdout = ""
     let stderr = ""
-    let timedOut = false
     const timer = options.timeoutSeconds === undefined ? undefined : setTimeout(() => {
-      timedOut = true
-      child.kill("SIGKILL")
+      try {
+        killProcessGroup(child.pid as number)
+      } catch (error) {
+        reject(error)
+        return
+      }
+      child.stdout.destroy()
+      child.stderr.destroy()
+      reject(new TimeoutExpired(command, options.timeoutSeconds ?? 0, stdout))
     }, options.timeoutSeconds * 1000)
     child.stdout.setEncoding("utf8").on("data", (chunk: string) => { stdout += chunk })
     child.stderr.setEncoding("utf8").on("data", (chunk: string) => { stderr += chunk })
@@ -66,10 +72,17 @@ export function runProcessAsync(command: string[], options: Pick<RunOptions, "ti
     })
     child.once("close", (status, signal) => {
       clearTimeout(timer)
-      if (timedOut) reject(new TimeoutExpired(command, options.timeoutSeconds ?? 0, stdout))
-      else resolve({ returncode: exitCode(status, signal), stdout, stderr })
+      resolve({ returncode: exitCode(status, signal), stdout, stderr })
     })
   })
+}
+
+function killProcessGroup(leader: number): void {
+  try {
+    process.kill(-leader, "SIGKILL")
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error
+  }
 }
 
 function exitCode(status: number | null, signal: NodeJS.Signals | null): number {

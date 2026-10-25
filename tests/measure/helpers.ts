@@ -103,6 +103,11 @@ export class MeasureSandbox {
     }
   }
 
+  linkShippedRunners(): void {
+    fs.mkdirSync(path.join(this.keel, "measure"), { recursive: true })
+    fs.symlinkSync(path.join(CHECKOUT, "measure", "metrics"), path.join(this.keel, "measure", "metrics"))
+  }
+
   installPlugins(plugins: { id: string; installPath: string }[]): void {
     this.write("stubs/plugins.json", JSON.stringify(plugins))
   }

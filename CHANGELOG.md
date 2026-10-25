@@ -323,6 +323,13 @@ Codex adapter (`codex/`) drop their Python emulation and run on plain Node behav
   about 360 s in sequence (the slowest alone 55 s) and now finish together in about 70 s. Each runner keeps its 120 s
   timeout, rows are judged in ledger order, and the `metrics` assertion and every error text are the ones a sequential
   run prints. `measure/run`, `measure/propose` and `measure/weekly` still run a runner when they need it.
+- `measure/metrics/C-review-command`, the runner behind the `C-review-command` row: it counts the distinct `run_id`s of
+  review evidence whose `review_kind` is `codex-lens-review` and that were created in the window. The row's metric was
+  `exists:~/git/keel:HEAD:codex/AGENTS.md`, which passed for as long as the file existed; it now reads zero until a
+  formal Codex review is registered, so the row leaves grace only when the rule's occasion has happened. It counts
+  occasions, not whether the explanation and command were in the final response, and the evidence files expire after 14
+  days, so a quiet fortnight reads zero. `F-mod-trust` and `C-verbatim-fix` keep their `exists:` metrics: smoke records
+  only the checks that FAIL (a mod-trust WARN looks like a PASS in `keel-smoke.jsonl`), and no log records a verbatim fix.
 - `measure/smoke` check `contract-miss-cap`: more than 20 `contract-miss` fires lines dated today or yesterday FAILs,
   with the count per hook, so a Claude Code payload change shows up within a day instead of in a later review. Every
   `contract-miss` line logged so far came from the `last_assistant_message` drift fixed above; ship-gate has logged

@@ -1,0 +1,8 @@
+#!/bin/bash
+self=$0
+case $self in */*) ;; *) self=./$self ;; esac
+while [ -L "$self" ]; do
+  target=$(readlink "$self")
+  case $target in /*) self=$target ;; *) self=${self%/*}/$target ;; esac
+done
+exec node "$(cd -P "${self%/*}" && pwd)/C-review-command.ts" "$@"

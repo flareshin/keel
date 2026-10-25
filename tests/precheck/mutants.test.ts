@@ -3,7 +3,7 @@ import { describe, it } from "node:test"
 
 const typescriptInstalled = await import("typescript").then(() => true, () => false)
 type MutantsModule = typeof import("../../lib/precheck/mutants.ts")
-const { generateMutants, applyMutant } = typescriptInstalled
+const { generateMutants, applyMutant, parsesCleanly } = typescriptInstalled
   ? await import("../../lib/precheck/mutants.ts")
   : ({} as MutantsModule)
 
@@ -213,5 +213,13 @@ describe("generateMutants", { skip: typescriptInstalled ? false : "typescript is
       const output = ts.transpileModule(applyMutant(source, mutant), { fileName: "src/a.ts", reportDiagnostics: true })
       assert.deepEqual(output.diagnostics, [], `${mutant.operator} at ${mutant.line} broke the syntax`)
     }
+  })
+})
+
+describe("parsesCleanly", { skip: typescriptInstalled ? false : "typescript is not installed; run npm ci" }, () => {
+  it("parsesCleanly_rejectsASyntaxError_butNotATypeError", () => {
+    assert.equal(parsesCleanly("src/a.ts", "export function f(x: number): number {\n  if (x > 1) return 1\n  return 2\n}"), true)
+    assert.equal(parsesCleanly("src/a.ts", "export function f(x: number) {\n  if ( return 1\n}"), false)
+    assert.equal(parsesCleanly("src/a.ts", "const x: number = 'text'"), true)
   })
 })

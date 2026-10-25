@@ -1,11 +1,10 @@
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { performance } from 'node:perf_hooks';
 import { checkoutSnapshot } from '../evidence/gitcmd.ts';
-import { runProcessGroup, TimeoutExpired } from '../evidence/subprocess.ts';
 import { readCoverage } from './coverage.ts';
 import type { Coverage } from './coverage.ts';
+import { runTestFile } from './testfile.ts';
 
 export interface BaselineFile {
   test: string;
@@ -23,8 +22,6 @@ type FileRun = { outcome: 'ran'; file: BaselineFile } | { outcome: 'red' | 'time
 
 const DEPENDENCY_DIRECTORY = 'node_modules';
 const LOCAL_EXCLUDE = join('.git', 'info', 'exclude');
-const PARENT_TEST_RUNNER = 'NODE_TEST_CONTEXT';
-const TAP_PASS_COUNT = /^# pass ([0-9]+)$/mu;
 
 export function materializeTree(repo: string, tree: string): string {
   const directory = mkdtempSync(join(tmpdir(), 'keel-precheck-'));
@@ -49,7 +46,7 @@ function linkDependencies(repo: string, directory: string): void {
 export async function runBaseline(directory: string, tests: string[], timeoutSeconds: number): Promise<Baseline> {
   const files: BaselineFile[] = [];
   for (const test of tests) {
-    const run = await runTestFile(directory, test, timeoutSeconds);
+    const run = await runBaselineFile(directory, test, timeoutSeconds);
     if (run.outcome !== 'ran') return run;
     files.push(run.file);
   }
@@ -58,29 +55,14 @@ export async function runBaseline(directory: string, tests: string[], timeoutSec
   return { outcome: 'green', files: withPasses, withoutPasses: files.filter((file) => file.passed === 0).map((file) => file.test) };
 }
 
-async function runTestFile(directory: string, test: string, timeoutSeconds: number): Promise<FileRun> {
+async function runBaselineFile(directory: string, test: string, timeoutSeconds: number): Promise<FileRun> {
   const coverageDirectory = mkdtempSync(join(tmpdir(), 'keel-precheck-coverage-'));
   try {
-    const started = performance.now();
-    const completed = await runProcessGroup([process.execPath, '--test', '--test-reporter=tap', test], {
-      cwd: directory,
-      env: { ...withoutParentTestRunner(process.env), NODE_V8_COVERAGE: coverageDirectory },
-      timeoutSeconds,
-    });
-    const durationMs = performance.now() - started;
-    const output = completed.stdout.toString() + completed.stderr.toString();
-    if (completed.returncode !== 0) return { outcome: 'red', test, output };
-    const passed = Number(TAP_PASS_COUNT.exec(completed.stdout.toString())?.[1] ?? 0);
-    return { outcome: 'ran', file: { test, passed, durationMs, coverage: readCoverage(coverageDirectory, directory) } };
-  } catch (error) {
-    if (error instanceof TimeoutExpired) return { outcome: 'timeout', test, output: error.message };
-    throw error;
+    const run = await runTestFile(directory, test, timeoutSeconds, { NODE_V8_COVERAGE: coverageDirectory });
+    if (run.outcome === 'timeout') return { outcome: 'timeout', test, output: run.output };
+    if (run.returncode !== 0) return { outcome: 'red', test, output: run.output };
+    return { outcome: 'ran', file: { test, passed: run.passed, durationMs: run.durationMs, coverage: readCoverage(coverageDirectory, directory) } };
   } finally {
     rmSync(coverageDirectory, { recursive: true, force: true });
   }
-}
-
-function withoutParentTestRunner(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const { [PARENT_TEST_RUNNER]: _parent, ...rest } = env;
-  return rest;
 }

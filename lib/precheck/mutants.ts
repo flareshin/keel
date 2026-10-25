@@ -71,6 +71,11 @@ export function applyMutant(source: string, mutant: Mutant): string {
   return source.slice(0, mutant.start) + mutant.replacement + source.slice(mutant.end);
 }
 
+export function parsesCleanly(fileName: string, source: string): boolean {
+  const { diagnostics } = ts.transpileModule(source, { fileName, reportDiagnostics: true });
+  return (diagnostics ?? []).length === 0;
+}
+
 function splicesFor(node: ts.Node, file: ts.SourceFile): Splice[] {
   if (ts.isExpressionStatement(node)) return callRemoval(node, file);
   if (ts.isBinaryExpression(node)) return [...logicTerms(node, file), ...boundary(node, file)];

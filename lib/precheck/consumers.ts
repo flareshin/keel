@@ -50,8 +50,12 @@ const DELETED_FILE = '+++ /dev/null';
 const PATH_END = '\t';
 const NO_MATCH = 1;
 
+export function addedLinesByPath(repo: string, base: string, tree: string): Map<string, Set<number>> {
+  return new Map(changesBetween(repo, base, tree).map((change) => [change.path, change.addedLines]));
+}
+
 export function findConsumers(repo: string, base: string, tree: string): ChangedName[] {
-  const changes = parseDiff(text(repo, ['-c', 'core.quotePath=false', 'diff', '--no-renames', '-U0', base, tree]));
+  const changes = changesBetween(repo, base, tree);
   const declarations = changes.flatMap((change) => enclosingExports(repo, tree, change));
   const names = new Map<string, { kind: NameKind; name: string }>();
   const add = (kind: NameKind, name: string): void => { names.set(`${kind}\0${name}`, { kind, name }); };
@@ -71,6 +75,10 @@ export function findConsumers(repo: string, base: string, tree: string): Changed
       const consumers = grepWord(repo, tree, kind, name).filter((consumer) => !insideDiff(name, consumer));
       return { kind, name, consumers };
     });
+}
+
+function changesBetween(repo: string, base: string, tree: string): FileChange[] {
+  return parseDiff(text(repo, ['-c', 'core.quotePath=false', 'diff', '--no-renames', '-U0', base, tree]));
 }
 
 function parseDiff(diff: string): FileChange[] {

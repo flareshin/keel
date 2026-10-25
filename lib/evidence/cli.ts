@@ -2,9 +2,11 @@ import { InvalidUtf8Error } from '../../measure/lib/measurekit/files.ts';
 import { compareCodePoints, isJsonObject, parseJsonKeepingIntegers, stringifySorted } from '../../measure/lib/measurekit/json.ts';
 import type { JsonValue } from '../../measure/lib/measurekit/json.ts';
 import { bindPrecheck } from '../precheck/binding.ts';
+import { renderCensus, summarizeCensus } from '../precheck/render.ts';
 import { buildChains } from './chain.ts';
 import * as codexLenses from './codex_lenses.ts';
 import * as codexReview from './codex_review.ts';
+import * as env from './env.ts';
 import * as gc from './gc.ts';
 import * as gitcmd from './gitcmd.ts';
 import * as prepare from './prepare.ts';
@@ -33,8 +35,11 @@ const EXIT_REFUSED = 3;
 const EXIT_INTERNAL = 70;
 const EVIDENCE_OPTIONS = new Set(['--repo', '--run', '--root', '--audits', '--verifiers']);
 const PRECHECK_BIND_OPTIONS = new Set(['--repo', '--base', '--end', '--tree']);
+const PRECHECK_RUN_OPTIONS = new Set(['--repo', '--base']);
+const PRECHECK_LOG = 'keel-precheck.jsonl';
+const MISSING_TYPESCRIPT = "'typescript'";
 
-export const seams = { print: printResult };
+export const seams = { print: printResult, loadCensus: () => import('../precheck/census.ts') };
 
 export async function main(argv: string[]): Promise<number> {
   try {
@@ -74,13 +79,39 @@ function review(rest: string[]): number {
   return EXIT_OK;
 }
 
-function precheck(rest: string[]): number {
+function precheck(rest: string[]): number | Promise<number> {
+  if (rest[0] === 'run') return precheckRun(rest.slice(1));
   const options = rest[0] === 'bind' ? parseOptions(rest.slice(1), PRECHECK_BIND_OPTIONS) : {};
   if (Object.keys(options).length !== PRECHECK_BIND_OPTIONS.size) throw new writers.Usage('keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>');
   const repoRoot = gitcmd.toplevel(options['--repo']!);
   if (repoRoot === null) throw new writers.Usage(`${options['--repo']} is not inside a git repository`);
   seams.print(bindPrecheck(repoRoot, options['--base']!, options['--end']!, options['--tree']!));
   return EXIT_OK;
+}
+
+async function precheckRun(rest: string[]): Promise<number> {
+  const options = parseOptions(rest, PRECHECK_RUN_OPTIONS);
+  const base = options['--base'];
+  if (Object.keys(options).length !== PRECHECK_RUN_OPTIONS.size || base!.startsWith('-')) throw new writers.Usage('keel precheck run --repo <path> --base <ref>');
+  const repoRoot = gitcmd.toplevel(options['--repo']!);
+  if (repoRoot === null) throw new writers.Usage(`${options['--repo']} is not inside a git repository`);
+  const reviewBase = gitcmd.mergeBase(repoRoot, base!, 'HEAD');
+  if (reviewBase === null) throw new writers.Refused(`${base} has no merge base with HEAD`);
+  const { runCensus } = await loadCensus();
+  const census = await runCensus(repoRoot, { base: base!, reviewBase, tree: gitcmd.snapshotTree(repoRoot) });
+  printLine(renderCensus(census));
+  env.appendRecord(PRECHECK_LOG, { at: env.iso(env.utcNow()), repo: repoRoot, review_base: reviewBase, ...summarizeCensus(census) });
+  return EXIT_OK;
+}
+
+async function loadCensus(): ReturnType<typeof seams.loadCensus> {
+  try {
+    return await seams.loadCensus();
+  } catch (error) {
+    const missing = (error as NodeJS.ErrnoException).code === 'ERR_MODULE_NOT_FOUND' && String((error as Error).message).includes(MISSING_TYPESCRIPT);
+    if (missing) throw new writers.Refused('keel precheck run needs typescript; run npm ci in the keel checkout');
+    throw error;
+  }
 }
 
 function approve(rest: string[]): number {

@@ -328,6 +328,48 @@ test('lensReview_bindsAPrecheckFromCliPreparedMetadata_whenTheDiffEndsAtAHeadCom
   assert.equal(result.precheck.status, 'bound')
 })
 
+const typescriptInstalled = await import('typescript').then(() => true, () => false)
+const NEEDS_TYPESCRIPT = { skip: typescriptInstalled ? false : 'typescript is not installed; run npm ci' }
+const PICK_TEST = "import assert from 'node:assert/strict'\nimport { it } from 'node:test'\nimport { pick } from '../src/pick.ts'\nit('picks', () => assert.equal(pick(true), 1))\n"
+
+function censusRepo(box, changedPick) {
+  const repo = join(box.root, 'app')
+  execFileSync('git', ['init', '-q', repo], { env: box.env })
+  mkdirSync(join(repo, 'src'))
+  mkdirSync(join(repo, 'tests'))
+  writeFileSync(join(repo, 'src', 'pick.ts'), 'export function pick(flag: boolean): number {\n  return 1\n}\n')
+  writeFileSync(join(repo, 'tests', 'pick.test.ts'), PICK_TEST)
+  box.git(repo, 'add', '-A')
+  box.git(repo, 'commit', '-qm', 'base')
+  writeFileSync(join(repo, 'src', 'pick.ts'), changedPick)
+  const census = box.bash(`cd "${box.env.KEEL_DATA_DIR}" && bin/keel precheck run --repo '${repo}' --base main`)
+  return { repo, census }
+}
+
+test('lensReview_bindsTheCensusThatKeelPrecheckRunPrinted_andKeepsItsSurvivorsOpenOnceTestsGrow', NEEDS_TYPESCRIPT, async () => {
+  const box = createSandbox()
+  const { repo, census } = censusRepo(box, 'export function pick(flag: boolean): number {\n  if (flag) return 1\n  return 2\n}\n')
+  writeFileSync(join(repo, 'tests', 'pick.test.ts'), PICK_TEST + "it('picks the other', () => assert.equal(pick(false), 2))\n")
+
+  const result = await createRuntime({ respond: shellResponder(box) }).run('lens-review', { auditMode: 'split', diffs: [{ repo, base: 'main' }], precheck: census })
+
+  assert.match(census, /\nsurvived|\nno test reaches/)
+  assert.equal(result.verdict, 'PASS')
+  assert.equal(result.precheck.status, 'bound', result.precheck.reason)
+  assert.equal(result.precheck.survivorsOpen, true)
+})
+
+test('lensReview_dropsTheCensusAsStale_whenKeelPrecheckRunStoppedAtARedBaseline', NEEDS_TYPESCRIPT, async () => {
+  const box = createSandbox()
+  const { repo, census } = censusRepo(box, 'export function pick(flag: boolean): number {\n  return 2\n}\n')
+
+  const result = await createRuntime({ respond: shellResponder(box) }).run('lens-review', { auditMode: 'split', diffs: [{ repo, base: 'main' }], precheck: census })
+
+  assert.match(census, /\nbaseline  red in tests\/pick\.test\.ts · precheck stopped\n/)
+  assert.equal(result.precheck.status, 'stale')
+  assert.equal(result.precheck.reason, 'no "blobs" line')
+})
+
 test('lensReview_bindsAPrecheckFromCliPreparedMetadata_withoutAPrepareAgent', async () => {
   const box = createSandbox()
   const { repo, precheckTree, precheck } = precheckRepo(box)

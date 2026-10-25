@@ -23,7 +23,7 @@ describe("files", () => {
 
   it("decodeStrict_namesItsSource_whenBytesAreNotUtf8_andKeepsAByteOrderMark", () => {
     assert.throws(() => decodeStrict(Buffer.from([0xc3, 0x28]), "the note"), (error: Error) => error instanceof InvalidUtf8Error
-      && error.message === "the note is not valid UTF-8")
+      && error.name === "InvalidUtf8Error" && error.message === "the note is not valid UTF-8")
     assert.equal(decodeStrict(Buffer.from("\ufeff\u00e9"), "the note"), "\ufeff\u00e9")
   })
 

@@ -60,16 +60,24 @@ describe("ship-gate parity checkout repo key", () => {
 describe("ship-gate parity listed divergences", () => {
   const label = "gh-answer-nested-200000";
 
-  it("lists the over-bound rows for the gh answer, the evidence file, stdin and a list command, and the python comment deletions that no longer keep evidence", () => {
-    assert.deepEqual([...EXPECTED_DIVERGENCES.keys()].sort(), [
+  const rowsRequiring = (code: number) => [...EXPECTED_DIVERGENCES].filter(([, required]) => required === code).map(([row]) => row).sort();
+
+  it("lists the over-bound rows, the python comment deletions, and the rows whose JSON reading or wording changed, each with the exit node must give", () => {
+    assert.deepEqual(rowsRequiring(DENY), [
       "command-list-nested-10001", "command-list-nested-9999", "evidence-file-nested-10001", "evidence-file-nested-200000", "gh-answer-nested-10001", "gh-answer-nested-200000",
       "py-comment-deletion-python-keel-0003", "py-comment-deletion-python-keel-0469", "py-comment-deletion-python-keel-0470", "py-comment-deletion-python-keel-0474",
       "py-comment-deletion-python-keel-0475", "py-comment-deletion-python-keel-0476", "py-comment-deletion-python-keel-0477",
       "py-comment-deletion-ts-keel-0003", "py-comment-deletion-ts-keel-0469", "py-comment-deletion-ts-keel-0470", "py-comment-deletion-ts-keel-0474",
       "py-comment-deletion-ts-keel-0475", "py-comment-deletion-ts-keel-0476", "py-comment-deletion-ts-keel-0477",
       "stdin-ls-nested-10001", "stdin-ls-nested-200000", "stdin-push-nested-10001", "stdin-push-nested-200000",
+      "extra-0018", "extra-0025", "extra-0026", "extra-0030", "extra-0031", "extra-0035", "extra-0514", "extra-0517", "extra-0518",
+      "extra-0539", "extra-0540", "extra-0549", "extra-0560", "extra-0562", "extra-0563", "extra-0565", "extra-0602", "extra-0604", "extra-0605",
+      "python-keel-0119", "ts-keel-0119",
+    ].sort());
+    assert.deepEqual(rowsRequiring(0), [
+      "extra-0019", "extra-0020", "extra-0036", "extra-0037", "extra-0041", "extra-0042", "extra-0046", "extra-0062",
+      "extra-0526", "extra-0527", "extra-0531", "extra-0532", "extra-0536", "extra-0561", "extra-0564",
     ]);
-    assert.deepEqual([...new Set(EXPECTED_DIVERGENCES.values())], [DENY]);
   });
 
   it("accepts a listed row only when node gives the required exit, whatever python did", () => {

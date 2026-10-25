@@ -4,22 +4,21 @@ import * as contract from "../lib/hookkit/contract.ts";
 import * as protocol from "../lib/hookkit/protocol.ts";
 import type { Payload } from "../lib/hookkit/protocol.ts";
 import {
-  arraysEqual, basename, getField, joinPath, lstripChar, normalizePath, partition, PY_WORD, pythonStr, truncate,
+  arraysEqual, basename, getField, isRecord, isTruthy, joinPath, lstripChar, normalizePath, partition, PY_WORD, pythonStr, sortedByCodePoint, strip,
+  truncate,
 } from "../lib/hookkit/pycompat.ts";
 import { isFile } from "../lib/hookkit/files.ts";
+import { decodeStrict, splitLines } from "../../measure/lib/measurekit/files.ts";
 import { shlexQuote } from "../../measure/lib/measurekit/shlex.ts";
-import { AttributeError, RecursionError as StrRecursionError, pythonTypeName as pythonValueTypeName, readStdin, writeStderr } from "../lib/hookkit/pyruntime.ts";
+import { parseJson } from "../lib/hookkit/json.ts";
+import { AttributeError, describeError, RecursionError, pythonTypeName, readStdin, ValueError, writeStderr } from "../lib/hookkit/pyruntime.ts";
 import * as shell from "../lib/hookkit/shell.ts";
 import type { Step } from "../lib/hookkit/shell.ts";
-import { appendLogLine, iso, stateDir, utcNow } from "../../lib/evidence/env.ts";
+import { appendRecord, iso, stateDir, utcNow } from "../../lib/evidence/env.ts";
 import * as gc from "../../lib/evidence/gc.ts";
 import * as gitcmd from "../../lib/evidence/gitcmd.ts";
-import {
-  decodeStrict, errorText, isJsonObject, PyFloat, pyRepr, pyStr, pythonJsonLoads, pythonTypeName as errorTypeName, pyStrip, ValueError,
-  pyTruthy, RecursionError as ScannerRecursionError, sortedStrings, universalNewlines,
-} from "../../lib/evidence/pycompat.ts";
-import type { JsonValue } from "../../lib/evidence/pycompat.ts";
 import * as registry from "../../lib/evidence/registry.ts";
+import { EvidenceTooDeepError } from "../../lib/evidence/store.ts";
 import type { GatedRepo } from "../../lib/evidence/registry.ts";
 import { runCaptured } from "../../lib/evidence/subprocess.ts";
 import * as verify from "../../lib/evidence/verify.ts";
@@ -79,9 +78,12 @@ const HEAD = "HEAD";
 const K1 = verify.K1;
 const RISK = verify.RISK;
 
-export class GateError extends Error {}
+export class GateError extends Error {
+  override name = "GateError";
+}
 
 export class UnclearTarget extends Error {
+  override name = "UnclearTarget";
   readonly addedWords: string[];
 
   constructor(why: string, addedWords: readonly string[] = []) {
@@ -149,7 +151,7 @@ class Report {
 
   constructor(payload: Payload, event: unknown) {
     const session = getField(payload, "session_id");
-    this.session = pyTruthy(session) ? session : "-";
+    this.session = isTruthy(session) ? session : "-";
     this.event = event;
   }
 
@@ -185,7 +187,7 @@ class Report {
   }
 
   error(error: unknown, failClosed: boolean, hint: string, repo: string | null = null): void {
-    const detail = errorLabel(error);
+    const detail = describeError(error);
     if (failClosed) {
       this.blocks.push(message("internal error; failing closed for a gated repo", [{ ruleId: K1, text: detail }], hint));
     }
@@ -194,7 +196,7 @@ class Report {
 
   emit(): number {
     if (this.blocks.length > 0) return protocol.deny(backslashReplaced(this.blocks.join("\n\n")));
-    if (this.context.length > 0) return protocol.warn(valueText(this.event), this.context.join("\n"));
+    if (this.context.length > 0) return protocol.warn(pythonStr(this.event), this.context.join("\n"));
     return protocol.EXIT_PASS;
   }
 
@@ -210,7 +212,7 @@ class Report {
       if (value !== null && value !== undefined && value !== "") line[key] = value;
     }
     if (typeof line["detail"] === "string") line["detail"] = truncate(line["detail"], FIRES_DETAIL_LIMIT);
-    appendLogLine("keel-fires.jsonl", line as Record<string, JsonValue>);
+    appendRecord("keel-fires.jsonl", line);
   }
 }
 
@@ -218,50 +220,33 @@ function backslashReplaced(text: string): string {
   return text.replace(LONE_SURROGATE, (surrogate) => "\\u" + surrogate.charCodeAt(0).toString(16).padStart(4, "0"));
 }
 
-function isScalarNumber(value: unknown): value is PyFloat | bigint {
-  return value instanceof PyFloat || typeof value === "bigint";
-}
-
-function valueText(value: unknown): string {
-  return isScalarNumber(value) ? pyStr(value) : pythonStr(value);
-}
-
-function valueTypeName(value: unknown): string {
-  if (value instanceof PyFloat) return "float";
-  return typeof value === "bigint" ? "int" : pythonValueTypeName(value);
-}
-
-function errorLabel(error: unknown): string {
-  return `${errorTypeName(error)}: ${errorText(error)}`;
-}
-
 function main(): number {
   const raw = readStdin();
   try {
-    return dispatch(pythonJsonLoads(raw));
+    return dispatch(parseJson(raw));
   } catch (error) {
     return failClosed(raw, error);
   }
 }
 
 function dispatch(payload: unknown): number {
-  if (!isJsonObject(payload)) {
-    throw new AttributeError(`'${valueTypeName(payload)}' object has no attribute 'get'`);
+  if (!isRecord(payload)) {
+    throw new AttributeError(`'${pythonTypeName(payload)}' object has no attribute 'get'`);
   }
   const eventField = getField(payload, "hook_event_name");
-  const event = pyTruthy(eventField) ? eventField : "";
+  const event = isTruthy(eventField) ? eventField : "";
   const report = new Report(payload, event);
   if (event === "PreToolUse" && getField(payload, "tool_name") === "Bash") guardBash(payload, report);
   return report.emit();
 }
 
 export function isRecursionError(error: unknown): boolean {
-  return error instanceof ScannerRecursionError || error instanceof StrRecursionError;
+  return error instanceof RecursionError || error instanceof EvidenceTooDeepError;
 }
 
 function failClosed(raw: string, error: unknown): number {
   if (isRecursionError(error)) return denyTooDeep(raw, error);
-  const detail = errorLabel(error);
+  const detail = describeError(error);
   let command: string;
   try {
     command = bashCommandOf(raw);
@@ -277,25 +262,25 @@ function failClosed(raw: string, error: unknown): number {
 }
 
 function denyTooDeep(raw: string, error: unknown): number {
-  return protocol.deny(backslashReplaced(message("internal error; failing closed", [{ ruleId: K1, text: errorLabel(error) }], raw)));
+  return protocol.deny(backslashReplaced(message("internal error; failing closed", [{ ruleId: K1, text: describeError(error) }], raw)));
 }
 
 function bashCommandOf(raw: string): string {
   let payload: unknown;
   try {
-    payload = pythonJsonLoads(raw);
+    payload = parseJson(raw);
   } catch (error) {
     if (error instanceof ValueError) return raw;
     throw error;
   }
-  if (!isJsonObject(payload)) return "";
+  if (!isRecord(payload)) return "";
   if (getField(payload, "hook_event_name") !== "PreToolUse" || getField(payload, "tool_name") !== "Bash") return "";
   return commandOf(payload);
 }
 
 function commandOf(payload: Payload): string {
   const command = getField(protocol.toolInput(payload), "command");
-  return valueText(pyTruthy(command) ? command : "");
+  return pythonStr(isTruthy(command) ? command : "");
 }
 
 function guardBash(payload: Payload, report: Report): void {
@@ -304,8 +289,8 @@ function guardBash(payload: Payload, report: Report): void {
   const command = commandOf(payload);
   if (!DECISION_HINT.test(command)) return;
   const cwdField = getField(payload, "cwd");
-  const cwd = pyTruthy(cwdField) ? cwdField : process.cwd();
-  if (typeof cwd !== "string") throw new TypeError(`expected string object, got '${valueTypeName(cwd)}'`);
+  const cwd = isTruthy(cwdField) ? cwdField : process.cwd();
+  if (typeof cwd !== "string") throw new TypeError(`expected string object, got '${pythonTypeName(cwd)}'`);
   const actions = callActions(command, cwd);
   for (const action of actions) judgeAction(action, report);
   if (actions.some((action) => action.kind === "push" || action.kind === "merge")) collectGarbageIfDue(report);
@@ -708,7 +693,7 @@ function ghDefaultKey(repoRoot: string): string | null {
   if (standard && standard.resolved !== gitcmd.GH_RESOLVED_BASE) {
     const stored = registry.normalizeRepoKey(standard.resolved);
     if (stored === null) {
-      throw new GateError(`gh's default repo ${pyRepr(standard.resolved)} on remote ${standard.remote} names no owner/repo`);
+      throw new GateError(`gh's default repo ${JSON.stringify(standard.resolved)} on remote ${standard.remote} names no owner/repo`);
     }
     return stored;
   }
@@ -718,7 +703,7 @@ function ghDefaultKey(repoRoot: string): string | null {
     const key = registry.normalizeRepoKey(gitcmd.remoteUrl(repoRoot, name));
     if (key !== null) named.add(key);
   }
-  const keys = sortedStrings(named);
+  const keys = sortedByCodePoint(named);
   if (keys.length <= 1) return keys[0] ?? null;
   const gated = keys.filter((key) => registry.isGated(registry.lookup(key)));
   if (gated.length > 0) {
@@ -731,7 +716,7 @@ function ghDefaultKey(repoRoot: string): string | null {
 }
 
 function warnRegistryAbsentOnce(report: Report): void {
-  const stamp = joinPath(stateDir(), "sessions", `${valueText(report.session)}.registry-warned`);
+  const stamp = joinPath(stateDir(), "sessions", `${pythonStr(report.session)}.registry-warned`);
   if (existsSync(stamp)) return;
   mkdirSync(pathDirname(stamp), { recursive: true });
   writeFileSync(stamp, "");
@@ -830,40 +815,40 @@ function fetchPullRequest(merge: Merge): Record<string, unknown> {
   const environment = merge.repoEnv ? { ...process.env, GH_REPO: merge.repoEnv } : undefined;
   const completed = runCaptured(argv, { cwd: merge.workdir, env: environment, timeoutSeconds: GH_TIMEOUT_SECONDS });
   if (completed.returncode !== 0) {
-    throw new GateError("gh pr view failed: " + pyStrip(universalNewlines(decodeStrict(completed.stderr))));
+    throw new GateError("gh pr view failed: " + strip(splitLines(decodeStrict(completed.stderr, "gh pr view stderr")).join("\n")));
   }
-  const pullRequest: unknown = pythonJsonLoads(universalNewlines(decodeStrict(completed.stdout)));
-  if (!isJsonObject(pullRequest) || !pyTruthy(pullRequest["baseRefName"])) throw new GateError("gh pr view returned no baseRefName");
+  const pullRequest: unknown = parseJson(decodeStrict(completed.stdout, "gh pr view output"));
+  if (!isRecord(pullRequest) || !isTruthy(pullRequest["baseRefName"])) throw new GateError("gh pr view returned no baseRefName");
   return pullRequest;
 }
 
 export function checksNotGreen(pullRequest: Record<string, unknown>, auto: boolean): string[] {
   const notGreen: string[] = [];
   for (const check of iterate(pullRequest["statusCheckRollup"])) {
-    if (!isJsonObject(check)) throw new AttributeError(`'${valueTypeName(check)}' object has no attribute 'get'`);
+    if (!isRecord(check)) throw new AttributeError(`'${pythonTypeName(check)}' object has no attribute 'get'`);
     const outcome = firstTruthy("", getField(check, "conclusion"), getField(check, "status"), getField(check, "state"));
     if (isBlocking(outcome, auto)) {
-      notGreen.push(`${valueText(firstTruthy("?", getField(check, "name"), getField(check, "context")))}=${valueText(outcome)}`);
+      notGreen.push(`${pythonStr(firstTruthy("?", getField(check, "name"), getField(check, "context")))}=${pythonStr(outcome)}`);
     }
   }
   return notGreen;
 }
 
 function iterate(value: unknown): unknown[] {
-  if (!pyTruthy(value)) return [];
+  if (!isTruthy(value)) return [];
   if (Array.isArray(value)) return value;
   if (typeof value === "string") return Array.from(value);
-  if (isJsonObject(value)) return Object.keys(value);
-  throw new TypeError(`'${valueTypeName(value)}' object is not iterable`);
+  if (isRecord(value)) return Object.keys(value);
+  throw new TypeError(`'${pythonTypeName(value)}' object is not iterable`);
 }
 
 function firstTruthy(fallback: unknown, ...values: unknown[]): unknown {
-  return values.find(pyTruthy) ?? fallback;
+  return values.find(isTruthy) ?? fallback;
 }
 
 function isBlocking(outcome: unknown, auto: boolean): boolean {
-  if (Array.isArray(outcome) || isJsonObject(outcome)) {
-    const type = valueTypeName(outcome);
+  if (Array.isArray(outcome) || isRecord(outcome)) {
+    const type = pythonTypeName(outcome);
     throw new TypeError(`cannot use '${type}' as a set element (unhashable type: '${type}')`);
   }
   if (typeof outcome !== "string") return false;
@@ -908,7 +893,7 @@ function fetchedCommit(repoRoot: string, sha: string): string {
 }
 
 function fetchedRemoteBranch(repoRoot: string, name: unknown): string {
-  if (typeof name !== "string") throw new TypeError(`can only concatenate str (not "${valueTypeName(name)}") to str`);
+  if (typeof name !== "string") throw new TypeError(`can only concatenate str (not "${pythonTypeName(name)}") to str`);
   if (!gitcmd.refExists(repoRoot, "refs/remotes/origin/" + name)) gitcmd.fetch(repoRoot, ["origin"]);
   if (!gitcmd.refExists(repoRoot, "refs/remotes/origin/" + name)) {
     throw new GateError(`origin/${name} is not in this clone even after fetching origin`);

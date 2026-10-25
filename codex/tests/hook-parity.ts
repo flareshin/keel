@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
+import { stringifySorted } from "../../measure/lib/measurekit/json.ts";
 import { recordedAnswers } from "../../tests/recorded.ts";
 import { EXPECTED_DEPTH_DENY_REASON } from "./json-depth-policy.ts";
 import type { JsonDepthDivergence } from "./json-depth-policy.ts";
@@ -20,6 +21,7 @@ const PYTHON_WORDING = [
 const DEPTH_FIRE_DIRECTORY = "data/logs";
 const DEPTH_FIRE_LOG = "data/logs/keel-fires.jsonl";
 const FILE_SNAPSHOT_PREFIX = /^file:\d+:/;
+const FIRES_LOG_SUFFIX = "/keel-fires.jsonl";
 const FLOAT_DIRECTORIES = ["1", "1.0", "100.0", "-0.0", "1e+16", "1e+22", "0.5", "2.5"];
 const TIMESTAMP = /\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)?/g;
 
@@ -206,6 +208,23 @@ function sameJson(recorded: string, now: string): boolean {
   }
 }
 
+function sameFiresLog(key: string, recorded: string | undefined, now: string | undefined): boolean {
+  if (!key.endsWith(FIRES_LOG_SUFFIX) || recorded === undefined || now === undefined) return false;
+  return comparableFires(recorded) === comparableFires(now);
+}
+
+function comparableFires(snapshotText: string): string {
+  const mode = FILE_SNAPSHOT_PREFIX.exec(snapshotText)?.[0] ?? "";
+  const lines = Buffer.from(snapshotText.slice(mode.length), "latin1").toString("utf8").split("\n");
+  return mode + lines.map((line) => {
+    try {
+      return line === "" ? line : stringifySorted(JSON.parse(line));
+    } catch {
+      return line;
+    }
+  }).join("\n");
+}
+
 function denialReason(stdout: string): string | null {
   try {
     const { hookSpecificOutput: decision } = JSON.parse(stdout) as { hookSpecificOutput: Record<string, string> };
@@ -232,7 +251,7 @@ function differences(testCase: HookCase, python: Observation, typescript: Observ
   if (!testCase.crash && python.stderr !== typescript.stderr) found.push(`stderr\n    py: ${JSON.stringify(python.stderr)}\n    ts: ${JSON.stringify(typescript.stderr)}`);
   if (testCase.crash && python.stderr === "") found.push("crash case produced no python error output");
   for (const key of new Set([...Object.keys(python.files), ...Object.keys(typescript.files)])) {
-    if (python.files[key] !== typescript.files[key]) found.push(`file ${key}: py=${python.files[key]} ts=${typescript.files[key]}`);
+    if (python.files[key] !== typescript.files[key] && !sameFiresLog(key, python.files[key], typescript.files[key])) found.push(`file ${key}: py=${python.files[key]} ts=${typescript.files[key]}`);
   }
   return found;
 }

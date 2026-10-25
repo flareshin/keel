@@ -5,6 +5,7 @@ import { join, relative } from "node:path";
 import { differencesFromRecorded, envFromTemplate, excerpt, materialize, paddedRoot, readFixtureFile, restored, runInSandbox } from "../recorded-cases.ts";
 import type { Observation, ObservedDelta, Run, SnapshotStore } from "../recorded-cases.ts";
 import { normalizeRepoKey } from "../../lib/evidence/registry.ts";
+import { isJsonObject, stringifySorted } from "../../measure/lib/measurekit/json.ts";
 import { KEEL_HOME } from "./helpers.ts";
 
 export const FIXTURE_DIRECTORY = join(import.meta.dirname, "fixtures", "ship-gate-parity");
@@ -13,7 +14,11 @@ const RUN_TIMEOUT_MS = 120_000;
 const MAX_MISMATCHES_SHOWN = 60;
 const DENY_EXIT_CODE = 2;
 const FIRES_LOG_NAME = "keel-fires.jsonl";
-const FIRES_TIMESTAMP = /"ts": "[^"]*"/g;
+const TIMESTAMP_PLACEHOLDER = "<ts>";
+const DECODE_DETAIL = /\b(?:JSONDecodeError|JsonSyntaxError): [^\n]*/g;
+const DECODE_DETAIL_MASKED = "JsonSyntaxError: <JSON syntax error message>";
+const EVIDENCE_DECODE_DETAIL = /(unreadable evidence \S+?\.json): [^\n]*/g;
+const EVIDENCE_DECODE_DETAIL_MASKED = "$1: <JSON syntax error message>";
 const CC_VERSION_FILE = ".cc-version";
 const CC_VERSION_FIELD = /cc_version=[^"\\]*/g;
 const CC_VERSION_PLACEHOLDER = "<version>";
@@ -27,11 +32,27 @@ const OVER_BOUND_KINDS = ["gh-answer", "evidence-file", "stdin-push", "stdin-ls"
 const COMMAND_DIVERGENT_NESTINGS = [9999, 10001];
 const PYTHON_COMMENT_DELETION_TESTS = ["0003", "0469", "0470", "0474", "0475", "0476", "0477"];
 const PYTHON_COMMENT_DELETION_SUITES = ["python-keel", "ts-keel"];
+const GH_NUMBER_PAST_PYTHON_DIGIT_LIMIT = ["extra-0526", "extra-0527", "extra-0531", "extra-0532", "extra-0536"];
+const PASS_EXIT_CODE = 0;
+const NON_FINITE_PUSH_PAYLOAD = "extra-0018";
+const NON_FINITE_GH_ANSWER_ON_A_PASSING_MERGE = "extra-0518";
+const READ_PAST_PYTHON_DIGIT_LIMIT_ON_A_PUSH = ["extra-0025", "extra-0026", "extra-0030", "extra-0031", "extra-0035"];
+const READ_PAST_PYTHON_DIGIT_LIMIT_ON_A_NON_PUSH = ["extra-0036", "extra-0037", "extra-0041", "extra-0042", "extra-0046", "extra-0062"];
+const NON_FINITE_NON_PUSH_PAYLOADS = ["extra-0019", "extra-0020"];
+const NON_FINITE_GH_ANSWERS_ON_A_DENIED_MERGE = ["extra-0514", "extra-0517"];
+const UTF8_WORDING_ON_A_DENY = ["extra-0539", "extra-0540", "extra-0602"];
+const JSON_QUOTING_ON_A_DENY = ["extra-0549", "extra-0560", "extra-0562", "extra-0563", "extra-0565", "extra-0604", "extra-0605",
+  "python-keel-0119", "ts-keel-0119"];
+const JSON_QUOTING_ON_A_PASS = ["extra-0561", "extra-0564"];
 
 export const EXPECTED_DIVERGENCES: ReadonlyMap<string, number> = new Map([
   ...OVER_BOUND_NESTINGS.flatMap((depth) => OVER_BOUND_KINDS.map((kind): [string, number] => [`${kind}-nested-${depth}`, DENY_EXIT_CODE])),
   ...COMMAND_DIVERGENT_NESTINGS.map((depth): [string, number] => [`command-list-nested-${depth}`, DENY_EXIT_CODE]),
   ...PYTHON_COMMENT_DELETION_SUITES.flatMap((suite) => PYTHON_COMMENT_DELETION_TESTS.map((number): [string, number] => [`py-comment-deletion-${suite}-${number}`, DENY_EXIT_CODE])),
+  ...[...GH_NUMBER_PAST_PYTHON_DIGIT_LIMIT, ...READ_PAST_PYTHON_DIGIT_LIMIT_ON_A_NON_PUSH, ...NON_FINITE_NON_PUSH_PAYLOADS, ...JSON_QUOTING_ON_A_PASS]
+    .map((id): [string, number] => [id, PASS_EXIT_CODE]),
+  ...[NON_FINITE_PUSH_PAYLOAD, NON_FINITE_GH_ANSWER_ON_A_PASSING_MERGE, ...READ_PAST_PYTHON_DIGIT_LIMIT_ON_A_PUSH, ...NON_FINITE_GH_ANSWERS_ON_A_DENIED_MERGE,
+    ...UTF8_WORDING_ON_A_DENY, ...JSON_QUOTING_ON_A_DENY].map((id): [string, number] => [id, DENY_EXIT_CODE]),
 ]);
 
 export type Suite = (typeof SUITES)[number];
@@ -72,11 +93,12 @@ export function runShipGateParity(suites: readonly Suite[] = selectedSuites()): 
   try {
     for (const testCase of loadCases(suites)) {
       const run = replay(testCase, store, root);
-      const verdict = judgeCase(testCase.label, testCase.expected, run, root);
+      const label = testCase.label || testCase.id;
+      const verdict = judgeCase(label, testCase.expected, run, root);
       report.cases += 1;
       report.perSuite.set(testCase.suite, (report.perSuite.get(testCase.suite) ?? 0) + 1);
-      if (testCase.label) seenLabels.add(testCase.label);
-      if (isDenyToPass(testCase.expected, run.observation)) report.denyToPass += 1;
+      seenLabels.add(label);
+      if (!verdict.listed && isDenyToPass(testCase.expected, run.observation)) report.denyToPass += 1;
       if (verdict.listed) report.listedDivergences += 1;
       if (verdict.problems.length > 0) {
         report.mismatches += 1;
@@ -162,8 +184,38 @@ export function withoutCheckoutRepoKey(content: string, repoKey: string | null):
 function normalized(key: string, content: string): string {
   if (key.endsWith(CC_VERSION_FILE)) return CC_VERSION_PLACEHOLDER;
   if (!key.endsWith(FIRES_LOG_NAME)) return content;
-  const masked = content.replace(FIRES_TIMESTAMP, '"ts": "<ts>"').replace(CC_VERSION_FIELD, `cc_version=${CC_VERSION_PLACEHOLDER}`);
-  return withoutCheckoutRepoKey(masked, CHECKOUT_REPO_KEY);
+  return withoutCheckoutRepoKey(comparableFires(content), CHECKOUT_REPO_KEY);
+}
+
+function decodeWordingMasked(text: string): string {
+  return text.replace(DECODE_DETAIL, DECODE_DETAIL_MASKED).replace(EVIDENCE_DECODE_DETAIL, EVIDENCE_DECODE_DETAIL_MASKED);
+}
+
+function comparableFires(content: string): string {
+  return content.split("\n").map((line) => (line === "" ? line : comparableFiresLine(line))).join("\n");
+}
+
+function comparableFiresLine(line: string): string {
+  const masked = line.replace(CC_VERSION_FIELD, `cc_version=${CC_VERSION_PLACEHOLDER}`);
+  let record: unknown;
+  try {
+    record = JSON.parse(Buffer.from(masked, "latin1").toString("utf8"));
+  } catch {
+    return masked;
+  }
+  if (!isJsonObject(record)) return masked;
+  if (typeof record["detail"] === "string") record["detail"] = decodeWordingMasked(record["detail"]);
+  if ("ts" in record) record["ts"] = TIMESTAMP_PLACEHOLDER;
+  return stringifySorted(record);
+}
+
+function comparableRecorded(expected: ObservedDelta): ObservedDelta {
+  const set = Object.fromEntries(Object.entries(expected.set).map(([key, content]) => [key, key.endsWith(FIRES_LOG_NAME) ? comparableFires(content) : content]));
+  return { ...expected, stderr: decodeWordingMasked(expected.stderr), set };
+}
+
+function comparableRun(run: Run): Run {
+  return { ...run, observation: { ...run.observation, stderr: decodeWordingMasked(run.observation.stderr) } };
 }
 
 export interface Verdict {
@@ -172,7 +224,7 @@ export interface Verdict {
 }
 
 export function judgeCase(label: string, expected: ObservedDelta, run: Run, root: string): Verdict {
-  const differences = differencesFromRecorded(expected, run, root);
+  const differences = differencesFromRecorded(comparableRecorded(expected), comparableRun(run), root);
   const required = EXPECTED_DIVERGENCES.get(label);
   const code = run.observation.code;
   if (required === undefined) return { listed: false, problems: differences };

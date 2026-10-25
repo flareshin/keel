@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, test } from 'node:test';
 import type { TestContext } from 'node:test';
-import { RecursionError as HookRecursionError } from '../../hooks/lib/hookkit/pyruntime.ts';
+import { parseJson } from '../../hooks/lib/hookkit/json.ts';
+import { RecursionError as HookRecursionError, ValueError } from '../../hooks/lib/hookkit/pyruntime.ts';
 import { isRecursionError } from '../../hooks/ship-gate/ship-gate.ts';
-import { RecursionError as ScannerRecursionError, ValueError, pythonJsonLoads } from '../../lib/evidence/pycompat.ts';
+import { EvidenceError, EvidenceTooDeepError } from '../../lib/evidence/store.ts';
 import { LOGIC_WITH_TEST, Sandbox } from './helpers.ts';
 import type { Repo } from './helpers.ts';
 
@@ -43,9 +45,10 @@ function featureRepo(t: TestContext): [Sandbox, Repo] {
 }
 
 describe('RecursionDenialTest', () => {
-  test('isRecursionError_recognizesTheScannerAndTheStrRendererClassesOnly', () => {
-    assert.equal(isRecursionError(new ScannerRecursionError('deep')), true);
+  test('isRecursionError_recognizesTheHookAndTheStoredEvidenceClassesOnly', () => {
+    assert.equal(isRecursionError(new EvidenceTooDeepError('deep')), true);
     assert.equal(isRecursionError(new HookRecursionError('deep')), true);
+    assert.equal(isRecursionError(new EvidenceError('deep')), false);
     assert.equal(isRecursionError(new ValueError('deep')), false);
     assert.equal(isRecursionError(new RangeError('deep')), false);
     assert.equal(isRecursionError('deep'), false);
@@ -57,13 +60,12 @@ describe('RecursionDenialTest', () => {
     writeFileSync(sandbox.ghResponse, `{"baseRefName": "main", "number": ${'['.repeat(OVER_BOUND)}1${']'.repeat(OVER_BOUND)}}`);
     const run = sandbox.push(repo, `gh pr merge 7 --match-head-commit ${head}`);
     assert.equal(run.rc, 2, run.stderr.slice(0, 400));
-    assert.ok(run.stderr.includes('RecursionError: maximum recursion depth exceeded while decoding a JSON array'), run.stderr.slice(0, 400));
+    assert.ok(run.stderr.includes('RecursionError: JSON nesting is deeper than 10000 levels'), run.stderr.slice(0, 400));
   });
 
   test('push_denies_whenCommandIsAListNestedPastTheJsonBound', (t) => {
     const [sandbox, repo] = featureRepo(t);
-    assert.throws(() => pythonJsonLoads(listCommandPayload(sandbox, repo, OVER_BOUND)),
-      (error: Error) => error instanceof ScannerRecursionError && error.message.includes('while decoding a JSON array'));
+    assert.throws(() => parseJson(listCommandPayload(sandbox, repo, OVER_BOUND)), HookRecursionError);
     const run = listCommandPush(sandbox, repo, OVER_BOUND);
     assert.equal(run.rc, 2, run.stderr.slice(0, 400));
     assert.ok(run.stderr.includes(DENY_TAIL), run.stderr.slice(0, 400));
@@ -89,6 +91,17 @@ describe('RecursionDenialTest', () => {
       const run = sandbox.hookRaw(text.replace(JSON.stringify(placeholder), '['.repeat(depth) + '"s1"' + ']'.repeat(depth)));
       assert.equal(run.rc, 0, run.stderr.slice(0, 400));
     }
+  });
+
+  test('push_denies_whenStoredReviewEvidenceNestsPastTheJsonBound', (t) => {
+    const [sandbox, repo] = featureRepo(t);
+    const directory = join(sandbox.data, 'state', 'keel', 'evidence', 'review', 'acme__app');
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, 'review-deep.json'), `{"expires_at": "2099-01-01T00:00:00Z", "n": ${'['.repeat(OVER_BOUND)}${']'.repeat(OVER_BOUND)}}`);
+    const run = sandbox.push(repo, 'git push origin feature');
+    assert.equal(run.rc, 2, run.stderr.slice(0, 400));
+    assert.ok(run.stderr.includes('EvidenceTooDeepError: '), run.stderr.slice(0, 400));
+    assert.ok(run.stderr.includes(DENY_TAIL), run.stderr.slice(0, 400));
   });
 
   test('hook_denies_whenStdinNestsPastTheJsonBoundEvenForAHarmlessCommand', (t) => {

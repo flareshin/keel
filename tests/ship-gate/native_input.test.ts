@@ -10,7 +10,6 @@ import { dataDir } from '../../lib/evidence/env.ts';
 import * as gitcmd from '../../lib/evidence/gitcmd.ts';
 import * as codexReview from '../../lib/evidence/codex_review.ts';
 import { onlyCommentDeletions } from '../../lib/evidence/comment_cleanup.ts';
-import { UnicodeDecodeError, ValueError } from '../../lib/evidence/pycompat.ts';
 import { RegistryError, readTsv } from '../../lib/evidence/registry.ts';
 import * as store from '../../lib/evidence/store.ts';
 import { TimeoutExpired, runCaptured } from '../../lib/evidence/subprocess.ts';
@@ -244,8 +243,7 @@ describe('failure classification', () => {
   const systemError = Object.assign(new Error('boom'), { errno: -2, code: 'ENOENT', syscall: 'open' });
 
   test('isInputFailure accepts parse, type, range, decode and system errors and rejects programming errors', () => {
-    const accepted = [new TypeError('x'), new RangeError('x'), new SyntaxError('x'), new InvalidUtf8Error('x'), systemError,
-      new ValueError('x'), new UnicodeDecodeError('x')];
+    const accepted = [new TypeError('x'), new RangeError('x'), new SyntaxError('x'), new InvalidUtf8Error('x'), systemError];
     for (const error of accepted) assert.equal(isInputFailure(error), true, error.constructor.name);
     for (const unexpected of [new Error('x'), new ReferenceError('x'), new Usage('x'), new Refused('x'), 'text', null]) {
       assert.equal(isInputFailure(unexpected), false, String(unexpected));

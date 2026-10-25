@@ -614,7 +614,7 @@ describe('HookBehaviorTest', () => {
     const run = sandbox.push(repo, 'git push origin no-such-branch');
     assert.equal(run.rc, 2, run.stderr + run.stdout);
     assert.ok(run.stderr.includes('failing closed'), run.stderr);
-    assert.ok(run.stderr.includes('refspec source no-such-branch does not name a commit'), run.stderr);
+    assert.ok(run.stderr.includes('GateError: refspec source no-such-branch does not name a commit'), run.stderr);
     assert.equal(sandbox.fires('K1', 'error')[0].repo, 'acme/app');
   });
 
@@ -623,7 +623,7 @@ describe('HookBehaviorTest', () => {
     const repo = sandbox.clone('acme', 'app');
     const run = sandbox.push(repo, 'cd /nonexistent-dir && git push origin feature');
     assert.equal(run.rc, 2);
-    assert.ok(run.stderr.includes('not a git repository'), run.stderr);
+    assert.ok(run.stderr.includes('GateError: not a git repository'), run.stderr);
   });
 
   test('push_failsClosed_whenFiresLogIsUnwritableInGatedRepo', (t) => {
@@ -676,6 +676,18 @@ describe('HookBehaviorTest', () => {
     assert.equal(run.rc, 2, run.stderr + run.stdout);
     assert.ok(run.stderr.startsWith('[K1] ship-gate: internal error'), run.stderr);
     assert.ok(!run.stderr.includes('Traceback'), run.stderr);
+  });
+
+  test('hook_failsClosed_whenAPushPayloadHoldsANonFiniteNumber', (t) => {
+    const { sandbox, repo } = featureRepo(t, { 'src/a.py': 'print(1)\n' });
+    const withNaN = (command: string) => JSON.stringify(sandbox.bashPayload(repo, command)).slice(0, -1) + ', "extra": NaN}';
+    const push = sandbox.hookRaw(withNaN('git push origin feature'));
+    assert.equal(push.rc, 2, push.stderr + push.stdout);
+    assert.ok(push.stderr.startsWith('[K1] ship-gate: internal error'), push.stderr);
+    assert.ok(push.stderr.includes('JsonSyntaxError'), push.stderr);
+    const listing = sandbox.hookRaw(withNaN('ls'));
+    assert.equal(listing.rc, 0, listing.stderr + listing.stdout);
+    assert.ok(listing.stderr.includes('internal error on a command that is not a push or merge: JsonSyntaxError'), listing.stderr);
   });
 
   test('hook_logsContractMissAndPasses_whenToolInputIsNotAnObject', (t) => {

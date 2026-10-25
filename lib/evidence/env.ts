@@ -3,7 +3,6 @@ import { appendFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expandHome } from '../../measure/lib/measurekit/files.ts';
 import { stringifySorted } from '../../measure/lib/measurekit/json.ts';
-import { dumpFiresLine } from './hook_pinned.ts';
 
 const RUN_ID_BODY = '[A-Za-z0-9._-]{8,64}';
 const SHA_BODY = '[0-9a-f]{40}';
@@ -30,10 +29,6 @@ export function stateDir(): string {
 
 export function logsDir(): string {
   return join(dataDir(), 'logs');
-}
-
-export function appendLogLine(name: string, line: Record<string, unknown>): void {
-  appendLine(name, dumpFiresLine(line));
 }
 
 export function appendRecord(name: string, record: Record<string, unknown>): void {

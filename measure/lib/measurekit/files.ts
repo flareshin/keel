@@ -6,7 +6,9 @@ const STRICT_UTF8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true })
 const LINE_BREAK = /\r\n|\r|\n/
 const WHITESPACE_RUN = /\s+/
 
-export class InvalidUtf8Error extends Error {}
+export class InvalidUtf8Error extends Error {
+  override name = "InvalidUtf8Error"
+}
 
 export function decodeStrict(bytes: Uint8Array, source: string): string {
   try {

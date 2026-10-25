@@ -32,7 +32,9 @@ type TreeEntry = [mode: string, object: string];
 const treeListings = new Map<string, Map<string, TreeEntry>>();
 const ancestryAnswers = new Map<string, boolean>();
 
-export class GitError extends Error {}
+export class GitError extends Error {
+  override name = 'GitError';
+}
 
 export interface PathEntry {
   path: string;

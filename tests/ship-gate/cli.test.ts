@@ -286,10 +286,17 @@ describe('WriteReviewTest', () => {
     assert.equal(sandbox.keel(['evidence', 'write-review'], { stdin: JSON.stringify(longReason) }).rc, 0);
   });
 
-  test('reviewPrepare_reportsAnInternalError_whenStdinNestsPastWhatTheParserHolds', (t) => {
+  test('reviewPrepare_readsDeeplyNestedStdin_andRefusesItWhenItIsNotAnObject', (t) => {
     const sandbox = new Sandbox(t);
     const run = sandbox.keel(['review', 'prepare'], { stdin: '['.repeat(200_000) + ']'.repeat(200_000) });
-    assert.equal(run.rc, 70, run.stderr);
+    assert.equal(run.rc, 2, run.stderr.slice(0, 300));
+    assert.ok(run.stderr.startsWith('keel: stdin must be a JSON object\n'), run.stderr.slice(0, 300));
+  });
+
+  test('reviewPrepare_reportsAnInternalError_whenDeepStdinAlsoHoldsAnIntegerPastDoublePrecision', (t) => {
+    const sandbox = new Sandbox(t);
+    const run = sandbox.keel(['review', 'prepare'], { stdin: '['.repeat(200_000) + '9007199254740993' + ']'.repeat(200_000) });
+    assert.equal(run.rc, 70, run.stderr.slice(0, 300));
     assert.ok(run.stderr.includes('keel: internal error: RangeError'), run.stderr.slice(0, 300));
     assert.ok(!run.stderr.includes('stdin is not JSON'), run.stderr.slice(0, 300));
   });

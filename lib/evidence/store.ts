@@ -1,10 +1,9 @@
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { dirname, join } from 'node:path';
-import { isDir } from '../../measure/lib/measurekit/files.ts';
-import { compareCodePoints, isJsonObject, stringifySorted } from '../../measure/lib/measurekit/json.ts';
+import { isDir, readUtf8 } from '../../measure/lib/measurekit/files.ts';
+import { compareCodePoints, isJsonObject, MAX_JSON_DEPTH, nestsPastMaxJsonDepth, parseJsonKeepingIntegers, stringifySorted } from '../../measure/lib/measurekit/json.ts';
 import * as env from './env.ts';
-import { isStoredJsonTooDeep, parseStoredJson } from './hook_pinned.ts';
 
 export const REPO_SCOPED_KINDS = ['review', 'tests', 'smoke'];
 export const GLOBAL_KINDS = ['approval', 'ack'];
@@ -13,7 +12,13 @@ const FILE_MODE = 0o600;
 const DIRECTORY_MODE = 0o700;
 const TEMP_FILE_RANDOM_BYTES = 6;
 
-export class EvidenceError extends Error {}
+export class EvidenceError extends Error {
+  override name = 'EvidenceError';
+}
+
+export class EvidenceTooDeepError extends Error {
+  override name = 'EvidenceTooDeepError';
+}
 
 export interface Evidence {
   schema: number;
@@ -111,9 +116,11 @@ export function repoKeys(kind: string): string[] {
 export function readFile(path: string): Evidence {
   let evidence: unknown;
   try {
-    evidence = parseStoredJson(readFileSync(path));
+    const text = readUtf8(path);
+    if (nestsPastMaxJsonDepth(text)) throw new EvidenceTooDeepError(`evidence ${path} nests deeper than ${MAX_JSON_DEPTH} levels`);
+    evidence = parseJsonKeepingIntegers(text);
   } catch (error) {
-    if (isStoredJsonTooDeep(error)) throw error;
+    if (error instanceof EvidenceTooDeepError) throw error;
     throw new EvidenceError(`unreadable evidence ${path}: ${error instanceof Error ? error.message : String(error)}`);
   }
   if (!isJsonObject(evidence) || typeof evidence['expires_at'] !== 'string') {

@@ -1,4 +1,4 @@
-import { MAX_JSON_DEPTH } from "./pycompat.ts";
+import { MAX_JSON_DEPTH, nestsPastMaxJsonDepth } from "../../../measure/lib/measurekit/json.ts";
 import { RecursionError, ValueError } from "./pyruntime.ts";
 
 const NON_FINITE_TOKENS = ["-Infinity", "Infinity", "NaN"];
@@ -52,22 +52,7 @@ export function parseTranscriptLine(text: string): unknown {
 }
 
 function refuseDeepNesting(text: string): void {
-  let depth = 0;
-  let inString = false;
-  for (let index = 0; index < text.length; index += 1) {
-    const character = text[index];
-    if (inString) {
-      if (character === "\\") index += 1;
-      else if (character === '"') inString = false;
-    } else if (character === '"') {
-      inString = true;
-    } else if (character === "[" || character === "{") {
-      depth += 1;
-      if (depth > MAX_JSON_DEPTH) throw new RecursionError(`JSON nesting is deeper than ${MAX_JSON_DEPTH} levels`);
-    } else if (character === "]" || character === "}") {
-      depth -= 1;
-    }
-  }
+  if (nestsPastMaxJsonDepth(text)) throw new RecursionError(`JSON nesting is deeper than ${MAX_JSON_DEPTH} levels`);
 }
 
 function holdsOnlyFiniteNumbers(value: unknown): boolean {

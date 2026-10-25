@@ -1,13 +1,14 @@
 import childProcess from 'node:child_process';
 import { constants } from 'node:os';
-import { describeCommand } from './hook_pinned.ts';
 
 const UNLIMITED_OUTPUT = Infinity;
 const SIGNAL_NUMBERS: Record<string, number> = constants.signals;
 
 export class TimeoutExpired extends Error {
+  override name = 'TimeoutExpired';
+
   constructor(command: string[], timeoutSeconds: number) {
-    super(`Command '${describeCommand(command)}' timed out after ${timeoutSeconds} seconds`);
+    super(`Command ${JSON.stringify(command)} timed out after ${timeoutSeconds} seconds`);
   }
 }
 
@@ -26,7 +27,9 @@ export interface RunOptions {
 
 const UNENCODABLE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udc7f\udd00-\udfff]/;
 
-export class UnicodeEncodeError extends Error {}
+export class UnicodeEncodeError extends Error {
+  override name = 'UnicodeEncodeError';
+}
 
 function rejectUnencodable(command: string[]): void {
   for (const word of command) {

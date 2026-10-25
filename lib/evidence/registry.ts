@@ -1,8 +1,7 @@
 import { join } from 'node:path';
-import { isFile, splitLines } from '../../measure/lib/measurekit/files.ts';
+import { isFile, readUtf8, splitLines } from '../../measure/lib/measurekit/files.ts';
 import * as env from './env.ts';
 import * as gitcmd from './gitcmd.ts';
-import { quoted, readTsvText } from './hook_pinned.ts';
 import { isWhitespaceBothWays, stripEitherWay } from './text.ts';
 
 const GATED_HEADER = ['origin', 'gate', 'integration_base', 'risk_rules', 'tests'];
@@ -14,7 +13,9 @@ const RISK_CLASSES = ['light', 'heavy', 'smoke-only'];
 const FLAG_VALUES = ['true', 'false'];
 const EMPTY = '-';
 
-export class RegistryError extends Error {}
+export class RegistryError extends Error {
+  override name = 'RegistryError';
+}
 
 export interface GatedRepo {
   origin: string;
@@ -59,7 +60,7 @@ export function gatedRepos(): Map<string, GatedRepo> {
   const repos = new Map<string, GatedRepo>();
   for (const row of readTsv(registryPath(), GATED_HEADER, GATED_OPTIONAL)) {
     if (!GATE_VALUES.includes(row['gate']!)) {
-      throw new RegistryError(`gated-repos.tsv: unknown gate ${quoted(row['gate']!)} for ${row['origin']}`);
+      throw new RegistryError(`gated-repos.tsv: unknown gate ${JSON.stringify(row['gate'])} for ${row['origin']}`);
     }
     if (!FLAG_VALUES.includes(row['push_approval'] ?? 'false')) {
       throw new RegistryError(`gated-repos.tsv: push_approval must be true or false for ${row['origin']}`);
@@ -91,7 +92,7 @@ export function riskRules(ruleSet: string): RiskRule[] {
   for (const row of readTsv(join(env.overlayDir(), 'risk-rules.tsv'), RISK_HEADER)) {
     if (row['set'] !== ruleSet) continue;
     if (!RISK_CLASSES.includes(row['class']!)) {
-      throw new RegistryError(`risk-rules.tsv: unknown class ${quoted(row['class']!)}`);
+      throw new RegistryError(`risk-rules.tsv: unknown class ${JSON.stringify(row['class'])}`);
     }
     rules.push({ ruleSet: row['set']!, pathGlob: row['path_glob']!, riskClass: row['class']! });
   }
@@ -100,7 +101,7 @@ export function riskRules(ruleSet: string): RiskRule[] {
 
 export function readTsv(path: string, header: string[], optional: string[] = []): Array<Record<string, string>> {
   if (!isFile(path)) return [];
-  const content = splitLines(readTsvText(path)).filter((line) => !isWhitespaceBothWays(line) && !line.startsWith('#'));
+  const content = splitLines(readUtf8(path)).filter((line) => !isWhitespaceBothWays(line) && !line.startsWith('#'));
   if (content.length === 0) return [];
   const columns = content[0]!.split('\t');
   const expected = [header, [...header, ...optional]];
@@ -110,7 +111,7 @@ export function readTsv(path: string, header: string[], optional: string[] = [])
   return content.slice(1).map((line) => {
     const values = line.split('\t');
     if (values.length !== columns.length) {
-      throw new RegistryError(`${path}: expected ${columns.length} columns: ${quoted(line)}`);
+      throw new RegistryError(`${path}: expected ${columns.length} columns: ${JSON.stringify(line)}`);
     }
     return Object.fromEntries(columns.map((column, index) => [column, values[index]!]));
   });

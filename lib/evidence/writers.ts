@@ -6,7 +6,6 @@ import type { Chain } from './chain.ts';
 import * as codexReview from './codex_review.ts';
 import * as env from './env.ts';
 import * as gitcmd from './gitcmd.ts';
-import { isPinnedParseFailure } from './hook_pinned.ts';
 import { isBlankEitherWay, isWhitespaceBothWays } from './text.ts';
 import * as registry from './registry.ts';
 import * as store from './store.ts';
@@ -26,13 +25,17 @@ export function isJsonRecord(value: unknown): value is JsonObject {
   return isJsonObject(value);
 }
 
-export class Refused extends Error {}
+export class Refused extends Error {
+  override name = 'Refused';
+}
 
-export class Usage extends Error {}
+export class Usage extends Error {
+  override name = 'Usage';
+}
 
 export function isInputFailure(error: unknown): boolean {
   return error instanceof TypeError || error instanceof RangeError || error instanceof SyntaxError || error instanceof InvalidUtf8Error
-    || isPinnedParseFailure(error) || isSystemError(error);
+    || isSystemError(error);
 }
 
 export function writeReview(request: JsonObject): JsonObject {

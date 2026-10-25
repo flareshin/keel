@@ -8,8 +8,7 @@ All notable changes to keel are recorded here. The format follows
 
 `measure`, `bin/link`, `lib/evidence` (the `keel` command, the evidence store and the verdict the ship-gate reads) and the
 Codex adapter (`codex/`) drop their Python emulation and run on plain Node behavior: `JSON.parse` and `JSON.stringify`,
-`node:path`, `node:fs`, `RegExp`, a fatal `TextDecoder` and `node:util` `parseArgs`. A few spellings in `lib/evidence` stay
-Python-shaped for now because the recorded ship-gate hook run still pins them (see the last bullet of Changed).
+`node:path`, `node:fs`, `RegExp`, a fatal `TextDecoder` and `node:util` `parseArgs`.
 
 ### Changed
 - What stays the same: exit codes for every documented outcome, the field names and values of every JSON and JSONL
@@ -112,9 +111,10 @@ Python-shaped for now because the recorded ship-gate hook run still pins them (s
   JavaScript does (`1.0` is `1`, `-0.0` is `0`, `1e16` is `10000000000000000`); integers beyond 2^53 stay exact. A runner
   count beyond 2^53 (`Ran 12345678901234567890 tests`) is recorded as the nearest double.
 - `keel`, stdin (`evidence write-review`, `review prepare`): standard JSON only. `NaN`, `Infinity` and `-Infinity` exit 2 as
-  `stdin is not JSON` (they parsed before); bytes that are not UTF-8 exit 2 as `stdin is not valid UTF-8`; nesting beyond
-  about two thousand levels exits 70 with a `RangeError` (the old limit was 10,000 levels, then exit 70 with a
-  `RecursionError`). An evidence file on disk is still read by the old reader, so its 10,000 level bound is unchanged.
+  `stdin is not JSON` (they parsed before); bytes that are not UTF-8 exit 2 as `stdin is not valid UTF-8`; stdin is read as deep as
+  `JSON.parse` allows; only nesting beyond about two thousand levels that also holds an integer beyond 2^53 exits 70 with a
+  `RangeError` (the old limit was 10,000 levels, then exit 70 with a `RecursionError`). An evidence file on disk keeps a
+  10,000 level bound: past it the read raises `EvidenceTooDeepError`, which the ship-gate denies like a too-deep payload.
 - `keel evidence write-review`: `keel_evidence.v` must be the JSON number 1 in any spelling (`1.0`, `1e0`, `10e-1`); `true`
   is now refused with exit 2 (it was accepted). `run_id`, `root_run_id`, `review_base`, `head`, `snapshot_tree` and `since` must be JSON
   strings (a number whose digits read like an id was accepted), and an id followed by a newline is refused with exit 2
@@ -150,12 +150,25 @@ Python-shaped for now because the recorded ship-gate hook run still pins them (s
   `~user`.
 - `risk-rules.tsv` globs are `*`, `?`, `[...]` and `[!...]` with the star crossing slashes, as before. A character range
   written backwards (`[z-a]`) is now an error that blocks the gate; it used to match nothing.
-- What `lib/evidence` still spells the Python way, in `lib/evidence/hook_pinned.ts` and the `UnicodeEncodeError` and
-  `TimeoutExpired` messages of `subprocess.ts`, because `tests/ship-gate/ship-gate-parity.test.ts` replays 1,757 recorded
-  hook runs byte for byte: the `keel-fires.jsonl` lines the ship-gate writes (`json.dumps` spacing and escapes); the reader of
-  evidence files (Python `json.loads` messages, `NaN`, the 10,000 level bound); the `RegistryError` text with Python
-  `repr` quoting and the UTF-8 message of the registry reader; the `TimeoutExpired` text with a Python list repr; and
-  `UnicodeEncodeError` for a command word holding a lone surrogate. They go with the parity re-recording in the hooks kit.
+- The ship-gate hook and `lib/evidence` no longer spell anything the Python way. What may differ from 1.0.0:
+  - A ship-gate payload holding `NaN` or `Infinity` is malformed JSON: a push or merge fails closed with an internal error
+    (exit 2, it used to pass), any other command passes with an internal-error line on stderr. A `gh pr view` answer
+    holding them makes a merge fail closed the same way.
+  - A stored evidence file holding `NaN`, starting with a byte order mark, or not valid UTF-8 is an `EvidenceError`
+    (unreadable evidence, deny). A stored integer longer than 4,300 digits is read exactly; a payload or `gh` answer holding
+    one is read too, so the gate decides on the fields it uses instead of denying on Python's digit limit.
+  - Wording: `JsonSyntaxError` with the `JSON.parse` message for unreadable JSON, `InvalidUtf8Error: <source> is not
+    valid UTF-8`, `RecursionError: JSON nesting is deeper than 10000 levels`, `EvidenceTooDeepError`, and `JSON.stringify`
+    quoting (`"bogus"`, `["gh","pr","view"]`) in `RegistryError`, `GateError` and `TimeoutExpired` text. Numbers in messages
+    render as JavaScript does (`1.0` is `1`).
+  - `keel-fires.jsonl` lines are compact sorted-key JSON (`stringifySorted`) with non-ASCII characters written as is.
+  - `stringifySorted` and `parseJsonKeepingIntegers` (`measure/lib/measurekit/json.ts`) handle the full 10,000 level nesting
+    without running out of stack.
+  - `tests/ship-gate/ship-gate-parity.test.ts` still replays the 1,757 recorded hook runs. It compares fires lines by
+    content, masks the JSON decode wording, and lists each case whose wording or outcome changed with the exit code the
+    hook must give (`EXPECTED_DIVERGENCES`). `codex/tests/hook-parity.ts` compares the fires lines it replays by content too.
+  - `keel review prepare` reads deeply nested stdin: 200,000 nested arrays exit 2 as `stdin must be a JSON object`
+    instead of exit 70.
 - `git-guard` `repo-rules.tsv` and `env-preflight` `jdk.tsv` globs match through the same `globMatches` as
   `risk-rules.tsv`. A backwards character range there is now an error: `git-guard` refuses the guarded command as an
   internal error (fail closed), and `env-preflight` logs an `error` fire and lets the command run, where both used to
@@ -221,9 +234,11 @@ Python-shaped for now because the recorded ship-gate hook run still pins them (s
 - The `lib/evidence/pycompat.ts` exports that no hook, Codex or evidence module imports any more: `compareCodePoints`,
   `pySplitWhitespace`, `pySplitLines`, `decodeReplacing`, `decodeSurrogateEscape`, `expandUser`, `pyEquals`, `fnmatchCase`,
   `isSystemError`, `isDirectory`, `isFile`, `pyRealpath`, `PYTHON_SPACE_PATTERN` and `pyOsErrorMessage`, `pythonErrnoName`,
-  `jsonNumber` and `pyFloatRepr` as exports, and the `OSError` class of `subprocess.ts`. What the ship-gate hook still
-  imports stays in `pycompat.ts` until the hooks kit. `lib/evidence` now uses `measure/lib/measurekit/{json,files}.ts` and the
+  `jsonNumber` and `pyFloatRepr` as exports, and the `OSError` class of `subprocess.ts`. `lib/evidence` now uses `measure/lib/measurekit/{json,files}.ts` and the
   new `lib/evidence/{glob,text}.ts`.
+- `lib/evidence/pycompat.ts`, `lib/evidence/hook_pinned.ts` and `tests/ship-gate/pycompat.test.ts`. The ship-gate hook
+  now uses `parseJson` from `hooks/lib/hookkit/json.ts`, `appendRecord` from `lib/evidence/env.ts` and
+  `measure/lib/measurekit/{json,files}.ts`.
 - The byte-for-byte Python recordings of the evidence code (`tests/fixtures/python/ship-gate-{cross-impl,cross-impl-codex,parity}.json`)
   and `tests/ship-gate/parity.test.ts`. The outcomes they recorded live on in `tests/fixtures/evidence/{cross-impl,helper-outcomes}.json`
   and in `tests/ship-gate/{cross_impl,cross_impl_codex,helper_outcomes,native_input}.test.ts`; the cases whose outcome changed are

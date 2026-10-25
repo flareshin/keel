@@ -318,8 +318,8 @@ describe("file checks", () => {
   })
 
   it("contractMissCap_failsNamingEachHook_whenTodayAndYesterdayHoldMoreThanTwenty", () => {
-    contractMisses(19, NOW_TS)
     contractMisses(2, addDays(TODAY, -1) + "T09:00:00Z", "ship-gate")
+    contractMisses(19, NOW_TS)
     assertStatus("contract-miss-cap", "all", "FAIL", "21 in the last 2 days (cap 20): report-gate 19; ship-gate 2")
   })
 

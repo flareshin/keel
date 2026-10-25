@@ -220,7 +220,7 @@ Evidence lives under `$KEEL_DATA_DIR/state/keel/evidence/` as immutable JSON fil
 - `prompt-refine` (K4): turns an ambiguous request into an approved brief and asks only the questions that change the work.
 - `readable-code` (K5): rules R1–R16 for code a person can follow. Its `scripts/rule-checks.ts` produces signals for the review's rule-checks lens.
 - `descend`: moves a recurring finding to a stronger layer.
-- `improve`: one requested structural improvement in existing code.
+- `improve`: discover one structural improvement or carry out a specified refactoring, with a before/after behavior pin and equivalence evidence.
 - `workflows/lens-review.js`: the review engine. Lenses, adversarial audit, verification, reporter.
 - `workflows/adversarial-audit.js`: independent lens coverage plus batched finding verification.
 

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, readFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, symlinkSync } from "node:fs";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { dirname, join } from "node:path";
 import {
@@ -425,6 +425,77 @@ describe("LiveCheckoutTest", () => {
 
   it("write_passes_whenTargetIsInsideAWorktree", () => {
     assertPassed(edit("Write", { file_path: join(worktree, "PRINCIPLES.md"), content: "x" }));
+  });
+
+  describe("a worktree nested under the live checkout", () => {
+    let nested: string;
+
+    beforeEach(() => {
+      nested = join(live, ".claude", "worktrees", "nested");
+      sandbox.git(live, "worktree", "add", "-q", "-b", "nested", nested);
+    });
+
+    it("edit_passes_whenTargetIsInsideTheNestedWorktree", () => {
+      assertPassed(edit("Edit", { file_path: join(nested, "README.md"), old_string: "live", new_string: "x" }));
+      assertPassed(edit("Write", { file_path: join(nested, "new-dir", "notes.md"), content: "x" }));
+    });
+
+    it("bash_passes_whenWritingOrMovingGitStateInsideTheNestedWorktree", () => {
+      for (const command of ["echo x > notes.md", "git add notes.md", "git commit -q -m x", "git checkout -b nested2"]) {
+        assertPassed(guard(command, nested));
+      }
+    });
+
+    it("bash_denied_whenWritingIntoTheLiveCheckoutFromTheNestedWorktree", () => {
+      assertDenied(guard(`echo x > ${live}/notes.md`, nested), "C-isolation");
+    });
+
+    it("edit_denied_whenADotGitFileUnderLiveKeelIsNotOneOfItsWorktrees", () => {
+      const adminDirs = join(live, ".git", "worktrees");
+      const dotGitTexts = [
+        `gitdir: ${join(worktree, ".git")}\n`,
+        `gitdir: ${join(adminDirs, "missing")}\n`,
+        `gitdir: ${join(adminDirs, "nested")}\n`,
+        "gitdir: \n",
+        "garbage\n",
+      ];
+      for (const text of dotGitTexts) {
+        const fake = join(live, ".claude", "worktrees", "fake");
+        sandbox.write(join(fake, ".git"), text);
+        assertDenied(edit("Write", { file_path: join(fake, "notes.md"), content: "x" }), "C-isolation");
+      }
+    });
+
+    it("edit_denied_whenADotGitFileUnderLiveKeelNamesAnAdminDirOutsideItsWorktrees", () => {
+      const fake = join(live, ".claude", "worktrees", "fake");
+      const elsewhere = join(sandbox.root, "elsewhere", "admin");
+      sandbox.write(join(fake, ".git"), `gitdir: ${elsewhere}\n`);
+      sandbox.write(join(elsewhere, "gitdir"), `${join(fake, ".git")}\n`);
+      assertDenied(edit("Write", { file_path: join(fake, "notes.md"), content: "x" }), "C-isolation");
+    });
+
+    it("edit_denied_whenADotGitUnderLiveKeelIsASymlinkToTheNestedWorktreesDotGit", () => {
+      const sub = join(live, "sub");
+      mkdirSync(sub);
+      symlinkSync(join(nested, ".git"), join(sub, ".git"));
+      assertDenied(edit("Write", { file_path: join(sub, "notes.md"), content: "x" }), "C-isolation");
+    });
+
+    it("edit_denied_whenTheNestedWorktreesDotGitFileIsUnreadable", () => {
+      chmodSync(join(nested, ".git"), 0o000);
+      try {
+        assertDenied(edit("Write", { file_path: join(nested, "notes.md"), content: "x" }), "C-isolation");
+      } finally {
+        chmodSync(join(nested, ".git"), 0o644);
+      }
+    });
+
+    it("edit_denied_whenTargetIsInsideAPlainRepoInsideTheNestedWorktree", () => {
+      const inner = join(nested, "inner");
+      mkdirSync(inner);
+      sandbox.git(inner, "init", "-q");
+      assertDenied(edit("Write", { file_path: join(inner, "notes.md"), content: "x" }), "C-isolation");
+    });
   });
 
   it("multiEdit_denied_whenEditsIsNotAListAndTheTargetIsInsideLiveKeelOrTheOverlay", () => {

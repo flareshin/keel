@@ -22,7 +22,7 @@ export function resolveSymlinksKeepingMissingTail(path: string): string {
   return normalize(resolveLinks("/", absolute.slice(1), new Map()).path);
 }
 
-function isSymlink(path: string): boolean {
+export function isSymlink(path: string): boolean {
   try {
     return lstatSync(path).isSymbolicLink();
   } catch {

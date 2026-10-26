@@ -304,6 +304,11 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
     six `resolve_directory` calls on `~root`.
 
 ### Fixed
+- `git-guard` (`[C-isolation]`) no longer treats a linked worktree of a live checkout as the live checkout when the
+  worktree sits inside it, such as `~/git/keel/.claude/worktrees/<name>` made by the desktop app. Edit, Write, Bash
+  writes and state-moving git commands in it pass. A directory counts as such a worktree only when its `.git` file names
+  an entry under that checkout's `.git/worktrees/` whose own `gitdir` file names this `.git` file back; any other, a
+  `.git` that is a symlink, an unreadable `.git` file and a plain repository below it are still denied.
 - `env-preflight` (`[S-jdk]`) accepts a `java_home` lookup that names a patch release of the required major, such as
   `-v 17.0.20` or `--version=17.0.2`; it already accepted `-v 17` and `-v 17.0`. An open range (`17.0.20+`), a wildcard
   (`17.0.*`), a trailing dot or another major is still denied.

@@ -14,7 +14,7 @@ import { partition, SPACE_CHARS, SPACE_CLASS, splitlines, testCaseFolded, trimSp
 import { compareCodePoints } from "../../measure/lib/measurekit/json.ts";
 import { globMatches } from "../../lib/evidence/glob.ts";
 import { parseJson, parseJsonReadingNonFiniteNumbersAsZero, parsePayload } from "../lib/hookkit/json.ts";
-import { isDirectory, isFile, resolveSymlinksKeepingMissingTail } from "../lib/hookkit/files.ts";
+import { isDirectory, isFile, isSymlink, resolveSymlinksKeepingMissingTail, tryReadText } from "../lib/hookkit/files.ts";
 import { AttributeError, describeError, errorName, pythonTypeName, RecursionError, ValueError } from "../lib/hookkit/errors.ts";
 import { readStdin } from "../lib/hookkit/stdio.ts";
 import { currentBranch, findRepoKey, findToplevel, git, gitOutput, isCommit } from "../lib/hookkit/repo.ts";
@@ -617,10 +617,39 @@ class LiveCheckouts {
 
   rootOf(path: string): string | null {
     for (const candidate of spellings(path)) {
-      for (const root of this.roots) if (candidate === root || candidate.startsWith(root + "/")) return root;
+      const root = this.roots.find((root) => candidate === root || candidate.startsWith(root + "/"));
+      if (root && !isInsideLinkedWorktreeOf(root, candidate)) return root;
     }
     return null;
   }
+}
+
+function isInsideLinkedWorktreeOf(root: string, path: string): boolean {
+  const adminDirs = joinPath(root, ".git", "worktrees") + "/";
+  for (let directory = path; directory.startsWith(root + "/"); directory = dirname(directory)) {
+    const dotGit = joinPath(directory, ".git");
+    if (isDirectory(dotGit)) return false;
+    if (isFile(dotGit)) return isRegisteredWorktree(dotGit, adminDirs);
+  }
+  return false;
+}
+
+function isRegisteredWorktree(dotGitFile: string, adminDirs: string): boolean {
+  if (isSymlink(dotGitFile)) return false;
+  const adminDir = adminDirOf(dotGitFile);
+  if (adminDir === null || !adminDir.startsWith(adminDirs)) return false;
+  return dotGitFileOf(adminDir) === resolveSymlinksKeepingMissingTail(dotGitFile);
+}
+
+function adminDirOf(dotGitFile: string): string | null {
+  const [key, separator, value] = partition(trimSpace(tryReadText(dotGitFile) ?? ""), ":");
+  if (key !== "gitdir" || separator === "" || trimSpace(value) === "") return null;
+  return resolveSymlinksKeepingMissingTail(joinPath(dirname(dotGitFile), trimSpace(value)));
+}
+
+function dotGitFileOf(adminDir: string): string | null {
+  const recorded = trimSpace(tryReadText(joinPath(adminDir, "gitdir")) ?? "");
+  return recorded === "" ? null : resolveSymlinksKeepingMissingTail(joinPath(adminDir, recorded));
 }
 
 function isClaudeSettingsFile(path: string): boolean {

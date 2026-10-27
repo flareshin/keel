@@ -4,13 +4,15 @@ import { runRuleChecksParity } from "./rule-checks-parity.ts";
 
 const MIN_RUNS = 60;
 const MIN_SIGNAL_LINES = 1000;
+const RUNS_PRINTING_USAGE = 32;
 
 describe("rule-checks.ts parity with the recorded rule-checks.py output", () => {
-  it("prints the recorded Python stdout, stderr and exit code for the same repositories and arguments", async () => {
+  it("prints the recorded Python stdout, stderr and exit code for the same repositories and arguments, with --module-repo added to the usage and help text", async () => {
     const report = await runRuleChecksParity();
     console.log(`parity rule-checks: ${report.runs} cases, ${report.mismatches} mismatches (${report.signalLines} signal lines, exit codes ${JSON.stringify(report.exitCodes)})`);
     assert.ok(report.runs >= MIN_RUNS, `${report.runs} runs`);
     assert.ok(report.signalLines >= MIN_SIGNAL_LINES, `${report.signalLines} signal lines compared`);
     assert.equal(report.mismatches, 0, report.details.join("\n"));
+    assert.equal(report.usageRewrites, RUNS_PRINTING_USAGE, "only the usage and help text gained --module-repo since the recording");
   });
 });

@@ -13,6 +13,10 @@ const MAX_CONCURRENT_RUNS = 8;
 const MISMATCHES_SHOWN = 5;
 const FUZZ_LINES_PER_FILE = 120;
 const OBJECT_NAME = /\b[0-9a-f]{40}\b/g;
+const MODULE_REPO_USAGE: readonly [recorded: RegExp, current: string] = [/\n( +)\[--self-test\]\n/, "\n$1[--module-repo MODULE_REPO] [--self-test]\n"];
+const MODULE_REPO_HELP: readonly [recorded: string, current: string] = [
+  "  --head HEAD\n  --self-test\n",
+  "  --head HEAD\n  --module-repo MODULE_REPO\n               a repo holding the commits of a submodule that is not checked out\n               (repeatable)\n  --self-test\n"];
 
 export interface Run {
   name: string;
@@ -25,6 +29,7 @@ export interface ParityReport {
   details: string[];
   signalLines: number;
   exitCodes: Record<string, number>;
+  usageRewrites: number;
 }
 
 export interface Observation {
@@ -340,13 +345,17 @@ function differences(python: Observation, typescript: Observation): string[] {
 }
 
 function restoredObservation(recorded: Observation, root: string): Observation {
-  return { status: recorded.status, stdout: restored(recorded.stdout, root), stderr: restored(recorded.stderr, root) };
+  return { status: recorded.status, stdout: withModuleRepoFlag(restored(recorded.stdout, root)), stderr: withModuleRepoFlag(restored(recorded.stderr, root)) };
+}
+
+function withModuleRepoFlag(text: string): string {
+  return text.replace(...MODULE_REPO_USAGE).replace(...MODULE_REPO_HELP);
 }
 
 export async function runRuleChecksParity(): Promise<ParityReport> {
   const recorded = JSON.parse(readFileSync(FIXTURE_PATH, "utf8")) as RecordedRuns;
   const root = paddedRoot(realpathSync(tmpdir()), recorded.rootLength);
-  const report: ParityReport = { runs: 0, mismatches: 0, details: [], signalLines: 0, exitCodes: {} };
+  const report: ParityReport = { runs: 0, mismatches: 0, details: [], signalLines: 0, exitCodes: {}, usageRewrites: 0 };
   try {
     const runs = buildRuns(root);
     report.runs = runs.length;
@@ -364,6 +373,7 @@ export async function runRuleChecksParity(): Promise<ParityReport> {
           report.mismatches += 1;
           if (report.details.length < MISMATCHES_SHOWN) report.details.push(`${run.name}: ${found.join("; ")}`);
         }
+        if (entry !== undefined && withModuleRepoFlag(entry.stdout + entry.stderr) !== entry.stdout + entry.stderr) report.usageRewrites += 1;
         report.signalLines += (entry?.stdout ?? "").split("\n").filter((line) => line.startsWith("signal ")).length;
         const key = String(entry?.status);
         report.exitCodes[key] = (report.exitCodes[key] ?? 0) + 1;

@@ -325,6 +325,58 @@ describe("rule-checks over submodules", () => {
     assert.ok(run.summary.endsWith("blocked=mod"), run.summary);
   });
 
+  function deinitializedWithModuleCopy(): { parent: string; copy: string } {
+    const { parent, source } = parentWithSubmodule();
+    fixture.git(source, ["fetch", "-q", join(parent, "mod"), "HEAD"]);
+    fixture.git(parent, ["submodule", "deinit", "-q", "-f", "mod"]);
+    return { parent, copy: source };
+  }
+
+  it("test_ruleChecks_scansGitlinkRangeInModuleRepo_whenSubmoduleNotInitialized", () => {
+    const { parent, copy } = deinitializedWithModuleCopy();
+    const run = fixture.runRuleChecks("--repo", parent, "--base", "base", "--head", "HEAD", "--module-repo", copy);
+    assert.equal(run.code, 0, run.summary);
+    assert.deepEqual(run.signals, signalSet(["K5.11", "mod/f.ts:1"]));
+    assert.equal(run.summary, "summary repos=2 scanned_lines=1 signals=1 unscanned=none blocked=none");
+  });
+
+  it("test_ruleChecks_scansGitlinkRangeInModuleRepo_inSnapshotTree", () => {
+    const { parent, copy } = deinitializedWithModuleCopy();
+    const tree = fixture.snapshotTree(parent);
+    const reviewBase = fixture.git(parent, ["rev-parse", "base"]);
+    const run = fixture.runRuleChecks("--repo", parent, "--base", reviewBase, "--head", tree, "--module-repo", copy);
+    assert.equal(run.code, 0, run.summary);
+    assert.deepEqual(run.signals, signalSet(["K5.11", "mod/f.ts:1"]));
+  });
+
+  it("test_ruleChecks_skipsModuleRepoWithoutBothCommits_andUsesTheNextOne", () => {
+    const { parent, copy } = deinitializedWithModuleCopy();
+    const stale = fixture.newRepo("stale");
+    fixture.write(stale, "f.ts", CLEAN_LINE);
+    fixture.commitAll(stale);
+    const run = fixture.runRuleChecks("--repo", parent, "--base", "base", "--head", "HEAD", "--module-repo", stale, "--module-repo", copy);
+    assert.equal(run.code, 0, run.summary);
+    assert.deepEqual(run.signals, signalSet(["K5.11", "mod/f.ts:1"]));
+  });
+
+  it("test_ruleChecks_blocksWithExitTwo_whenNoModuleRepoHasBothGitlinkCommits", () => {
+    const { parent, source } = parentWithSubmodule();
+    fixture.git(parent, ["submodule", "deinit", "-q", "-f", "mod"]);
+    for (const moduleRepo of [source, join(fixture.tmp, "nowhere")]) {
+      const run = fixture.runRuleChecks("--repo", parent, "--base", "base", "--head", "HEAD", "--module-repo", moduleRepo);
+      assert.equal(run.code, 2, moduleRepo);
+      assert.deepEqual(run.signals, new Set());
+      assert.ok(run.summary.endsWith("blocked=mod"), run.summary);
+    }
+  });
+
+  it("test_ruleChecks_blocksWithExitTwo_whenOnlyModuleRepoCouldServeTheWorkingTree", () => {
+    const { parent, copy } = deinitializedWithModuleCopy();
+    const run = fixture.runRuleChecks("--repo", parent, "--base", "base", "--module-repo", copy);
+    assert.equal(run.code, 2);
+    assert.ok(run.summary.endsWith("blocked=mod"), run.summary);
+  });
+
   it("test_ruleChecks_blocksWithExitTwo_whenGitlinkReplacedBySymlink", () => {
     const { parent } = parentWithSubmodule();
     fixture.git(parent, ["rm", "-q", "--cached", "mod"]);

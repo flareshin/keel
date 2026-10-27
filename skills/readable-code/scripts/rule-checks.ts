@@ -20,7 +20,7 @@ interface Summary {
   blocked: string[];
 }
 
-type ScanTree = (root: string, base: string, head: string | undefined) => { signals: Signal[]; summary: Summary };
+type ScanTree = (root: string, base: string, head: string | undefined, moduleRepos: readonly string[]) => { signals: Signal[]; summary: Summary };
 
 const SKILL_DIR = dirname(dirname(realpathSync(import.meta.filename)));
 const TEST_SEGMENTS = new Set(["test", "tests", "__tests__"]);
@@ -82,8 +82,8 @@ const NO_ENTRY_MODE = "000000";
 const BLOCKED = "blocked";
 
 const PROG = basename(process.argv[1] ?? "rule-checks.ts");
-const USAGE = `usage: ${PROG} [-h] [--repo REPO] [--base BASE] [--head HEAD]\n${" ".repeat(`usage: ${PROG} `.length)}[--self-test]\n`;
-const HELP = `${USAGE}\noptions:\n  -h, --help   show this help message and exit\n  --repo REPO\n  --base BASE\n  --head HEAD\n  --self-test\n`;
+const USAGE = `usage: ${PROG} [-h] [--repo REPO] [--base BASE] [--head HEAD]\n${" ".repeat(`usage: ${PROG} `.length)}[--module-repo MODULE_REPO] [--self-test]\n`;
+const HELP = `${USAGE}\noptions:\n  -h, --help   show this help message and exit\n  --repo REPO\n  --base BASE\n  --head HEAD\n  --module-repo MODULE_REPO\n               a repo holding the commits of a submodule that is not checked out\n               (repeatable)\n  --self-test\n`;
 
 class RuntimeError extends Error {}
 
@@ -139,7 +139,7 @@ function runCli(argv: readonly string[], scan: ScanTree = scanTree): number {
   if (!parsed.repo || !parsed.base) return usageError("--repo and --base are required");
   let scanResult: { signals: Signal[]; summary: Summary };
   try {
-    scanResult = scan(parsed.repo, parsed.base, parsed.head);
+    scanResult = scan(parsed.repo, parsed.base, parsed.head, parsed.moduleRepos);
   } catch (error) {
     process.stderr.write((error instanceof Error ? error.stack : String(error)) + "\n");
     process.stdout.write(`summary repos=0 scanned_lines=0 signals=0 unscanned=none blocked=.(crashed: ${pythonExceptionName(error)})\n`);
@@ -154,10 +154,11 @@ interface Arguments {
   repo?: string;
   base?: string;
   head?: string;
+  moduleRepos: string[];
   selfTest: boolean;
 }
 
-const ALL_FLAGS = ["-h", "--help", "--repo", "--base", "--head", "--self-test"];
+const ALL_FLAGS = ["-h", "--help", "--repo", "--base", "--head", "--module-repo", "--self-test"];
 const NEGATIVE_NUMBER = /^-\d+$|^-\d*\.\d+$/;
 
 function usageError(message: string): number {
@@ -197,7 +198,7 @@ function classify(text: string): Classified {
 }
 
 function parseArguments(argv: readonly string[]): Arguments | number {
-  const parsed: Arguments = { selfTest: false };
+  const parsed: Arguments = { moduleRepos: [], selfTest: false };
   const extras: string[] = [];
   const classified: Classified[] = [];
   for (const text of argv) {
@@ -235,20 +236,21 @@ function parseArguments(argv: readonly string[]): Arguments | number {
       value = argv[index] ?? "";
       index += 1;
     }
-    parsed[found.flag.slice(2) as "repo" | "base" | "head"] = value;
+    if (found.flag === "--module-repo") parsed.moduleRepos.push(value);
+    else parsed[found.flag.slice(2) as "repo" | "base" | "head"] = value;
   }
   if (extras.length > 0) return usageError(`unrecognized arguments: ${extras.join(" ")}`);
   return parsed;
 }
 
-function scanTree(root: string, base: string, head: string | undefined): { signals: Signal[]; summary: Summary } {
+function scanTree(root: string, base: string, head: string | undefined, moduleRepos: readonly string[]): { signals: Signal[]; summary: Summary } {
   const summary: Summary = { repos: 0, scanned: 0, changed: 0, unscanned: [], blocked: [] };
   const start = resolveStart(root, base, head);
   if (start === null) {
     summary.blocked.push(".");
     return { signals: [], summary };
   }
-  const signals = scanRepo(root, ".", [start, head ?? null], base, summary);
+  const signals = scanRepo(root, ".", [start, head ?? null], base, moduleRepos, summary);
   if (summary.changed > DIFF_LINE_SIGNAL) {
     signals.push(signal(SIZE, "(diff)", `${summary.changed} changed lines excluding tests and generated files > ${DIFF_LINE_SIGNAL}`));
   }
@@ -260,7 +262,7 @@ function resolveStart(root: string, base: string, head: string | undefined): str
   return git(root, "merge-base", base, head || "HEAD");
 }
 
-function scanRepo(repo: string, rel: string, span: Span, base: string, summary: Summary): Signal[] {
+function scanRepo(repo: string, rel: string, span: Span, base: string, moduleRepos: readonly string[], summary: Summary): Signal[] {
   const [start, end] = span;
   const changes = readChanges(repo, start, end);
   if (changes === null) {
@@ -282,7 +284,7 @@ function scanRepo(repo: string, rel: string, span: Span, base: string, summary: 
     found.push(...checkLines(label, path, added), ...checkFileSize(repo, span, label, path, beforePath));
   }
   for (const [path, status] of changedGitlinks(repo, start, end)) {
-    found.push(...scanSubmodule(repo, joinRel(rel, path), path, status, span, base, summary));
+    found.push(...scanSubmodule(repo, joinRel(rel, path), path, status, span, base, moduleRepos, summary));
   }
   return found;
 }
@@ -291,22 +293,39 @@ function joinRel(rel: string, path: string): string {
   return rel === "." ? path : `${rel}/${path}`;
 }
 
-function scanSubmodule(parent: string, rel: string, path: string, status: string, parentSpan: Span, base: string, summary: Summary): Signal[] {
+function scanSubmodule(parent: string, rel: string, path: string, status: string, parentSpan: Span, base: string,
+  moduleRepos: readonly string[], summary: Summary): Signal[] {
   if (status === "A" || status === "D") {
     summary.unscanned.push(`${rel}(${status === "A" ? "added" : "removed"})`);
     return [];
   }
-  const span = status === "M" ? resolveSubmoduleSpan(parent, path, parentSpan, base) : BLOCKED;
-  if (span === BLOCKED) {
+  const located = status === "M" ? locateSubmodule(parent, path, parentSpan, base, moduleRepos) : BLOCKED;
+  if (located === BLOCKED) {
     summary.blocked.push(rel);
     return [];
   }
-  return scanRepo(join(parent, path), rel, span, base, summary);
+  return scanRepo(located.repo, rel, located.span, base, moduleRepos, summary);
+}
+
+function locateSubmodule(parent: string, path: string, parentSpan: Span, base: string,
+  moduleRepos: readonly string[]): { repo: string; span: Span } | typeof BLOCKED {
+  const sub = join(parent, path);
+  if (!isInitialized(sub)) return findModuleRepo(parent, path, parentSpan, moduleRepos);
+  const span = resolveSubmoduleSpan(parent, path, parentSpan, base);
+  return span === BLOCKED ? BLOCKED : { repo: sub, span };
+}
+
+function findModuleRepo(parent: string, path: string, parentSpan: Span, moduleRepos: readonly string[]): { repo: string; span: Span } | typeof BLOCKED {
+  const [parentStart, parentEnd] = parentSpan;
+  if (!parentEnd) return BLOCKED;
+  const start = readGitlink(parent, parentStart, path);
+  const end = readGitlink(parent, parentEnd, path);
+  const repo = moduleRepos.find((candidate) => hasCommit(candidate, start) && hasCommit(candidate, end));
+  return repo === undefined ? BLOCKED : { repo, span: [start as string, end as string] };
 }
 
 function resolveSubmoduleSpan(parent: string, path: string, parentSpan: Span, base: string): Span | typeof BLOCKED {
   const sub = join(parent, path);
-  if (!isInitialized(sub)) return BLOCKED;
   const [parentStart, parentEnd] = parentSpan;
   if (parentEnd) {
     const start = readGitlink(parent, parentStart, path);

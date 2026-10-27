@@ -324,6 +324,13 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
   logs deny, pass or record lines, so none drops to zero.
 
 ### Added
+- `rule-checks.ts --module-repo <repo>` (repeatable): a changed gitlink whose submodule is not checked out (a parent repo
+  that holds the module as a plain copy, or a deinitialized submodule) is scanned from the old to the new pinned commit in
+  the first given repo that holds both commits, with its signals labelled under the gitlink path. It applies only when
+  `--head` is a commit or tree; without a matching repo, or over the working tree, the gitlink stays `blocked` and exit 2.
+  `lens-review` passes every other reviewed repo as `--module-repo` to each rule-checks command, so a parent-repo review
+  that bumps a gitlink to a module reviewed in the same run can pass. The rule-checks parity test compares the recorded
+  usage and help text with `--module-repo` added (32 of the 66 recorded runs print it); nothing else in them changes.
 - `measure/smoke` starts every `run:` metric runner of the ledger rows before it judges the rows, at most 6 at a time,
   instead of running them one after another inside the metrics check. On the owner's machine the 13 overlay runners took
   about 360 s in sequence (the slowest alone 55 s) and now finish together in about 70 s. Each runner keeps its 120 s

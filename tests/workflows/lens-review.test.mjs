@@ -193,6 +193,22 @@ test('lensReview_diffsLensesAgainstSnapshotTree_whenWorkingTreeIsReviewed', asyn
   assert.equal(prepareCommands.lenses, null)
 })
 
+test('lensReview_offersTheOtherReviewedReposAsModuleRepos_toEachRuleChecksCommand', async () => {
+  const prepare = { diff_outputs: [preparedLine({ repoRoot: '/work/module' }), preparedLine()], run_id_output: DERIVED_RUN_ID, lenses_output: '' }
+  const rt = createRuntime({ respond: responder({ prepare }) })
+  await rt.run('lens-review', { auditMode: 'split', diffs: [{ repo: '/work/module', base: 'origin/main' }, ROOT_DIFF], lenses: CALLER_LENSES })
+  const commands = auditChildArgs(rt).lenses.find((lens) => lens.key === 'rule-checks').prompt.split('\n').filter((line) => line.startsWith('node '))
+  assert.equal(commands.length, 2)
+  assert.ok(commands[0].endsWith(` --repo '/work/module' --base ${SHA_A} --head ${SHA_B} --module-repo '/work/app'`), commands[0])
+  assert.ok(commands[1].endsWith(` --repo '/work/app' --base ${SHA_A} --head ${SHA_B} --module-repo '/work/module'`), commands[1])
+})
+
+test('lensReview_passesNoModuleRepo_whenOneRepoIsReviewed', async () => {
+  const rt = createRuntime({ respond: responder() })
+  await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
+  assert.doesNotMatch(auditChildArgs(rt).lenses.find((lens) => lens.key === 'rule-checks').prompt, /--module-repo/)
+})
+
 test('lensReview_returnsNeedsFixesThroughReporter_whenBlockingFindingIsConfirmed', async () => {
   const audits = { contract: { findings: [finding('c1', 'medium'), finding('c2', 'low')] } }
   const verdicts = { c1: { verdict: 'CONFIRMED', evidence: 'reran' }, c2: { verdict: 'CONFIRMED', evidence: 'reran' } }

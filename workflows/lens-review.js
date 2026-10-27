@@ -374,7 +374,10 @@ function buildReadingGuideBlock() {
 }
 
 function buildRuleChecksLens(reviewed) {
-  const commands = reviewed.map((target) => `node ${RULE_CHECKS} --repo '${target.repo_root}' --base ${target.review_base} --head ${target.head || target.snapshot_tree}`)
+  const commands = reviewed.map((target) => {
+    const moduleRepos = reviewed.filter((other) => other !== target).map((other) => ` --module-repo '${other.repo_root}'`).join('')
+    return `node ${RULE_CHECKS} --repo '${target.repo_root}' --base ${target.review_base} --head ${target.head || target.snapshot_tree}${moduleRepos}`
+  })
   const deltaNote = reviewed.some((target) => target.since) ? ' In a delta review, only a line the delta changes is a candidate.' : ''
   return {
     key: RULE_CHECKS_KEY,

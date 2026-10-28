@@ -86,6 +86,19 @@ describe('MultiRepoScenarioTest', () => {
     assert.ok(run.stderr.includes('no tests evidence covers this exact content'), run.stderr);
   });
 
+  test('parentPush_denies_whenItChangesAFileBesideThePointerAndOnlyTheSubmoduleRanTests', (t) => {
+    const sandbox = new Sandbox(t, MULTI_REGISTRY);
+    const [parent, submodule] = submoduleChange(sandbox);
+    parent.commit({ 'app.py': 'APP = 2\n', 'tests/test_app.py': TEST }, 'app change');
+    sandbox.testsEvidence(submodule);
+    sandbox.review(submodule, { runId: 'rv-run-0001' });
+    sandbox.review(parent, { runId: 'rv-run-0001' });
+    sandbox.approve('rv-run-0001');
+    const run = sandbox.push(parent, 'git push origin feature');
+    assert.equal(run.rc, 2);
+    assert.ok(run.stderr.includes('no tests evidence covers this exact content'), run.stderr);
+  });
+
   test('parentPointerPush_denies_whenSubmoduleTestsRanOnUncommittedEdits', (t) => {
     const sandbox = new Sandbox(t, MULTI_REGISTRY);
     const [parent, submodule] = submoduleChange(sandbox);

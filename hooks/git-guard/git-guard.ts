@@ -17,7 +17,7 @@ import { parseJson, parseJsonReadingNonFiniteNumbersAsZero, parsePayload } from 
 import { isDirectory, isFile, isSymlink, resolveSymlinksKeepingMissingTail, tryReadText } from "../lib/hookkit/files.ts";
 import { AttributeError, describeError, errorName, pythonTypeName, RecursionError, ValueError } from "../lib/hookkit/errors.ts";
 import { readStdin } from "../lib/hookkit/stdio.ts";
-import { addedComments } from "./comments.ts";
+import { addedComments, withStraightQuotes } from "./comments.ts";
 import { currentBranch, findRepoKey, findToplevel, git, gitOutput, isCommit } from "../lib/hookkit/repo.ts";
 import {
   ghSubcommandArgv, gitDirectory, gitSubcommandIndex, isConfigRead, readPushArguments, resolveDirectory, steps, writeTargets,
@@ -214,10 +214,17 @@ function fileAfterEdit(toolArgs: Payload, edits: readonly unknown[], before: str
     const oldString = getField(replacement, "old_string");
     const newString = getField(replacement, "new_string");
     if (typeof oldString !== "string" || typeof newString !== "string") continue;
-    if (!text.includes(oldString)) return null;
-    text = getField(replacement, "replace_all") === true ? text.replaceAll(oldString, () => newString) : text.replace(oldString, () => newString);
+    const matched = matchedOldString(text, oldString);
+    if (matched === null) return null;
+    text = getField(replacement, "replace_all") === true ? text.replaceAll(matched, () => newString) : text.replace(matched, () => newString);
   }
   return text;
+}
+
+function matchedOldString(text: string, oldString: string): string | null {
+  if (text.includes(oldString)) return oldString;
+  const start = withStraightQuotes(text).indexOf(withStraightQuotes(oldString));
+  return start === -1 ? null : text.slice(start, start + oldString.length);
 }
 
 function fillIn(template: string, value: string): string {

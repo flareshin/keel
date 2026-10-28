@@ -1439,6 +1439,27 @@ describe("CommentWriteTest", () => {
     assertPassed(edit("Edit", toolArgs));
   });
 
+  it("edit_denied_whenTheOldStringMatchesOnlyWithCurlyQuotesStraightened", () => {
+    const path = codeFile("label.ts", "const label = “don’t”;\n");
+    const toolArgs = { file_path: path, old_string: "const label = \"don't\";", new_string: "// shown on the cart\nconst label = \"don't\";" };
+
+    assertCommentDenied(edit("Edit", toolArgs), "// shown on the cart");
+  });
+
+  it("edit_passes_whenACurlyQuotedCommentIsCarriedThroughWithStraightQuotes", () => {
+    const path = codeFile("label.ts", "// don’t cache\nconst label = 1;\n");
+    const toolArgs = { file_path: path, old_string: "// don't cache\nconst label = 1;", new_string: "// don't cache\nconst label = 2;" };
+
+    assertPassed(edit("Edit", toolArgs));
+  });
+
+  it("edit_denied_whenThreeCurlyQuotesPrecedeANewPythonComment", () => {
+    const path = codeFile("quote.py", "QUOTE = \"’’’\"\nx = 1\n");
+    const toolArgs = { file_path: path, old_string: "x = 1", new_string: "# new note\nx = 1" };
+
+    assertCommentDenied(edit("Edit", toolArgs), "# new note");
+  });
+
   it("write_denied_whenAModuleDocstringOpensTheFile", () => {
     const content = '"""\nLoads the items.\n"""\nimport os\n';
 

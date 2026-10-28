@@ -27,14 +27,22 @@ export function addedComments(path: string, before: string, after: string): stri
   const findComments = commentFinderOf(path);
   if (findComments === null) return [];
   const remaining = new Map<string, number>();
-  for (const line of reported(findComments(before))) remaining.set(line, (remaining.get(line) ?? 0) + 1);
+  for (const line of reported(findComments(before))) {
+    const key = withStraightQuotes(line);
+    remaining.set(key, (remaining.get(key) ?? 0) + 1);
+  }
   const added: string[] = [];
   for (const line of reported(findComments(after))) {
-    const left = remaining.get(line) ?? 0;
-    if (left > 0) remaining.set(line, left - 1);
+    const key = withStraightQuotes(line);
+    const left = remaining.get(key) ?? 0;
+    if (left > 0) remaining.set(key, left - 1);
     else added.push(line);
   }
   return added;
+}
+
+export function withStraightQuotes(text: string): string {
+  return text.replace(/[\u2018\u2019]/gu, "'").replace(/[\u201C\u201D]/gu, '"');
 }
 
 function commentFinderOf(path: string): CommentFinder | null {

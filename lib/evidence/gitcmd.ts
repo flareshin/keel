@@ -282,6 +282,18 @@ export function submoduleRoots(repo: string): string[] {
   return roots.map((root) => resolveLinks(root));
 }
 
+export function submoduleUrl(repo: string, commit: string, path: string): string | null {
+  const completed = run(repo, ['config', '--blob', commit + ':.gitmodules', '-z', '--get-regexp', '^submodule\\..*\\.path$'], { check: false });
+  if (completed.returncode !== 0) return null;
+  for (const record of completed.stdout.toString().split('\0')) {
+    const [key, value] = record.split('\n');
+    if (value !== path || key === undefined) continue;
+    const name = key.slice('submodule.'.length, -'.path'.length);
+    return exactOutputIfOk(repo, ['config', '--blob', commit + ':.gitmodules', '--get', `submodule.${name}.url`]);
+  }
+  return null;
+}
+
 export function snapshotTree(repo: string): string {
   const index = join(tmpdir(), 'keel-index-' + randomBytes(TEMP_INDEX_RANDOM_BYTES).toString('hex'));
   closeSync(openSync(index, 'wx'));

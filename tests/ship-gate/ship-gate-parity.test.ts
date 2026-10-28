@@ -83,6 +83,7 @@ describe("ship-gate parity listed divergences", () => {
       ...GH_ANSWER_OR_PAYLOAD_NOW_DENIED_OR_REWORDED,
       "python-keel-0027", "python-keel-0028", "python-keel-0029", "python-keel-0030", "python-keel-0031", "python-keel-0046", "python-keel-0047",
       "ts-keel-0027", "ts-keel-0028", "ts-keel-0029", "ts-keel-0030", "ts-keel-0031", "ts-keel-0046", "ts-keel-0047",
+      "extra-0800",
     ].sort());
     assert.deepEqual(rowsRequiring(0), [
       "extra-0019", "extra-0020", "extra-0036", "extra-0037", "extra-0041", "extra-0042", "extra-0046", "extra-0062",
@@ -106,7 +107,7 @@ describe("ship-gate parity listed divergences", () => {
       "command-list-nested-10001", "command-list-nested-9999",
       "extra-0019", "extra-0020", "extra-0025", "extra-0026", "extra-0030", "extra-0031", "extra-0035",
       "extra-0036", "extra-0037", "extra-0041", "extra-0042", "extra-0046",
-      "extra-0051", "extra-0052", "extra-0064", "extra-0068", "extra-0069",
+      "extra-0051", "extra-0052", "extra-0064", "extra-0068", "extra-0069", "extra-0800",
       "py-comment-deletion-python-keel-0470", "py-comment-deletion-python-keel-0477",
       "py-comment-deletion-ts-keel-0470", "py-comment-deletion-ts-keel-0477", "stdin-push-nested-10001",
     ]);

@@ -58,6 +58,48 @@ describe('MultiRepoScenarioTest', () => {
     assert.equal(run.rc, 0, run.stderr);
   });
 
+  test('parentPointerPush_passes_whenTestsRanOnlyInTheSubmodule', (t) => {
+    const sandbox = new Sandbox(t, MULTI_REGISTRY);
+    const [parent, submodule] = submoduleChange(sandbox);
+    sandbox.review(submodule, { runId: 'rv-run-0001' });
+    sandbox.review(parent, { runId: 'rv-run-0001' });
+    sandbox.testsEvidence(submodule);
+    sandbox.approve('rv-run-0001');
+    assert.equal(sandbox.push(submodule, 'git push origin feature').rc, 0);
+    submodule.git('push', '-q', 'origin', 'feature');
+    const run = sandbox.push(parent, 'git push origin feature');
+    assert.equal(run.rc, 0, run.stderr);
+  });
+
+  test('parentPointerPush_denies_whenSubmoduleTestsRanOnAnotherCommit', (t) => {
+    const sandbox = new Sandbox(t, MULTI_REGISTRY);
+    const [parent, submodule] = submoduleChange(sandbox);
+    sandbox.testsEvidence(submodule);
+    submodule.commit({ 'lib.py': 'LIB = 3\n' }, 'untested lib change');
+    parent.git('add', 'lib');
+    parent.git('commit', '-q', '-m', 'bump lib again');
+    sandbox.review(submodule, { runId: 'rv-run-0001' });
+    sandbox.review(parent, { runId: 'rv-run-0001' });
+    sandbox.approve('rv-run-0001');
+    const run = sandbox.push(parent, 'git push origin feature');
+    assert.equal(run.rc, 2);
+    assert.ok(run.stderr.includes('no tests evidence covers this exact content'), run.stderr);
+  });
+
+  test('parentPointerPush_denies_whenSubmoduleTestsRanOnUncommittedEdits', (t) => {
+    const sandbox = new Sandbox(t, MULTI_REGISTRY);
+    const [parent, submodule] = submoduleChange(sandbox);
+    submodule.write('lib.py', 'LIB = 3\n');
+    sandbox.testsEvidence(submodule);
+    submodule.git('checkout', '-q', '--', 'lib.py');
+    sandbox.review(submodule, { runId: 'rv-run-0001' });
+    sandbox.review(parent, { runId: 'rv-run-0001' });
+    sandbox.approve('rv-run-0001');
+    const run = sandbox.push(parent, 'git push origin feature');
+    assert.equal(run.rc, 2);
+    assert.ok(run.stderr.includes('no tests evidence covers this exact content'), run.stderr);
+  });
+
   test('pushes_pass_whenRootCoversTwoReposAndOneGetsADelta', (t) => {
     const sandbox = new Sandbox(t, MULTI_REGISTRY);
     const app = sandbox.clone('acme', 'app');

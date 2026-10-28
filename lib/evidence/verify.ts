@@ -303,8 +303,28 @@ function testReasons(outgoing: Outgoing, entries: PathEntry[], risk: Risk): Reas
   if (!registry.testsRequired(outgoing.row)) {
     return [{ ruleId: K3, text: `add test infrastructure first: ${outgoing.repoKey} has tests=none and the change is ${risk.riskClass}` }];
   }
-  if (coveredBy('tests', outgoing, entries)) return [];
+  if (coveredBy('tests', outgoing, entries) || pointersTestedInTheirSubmodules(outgoing, entries)) return [];
   return [{ ruleId: K3, text: 'no tests evidence covers this exact content: run `keel test -- <test command>`' }];
+}
+
+function pointersTestedInTheirSubmodules(outgoing: Outgoing, entries: PathEntry[]): boolean {
+  return entries.every((entry) => gitcmd.isGitlink(entry) && !gitcmd.isDeleted(entry) && submoduleTestedAt(outgoing, entry));
+}
+
+function submoduleTestedAt(outgoing: Outgoing, entry: PathEntry): boolean {
+  const submoduleKey = registry.normalizeRepoKey(gitcmd.submoduleUrl(outgoing.repoRoot, outgoing.head, entry.path));
+  if (submoduleKey === null) return false;
+  return store.load('tests', submoduleKey).some((evidence) => evidence['head'] === entry.blob
+    && cleanCommitTree(evidence['repo_root'], entry.blob!) === evidence['tree']);
+}
+
+function cleanCommitTree(repoRoot: string, commit: string): string | null {
+  try {
+    return gitcmd.treeOfCommit(repoRoot, commit);
+  } catch (error) {
+    if (error instanceof gitcmd.GitError) return null;
+    throw error;
+  }
 }
 
 function sameRangeTestReasons(risk: Risk, waiver: string | null, unchangedLogic: Set<string>): Reason[] {

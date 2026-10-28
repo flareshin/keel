@@ -18,6 +18,8 @@ import { isDirectory, isFile, isSymlink, resolveSymlinksKeepingMissingTail, tryR
 import { AttributeError, describeError, errorName, pythonTypeName, RecursionError, ValueError } from "../lib/hookkit/errors.ts";
 import { readStdin } from "../lib/hookkit/stdio.ts";
 import { addedComments, withStraightQuotes } from "./comments.ts";
+import { notebookCellChange } from "./notebook.ts";
+import type { CodeChange } from "./notebook.ts";
 import { currentBranch, findRepoKey, findToplevel, git, gitOutput, isCommit } from "../lib/hookkit/repo.ts";
 import {
   ghSubcommandArgv, gitDirectory, gitSubcommandIndex, isConfigRead, readPushArguments, resolveDirectory, steps, writeTargets,
@@ -198,12 +200,19 @@ function editViolations(shown: string, path: string, text: string): Violation[] 
 }
 
 function commentViolations(toolArgs: Payload, edits: readonly unknown[], shown: string, path: string): Violation[] {
-  const before = (tryReadText(path) ?? "").replaceAll("\r\n", "\n");
-  const after = fileAfterEdit(toolArgs, edits, before);
-  if (after === null) return [];
-  const added = addedComments(path, before, after);
+  const change = codeChange(toolArgs, edits, path);
+  if (change === null) return [];
+  const added = addedComments(change.path, change.before, change.after);
   if (added.length === 0) return [];
   return [{ ruleId: C_COMMENTS, text: `${shown} adds or rewrites code comments: ${protocol.listed(added)}. Only tool directives and legal notices may stay.` }];
+}
+
+function codeChange(toolArgs: Payload, edits: readonly unknown[], path: string): CodeChange | null {
+  const diskText = tryReadText(path);
+  if (getField(toolArgs, "new_source") !== null) return notebookCellChange(path, diskText, toolArgs);
+  const before = (diskText ?? "").replaceAll("\r\n", "\n");
+  const after = fileAfterEdit(toolArgs, edits, before);
+  return after === null ? null : { path, before, after };
 }
 
 function fileAfterEdit(toolArgs: Payload, edits: readonly unknown[], before: string): string | null {

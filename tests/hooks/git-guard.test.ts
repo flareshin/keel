@@ -1460,6 +1460,73 @@ describe("CommentWriteTest", () => {
     assertCommentDenied(edit("Edit", toolArgs), "# new note");
   });
 
+  function notebookFile(cells: unknown[], language = "python", name = "load.ipynb"): string {
+    return codeFile(name, JSON.stringify({ cells, metadata: { language_info: { name: language } }, nbformat: 4, nbformat_minor: 5 }));
+  }
+
+  const loadCell = { cell_type: "code", id: "a1", source: ["# reads the rows\n", "rows = load()\n"], metadata: {}, outputs: [] };
+
+  it("notebookEdit_denied_whenAReplacedCodeCellAddsAComment", () => {
+    const toolArgs = { notebook_path: notebookFile([loadCell]), cell_id: "a1", new_source: "# reads the rows\n# skips blanks\nrows = load()\n" };
+
+    assertCommentDenied(edit("NotebookEdit", toolArgs), "# skips blanks");
+  });
+
+  it("notebookEdit_passes_whenTheCellKeepsItsExistingComment", () => {
+    const toolArgs = { notebook_path: notebookFile([loadCell]), cell_id: "a1", new_source: "# reads the rows\nrows = load(limit=10)\n" };
+
+    assertPassed(edit("NotebookEdit", toolArgs));
+  });
+
+  it("notebookEdit_denied_whenAnInsertedCodeCellHasAComment", () => {
+    const toolArgs = { notebook_path: notebookFile([loadCell]), cell_id: "a1", edit_mode: "insert", cell_type: "code", new_source: "# count them\nlen(rows)\n" };
+
+    assertCommentDenied(edit("NotebookEdit", toolArgs), "# count them");
+  });
+
+  it("notebookEdit_denied_whenTheCellIsNamedByIndex", () => {
+    const { id: _, ...unnamedCell } = loadCell;
+    const toolArgs = { notebook_path: notebookFile([unnamedCell]), cell_id: "cell-0", new_source: "# reads the rows\n# skips blanks\nrows = load()\n" };
+
+    assertCommentDenied(edit("NotebookEdit", toolArgs), "# skips blanks");
+  });
+
+  it("notebookEdit_passes_forMarkdownCellsAndUnknownKernels", () => {
+    const markdown = { notebook_path: notebookFile([loadCell], "python", "insert.ipynb"), edit_mode: "insert", cell_type: "markdown", new_source: "# Loading\n" };
+    const unknownKernel = { notebook_path: notebookFile([loadCell], "r", "r.ipynb"), cell_id: "a1", new_source: "# reads the rows\n# skips blanks\nrows = load()\n" };
+
+    assertPassed(edit("NotebookEdit", markdown));
+    assertPassed(edit("NotebookEdit", unknownKernel));
+  });
+
+  it("notebookEdit_denied_whenTheKernelIsUnnamedOrMixedCase", () => {
+    const newSource = "# reads the rows\n# skips blanks\nrows = load()\n";
+    const unnamed = codeFile("plain.ipynb", JSON.stringify({ cells: [loadCell], metadata: {}, nbformat: 4, nbformat_minor: 5 }));
+
+    assertCommentDenied(edit("NotebookEdit", { notebook_path: unnamed, cell_id: "a1", new_source: newSource }), "# skips blanks");
+    assertCommentDenied(edit("NotebookEdit", { notebook_path: notebookFile([loadCell], "Python"), cell_id: "a1", new_source: newSource }), "# skips blanks");
+  });
+
+  it("notebookEdit_denied_whenACppKernelCellAddsASlashComment", () => {
+    const cppCell = { cell_type: "code", id: "c1", source: "int x = 1;\n", metadata: {}, outputs: [] };
+    const toolArgs = { notebook_path: notebookFile([cppCell], "c++"), cell_id: "c1", new_source: "// skips blanks\nint x = 1;\n" };
+
+    assertCommentDenied(edit("NotebookEdit", toolArgs), "// skips blanks");
+  });
+
+  it("notebookEdit_passes_whenTheEditIsNotJudged", () => {
+    const markdownCell = { cell_type: "markdown", id: "m1", source: "Intro\n", metadata: {} };
+    const newSource = "# skips blanks\nrows = load()\n";
+    const deleted = { notebook_path: notebookFile([loadCell]), cell_id: "a1", edit_mode: "delete", new_source: newSource };
+    const markdownReplace = { notebook_path: notebookFile([markdownCell], "python", "markdown.ipynb"), cell_id: "m1", new_source: "# Loading\nIntro\n" };
+    const unparsable = { notebook_path: codeFile("broken.ipynb", "{not json"), cell_id: "a1", new_source: newSource };
+
+    assertPassed(edit("NotebookEdit", deleted));
+    assertPassed(edit("NotebookEdit", markdownReplace));
+    assertPassed(edit("NotebookEdit", unparsable));
+    assert.deepEqual(sandbox.fires().filter((fire) => fire.outcome === "error"), []);
+  });
+
   it("write_denied_whenAModuleDocstringOpensTheFile", () => {
     const content = '"""\nLoads the items.\n"""\nimport os\n';
 

@@ -63,7 +63,7 @@ export const SESSION_ID = "11111111-2222-3333-4444-555555555555";
 export const AGENT_ID = "a1b2c3d4e5f6";
 export const SEEDED_RULE_IDS: ReadonlySet<string> = new Set([
   "K1", "K2", "K3", "K4", "K5", "risk", "F-irreversible", "F-secrets", "F-attribution",
-  "F-force-push", "F-hookskip", "C-dispatch", "C-handoff", "C-isolation", "S-jdk",
+  "F-force-push", "F-hookskip", "C-dispatch", "C-handoff", "C-isolation", "C-comments", "S-jdk",
 ]);
 
 export const KEEL_EVIDENCE_LINE =

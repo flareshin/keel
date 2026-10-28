@@ -214,7 +214,7 @@ describe("wired-fires", () => {
     harness.box.registerHooks(shippedHooks())
     const item = wiredFires()
     assert.equal(item.status, "PASS", JSON.stringify(item))
-    assert.ok(item.detail.includes("13 rows fired on bad fixtures, 6 hooks quiet"), item.detail)
+    assert.ok(item.detail.includes("14 rows fired on bad fixtures, 6 hooks quiet"), item.detail)
   })
 
   it("wiredFires_passes_whenTheOverlayIsAssembledFromTheShippedExamples", () => {
@@ -226,6 +226,6 @@ describe("wired-fires", () => {
     harness.box.registerHooks(shippedHooks())
     const item = wiredFires()
     assert.equal(item.status, "PASS", JSON.stringify(item))
-    assert.ok(item.detail.includes("14 rows fired on bad fixtures, 6 hooks quiet"), item.detail)
+    assert.ok(item.detail.includes("15 rows fired on bad fixtures, 6 hooks quiet"), item.detail)
   })
 })

@@ -8,7 +8,7 @@ import { CHECKOUT, LEDGER_COLUMNS, TODAY, MeasureSandbox, readText } from "./hel
 const SEED_IDS = [
   "K1", "K2", "K3", "K4", "K5", "risk", "F-irreversible", "F-secrets", "F-attribution",
   "F-force-push", "F-hookskip", "F-mod-trust", "C-dispatch", "C-handoff", "C-isolation", "S-jdk", "C-review-command",
-  "C-verbatim-fix", "C-precheck",
+  "C-verbatim-fix", "C-precheck", "C-comments",
 ]
 const SEED_GRACE_UNTIL = "2026-12-10"
 const STATUS_WITHOUT_EVIDENCE = TODAY <= SEED_GRACE_UNTIL ? "GRACE" : "FAIL"
@@ -44,7 +44,7 @@ describe("seed ledger", () => {
     const [, result] = box.runJson("smoke", ["--json-only"])
     const relevant = result.assertions.filter((item: { check: string }) => ["ledger-format", "id-unique", "caps"].includes(item.check))
     assert.deepEqual(relevant.filter((item: { status: string }) => item.status !== "PASS"), [])
-    assert.deepEqual(relevant.find((item: { scope: string; check: string }) => item.check === "caps" && item.scope === "core"), { check: "caps", scope: "core", status: "PASS", detail: "7/10" })
+    assert.deepEqual(relevant.find((item: { scope: string; check: string }) => item.check === "caps" && item.scope === "core"), { check: "caps", scope: "core", status: "PASS", detail: "8/10" })
   })
 
   it("seedLedger_isGraceUntilItsGraceDate_forRuleOfTwoAndMetricsWithNoFiresYet", () => {

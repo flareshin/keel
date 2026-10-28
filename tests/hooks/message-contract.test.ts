@@ -5,13 +5,14 @@ import {
   bash, ENV_PREFLIGHT, GIT_GUARD, HookSandbox, MODEL_ASSIGN, preToolUse, REPORT_GATE, SEEDED_RULE_IDS, SHIP_GATE, subagentStop,
 } from "./helpers.ts";
 import { HANDBACK_TAIL } from "../../hooks/report-gate/report-gate.ts";
+import { DROP_COMMENTS } from "../../hooks/git-guard/git-guard.ts";
 
 const FIRST_LINE = /^\[[A-Za-z0-9-]+\] (ship-gate|git-guard|report-gate|model-assign|env-preflight): \S/;
 const BULLET = /^- \[[A-Za-z0-9-]+\] \S/;
 const RUN_YOURSELF = "Run it yourself in your terminal: ";
 const ASK_USER = "Stop and ask the user.";
 const MESSAGE_LIMIT = 2000;
-const NEXT_STEPS = [RUN_YOURSELF, ASK_USER, HANDBACK_TAIL];
+const NEXT_STEPS = [RUN_YOURSELF, ASK_USER, HANDBACK_TAIL, DROP_COMMENTS];
 
 let sandbox: HookSandbox;
 

@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, readFileSync, symlinkSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { dirname, join } from "node:path";
 import {
   assertBulletIdsSeeded, assertFired, bash, GIT_GUARD, HookSandbox, KEEL_HOME, preToolUse, withEnv,
 } from "./helpers.ts";
 import type { HookResult } from "./helpers.ts";
-import { BOUNDARY_TIMEOUT_SECONDS, GuardError, scanStagedSecrets } from "../../hooks/git-guard/git-guard.ts";
+import { BOUNDARY_TIMEOUT_SECONDS, DROP_COMMENTS, GuardError, scanStagedSecrets } from "../../hooks/git-guard/git-guard.ts";
 import { GIT_TIMEOUT_SECONDS } from "../../hooks/lib/hookkit/repo.ts";
 
 const ATTRIBUTION_TRAILER = "Co-Authored-By: Claude <noreply@example.invalid>";
@@ -1295,5 +1295,183 @@ describe("FailClosedTest", () => {
   it("guard_passesWithoutFire_whenCommandIsNotADecisionPoint", () => {
     assertPassed(guard("ls -la && echo done"));
     assert.deepEqual(sandbox.fires(), []);
+  });
+});
+
+describe("CommentWriteTest", () => {
+  function assertCommentDenied(result: HookResult, line: string): void {
+    assert.equal(result.code, 2, result.stderr);
+    assert.ok(result.stderr.includes("[C-comments]"), result.stderr);
+    assert.ok(result.stderr.includes(line), result.stderr);
+    assert.equal(lastLine(result.stderr), DROP_COMMENTS);
+  }
+
+  function codeFile(name: string, content?: string): string {
+    const path = join(sandbox.root, "src", name);
+    mkdirSync(dirname(path), { recursive: true });
+    if (content !== undefined) writeFileSync(path, content);
+    return path;
+  }
+
+  it("write_denied_whenANewFileAddsADocComment", () => {
+    const result = edit("Write", { file_path: codeFile("total.ts"), content: "/** Sums the cart. */\nexport const total = 1;\n" });
+
+    assertCommentDenied(result, "/** Sums the cart. */");
+    assertFired(sandbox, "C-comments", "deny", "git-guard");
+  });
+
+  it("edit_denied_whenACommentIsReworded", () => {
+    const path = codeFile("Cart.java", "class Cart {\n// keeps the cart\nint n;\n}\n");
+    const toolArgs = { file_path: path, old_string: "// keeps the cart\nint n;", new_string: "// keeps the basket\nint n;" };
+
+    assertCommentDenied(edit("Edit", toolArgs), "// keeps the basket");
+  });
+
+  it("edit_passes_whenAnUnchangedCommentIsCarriedThroughTheReplacedSpan", () => {
+    const toolArgs = {
+      file_path: codeFile("Cart.java", "class Cart {\n    /**\n     * Legacy cart.\n     */\n    int n;\n}\n"),
+      old_string: "    /**\n     * Legacy cart.\n     */\n    int n;",
+      new_string: "    /**\n     * Legacy cart.\n     */\n    int count;",
+    };
+
+    assertPassed(edit("Edit", toolArgs));
+  });
+
+  it("multiEdit_denied_whenAnEditsEntryAddsALineComment", () => {
+    const edits = [{ old_string: "a = 1", new_string: "a = 1" }, { old_string: "b = 2", new_string: "# set b\nb = 2" }];
+
+    assertCommentDenied(edit("MultiEdit", { file_path: codeFile("job.py", "a = 1\nb = 2\n"), edits }), "# set b");
+  });
+
+  it("write_denied_whenAMultiLineDocstringBodyIsAdded", () => {
+    const content = 'def run():\n    """\n    Run the job.\n    """\n    return 1\n';
+
+    assertCommentDenied(edit("Write", { file_path: codeFile("job.py"), content }), "Run the job.");
+  });
+
+  it("write_denied_whenABlockCommentBodyLineHasNoLeadingStar", () => {
+    const content = "/*\n  Sums the cart.\n*/\nexport const total = 1;\n";
+
+    assertCommentDenied(edit("Write", { file_path: codeFile("total.ts"), content }), "Sums the cart.");
+  });
+
+  it("edit_denied_whenAJavadocLineIsRewordedInsideAnOpenBlock", () => {
+    const path = codeFile("Cart.java", "class Cart {\n    /**\n     * Legacy cart.\n     */\n    int n;\n}\n");
+    const toolArgs = { file_path: path, old_string: "     * Legacy cart.\n     */", new_string: "     * Current cart.\n     */" };
+
+    assertCommentDenied(edit("Edit", toolArgs), "* Current cart.");
+  });
+
+  it("write_denied_whenANarrativeCommentOnlyMentionsALicenseOrTool", () => {
+    const content = "// the license service returns 404 here, so retry\nexport const retry = 1;\n";
+
+    assertCommentDenied(edit("Write", { file_path: codeFile("retry.ts"), content }), "the license service");
+  });
+
+  it("write_passes_whenAContinuationLineStartsWithMultiplication", () => {
+    const content = "class Cart {\n  int total() {\n    return price\n        * quantity;\n  }\n}\n";
+
+    assertPassed(edit("Write", { file_path: codeFile("Cart.java"), content }));
+  });
+
+  it("write_passes_whenATripleQuotedDataStringHoldsHashLines", () => {
+    const content = 'QUERY = """\n# not a comment\nSELECT 1\n"""\n';
+
+    assertPassed(edit("Write", { file_path: codeFile("query.py"), content }));
+  });
+
+  it("write_passes_whenAGlobOrRegexHoldsABlockCloserBeforeAnyOpener", () => {
+    const glob = 'import x from "y";\nconst files = glob("**/*.ts");\n';
+    const regex = "const stars = /a*/;\nconst n = 1;\n";
+
+    assertPassed(edit("Write", { file_path: codeFile("files.ts"), content: glob }));
+    assertPassed(edit("Write", { file_path: codeFile("stars.ts"), content: regex }));
+  });
+
+  it("write_passes_whenATripleQuotedStringIsACallArgument", () => {
+    const content = 'cursor.execute(\n    """\n    SELECT id FROM item\n    """\n)\n';
+
+    assertPassed(edit("Write", { file_path: codeFile("q.py"), content }));
+  });
+
+  it("edit_passes_whenItRewordsALineOfATripleQuotedCallArgument", () => {
+    const path = codeFile("q.py", 'cursor.execute(\n    """\n    SELECT id FROM item\n    """\n)\n');
+    const toolArgs = { file_path: path, old_string: '    """\n    SELECT id FROM item\n    """', new_string: '    """\n    SELECT id, name FROM item\n    """' };
+
+    assertPassed(edit("Edit", toolArgs));
+  });
+
+  it("edit_passes_whenAGeneratorMethodLineLeadsTheFragment", () => {
+    const path = codeFile("walk.ts", 'class Walk {\n  *items() {\n    return glob("*.ts");\n  }\n}\n');
+    const toolArgs = { file_path: path, old_string: '  *items() {\n    return glob("*.ts");', new_string: '  *items() {\n    return glob("**/*.ts");' };
+
+    assertPassed(edit("Edit", toolArgs));
+  });
+
+  it("edit_denied_whenReplaceAllRewordsEveryCopyOfAComment", () => {
+    const path = codeFile("Cart.java", "class Cart {\n// tmp\nint a;\n// tmp\nint b;\n}\n");
+    const toolArgs = { file_path: path, old_string: "// tmp", new_string: "// keeps the total", replace_all: true };
+
+    assertCommentDenied(edit("Edit", toolArgs), "// keeps the total");
+  });
+
+  it("multiEdit_denied_whenALaterEntryMatchesOnlyAfterReplaceAll", () => {
+    const path = codeFile("Cart.java", "class Cart {\n// tmp\nint a;\n// tmp\nint b;\n}\n");
+    const edits = [
+      { old_string: "// tmp", new_string: "// keeps the total", replace_all: true },
+      { old_string: "// keeps the total\nint b;", new_string: "// keeps the total\nint count;" },
+    ];
+
+    assertCommentDenied(edit("MultiEdit", { file_path: path, edits }), "// keeps the total");
+  });
+
+  it("edit_denied_whenItAddsACommentToACrlfFile", () => {
+    const path = codeFile("Crlf.java", "class Cart {\r\nint n;\r\n}\r\n");
+    const toolArgs = { file_path: path, old_string: "int n;\n}", new_string: "// keeps the count\nint n;\n}" };
+
+    assertCommentDenied(edit("Edit", toolArgs), "// keeps the count");
+  });
+
+  it("edit_passes_whenTheOldStringIsNotInTheFile", () => {
+    const path = codeFile("Cart.java", "class Cart {\n}\n");
+    const toolArgs = { file_path: path, old_string: "int missing;", new_string: "// note\nint missing;" };
+
+    assertPassed(edit("Edit", toolArgs));
+  });
+
+  it("write_denied_whenAModuleDocstringOpensTheFile", () => {
+    const content = '"""\nLoads the items.\n"""\nimport os\n';
+
+    assertCommentDenied(edit("Write", { file_path: codeFile("load.py"), content }), "Loads the items.");
+  });
+
+  it("write_denied_whenAPythonDocstringIsAdded", () => {
+    const content = 'def run():\n    """Run the job."""\n    return 1\n';
+
+    assertCommentDenied(edit("Write", { file_path: codeFile("job.py"), content }), '"""Run the job."""');
+  });
+
+  it("write_passes_whenTheFileOnDiskAlreadyHasTheComment", () => {
+    const path = codeFile("total.ts", "// SPDX-License-Identifier: MIT\n// old note\nexport const total = 1;\n");
+
+    assertPassed(edit("Write", { file_path: path, content: "// SPDX-License-Identifier: MIT\n// old note\nexport const total = 2;\n" }));
+  });
+
+  it("write_passes_whenOnlyToolDirectivesAndNoticesAreAdded", () => {
+    const shell = "#!/usr/bin/env bash\n# shellcheck disable=SC2086\necho $1\n";
+    const script = "// @ts-check\n/* eslint-disable no-console */\n// Copyright 2026 Example Corp\n/// <reference types=\"node\" />\nconsole.log(1);\n";
+    const python = "# -*- coding: utf-8 -*-\n# pylint: disable=invalid-name\nx = 1  # noqa: E501\n";
+
+    assertPassed(edit("Write", { file_path: codeFile("run.sh"), content: shell }));
+    assertPassed(edit("Write", { file_path: codeFile("log.js"), content: script }));
+    assertPassed(edit("Write", { file_path: codeFile("names.py"), content: python }));
+  });
+
+  it("write_passes_whenCommentMarkersSitInsideStringsOrNonCodeFiles", () => {
+    const script = 'export const url = "https://example.invalid/a";\nconst glob = "/*.ts";\n';
+
+    assertPassed(edit("Write", { file_path: codeFile("url.ts"), content: script }));
+    assertPassed(edit("Write", { file_path: codeFile("README.md"), content: "# Title\n// not code\n" }));
+    assertPassed(edit("Write", { file_path: codeFile("app.yaml"), content: "# config note\nkey: 1\n" }));
   });
 });

@@ -17,6 +17,7 @@ import { parseJson, parseJsonReadingNonFiniteNumbersAsZero, parsePayload } from 
 import { isDirectory, isFile, isSymlink, resolveSymlinksKeepingMissingTail, tryReadText } from "../lib/hookkit/files.ts";
 import { AttributeError, describeError, errorName, pythonTypeName, RecursionError, ValueError } from "../lib/hookkit/errors.ts";
 import { readStdin } from "../lib/hookkit/stdio.ts";
+import { addedComments } from "./comments.ts";
 import { currentBranch, findRepoKey, findToplevel, git, gitOutput, isCommit } from "../lib/hookkit/repo.ts";
 import {
   ghSubcommandArgv, gitDirectory, gitSubcommandIndex, isConfigRead, readPushArguments, resolveDirectory, steps, writeTargets,
@@ -32,6 +33,8 @@ const F_SECRETS = "F-secrets";
 const F_FORCE_PUSH = "F-force-push";
 const F_HOOKSKIP = "F-hookskip";
 const C_ISOLATION = "C-isolation";
+const C_COMMENTS = "C-comments";
+export const DROP_COMMENTS = "Remove the listed comment lines and resubmit the edit; put the reasoning in the reading guide.";
 const EDIT_TOOLS: ReadonlySet<string> = new Set(["edit", "write", "notebookedit", "multiedit"]);
 const REPO_RULES_HEADER = ["origin_glob", "action", "pattern", "rule_id", "message"] as const;
 const GATED_REPOS_HEADER = ["origin", "gate", "integration_base", "risk_rules", "tests"] as const;
@@ -137,10 +140,11 @@ function main(): number {
   if (violations.length === 0) return protocol.EXIT_PASS;
   for (const violation of violations) fires.append(violation.ruleId, "deny", { repo: violation.repo, detail: violation.text });
   const bullets = violations.map((violation): protocol.Bullet => [violation.ruleId, violation.text]);
-  return protocol.deny(protocol.formatMessage(HOOK, "blocked", bullets, nextStepFor(payload)));
+  return protocol.deny(protocol.formatMessage(HOOK, "blocked", bullets, nextStepFor(payload, violations)));
 }
 
-function nextStepFor(payload: Payload): string {
+function nextStepFor(payload: Payload, violations: readonly Violation[]): string {
+  if (violations.every((violation) => violation.ruleId === C_COMMENTS)) return DROP_COMMENTS;
   if (protocol.toolName(payload) !== "bash") return protocol.ASK_USER;
   const command = commandOf(protocol.toolInput(payload));
   return protocol.runYourself(`cd ${shlexQuote(protocol.cwdOrProcessDirectory(payload))} && ${command}`);
@@ -169,11 +173,14 @@ function checkEdit(toolArgs: Payload, cwd: string): Violation[] {
   const { path: target, unreadable } = editTarget(toolArgs);
   if (target === "" && unreadable === null) return [];
   const edits = getField(toolArgs, "edits");
-  const text = editedText(toolArgs, Array.isArray(edits) ? edits : []);
+  const editList = Array.isArray(edits) ? edits : [];
+  const text = editedText(toolArgs, editList);
+  const targetPath = normalizePath(joinPath(cwd, expandUser(target)));
   const judged: Array<[shown: string, path: string]> = [];
-  if (target !== "") judged.push([target, normalizePath(joinPath(cwd, expandUser(target)))]);
+  if (target !== "") judged.push([target, targetPath]);
   if (unreadable !== null) judged.push([NOT_TEXT_PATH, normalizePath(cwd)]);
   const found = unique(judged.flatMap(([shown, path]) => editViolations(shown, path, text)));
+  if (target !== "") found.push(...commentViolations(toolArgs, editList, target, targetPath));
   if (found.length > 0) return found;
   if (unreadable !== null) throw unreadable;
   if (edits !== null && !Array.isArray(edits)) throw new TypeError(`edits is not a list: '${pythonTypeName(edits)}'`);
@@ -188,6 +195,29 @@ function editViolations(shown: string, path: string, text: string): Violation[] 
   if (liveRoot) violations.push(liveViolation(shown, liveRoot));
   if (isClaudeSettingsFile(path) && DISABLE_HOOKS_RE.test(text)) violations.push(disableHooksViolation(shown));
   return [...violations, ...knownValueViolations(() => knownvalues.numberedLines(shown, text))];
+}
+
+function commentViolations(toolArgs: Payload, edits: readonly unknown[], shown: string, path: string): Violation[] {
+  const before = (tryReadText(path) ?? "").replaceAll("\r\n", "\n");
+  const after = fileAfterEdit(toolArgs, edits, before);
+  if (after === null) return [];
+  const added = addedComments(path, before, after);
+  if (added.length === 0) return [];
+  return [{ ruleId: C_COMMENTS, text: `${shown} adds or rewrites code comments: ${protocol.listed(added)}. Only tool directives and legal notices may stay.` }];
+}
+
+function fileAfterEdit(toolArgs: Payload, edits: readonly unknown[], before: string): string | null {
+  const content = getField(toolArgs, "content");
+  if (typeof content === "string") return content;
+  let text = before;
+  for (const replacement of [toolArgs, ...edits.filter(isRecord)]) {
+    const oldString = getField(replacement, "old_string");
+    const newString = getField(replacement, "new_string");
+    if (typeof oldString !== "string" || typeof newString !== "string") continue;
+    if (!text.includes(oldString)) return null;
+    text = getField(replacement, "replace_all") === true ? text.replaceAll(oldString, () => newString) : text.replace(oldString, () => newString);
+  }
+  return text;
 }
 
 function fillIn(template: string, value: string): string {

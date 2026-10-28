@@ -85,6 +85,7 @@ export type Variables = Map<string, string>;
 export interface Redirect {
   op: string;
   target: string;
+  fd?: string;
 }
 
 function commandName(argv: readonly string[]): string {
@@ -494,7 +495,7 @@ function targetDirectoryOption(args: readonly string[]): string | null {
   return null;
 }
 
-function operands(verb: string, args: readonly string[]): string[] {
+export function operands(verb: string, args: readonly string[]): string[] {
   const takesValue = VALUE_OPTIONS.get(verb) ?? new Set<string>();
   const found: string[] = [];
   let index = 0;
@@ -739,6 +740,7 @@ class Reader {
   parent: SimpleCommand | null;
   substitutions: Array<[string, SimpleCommand]> = [];
   pendingHeredocs: PendingHeredoc[] = [];
+  pendingFd: string | null = null;
   current: SimpleCommand;
 
   constructor(text: string, nested: boolean, out: SimpleCommand[], parent: SimpleCommand | null = null) {
@@ -808,19 +810,26 @@ class Reader {
     }
     const [word, , end] = this.readWordHere();
     this.position = end;
+    const fd = this.pendingFd;
+    this.pendingFd = null;
     if (op === "<<" || op === "<<-") {
       this.pendingHeredocs.push({ command: this.current, delimiter: word, stripTabs: op === "<<-" });
       return;
     }
-    this.current.redirects.push({ op, target: word });
+    this.current.redirects.push(fd === null ? { op, target: word } : { op, target: word, fd });
   }
 
   private readWordOrFd(): void {
     const start = this.position;
     const [word, quoted, end] = this.readWordHere();
     this.position = end;
-    const isFdNumber = isDigits(word) && !quoted && ["<", ">"].includes(this.text.slice(this.position, this.position + 1));
-    if (!isFdNumber) this.addWord(word, quoted, assignmentName(this.text.slice(start, this.position)));
+    const next = this.text.slice(this.position, this.position + 2);
+    const isFdNumber = isDigits(word) && !quoted && ["<", ">"].includes(next.slice(0, 1));
+    if (isFdNumber) {
+      if (next !== "<(" && next !== ">(") this.pendingFd = word;
+    } else {
+      this.addWord(word, quoted, assignmentName(this.text.slice(start, this.position)));
+    }
   }
 
   private readWordHere(): [string, boolean, number] {

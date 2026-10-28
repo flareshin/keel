@@ -271,10 +271,15 @@ describe("ParseCommandsTest", () => {
     assert.deepEqual(argvs("ls # > not-a-redirect"), [["ls"]]);
   });
 
+  it("parseCommands_keepsTheFdOnlyOnTheRedirectItPrecedes", () => {
+    assert.deepEqual(parseCommands("cat 2>/dev/null > f")[0]?.redirects, [{ op: ">", target: "/dev/null", fd: "2" }, { op: ">", target: "f" }]);
+    assert.deepEqual(parseCommands("tee 2<(true) > f")[0]?.redirects, [{ op: ">", target: "f" }]);
+  });
+
   it("parseCommands_ignoresFdNumber_whenRedirectFollows", () => {
     const command = parseCommands("mvn test 2>&1")[0];
     assert.deepEqual(command?.argv, ["mvn", "test"]);
-    assert.deepEqual(command?.redirects, [{ op: ">&", target: "1" }]);
+    assert.deepEqual(command?.redirects, [{ op: ">&", target: "1", fd: "2" }]);
   });
 });
 

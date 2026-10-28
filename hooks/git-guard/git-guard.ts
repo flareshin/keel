@@ -22,7 +22,7 @@ import { notebookCellChange } from "./notebook.ts";
 import type { CodeChange } from "./notebook.ts";
 import { currentBranch, findRepoKey, findToplevel, git, gitOutput, isCommit } from "../lib/hookkit/repo.ts";
 import {
-  ghSubcommandArgv, gitDirectory, gitSubcommandIndex, isConfigRead, readPushArguments, resolveDirectory, steps, writeTargets,
+  ghSubcommandArgv, gitDirectory, gitSubcommandIndex, isConfigRead, operands, readPushArguments, resolveDirectory, steps, writeTargets,
 } from "../lib/hookkit/shell.ts";
 import type { Step } from "../lib/hookkit/shell.ts";
 import { OSError, run, TimeoutExpired } from "../lib/hookkit/subprocess.ts";
@@ -36,6 +36,11 @@ const F_FORCE_PUSH = "F-force-push";
 const F_HOOKSKIP = "F-hookskip";
 const C_ISOLATION = "C-isolation";
 const C_COMMENTS = "C-comments";
+const STDOUT_REDIRECT_APPENDS: ReadonlyMap<string, boolean> = new Map([
+  [">", false], [">|", false], ["&>", false], [">>", true], ["&>>", true],
+]);
+const STDOUT_FD = "1";
+const TEE_SHORT_APPEND = /^-[^-]*a/u;
 export const DROP_COMMENTS = "Remove the listed comment lines and resubmit the edit; put the reasoning in the reading guide.";
 const EDIT_TOOLS: ReadonlySet<string> = new Set(["edit", "write", "notebookedit", "multiedit"]);
 const REPO_RULES_HEADER = ["origin_glob", "action", "pattern", "rule_id", "message"] as const;
@@ -204,6 +209,10 @@ function commentViolations(toolArgs: Payload, edits: readonly unknown[], shown: 
   if (change === null) return [];
   const baselines = [change.before, ...patchRemovedLines(toolArgs)];
   const added = [...new Set(baselines.flatMap((before) => addedComments(change.path, before, change.after)))];
+  return commentViolation(shown, added);
+}
+
+function commentViolation(shown: string, added: readonly string[]): Violation[] {
   if (added.length === 0) return [];
   return [{ ruleId: C_COMMENTS, text: `${shown} adds or rewrites code comments: ${protocol.listed(added)}. Only tool directives and legal notices may stay.` }];
 }
@@ -257,10 +266,60 @@ function checkBash(command: string, cwd: string): Violation[] {
   const callHeredocs = call.flatMap((step) => step.heredocs);
   const violations = [
     ...checkKeelCommands(call), ...checkProtectedWrites(call), ...checkLiveCheckouts(call), ...checkHookSkips(call),
-    ...checkHookDisablingWrites(call),
+    ...checkHookDisablingWrites(call), ...checkCommentWrites(call),
   ];
   call.forEach((step, index) => violations.push(...checkGitOrPr(step, call, index, callHeredocs)));
   return unique(violations);
+}
+
+function checkCommentWrites(call: readonly Step[]): Violation[] {
+  return call.flatMap((step, index) => {
+    const body = stdinBody(call, index);
+    if (body === null) return [];
+    return shellWrites(step).flatMap(({ target, appends }) => {
+      const path = resolveDirectory(step.directory, target, step.expansion);
+      const disk = (tryReadText(path) ?? "").replaceAll("\r\n", "\n");
+      return commentViolation(target, addedComments(path, disk, appends ? disk + body : body));
+    });
+  });
+}
+
+function stdinBody(call: readonly Step[], index: number): string | null {
+  const step = call[index];
+  if (step === undefined || !copiesStdin(step)) return null;
+  const hereStrings = step.command.redirects.filter((redirect) => redirect.op === "<<<").map((redirect) => redirect.target + "\n");
+  const bodies = [...step.heredocs, ...hereStrings];
+  if (bodies.length > 0) return bodies.length === 1 ? (bodies[0] ?? null) : null;
+  const previous = call[index - 1];
+  const pipedFromPrevious = previous !== undefined && previous.command.pipesToNext && !sendsStdoutAway(previous);
+  return pipedFromPrevious ? stdinBody(call, index - 1) : null;
+}
+
+function sendsStdoutAway(step: Step): boolean {
+  const duplicatesStdout = step.command.redirects.some((redirect) =>
+    redirect.op === ">&" && (redirect.fd === undefined || redirect.fd === STDOUT_FD) && redirect.target !== STDOUT_FD);
+  return duplicatesStdout || stdoutRedirects(step).length > 0;
+}
+
+function copiesStdin(step: Step): boolean {
+  return step.name === "tee" || (step.name === "cat" && step.argv.slice(1).every((arg) => arg === "-"));
+}
+
+function shellWrites(step: Step): Array<{ target: string; appends: boolean }> {
+  const redirects = stdoutRedirects(step);
+  if (step.name !== "tee") return redirects;
+  const args = step.argv.slice(1);
+  const optionsEnd = args.includes("--") ? args.indexOf("--") : args.length;
+  const appends = args.slice(0, optionsEnd).some((arg) => arg === "--append" || TEE_SHORT_APPEND.test(arg));
+  return [...operands("tee", args).map((target) => ({ target, appends })), ...redirects];
+}
+
+function stdoutRedirects(step: Step): Array<{ target: string; appends: boolean }> {
+  return step.command.redirects.flatMap((redirect) => {
+    const appends = STDOUT_REDIRECT_APPENDS.get(redirect.op);
+    const toStdout = redirect.fd === undefined || redirect.fd === STDOUT_FD;
+    return appends === undefined || !toStdout ? [] : [{ target: redirect.target, appends }];
+  });
 }
 
 function checkKeelCommands(call: readonly Step[]): Violation[] {

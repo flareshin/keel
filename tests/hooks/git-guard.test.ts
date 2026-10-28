@@ -1568,6 +1568,110 @@ describe("CommentWriteTest", () => {
     assertPassed(edit("Write", toolArgs));
   });
 
+  it("bash_denied_whenAHeredocWritesACommentIntoACodeFile", () => {
+    const path = codeFile("load.py");
+    const viaCat = `cat > ${path} <<'EOF'\n# reads the rows\nrows = load()\nEOF`;
+    const viaTee = `tee ${codeFile("save.ts")} <<'EOF' >/dev/null\n// saves the rows\nsave(rows);\nEOF`;
+
+    assertCommentDenied(guard(viaCat), "# reads the rows");
+    assertCommentDenied(guard(viaTee), "// saves the rows");
+  });
+
+  it("bash_judgesAnAppendAgainstTheFileOnDisk", () => {
+    const path = codeFile("load.py", "# reads the rows\nrows = load()\n");
+    const carried = `cat >> ${path} <<'EOF'\nrows.sort()\nEOF`;
+    const added = `cat <<'EOF' >> ${path}\n# sorts the rows\nrows.sort()\nEOF`;
+
+    assertPassed(guard(carried));
+    assertCommentDenied(guard(added), "# sorts the rows");
+  });
+
+  it("bash_denied_whenAnAppendCopiesACommentThatAnOverwriteWouldCarry", () => {
+    const path = codeFile("load.py", "# reads the rows\nrows = load()\n");
+
+    assertPassed(guard(`cat > ${path} <<'EOF'\n# reads the rows\nEOF`));
+    assertCommentDenied(guard(`cat >> ${path} <<'EOF'\n# reads the rows\nEOF`), "# reads the rows");
+    assertPassed(guard(`tee ${path} <<< '# reads the rows' >/dev/null`));
+    assertCommentDenied(guard(`tee -a ${path} <<< '# reads the rows' >/dev/null`), "# reads the rows");
+  });
+
+  it("bash_passes_whenTheHeredocHasNoCommentOrTheTargetIsNotCode", () => {
+    const plain = `cat > ${codeFile("load.py")} <<'EOF'\nrows = load()\nEOF`;
+    const notes = `cat > ${codeFile("notes.md")} <<'EOF'\n# Notes\nEOF`;
+
+    const fromFile = `cat ${codeFile("source.py", "rows = load()\n")} <<'EOF' > ${codeFile("copy.py")}\n# ignored stdin\nEOF`;
+
+    assertPassed(guard(plain));
+    assertPassed(guard(notes));
+    assertPassed(guard(fromFile));
+  });
+
+  it("bash_denied_whenAnOverwriteDropsTheDiskCommentsAndAddsOne", () => {
+    const path = codeFile("load.py", "# reads the rows\nrows = load()\n");
+    const command = `cat > ${path} <<'EOF'\n# loads every row\nrows = load()\nEOF`;
+
+    assertCommentDenied(guard(command), "# loads every row");
+  });
+
+  it("bash_denied_whenAHeredocIsPipedIntoTee", () => {
+    const path = codeFile("load.py");
+    const piped = `cat <<'EOF' | tee ${path} >/dev/null\n# reads the rows\nEOF`;
+    const redirectedAway = `cat > ${codeFile("rows.txt")} <<'EOF' | tee ${path}\n# reads the rows\nEOF`;
+    const fromFile = `cat ${codeFile("source.py", "rows = load()\n")} <<'EOF' | tee ${path}\n# ignored stdin\nEOF`;
+
+    assertCommentDenied(guard(piped), "# reads the rows");
+    assertPassed(guard(redirectedAway));
+    assertPassed(guard(fromFile));
+  });
+
+  it("bash_judgesEveryStdoutRedirectFormAsItsOverwriteOrAppend", () => {
+    const path = codeFile("load.py", "# reads the rows\nrows = load()\n");
+
+    for (const op of [">|", "&>"]) {
+      assertPassed(guard(`cat ${op} ${path} <<'EOF'\n# reads the rows\nEOF`));
+      assertCommentDenied(guard(`cat ${op} ${path} <<'EOF'\n# sorts the rows\nEOF`), "# sorts the rows");
+    }
+    assertPassed(guard(`cat &>> ${path} <<'EOF'\nrows.sort()\nEOF`));
+    assertCommentDenied(guard(`cat &>> ${path} <<'EOF'\n# reads the rows\nEOF`), "# reads the rows");
+    assertCommentDenied(guard(`tee --append ${path} <<< '# reads the rows' >/dev/null`), "# reads the rows");
+  });
+
+  it("bash_judgesOnlyTheStdoutRedirect_whenStderrGoesToACodeFile", () => {
+    assertPassed(guard(`cat <<'EOF' 2> ${codeFile("err.py")}\n# reads the rows\nEOF`));
+    assertCommentDenied(guard(`cat <<'EOF' 1> ${codeFile("out.py")}\n# reads the rows\nEOF`), "# reads the rows");
+  });
+
+  it("bash_resolvesARelativeTargetAgainstTheDirectoryItCdsInto", () => {
+    codeFile("q.py", "# reads the rows\nrows = load()\n");
+    const source = join(sandbox.root, "src");
+
+    assertPassed(guard(`cd ${source} && cat > q.py <<'EOF'\n# reads the rows\nEOF`));
+    assertCommentDenied(guard(`cd ${source} && cat >> q.py <<'EOF'\n# reads the rows\nEOF`), "# reads the rows");
+  });
+
+  it("bash_judgesTheStdoutRedirect_whenAnFdRedirectComesFirst", () => {
+    const path = codeFile("load.py");
+
+    assertCommentDenied(guard(`cat <<'EOF' 2>/dev/null > ${path}\n# reads the rows\nEOF`), "# reads the rows");
+    assertCommentDenied(guard(`tee 2<(true) > ${path} <<'EOF'\n# reads the rows\nEOF`), "# reads the rows");
+  });
+
+  it("bash_passes_whenThePipedProducerSendsStdoutToStderr", () => {
+    const path = codeFile("load.py");
+
+    assertPassed(guard(`cat <<'EOF' >&2 | tee ${path}\n# reads the rows\nEOF`));
+    assertCommentDenied(guard(`cat <<'EOF' >&1 | tee ${path}\n# reads the rows\nEOF`), "# reads the rows");
+    assertCommentDenied(guard(`cat <<'EOF' 2>&- | tee ${path}\n# reads the rows\nEOF`), "# reads the rows");
+  });
+
+  it("bash_readsTeeOperandsAfterDoubleDashAsFiles", () => {
+    codeFile("-a.py", "# reads the rows\nrows = load()\n");
+    const source = join(sandbox.root, "src");
+
+    assertPassed(guard(`cd ${source} && tee -- -a.py <<< '# reads the rows' >/dev/null`));
+    assertCommentDenied(guard(`cd ${source} && tee -- -a.py <<< '# sorts the rows' >/dev/null`), "# sorts the rows");
+  });
+
   it("write_denied_whenAModuleDocstringOpensTheFile", () => {
     const content = '"""\nLoads the items.\n"""\nimport os\n';
 

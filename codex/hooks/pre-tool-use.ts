@@ -70,23 +70,28 @@ export function normalize(payload: unknown): Call[] {
   const calls: Call[] = [];
   let path: string | null = null;
   let added: string[] = [];
+  let removed: string[] = [];
   for (const line of splitlines(patch)) {
     const prefix = PATCH_PREFIXES.find((item) => line.startsWith(item));
     if (prefix !== undefined) {
-      if (path !== null) calls.push(editCall(payload, path, added));
+      if (path !== null) calls.push(editCall(payload, path, added, removed));
       path = line.slice(prefix.length);
       added = [];
+      removed = [];
     } else if (line.startsWith("+")) {
       added.push(line.slice(1));
+    } else if (line.startsWith("-")) {
+      removed.push(line.slice(1));
     }
   }
-  if (path !== null) calls.push(editCall(payload, path, added));
+  if (path !== null) calls.push(editCall(payload, path, added, removed));
   if (calls.length === 0) throw new Refusal("apply_patch has no recognized file operations");
   return calls;
 }
 
-function editCall(payload: Record<string, unknown>, path: string, added: string[]): Call {
-  return { ...payload, tool_name: "Write", tool_input: { file_path: path, content: added.join("\n"), keel_partial: true } };
+function editCall(payload: Record<string, unknown>, path: string, added: string[], removed: string[]): Call {
+  const tool_input = { file_path: path, content: added.join("\n"), keel_removed: removed.join("\n"), keel_partial: true };
+  return { ...payload, tool_name: "Write", tool_input };
 }
 
 export function protectAdapter(call: Call, accountHome: string = userInfo().homedir): void {

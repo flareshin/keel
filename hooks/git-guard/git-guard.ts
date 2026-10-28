@@ -202,7 +202,8 @@ function editViolations(shown: string, path: string, text: string): Violation[] 
 function commentViolations(toolArgs: Payload, edits: readonly unknown[], shown: string, path: string): Violation[] {
   const change = codeChange(toolArgs, edits, path);
   if (change === null) return [];
-  const added = addedComments(change.path, change.before, change.after);
+  const baselines = [change.before, ...patchRemovedLines(toolArgs)];
+  const added = [...new Set(baselines.flatMap((before) => addedComments(change.path, before, change.after)))];
   if (added.length === 0) return [];
   return [{ ruleId: C_COMMENTS, text: `${shown} adds or rewrites code comments: ${protocol.listed(added)}. Only tool directives and legal notices may stay.` }];
 }
@@ -213,6 +214,11 @@ function codeChange(toolArgs: Payload, edits: readonly unknown[], path: string):
   const before = (diskText ?? "").replaceAll("\r\n", "\n");
   const after = fileAfterEdit(toolArgs, edits, before);
   return after === null ? null : { path, before, after };
+}
+
+function patchRemovedLines(toolArgs: Payload): string[] {
+  const removed = getField(toolArgs, "keel_removed");
+  return getField(toolArgs, "keel_partial") === true && typeof removed === "string" ? [removed] : [];
 }
 
 function fileAfterEdit(toolArgs: Payload, edits: readonly unknown[], before: string): string | null {

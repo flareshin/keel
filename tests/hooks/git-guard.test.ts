@@ -1527,6 +1527,47 @@ describe("CommentWriteTest", () => {
     assert.deepEqual(sandbox.fires().filter((fire) => fire.outcome === "error"), []);
   });
 
+  it("codexPatch_denied_whenItCopiesACommentTheFileAlreadyHas", () => {
+    const toolArgs = { file_path: codeFile("keep.py", "x = 1\n# keeps x\n"), content: "# keeps x", keel_partial: true, keel_removed: "" };
+
+    assertCommentDenied(edit("Write", toolArgs), "# keeps x");
+  });
+
+  it("codexPatch_passes_whenTheHunkKeepsTheCommentItRemoves", () => {
+    const toolArgs = { file_path: codeFile("keep.py", "# keeps x\nx = 1\n"), content: "# keeps x\nx = 2", keel_partial: true, keel_removed: "# keeps x\nx = 1" };
+
+    assertPassed(edit("Write", toolArgs));
+  });
+
+  it("codexPatch_denied_whenTheRemovedLinesAreNotInTheFile", () => {
+    const toolArgs = { file_path: codeFile("keep.py", "x = 1\n"), content: "# brand new note\nx = 1", keel_partial: true, keel_removed: "# brand new note" };
+
+    assertCommentDenied(edit("Write", toolArgs), "# brand new note");
+  });
+
+  it("codexPatch_denied_whenForgedRemovedLinesWouldHideAComment", () => {
+    const repeated = { file_path: codeFile("keep.py", "# keeps x\nx = 1\n"), content: "# keeps x\n# keeps x", keel_partial: true, keel_removed: "# keeps x\n# keeps x" };
+    const onEdit = { file_path: codeFile("edit.py", "x = 1\ny = 2\n"), old_string: "y = 2", new_string: "y = 2\n# new note", keel_partial: true, keel_removed: "x = 1" };
+    const fromString = { file_path: codeFile("text.py", 'TEXT = """\n# not a comment\n"""\n'), content: "# not a comment", keel_partial: true, keel_removed: "# not a comment" };
+
+    assertCommentDenied(edit("Write", repeated), "# keeps x");
+    assertCommentDenied(edit("Edit", onEdit), "# new note");
+    assertCommentDenied(edit("Write", fromString), "# not a comment");
+  });
+
+  it("codexPatch_passes_whenTheRemovedLinesAreNotText", () => {
+    const toolArgs = { file_path: codeFile("keep.py", "x = 1\n# keeps x\n"), content: "# keeps x", keel_partial: true, keel_removed: 5 };
+
+    assertPassed(edit("Write", toolArgs));
+    assert.deepEqual(sandbox.fires().filter((fire) => fire.outcome === "error"), []);
+  });
+
+  it("write_passes_whenRemovedLinesComeWithoutThePartialFlag", () => {
+    const toolArgs = { file_path: codeFile("keep.py", "x = 1\n# keeps x\n"), content: "x = 1\n# keeps x\n", keel_removed: "" };
+
+    assertPassed(edit("Write", toolArgs));
+  });
+
   it("write_denied_whenAModuleDocstringOpensTheFile", () => {
     const content = '"""\nLoads the items.\n"""\nimport os\n';
 

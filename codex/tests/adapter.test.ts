@@ -696,6 +696,8 @@ describe("guard", () => {
     const calls = normalize(payload("apply_patch", { command: patch }));
     assert.deepEqual(calls.map((call) => call.tool_input["file_path"]), ["a.py", "b.py", "c.py", "d.py"]);
     assert.equal(calls[1]?.tool_input["content"], "new");
+    assert.equal(calls[1]?.tool_input["keel_removed"], "old");
+    assert.equal(calls[3]?.tool_input["keel_removed"], "");
   });
 
   it("test_adapterConfig_blocksShellWriteAndDelete_butAllowsRead", () => {

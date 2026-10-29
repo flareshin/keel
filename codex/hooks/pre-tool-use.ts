@@ -22,6 +22,7 @@ const GUARDED_TOOLS = ["Bash", "Edit", "Write"];
 const PATCH_PREFIXES = ["*** Add File: ", "*** Update File: ", "*** Delete File: ", "*** Move to: "];
 const HUNK_HEADER = "@@";
 const HUNK_LINE_PREFIXES = [" ", "+", "-"];
+const BLANK_CONTEXT_LINE = " ";
 const ADAPTER_FILES = ["AGENTS.md", "hooks.json", "keel-codex-state.json"];
 const SKILL_REGISTRY_FILES = ["keel-codex-skills.json", "keel-codex-skills.lock"];
 const SESSION_FOLDERS = ["sessions", "archived_sessions"];
@@ -83,6 +84,8 @@ export function normalize(payload: unknown): Call[] {
     } else if (HUNK_LINE_PREFIXES.some((item) => line.startsWith(item))) {
       if (hunks.length === 0) hunks.push([]);
       hunks.at(-1)?.push(line);
+    } else if (line === "" && hunks.length > 0) {
+      hunks.at(-1)?.push(BLANK_CONTEXT_LINE);
     }
   }
   if (path !== null) calls.push(editCall(payload, path, hunks));

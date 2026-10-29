@@ -227,7 +227,7 @@ function patchedFile(toolArgs: Payload, before: string): string | null {
     const oldLines = hunk.filter((line) => !line.startsWith("+")).map((line) => line.slice(1));
     const newLines = hunk.filter((line) => !line.startsWith("-")).map((line) => line.slice(1));
     const start = linesIndexOf(text, oldLines, cursor);
-    if (oldLines.length === 0 || start === -1) return null;
+    if (oldLines.length === 0 || start === -1 || linesIndexOf(text, oldLines, start + 1) !== -1) return null;
     text = [...text.slice(0, start), ...newLines, ...text.slice(start + oldLines.length)];
     cursor = start + newLines.length;
   }

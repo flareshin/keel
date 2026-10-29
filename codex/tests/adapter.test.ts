@@ -707,6 +707,12 @@ describe("guard", () => {
     assert.deepEqual(calls[1]?.tool_input["keel_hunks"], [["+x"]]);
   });
 
+  it("test_patch_readsAnEmptyHunkLineAsABlankContextLine", () => {
+    const patch = "*** Begin Patch\n*** Update File: a.py\n@@\n-x = 1\n+x = 2\n\n return x\n*** End Patch";
+    const calls = normalize(payload("apply_patch", { command: patch }));
+    assert.deepEqual(calls[0]?.tool_input["keel_hunks"], [["-x = 1", "+x = 2", " ", " return x"]]);
+  });
+
   it("test_adapterConfig_blocksShellWriteAndDelete_butAllowsRead", () => {
     const profile = join(temp, "profile");
     mkdirSync(profile);

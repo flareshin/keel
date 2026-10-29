@@ -1572,6 +1572,13 @@ describe("CommentWriteTest", () => {
     assertCommentDenied(edit("Write", toolArgs), '"""Halves x."""');
   });
 
+  it("codexPatch_judgesTheAddedLinesAlone_whenTheHunkContextFitsMoreThanOnePlace", () => {
+    const source = 'DOC = """\nx = 1\n"""\nx = 1\n';
+    const toolArgs = { file_path: codeFile("twice.py", source), content: "y = 2  # sets y", keel_removed: "", keel_partial: true, keel_hunks: [[" x = 1", "+y = 2  # sets y"]] };
+
+    assertCommentDenied(edit("Write", toolArgs), "# sets y");
+  });
+
   it("codexPatch_judgesTheAddedLinesAlone_whenTheHunksDoNotFitTheCall", () => {
     const source = 'TEXT = """\n# not a comment\n"""\n';
     const forged = { file_path: codeFile("text.py", source), content: "# not a comment", keel_removed: "", keel_partial: true, keel_hunks: [[' TEXT = """']] };
@@ -1741,12 +1748,15 @@ describe("CommentWriteTest", () => {
       ["a.tsx", "/** @jsxImportSource @emotion/react */"], ["a.tsx", "/** @jsx h */"], ["a.ts", "// @vitest-environment jsdom"],
       ["a.ts", "/** @jest-environment jsdom */"], ["a.cpp", "// NOLINT"], ["a.cpp", "// NOLINTNEXTLINE(bugprone-x)"],
       ["a.sql", "--liquibase formatted sql"], ["a.sql", "--changeset dev:1"], ["a.ts", '/* webpackChunkName: "m" */'],
-      ["a.swift", "// swiftlint:disable force_cast"],
+      ["a.swift", "// swiftlint:disable force_cast"], ["a.tsx", "/** @jsxRuntime classic */"], ["a.cpp", "// NOLINTBEGIN(bugprone-x)"],
+      ["a.cpp", "// NOLINTEND(bugprone-x)"], ["a.sql", "--rollback DROP TABLE t;"], ["a.sql", "--comment: adds t"],
+      ["a.sql", "--preconditions onFail:MARK_RAN"], ["a.sql", "--precondition-sql-check expectedResult:0 SELECT 1"], ["a.py", "# ruff: noqa"],
+      ["a.cpp", "// clang-format off"], ["a.py", "# yapf: disable"], ["a.js", "// @flow"], ["a.ts", "// deno-lint-ignore no-explicit-any"],
     ];
     const prose: Array<[file: string, comment: string]> = [
       ["b.c", "// pragmatic shortcut for now"], ["b.js", "// eslintrc settings apply here"], ["b.cpp", "// NOLINTED by accident"],
       ["b.rb", "# rubocop is strict here"], ["b.swift", "// swiftlint is noisy"], ["b.sql", "-- changesets merge here"],
-      ["b.py", "# noqable rows are skipped"],
+      ["b.py", "# noqable rows are skipped"], ["b.js", "// @flowtype is legacy"],
     ];
 
     for (const [file, comment] of directives) assertPassed(edit("Write", { file_path: codeFile(file), content: `${comment}\nx = 1\n` }));

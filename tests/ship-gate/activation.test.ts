@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { checkLiveCheckouts } from '../../hooks/git-guard/git-guard.ts';
 import { steps } from '../../hooks/lib/hookkit/shell.ts';
 import { approvedFastForward } from '../../lib/evidence/activation.ts';
+import { RegistryError, gatedRepos } from '../../lib/evidence/registry.ts';
 import { AUTO_MERGE_REGISTRY, KEEL_HOME, Sandbox } from './helpers.ts';
 import type { Repo } from './helpers.ts';
 
@@ -86,6 +87,12 @@ describe('ActivationTest', () => {
     const f = new ActivationFixture(t, AUTO_MERGE_REGISTRY);
     assert.equal(approvedFastForward(f.repo.path, f.target), true);
     f.repo.write('dirty.txt', 'unreviewed\n');
+    assert.equal(approvedFastForward(f.repo.path, f.target), false);
+  });
+
+  test('registry_refusesAnAutoMergeFlagOtherThanTrueOrFalse', (t) => {
+    const f = new ActivationFixture(t, ['acme/app\tcode\tmain\tacme\trequired\tfalse\tyes']);
+    assert.throws(() => gatedRepos(), (error: Error) => error instanceof RegistryError && error.message.includes('auto_merge must be true or false'));
     assert.equal(approvedFastForward(f.repo.path, f.target), false);
   });
 

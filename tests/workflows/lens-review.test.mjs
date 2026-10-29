@@ -287,6 +287,38 @@ async function runFixDelta({ priorRounds, isClean }) {
   return rt.run('lens-review', { auditMode: 'split', diffs: [{ ...ROOT_DIFF, since: SHA_D }], lenses: CALLER_LENSES, rootRunId: ROUND_ROOT, prepared })
 }
 
+async function runDelta({ impact, priorFindings }) {
+  const audits = { contract: { findings: [finding('c1', impact)] } }
+  const verdicts = { c1: { verdict: 'CONFIRMED', evidence: 'reran' } }
+  const rt = createRuntime({ respond: responder({ audits, verdicts }) })
+  const result = await rt.run('lens-review', { auditMode: 'split', diffs: [{ ...ROOT_DIFF, since: SHA_D }], lenses: CALLER_LENSES, rootRunId: ROUND_ROOT, ...(priorFindings ? { priorFindings } : {}) })
+  return [result, rt]
+}
+
+test('lensReview_passesWithTheNewMediumListedNonBlocking_whenAFixDeltaFindsOnlyAMedium', async () => {
+  const [result] = await runDelta({ impact: 'medium', priorFindings: ['a.py:3 drops the null check'] })
+  assert.equal(result.verdict, 'PASS')
+  assert.deepEqual(result.nonBlocking.map((f) => f.id), ['c1'])
+  assert.match(result.report, /Non-blocking \(1\):\n- \[medium\] contract\/c1/)
+})
+
+test('lensReview_needsFixes_whenAFixDeltaFindsAHigh', async () => {
+  const [result] = await runDelta({ impact: 'high', priorFindings: ['a.py:3 drops the null check'] })
+  assert.equal(result.verdict, 'NEEDS_FIXES')
+  assert.deepEqual(result.blocking.map((f) => f.id), ['c1'])
+})
+
+test('lensReview_keepsAMediumBlocking_whenTheDeltaFollowsAPass', async () => {
+  const [result] = await runDelta({ impact: 'medium' })
+  assert.equal(result.verdict, 'NEEDS_FIXES')
+  assert.deepEqual(result.blocking.map((f) => f.id), ['c1'])
+})
+
+test('lensReview_tellsTheAuditorOnlyHighBlocks_inAFixDelta', async () => {
+  const [, rt] = await runDelta({ impact: 'low', priorFindings: ['a.py:3 drops the null check'] })
+  assert.match(auditChildArgs(rt).target, /only impact high is merge-blocking; a new medium finding is reported as non-blocking/)
+})
+
 test('lensReview_asksAuthorToStepBack_whenThisNeedsFixesIsTheThirdOnTheRoot', async () => {
   const result = await runFixDelta({ priorRounds: 2 })
   assert.equal(result.verdict, 'NEEDS_FIXES')
@@ -436,7 +468,7 @@ test('lensReview_reviewsCommitRange_whenHeadIsGiven', async () => {
   const evidence = parseEvidenceLine(evidenceLines(result.report)[0])
   assert.equal(evidence.head, SHA_C)
   assert.equal(evidence.snapshot_tree, null)
-  assert.match(auditChildArgs(rt).guardrails, /K5\.14.*rule-contract violation.*impact medium/)
+  assert.match(auditChildArgs(rt).guardrails, /git-guard C-comments denies new and changed code comments at write time, so a retained comment is not a finding/)
   assert.match(auditChildArgs(rt).target, new RegExp(`diff ${SHA_A} ${SHA_C}`))
   assert.match(preparePromptCommands(rt.record.agents[0].prompt).diffs[0], /rev-parse --verify 'feature\/x\^\{commit\}'/)
 })
@@ -855,7 +887,7 @@ test('lensReview_runsReview_whenRequirementStatesAGoalInTestWords', async () => 
   const requirement = 'Fix the flaky date parser so the tests pass on CI; no regressions in the import path.'
   const result = await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES, requirement })
   assert.equal(result.verdict, 'PASS')
-  assert.match(auditChildArgs(rt).guardrails, /K5\.14.*rule-contract violation.*impact medium/)
+  assert.match(auditChildArgs(rt).guardrails, /git-guard C-comments denies new and changed code comments at write time, so a retained comment is not a finding/)
   assert.match(auditChildArgs(rt).target, /so the tests pass on CI; no regressions/)
 })
 
@@ -863,10 +895,10 @@ test('lensReview_runsReview_whenRequirementStatesAGoalInTestWords', async () => 
 test('lensReview_scopesCommentCleanupAndRequiresExecutableEvidence_inReadableLens', async () => {
   const rt = createRuntime({ respond: responder() })
   await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
-  assert.match(auditChildArgs(rt).guardrails, /K5\.14.*rule-contract violation.*impact medium/)
+  assert.match(auditChildArgs(rt).guardrails, /git-guard C-comments denies new and changed code comments at write time, so a retained comment is not a finding/)
   assert.match(auditChildArgs(rt).target, /existing-comment cleanup is a separate requested task/)
   const prompt = auditChildArgs(rt).lenses.find((lens) => lens.key === 'readable-code').prompt
-  assert.match(prompt, /K5\.14 applies to new and changed comments/)
+  assert.match(prompt, /Do not report comments \(git-guard C-comments judges them at write time\)/)
   assert.match(prompt, /do not expand the task into unrelated legacy cleanup/)
   assert.match(prompt, /Verify behavior from implementation, callers and tests; comments are not evidence/)
   assert.match(prompt, /explanatory-comment-only change cannot establish a behavior fix/)

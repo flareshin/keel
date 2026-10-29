@@ -67,11 +67,11 @@ export function snapshotTree(root: string): unknown[] {
 const PR_RULE_LINE = /^.*`\/ship1`.*$/m
 
 export function carriesPrApprovalRule(guidance: string): boolean {
-  return guidance.split("\n").some((line) => line.includes("`keel approve`") && line.includes("`/ship1`"))
+  return guidance.split("\n").some((line) => line.includes("`keel approve") && line.includes("`/ship1`"))
 }
 
 export function rewordPrRule(principles: string): string {
-  return principles.replace(PR_RULE_LINE, "- [risk] A PR waits for the owner's `keel approve` and an explicit `/ship1`; a PASS is not consent.")
+  return principles.replace(PR_RULE_LINE, "- [risk] Merge, a deploying push or a PR needs the owner's `keel approve <root_run_id>`; a PR then needs an explicit `/ship1`.")
 }
 
 export function dropPrRule(principles: string): string {

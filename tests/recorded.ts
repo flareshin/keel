@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { gunzipSync } from "node:zlib"
 
 const FIXTURE_DIRECTORY = join(import.meta.dirname, "fixtures", "python")
+const PRINCIPLES_PATH = join(import.meta.dirname, "..", "PRINCIPLES.md")
 export const RECORDED_PLATFORM = "darwin"
 
 export interface Tokens {
@@ -16,7 +17,8 @@ interface Fixture {
   answers: Record<string, unknown>
 }
 
-export function recordedAnswers<Question, Answer>(name: string, questions: readonly Question[], tokens: Tokens = {}): Answer[] {
+export function recordedAnswers<Question, Answer>(name: string, questions: readonly Question[], callerTokens: Tokens = {}): Answer[] {
+  const tokens = { "{{PRINCIPLES}}": readFileSync(PRINCIPLES_PATH, "utf8"), ...callerTokens }
   const fixture = readFixture(name)
   const missing: number[] = []
   const answers = questions.map((question, index) => {

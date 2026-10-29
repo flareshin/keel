@@ -559,6 +559,34 @@ describe("installation", () => {
       assert.equal(read(agents), install.agents);
       assert.equal(read(join(home, ".agents/keel-codex-skills.json")), install.registry);
     });
+
+    function sourceWithEdit(name: string, file: string, edit: (text: string) => string): string {
+      const source = copySource(name);
+      const path = join(source, file);
+      const edited = edit(read(path));
+      assert.notEqual(edited, read(path), `${file} edit changed nothing`);
+      writeFileSync(path, edited);
+      return source;
+    }
+
+    function recordedAgentsFor(source: string): string {
+      const tokens = { "{{ROOT}}": home, "{{KEEL_HOME}}": source, "{{PRINCIPLES}}": read(join(source, "PRINCIPLES.md")) };
+      return recordedAnswers<unknown, PythonInstall>("codex-python-install", [{ install: "write" }], tokens)[0]!.agents;
+    }
+
+    it("matches the recorded install after a PRINCIPLES.md text change, with no fixture edit", () => {
+      const source = sourceWithEdit("reworded", "PRINCIPLES.md", (text) => `${text}- [K6] A rule added after the fixtures were recorded.\n`);
+      const run = runSourceLink(source, "--write");
+      assert.equal(run.status, 0, run.stderr);
+      assert.equal(read(join(home, ".codex/AGENTS.md")), recordedAgentsFor(source));
+    });
+
+    it("differs from the recorded install when the adapter writes a different runtime section", () => {
+      const source = sourceWithEdit("restructured", "codex/AGENTS.md", (text) => text.replace("## Codex runtime\n", "## Codex runtime notes\n"));
+      const run = runSourceLink(source, "--write");
+      assert.equal(run.status, 0, run.stderr);
+      assert.notEqual(read(join(home, ".codex/AGENTS.md")), recordedAgentsFor(source));
+    });
   });
 
   it("test_legacyOwnership_preservesSkillOnUnlink", () => {

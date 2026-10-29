@@ -5,7 +5,7 @@ import * as gitcmd from './gitcmd.ts';
 import { isWhitespaceBothWays, stripEitherWay } from './text.ts';
 
 const GATED_HEADER = ['origin', 'gate', 'integration_base', 'risk_rules', 'tests'];
-const GATED_OPTIONAL = ['push_approval'];
+const GATED_OPTIONAL = ['push_approval', 'auto_merge'];
 const RISK_HEADER = ['set', 'path_glob', 'class'];
 const GATE_OFF = 'off';
 const GATE_VALUES = ['code', 'smoke', GATE_OFF];
@@ -24,6 +24,7 @@ export interface GatedRepo {
   riskRules: string;
   tests: string;
   pushApproval: string;
+  autoMerge: string;
 }
 
 export interface RiskRule {
@@ -38,6 +39,10 @@ export function testsRequired(row: GatedRepo): boolean {
 
 export function pushNeedsApproval(row: GatedRepo): boolean {
   return row.pushApproval === 'true';
+}
+
+export function mergesWithoutApproval(row: GatedRepo): boolean {
+  return row.autoMerge === 'true';
 }
 
 export function normalizeRepoKey(origin: string | null | undefined): string | null {
@@ -62,12 +67,14 @@ export function gatedRepos(): Map<string, GatedRepo> {
     if (!GATE_VALUES.includes(row['gate']!)) {
       throw new RegistryError(`gated-repos.tsv: unknown gate ${JSON.stringify(row['gate'])} for ${row['origin']}`);
     }
-    if (!FLAG_VALUES.includes(row['push_approval'] ?? 'false')) {
-      throw new RegistryError(`gated-repos.tsv: push_approval must be true or false for ${row['origin']}`);
+    for (const flag of GATED_OPTIONAL) {
+      if (!FLAG_VALUES.includes(row[flag] ?? 'false')) {
+        throw new RegistryError(`gated-repos.tsv: ${flag} must be true or false for ${row['origin']}`);
+      }
     }
     repos.set(row['origin']!.toLowerCase(), {
       origin: row['origin']!, gate: row['gate']!, integrationBase: row['integration_base']!, riskRules: row['risk_rules']!,
-      tests: row['tests']!, pushApproval: row['push_approval'] ?? 'false',
+      tests: row['tests']!, pushApproval: row['push_approval'] ?? 'false', autoMerge: row['auto_merge'] ?? 'false',
     });
   }
   return repos;
@@ -104,7 +111,7 @@ export function readTsv(path: string, header: string[], optional: string[] = [])
   const content = splitLines(readUtf8(path)).filter((line) => !isWhitespaceBothWays(line) && !line.startsWith('#'));
   if (content.length === 0) return [];
   const columns = content[0]!.split('\t');
-  const expected = [header, [...header, ...optional]];
+  const expected = Array.from({ length: optional.length + 1 }, (_, count) => [...header, ...optional.slice(0, count)]);
   if (!expected.some((candidate) => candidate.length === columns.length && candidate.every((name, index) => name === columns[index]))) {
     throw new RegistryError(`${path}: header must be ${[...header, ...optional].join('\t')}`);
   }

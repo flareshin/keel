@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { describe, test } from 'node:test';
 import type { TestContext } from 'node:test';
 import { splitlines } from '../../hooks/lib/hookkit/text.ts';
-import { LOGIC_WITH_TEST, PUSH_APPROVAL_REGISTRY, Sandbox, expireEvidence } from './helpers.ts';
+import { AUTO_MERGE_REGISTRY, LOGIC_WITH_TEST, PUSH_APPROVAL_REGISTRY, Sandbox, expireEvidence } from './helpers.ts';
 import type { Repo, Run } from './helpers.ts';
 
 const TEST_FILE = 'tests/test_a.py';
@@ -76,6 +76,19 @@ describe('PushScenarioTest', () => {
     assert.equal(sandbox.fires('risk', 'pass').length, 0);
     sandbox.approve('rv-root-0001');
     assertPassed(sandbox, sandbox.push(repo, PUSH_FEATURE));
+  });
+
+  test('push_passesWithoutApproval_whenTheRegistryMergesThisRepoOnReviewAndTests', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t, AUTO_MERGE_REGISTRY);
+    sandbox.pushBundle(repo);
+    const line = assertPassed(sandbox, sandbox.push(repo, PUSH_FEATURE));
+    assert.equal(line.root_run_id, 'rv-root-0001');
+  });
+
+  test('push_deniesK3_whenTheRegistryMergesThisRepoButTestsEvidenceIsMissing', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t, AUTO_MERGE_REGISTRY);
+    sandbox.review(repo);
+    assertDenied(sandbox.push(repo, PUSH_FEATURE), 'K3', 'no tests evidence');
   });
 
   test('push_deniesK1_whenNoReviewExists', (t) => {

@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { unlinkSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, test } from 'node:test';
 import type { TestContext } from 'node:test';
 import * as cli from '../../lib/evidence/cli.ts';
@@ -90,12 +92,84 @@ class LensFixture extends CodexFixture {
 }
 
 describe('CodexLensesTest', () => {
+  test('lenses_preservesTestsAuditorReason_throughRegistrationAndGate', (t) => {
+    const f = new LensFixture(t);
+    unlinkSync(join(f.repo.path, 'tests/test_a.py'));
+    f.tree = gitcmd.snapshotTree(f.repo.path);
+    for (const identity of f.audits) {
+      f.reports[identity].tree = f.tree;
+      if (f.reports[identity].lenses['rule-checks']) {
+        f.reports[identity].lenses['rule-checks'].evidence = codexReview.runRuleChecks(f.repo.path, f.base, f.tree);
+      }
+      f.rewrite(identity);
+    }
+    const audit = f.audits[LENSES.indexOf('tests')]!;
+    const reason = 'Static contract reviewed; this fixture intentionally has no changed test path.';
+    f.reports[audit].no_test_reason = reason;
+    f.rewrite(audit);
+    const registered = f.registerLenses();
+    const evidence = store.loadReviews(f.repo.key)[0]!;
+    assert.equal(evidence.no_test_reason, reason);
+    codexReview.validateEvidence(evidence);
+    f.repo.commit({});
+    f.sandbox.testsEvidence(f.repo);
+    assert.equal(verify.judge(f.outgoing()).ok, false);
+    writers.writeApproval(registered.root_run_id, 'approval');
+    assert.equal(verify.judge(f.outgoing()).ok, true);
+    assert.throws(() => codexReview.validateEvidence({ ...evidence, no_test_reason: 'substituted' }), refused);
+  });
+
   test('lenses_acceptsOneIndependentAuditor_coveringAllLenses', (t) => {
     const f = new LensFixture(t);
     f.combineAudits();
     const registered = f.registerLenses();
     assert.equal(registered.verdict, 'PASS');
     assert.equal(store.loadReviews(f.repo.key)[0]!.source['reviewers'].length, 1);
+    assert.equal(store.loadReviews(f.repo.key)[0]!.no_test_reason, null);
+  });
+
+  test('lenses_acceptsCombinedTestsAuditorReason', (t) => {
+    const f = new LensFixture(t);
+    const audit = f.combineAudits();
+    f.reports[audit].no_test_reason = 'Only prose changed; the documented contract was inspected.';
+    f.rewrite(audit);
+    f.registerLenses();
+    assert.equal(store.loadReviews(f.repo.key)[0]!.no_test_reason, f.reports[audit].no_test_reason);
+  });
+
+  for (const reason of [null, '', '  ', 1, {}]) {
+    test(`lenses_refusesInvalidTestReason_${JSON.stringify(reason)}`, (t) => {
+      const f = new LensFixture(t);
+      const audit = f.audits[LENSES.indexOf('tests')]!;
+      f.reports[audit].no_test_reason = reason;
+      f.rewrite(audit);
+      assert.throws(() => f.registerLenses(), /no_test_reason must be a nonblank reason from the tests auditor/);
+    });
+  }
+
+  test('lenses_refusesReasonFromAnotherLensOrVerifier', (t) => {
+    const f = new LensFixture(t);
+    const audit = f.audits[0]!;
+    f.reports[audit].no_test_reason = 'Not supplied by the tests auditor.';
+    f.rewrite(audit);
+    assert.throws(() => f.registerLenses(), /no_test_reason must be a nonblank reason from the tests auditor/);
+    delete f.reports[audit].no_test_reason;
+    f.rewrite(audit);
+    const verifier = f.addVerifier(f.addFinding());
+    f.reports[verifier].no_test_reason = 'A verifier cannot waive changed tests.';
+    f.rewrite(verifier);
+    assert.throws(() => f.registerLenses(), /no_test_reason must be a nonblank reason from the tests auditor/);
+  });
+
+  test('lenses_deltaDoesNotInheritTestReason', (t) => {
+    const f = new LensFixture(t);
+    const audit = f.audits[LENSES.indexOf('tests')]!;
+    f.reports[audit].no_test_reason = 'Reason applies only to the first candidate.';
+    f.rewrite(audit);
+    const previous = f.registerLenses();
+    f.startDelta(previous);
+    f.registerLenses();
+    assert.equal(writers.chainHeads(previous.root_run_id).get(f.repo.key)!.no_test_reason, null);
   });
 
   test('lenses_combinedAuditorStillNeedsEveryLens', (t) => {

@@ -37,7 +37,8 @@ a clean audit needs none. Coverage is mandatory; five processes are not.
 ## Report contract
 
 Persisted reports use format marker `version: 2`. This identifies stored JSON,
-not parallel review workflows. The keys below are exact. An auditor's `lenses`
+not parallel review workflows. The keys below are required; `no_test_reason` is
+the only optional key. An auditor's `lenses`
 contains one lens or all five, each with status (`complete` or `blocked`) and
 concrete evidence. A verifier uses `lenses: {}` and its source audit UUID in
 `audit_session`. An unavailable check stays blocked; silence is not success.
@@ -63,6 +64,14 @@ concrete evidence. A verifier uses `lenses: {}` and its source audit UUID in
   "decisions": []
 }
 ```
+
+Only the auditor covering the tests lens may add `no_test_reason`, a nonblank
+string explaining why this exact candidate needs no changed test file. Omit it
+when no exception is justified; null, empty strings, other auditors and verifiers
+are rejected. Registration preserves the reason in review evidence and revalidates
+it against the completed source report. It uses the existing K3 exception policy;
+it neither supplies test-run evidence nor owner approval. A delta needs its own
+tests auditor's reason and does not inherit an earlier exception.
 
 Each finding has exactly `id`, `impact` (`high`, `medium`, `low`), `evidence`
 (file:line and reproduction/static proof), and `scenario` (trigger, expected,

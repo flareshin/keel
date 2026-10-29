@@ -133,6 +133,7 @@ export function sharedAuthor(reviews: Review[]): string {
 
 export function validateReport(report: JsonObject, repo: string, target: Target): void {
   const expectedKeys = reportKeys();
+  if (Object.hasOwn(report, writers.NO_TEST_REASON)) expectedKeys.add(writers.NO_TEST_REASON);
   if (!codexReview.hasExactKeys(report, expectedKeys) || report['version'] !== 2 || !['audit', 'verify'].includes(report['role'])) {
     throw new writers.Refused('invalid lens review schema or role');
   }
@@ -165,6 +166,10 @@ export function validateReport(report: JsonObject, repo: string, target: Target)
     }
   } else if (lensNames.length > 0 || typeof report['audit_session'] !== 'string') {
     throw new writers.Refused('verifiers settle findings instead of repeating lens audits');
+  }
+  if (Object.hasOwn(report, writers.NO_TEST_REASON)
+    && (report['role'] !== 'audit' || !lensNames.includes('tests') || !codexReview.nonblank(report[writers.NO_TEST_REASON]))) {
+    throw new writers.Refused('no_test_reason must be a nonblank reason from the tests auditor');
   }
   codexReview.validateFindings(report['findings']);
   if (report['role'] === 'audit' && sameMembers(lensNames, codexReview.LENSES)) {
@@ -262,7 +267,9 @@ export function buildBody(repo: string, key: string, bundle: Bundle, reviews: Re
     since: bundle.previous ? bundle.previous['evidence_id'] : null,
     since_tree: bundle.sinceTree, review_base: bundle.base, head: null,
     snapshot_tree: bundle.tree, reviewed_tree: bundle.tree, review_kind: codexReview.KIND,
-    verdict, paths, source, [writers.NO_TEST_REASON]: null,
+    verdict, paths, source,
+    [writers.NO_TEST_REASON]: reviews.find((review) => review.report['role'] === 'audit'
+      && Object.hasOwn(review.report['lenses'], 'tests'))!.report[writers.NO_TEST_REASON] ?? null,
   };
 }
 

@@ -306,6 +306,20 @@ test('lensReview_omitsStepBack_belowTheCapOrOnPassOrWithoutACount', async () => 
   }
 })
 
+const APPROVE_LINE = /\n\nOwner approval, in your own terminal once the tests are green: keel approve rv-20261001T000000Z-aaaaaa\n\n/
+
+test('lensReview_givesTheOwnerTheApproveCommandForTheRoot_whenTheVerdictIsPass', async () => {
+  const result = await runFixDelta({ priorRounds: 1, isClean: true })
+  assert.equal(result.verdict, 'PASS')
+  assert.match(result.report, APPROVE_LINE)
+})
+
+test('lensReview_omitsTheApproveCommand_whenTheVerdictIsNeedsFixes', async () => {
+  const result = await runFixDelta({ priorRounds: 1 })
+  assert.equal(result.verdict, 'NEEDS_FIXES')
+  assert.doesNotMatch(result.report, /keel approve/)
+})
+
 test('lensReview_sendsRequirementToLensesAndGuideOnlyToReadableCode_whenBothAreGiven', async () => {
   const rt = createRuntime({ respond: responder() })
   const scriptArgs = { diffs: [ROOT_DIFF], lenses: CALLER_LENSES, requirement: 'Coupons stack per line.', readingGuide: 'Entry point : a.py' }

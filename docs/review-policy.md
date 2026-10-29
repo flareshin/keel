@@ -30,7 +30,8 @@ drafts, only through an explicitly invoked `/ship1` after the owner has run plai
 `keel approve <root_run_id>` for the current reviewed candidate. Both conditions
 are required: PASS, approval alone, or an ordinary request to create a PR cannot
 substitute for `/ship1`; `/ship1` without approval must stop before delivery.
-`--read` is acknowledgement, not approval. Never run the owner's approval command.
+`--read` is acknowledgement, not approval. Never run the owner's approval command;
+a Claude PASS report prints it for the owner to copy.
 If `/ship1` is unavailable in the current runtime, report the ready state for the
 owner to invoke it in a supported runtime; do not emulate its PR step. This applies
 to keel's own changes too. Local approved activation does not require a PR, and

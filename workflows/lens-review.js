@@ -499,6 +499,7 @@ function buildReport(outcome, audit, reviewed, evidenceLines, precheck) {
     `Lenses that did not run (re-run the review): ${outcome.failedLenses.length ? toOneLine(outcome.failedLenses.join(', ')) : 'none'}`,
     `Refuted: ${audit.refuted.length}`,
     ...(outcome.needsFixesRound >= NEEDS_FIXES_ROUND_CAP && outcome.verdict === 'NEEDS_FIXES' ? [describeStepBack(outcome.needsFixesRound)] : []),
+    ...(outcome.verdict === 'PASS' ? [describeApproval()] : []),
     describeLensNotes(audit.lensNotes || []),
     evidenceLines.join('\n'),
   ].join('\n\n')
@@ -516,6 +517,10 @@ function describeFindings(title, findings) {
 
 function describeStepBack(round) {
   return `Step back: NEEDS_FIXES round ${round} on root ${rootRunId} (cap ${NEEDS_FIXES_ROUND_CAP}). Before another fix, reconsider the approach and tell the owner what keeps failing.`
+}
+
+function describeApproval() {
+  return `Owner approval, in your own terminal once the tests are green: keel approve ${rootRunId}`
 }
 
 function describeLensNotes(lensNotes) {

@@ -14,7 +14,7 @@ Five principles, each enforced at the strongest layer that can hold it. Rules en
 
 ## Floor
 Hook-enforced, not principles.
-- [F-irreversible] Merge, deploy and deletes need the user's explicit approval (`auto_merge=true` merge: PASS plus tests); so does a branch push where the push itself deploys or notifies. A blocked command goes to the user verbatim; never retry it or route around it.
+- [F-irreversible] Merge, deploy and deletes need the user's explicit approval; so does a branch push where the push itself deploys or notifies (`auto_merge=true`: merge or that push takes PASS plus tests). A blocked command goes to the user verbatim; never retry it or route around it.
 - [F-secrets] No secrets in commits, PR bodies, logs or docs; cite the config path or a `<placeholder>`.
 - [F-attribution] No AI attribution in commits or PRs.
 - [F-force-push] No force push to shared branches.

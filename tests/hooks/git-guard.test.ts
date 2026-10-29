@@ -1707,4 +1707,132 @@ describe("CommentWriteTest", () => {
     assertPassed(edit("Write", { file_path: codeFile("README.md"), content: "# Title\n// not code\n" }));
     assertPassed(edit("Write", { file_path: codeFile("app.yaml"), content: "# config note\nkey: 1\n" }));
   });
+
+  it("write_denied_whenACodeLineEndsInAComment", () => {
+    assertCommentDenied(edit("Write", { file_path: codeFile("count.ts"), content: "const n = 1; // counts the rows\n" }), "// counts the rows");
+    assertCommentDenied(edit("Write", { file_path: codeFile("half.ts"), content: "const half = total / 2; // halves\n" }), "// halves");
+    assertCommentDenied(edit("Write", { file_path: codeFile("ratio.ts"), content: "const ratio = \"4\" / 2; // ratio\n" }), "// ratio");
+    assertCommentDenied(edit("Write", { file_path: codeFile("block.ts"), content: "const n = 1; /* counts */ const m = 2;\n" }), "/* counts */");
+    assertCommentDenied(edit("Write", { file_path: codeFile("count.py"), content: "n = 1  # counts the rows\n" }), "# counts the rows");
+    assertCommentDenied(edit("Write", { file_path: codeFile("run.sh"), content: "echo hi # greets\n" }), "# greets");
+    assertCommentDenied(edit("Write", { file_path: codeFile("count.sql"), content: "SELECT 1; -- counts\n" }), "-- counts");
+    assertCommentDenied(edit("Write", { file_path: codeFile("site.css"), content: "a { color: red; } /* brand */\n" }), "/* brand */");
+  });
+
+  it("write_denied_whenABlockCommentOpensAfterCodeAndSpansLines", () => {
+    const content = "const n = 1; /* starts here\nstill inside\n*/\nconst m = 2;\n";
+
+    assertCommentDenied(edit("Write", { file_path: codeFile("span.ts"), content }), "still inside");
+  });
+
+  it("edit_denied_whenATrailingCommentIsReworded", () => {
+    const path = codeFile("rows.ts", "const n = rows.length; // counts the rows\n");
+    const toolArgs = { file_path: path, old_string: "// counts the rows", new_string: "// counts every row" };
+
+    assertCommentDenied(edit("Edit", toolArgs), "// counts every row");
+  });
+
+  it("edit_passes_whenTheCodeChangesAndItsTrailingCommentStays", () => {
+    const path = codeFile("rows.py", "n = len(rows)  # counts the rows\n");
+    const toolArgs = { file_path: path, old_string: "n = len(rows)", new_string: "n = len(items)" };
+
+    assertPassed(edit("Edit", toolArgs));
+  });
+
+  it("write_passes_whenTrailingMarkersSitInsideStringsOrRegexes", () => {
+    const script = "const url = \"https://example.invalid\"; const quote = 'it\\'s // fine';\nconst scheme = /^https?:\\/\\//; const half = total / 2 / count;\n";
+    const shell = "echo \"keep # this\" ${#items[@]} ${name#pre} $#\n";
+
+    assertPassed(edit("Write", { file_path: codeFile("strings.ts"), content: script }));
+    assertPassed(edit("Write", { file_path: codeFile("strings.py"), content: "s = \"# not\" + '# not'\n" }));
+    assertPassed(edit("Write", { file_path: codeFile("count.sh"), content: shell }));
+    assertPassed(edit("Write", { file_path: codeFile("q.sql"), content: "SELECT '-- not', 'it''s -- not';\n" }));
+    assertPassed(edit("Write", { file_path: codeFile("cdn.css"), content: "a { background: url(//cdn.example.invalid/x.png); }\n" }));
+  });
+
+  it("write_passes_whenARegexHoldsSlashesInAClassOrFollowsAKeyword", () => {
+    const classed = "const R = /\\/\\.git\\/(w\\/[^/]+\\/)?m\\//;\n";
+    const keyword = "function f(s) {\n  return /^https?:\\/\\//.test(s) || /\\/*/.test(s);\n}\nconst x = 1;\n";
+
+    assertPassed(edit("Write", { file_path: codeFile("classed.ts"), content: classed }));
+    assertPassed(edit("Write", { file_path: codeFile("keyword.ts"), content: keyword }));
+  });
+
+  it("write_passes_whenAStringSpansLines", () => {
+    const textBlock = "String s = \"\"\"\n    see https://example.invalid\n    \"\"\";\n";
+    const shell = "echo \"first\nsecond # not a comment\n\"\n";
+
+    assertPassed(edit("Write", { file_path: codeFile("Block.java"), content: textBlock }));
+    assertPassed(edit("Write", { file_path: codeFile("lines.sh"), content: shell }));
+    assertPassed(edit("Write", { file_path: codeFile("lines.sql"), content: "SELECT 'first -- not a comment\nsecond -- still text';\n" }));
+  });
+
+  it("write_passes_whenABackslashIsLiteralInTheString", () => {
+    assertPassed(edit("Write", { file_path: codeFile("path.sql"), content: "SELECT 'C:\\', 'a -- b';\n" }));
+    assertPassed(edit("Write", { file_path: codeFile("Path.cs"), content: "var p = @\"C:\\\"; var q = \"// no\";\n" }));
+    assertPassed(edit("Write", { file_path: codeFile("path.sh"), content: "echo 'C:\\' \"# no\"\n" }));
+    assertCommentDenied(edit("Write", { file_path: codeFile("copy.sh"), content: "cp 'C:\\' out # copies the drive\n" }), "# copies the drive");
+  });
+
+  it("write_denied_whenAShiftOrHereStringPrecedesAComment", () => {
+    assertCommentDenied(edit("Write", { file_path: codeFile("shift.sh"), content: "n=$(( 1 << shift ))\n# shifts the bit\n" }), "# shifts the bit");
+    assertCommentDenied(edit("Write", { file_path: codeFile("word.sh"), content: "cat <<< word\n# reads the word\n" }), "# reads the word");
+  });
+
+  it("write_denied_whenALineStartCommentFollowsAQuoteLeftOpen", () => {
+    assertCommentDenied(edit("Write", { file_path: codeFile("name.sql"), content: "INSERT INTO t VALUES ('O\\'Brien');\n-- adds a row\n" }), "-- adds a row");
+    assertCommentDenied(edit("Write", { file_path: codeFile("ansi.sh"), content: "echo $'it\\'s'\n# prints it\n" }), "# prints it");
+    assertCommentDenied(edit("Write", { file_path: codeFile("nested.sh"), content: "x=\"$(cmd \"it's\")\"\n# runs cmd\n" }), "# runs cmd");
+    assertCommentDenied(edit("Write", { file_path: codeFile("match.rb"), content: "ok = name =~ /it's/\n# checks the name\n" }), "# checks the name");
+  });
+
+  it("write_denied_whenAKotlinRawStringEndsInABackslash", () => {
+    assertCommentDenied(edit("Write", { file_path: codeFile("Path.kt"), content: "val p = \"\"\"C:\\\"\"\"\nval q = 1 // sets q\n" }), "// sets q");
+  });
+
+  it("write_skipsAHeredocAfterClosedArithmetic", () => {
+    assertPassed(edit("Write", { file_path: codeFile("sum.sh"), content: "n=$((1+2)); cat <<EOF\n# Title\nEOF\n" }));
+    assertPassed(edit("Write", { file_path: codeFile("quoted.sh"), content: "x=\"(( \"; cat <<EOF\n# Title\nEOF\n" }));
+    assertPassed(edit("Write", { file_path: codeFile("spec.rb"), content: "expect(call(x)).to eq(<<~EOS)\n# Title\nEOS\n" }));
+  });
+
+  it("write_denied_whenALineInsideAMultiLineStringStartsWithAMarker", () => {
+    const textBlock = "String s = \"\"\"\n  // not code\n  \"\"\";\n";
+
+    assertCommentDenied(edit("Write", { file_path: codeFile("Block.java"), content: textBlock }), "// not code");
+    assertCommentDenied(edit("Write", { file_path: codeFile("lines.sql"), content: "SELECT 'first\n-- not a comment\n';\n" }), "-- not a comment");
+  });
+
+  it("write_passes_whenAQuoteOrTemplateLeavesTheLineOpen", () => {
+    const template = "const page = `\n  see https://example.invalid // not a comment\n`;\n";
+
+    assertPassed(edit("Write", { file_path: codeFile("open.ts"), content: "const s = 'unterminated // x\n" }));
+    assertPassed(edit("Write", { file_path: codeFile("page.ts"), content: template }));
+  });
+
+  it("write_passes_whenTrailingCommentsAreToolDirectives", () => {
+    const content = "run(); // eslint-disable-line no-console\nconst x = y as any; // @ts-expect-error\n";
+
+    assertPassed(edit("Write", { file_path: codeFile("lint.ts"), content }));
+  });
+
+  it("write_skipsHeredocBodiesInAShellScript", () => {
+    const script = "cat <<'EOF' > notes.txt\nvalue # literal\nEOF\necho done # after\n";
+
+    assertCommentDenied(edit("Write", { file_path: codeFile("notes.sh"), content: script }), "# after");
+    assertPassed(edit("Write", { file_path: codeFile("quiet.sh"), content: "cat << EOF\nvalue # literal\nEOF\n" }));
+  });
+
+  it("write_denied_whenARubyAppendIsFollowedByAComment", () => {
+    const content = "items << item\nputs items # prints the list\n";
+
+    assertCommentDenied(edit("Write", { file_path: codeFile("list.rb"), content }), "# prints the list");
+  });
+
+  it("bash_denied_whenAHeredocWritesATrailingComment", () => {
+    const path = codeFile("tail.ts");
+    const command = `cat > ${path} <<'EOF'\nconst n = 1; // counts\nEOF`;
+
+    assertCommentDenied(guard(command), "// counts");
+  });
 });

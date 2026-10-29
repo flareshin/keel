@@ -33,7 +33,7 @@ this reference shapes only the behavior and interfaces the current task needs.
 - [K5.11] Carry meaning in types; validate untyped external boundaries.
 - [K5.12] Handle failures explicitly; do not swallow errors or infer exception types from messages.
 - [K5.13] Validate external values once at the boundary, with security exceptions where necessary.
-- [K5.14] Write no new or changed code comments except mandatory notices and necessary tool directives; git-guard denies others on Edit, Write, NotebookEdit and Bash cat or tee heredoc writes. Comments are hypotheses, not behavior evidence. Preserve the full rule's exceptions; do not force unrelated legacy cleanup.
+- [K5.14] Write no new or changed code comments except mandatory notices and necessary tool directives; git-guard denies others, line-start or trailing, on Edit, Write, NotebookEdit and Bash cat or tee heredoc writes. Comments are hypotheses, not behavior evidence. Preserve the full rule's exceptions; do not force unrelated legacy cleanup.
 - [K5.15] Follow the nearest established pattern; explain an approved migration.
 - [K5.16] Tests assert observable behavior and meaningful failure boundaries, with expected values derived from the requirement, never recomputed like the code. Existing regression-sensitive tests count; a fixed number of tests per branch does not establish adequacy.
 - [K5] A separate context judges the output. New findings need concrete evidence, not taste.

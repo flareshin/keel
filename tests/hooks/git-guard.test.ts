@@ -1759,7 +1759,7 @@ describe("CommentWriteTest", () => {
       ["b.py", "# noqable rows are skipped"], ["b.js", "// @flowtype is legacy"],
       ["Repo.java", "// rollback the transaction when the save fails"], ["b.java", "// comment: the cache is warm here"],
       ["b.ts", "// preconditions are checked by the caller"], ["b.cpp", "// clang-format is set in the repo root"],
-      ["b.js", "// @flow control returns early here"],
+      ["b.js", "// @flow control returns early here"], ["b.sql", "--precondition-sql-check expectedResult:0 SELECT 1"],
     ];
 
     for (const [file, comment] of directives) assertPassed(edit("Write", { file_path: codeFile(file), content: `${comment}\nx = 1\n` }));

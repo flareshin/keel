@@ -10,11 +10,11 @@ Five principles, each enforced at the strongest layer that can hold it. Rules en
 - [K5] Make only needed, readable changes. Load `/readable-code` before code or agent briefs. Explain approval requests per `docs/review-policy.md`.
 
 ## Risk
-- [risk] Use `docs/review-policy.md` for ready-candidate per-lens audits, batched finding checks and snapshot deltas. smoke-only needs smoke evidence; other tiers need `/lens-review` and tests (light per registry). Merge or deploying/notifying push needs owner's `keel approve <root_run_id>`, except in a repo whose registry row sets `auto_merge=true`, where lens-review PASS plus tests suffice; `--read` is ack only. PRs require owner `keel approve` then explicit `/ship1`; PASS is not consent.
+- [risk] Use `docs/review-policy.md` for ready-candidate per-lens audits, batched finding checks and snapshot deltas. smoke-only needs smoke evidence; other tiers need `/lens-review` and tests (light per registry). Merge or deploying/notifying push needs owner's `keel approve <root_run_id>` (`auto_merge=true` repos: PASS plus tests); `--read` is ack only. PRs require owner `keel approve` then explicit `/ship1`; PASS is not consent.
 
 ## Floor
 Hook-enforced, not principles.
-- [F-irreversible] Merge, deploy and deletes need the user's explicit approval; so does a branch push where the push itself deploys or notifies. A repo whose registry row sets `auto_merge=true` takes lens-review PASS plus tests as that approval. A blocked command goes to the user verbatim; never retry it or route around it.
+- [F-irreversible] Merge, deploy and deletes need the user's explicit approval (`auto_merge=true` merge: PASS plus tests); so does a branch push where the push itself deploys or notifies. A blocked command goes to the user verbatim; never retry it or route around it.
 - [F-secrets] No secrets in commits, PR bodies, logs or docs; cite the config path or a `<placeholder>`.
 - [F-attribution] No AI attribution in commits or PRs.
 - [F-force-push] No force push to shared branches.

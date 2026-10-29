@@ -61,7 +61,7 @@ bin/link --check
 
 With an existing setup, one or both of two problems block `--write`. A refused `--write` writes nothing and prints the exact command to run after `link: or, once each one is reviewed, run:`.
 
-- `target-occupied` on `CLAUDE.md`: the file is yours, not generated. `--force` moves it to `~/.claude/state/keel/link-backup/<time>/CLAUDE.md`. To keep its rules, move them into the overlay's `PERSONAL.md`; `bin/link` appends that file to the generated `CLAUDE.md`. The generated file is capped at 4096 bytes and `PRINCIPLES.md` uses about half, so `PERSONAL.md` has about 1.9 KB; no flag lifts the cap, and the dry run's `claude_md_bytes` shows the size.
+- `target-occupied` on `CLAUDE.md`: the file is yours, not generated. `--force` moves it to `~/.claude/state/keel/link-backup/<time>/CLAUDE.md`. To keep its rules, move them into the overlay's `PERSONAL.md`; `bin/link` appends that file to the generated `CLAUDE.md`. The generated file is capped at 4608 bytes and `PRINCIPLES.md` uses about half, so `PERSONAL.md` has about 2.3 KB; no flag lifts the cap, and the dry run's `claude_md_bytes` shows the size.
 - `settings-unadopted`: keel takes over the `hooks`, `permissions` and `env` keys of `settings.json`, and `dropped` lists every existing item it would remove. To keep an item, declare it in an overlay settings fragment, such as `~/git/keel-overlay/settings/mine.json`, with the same key and value as in your `settings.json`. A plain `bin/link --write` refuses, writes nothing and prints each item on stderr as `link: adopt drops: <item>`. Copy each item you accept losing into a file, one per line, exactly as those lines print it (the JSON in `dropped` escapes quotes and backslashes).
 
 With both problems, that command is:
@@ -134,7 +134,7 @@ A rule enters at the strongest layer that can hold it. A `skill` or `prose` row 
 - **Rule of two.** A non-charter, non-floor row needs at least two distinct incidents behind it.
 - **Metric.** Every active row has a metric that `measure/run` evaluates, such as counting the hook's firings, running an eval or checking that a file exists in a repo. A metric that recognized zero items fails.
 - **Expiry.** Rows carry a `review_by` date. `measure/propose` looks at expired rows. A row whose metric counted nothing is proposed one layer weaker (`hook` → `skill` → `prose` → retired). A row that counted something gets 60 more days. Proposals are printed only; the owner edits the ledger.
-- **Caps.** Charter ≤ 7 rows, core ≤ 10 (floor rows excluded), each stack ≤ 10, overlay ≤ 15, hook scripts ≤ 8, and the generated `CLAUDE.md` ≤ 4096 bytes. Growth is visible and bounded.
+- **Caps.** Charter ≤ 7 rows, core ≤ 10 (floor rows excluded), each stack ≤ 10, overlay ≤ 15, hook scripts ≤ 8, and the generated `CLAUDE.md` ≤ 4608 bytes. Growth is visible and bounded.
 
 ## Three places: keel, overlay, data
 

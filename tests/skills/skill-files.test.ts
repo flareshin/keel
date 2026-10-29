@@ -8,7 +8,7 @@ import { splitlines } from "../../hooks/lib/hookkit/text.ts";
 import { bulletTags, GENERATED_HEADER, K5_SUB_IDS, KEEL_HOME, PRINCIPLES, read, rulesSection, SKILLS_DIR, skillPaths, VALID_IDS } from "./helpers.ts";
 
 const EXPECTED_SKILLS = new Set(["prompt-refine", "readable-code", "descend", "improve"]);
-const CLAUDE_MD_CAP = 4096;
+const CLAUDE_MD_CAP = 4608;
 const PERSONAL_BUDGET = 1024;
 const SKILL_LINE_CAP = 500;
 const DESCRIPTION_CAP = 1024;

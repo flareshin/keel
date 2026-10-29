@@ -64,6 +64,20 @@ export function snapshotTree(root: string): unknown[] {
   return entries.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)))
 }
 
+const PR_RULE_LINE = /^.*`\/ship1`.*$/m
+
+export function carriesPrApprovalRule(guidance: string): boolean {
+  return guidance.split("\n").some((line) => line.includes("`keel approve`") && line.includes("`/ship1`"))
+}
+
+export function rewordPrRule(principles: string): string {
+  return principles.replace(PR_RULE_LINE, "- [risk] A PR waits for the owner's `keel approve` and an explicit `/ship1`; a PASS is not consent.")
+}
+
+export function dropPrRule(principles: string): string {
+  return principles.replace(PR_RULE_LINE, "- [risk] Review before shipping.")
+}
+
 export function readFile(file: string): string {
   return fs.readFileSync(file, "utf8")
 }

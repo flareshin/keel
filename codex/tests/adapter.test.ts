@@ -14,6 +14,7 @@ import type { SnapshotStore } from "../../tests/recorded-cases.ts";
 import { recordedAnswers } from "../../tests/recorded.ts";
 import type { CompletedProcess } from "../../hooks/lib/hookkit/subprocess.ts";
 import { withEnv } from "../../tests/hooks/helpers.ts";
+import { carriesPrApprovalRule, dropPrRule, rewordPrRule } from "../../tests/link/helpers.ts";
 import { completeEdit, validateUpdate } from "../lib/config_policy.ts";
 import { digest, fingerprint } from "../lib/files.ts";
 import { buildFiles, buildSkillLinks, reconcile } from "../lib/install.ts";
@@ -83,6 +84,15 @@ describe("installation", () => {
     return source;
   }
 
+  function sourceWithEdit(name: string, file: string, edit: (text: string) => string): string {
+    const source = copySource(name);
+    const path = join(source, file);
+    const edited = edit(read(path));
+    assert.notEqual(edited, read(path), `${file} edit changed nothing`);
+    writeFileSync(path, edited);
+    return source;
+  }
+
   function actionsOf(result: { stdout: string }): unknown {
     return (JSON.parse(result.stdout) as Record<string, unknown>)["actions"];
   }
@@ -97,7 +107,19 @@ describe("installation", () => {
   it("test_install_requiresOwnerApprovalAndShip1_inGeneratedGuidance", () => {
     const run = runLink("--write");
     assert.equal(run.status, 0, run.stderr);
-    assert.ok(read(join(home, ".codex/AGENTS.md")).includes("PRs require owner `keel approve` then explicit `/ship1`; PASS is not consent."));
+    assert.ok(carriesPrApprovalRule(read(join(home, ".codex/AGENTS.md"))));
+  });
+
+  it("keeps owner approval and /ship1 in the generated guidance when the rule is reworded", () => {
+    const run = runSourceLink(sourceWithEdit("reworded-pr-rule", "PRINCIPLES.md", rewordPrRule), "--write");
+    assert.equal(run.status, 0, run.stderr);
+    assert.ok(carriesPrApprovalRule(read(join(home, ".codex/AGENTS.md"))));
+  });
+
+  it("loses owner approval and /ship1 from the generated guidance when the rule is dropped", () => {
+    const run = runSourceLink(sourceWithEdit("dropped-pr-rule", "PRINCIPLES.md", dropPrRule), "--write");
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(carriesPrApprovalRule(read(join(home, ".codex/AGENTS.md"))), false);
   });
 
   it("test_install_requiresConcreteOwnerCommand_afterEveryReview", () => {
@@ -559,15 +581,6 @@ describe("installation", () => {
       assert.equal(read(agents), install.agents);
       assert.equal(read(join(home, ".agents/keel-codex-skills.json")), install.registry);
     });
-
-    function sourceWithEdit(name: string, file: string, edit: (text: string) => string): string {
-      const source = copySource(name);
-      const path = join(source, file);
-      const edited = edit(read(path));
-      assert.notEqual(edited, read(path), `${file} edit changed nothing`);
-      writeFileSync(path, edited);
-      return source;
-    }
 
     function recordedAgentsFor(source: string): string {
       const tokens = { "{{ROOT}}": home, "{{KEEL_HOME}}": source, "{{PRINCIPLES}}": read(join(source, "PRINCIPLES.md")) };

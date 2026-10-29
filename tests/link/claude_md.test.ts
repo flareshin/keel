@@ -5,7 +5,7 @@ import path from "node:path"
 
 import { HEADER } from "../../lib/link/claude_md.ts"
 import { entryExists } from "../../measure/lib/measurekit/files.ts"
-import { KEEL_ROOT, LinkSandbox, PRINCIPLES, assertExit, onlyBackup, problemKinds, readFile } from "./helpers.ts"
+import { KEEL_ROOT, LinkSandbox, PRINCIPLES, assertExit, carriesPrApprovalRule, dropPrRule, onlyBackup, problemKinds, readFile, rewordPrRule } from "./helpers.ts"
 
 describe("link claude md", () => {
   let box: LinkSandbox
@@ -21,7 +21,19 @@ describe("link claude md", () => {
     box.writeKeel("PRINCIPLES.md", readFile(path.join(KEEL_ROOT, "PRINCIPLES.md")))
     const result = box.runLink("--write")
     assertExit(result, 0)
-    assert.ok(box.readData("CLAUDE.md").includes("PRs require owner `keel approve` then explicit `/ship1`; PASS is not consent."))
+    assert.ok(carriesPrApprovalRule(box.readData("CLAUDE.md")))
+  })
+
+  it("write_keepsOwnerApprovalAndShip1_whenTheRuleIsReworded", () => {
+    box.writeKeel("PRINCIPLES.md", rewordPrRule(readFile(path.join(KEEL_ROOT, "PRINCIPLES.md"))))
+    assertExit(box.runLink("--write"), 0)
+    assert.ok(carriesPrApprovalRule(box.readData("CLAUDE.md")))
+  })
+
+  it("write_losesOwnerApprovalAndShip1_whenTheRuleIsDropped", () => {
+    box.writeKeel("PRINCIPLES.md", dropPrRule(readFile(path.join(KEEL_ROOT, "PRINCIPLES.md"))))
+    assertExit(box.runLink("--write"), 0)
+    assert.equal(carriesPrApprovalRule(box.readData("CLAUDE.md")), false)
   })
 
   it("write_generatesHeaderPrinciplesAndPersonal_whenOverlayHasPersonal", () => {

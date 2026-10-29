@@ -207,9 +207,38 @@ function editViolations(shown: string, path: string, text: string): Violation[] 
 function commentViolations(toolArgs: Payload, edits: readonly unknown[], shown: string, path: string): Violation[] {
   const change = codeChange(toolArgs, edits, path);
   if (change === null) return [];
+  const patched = patchedFile(toolArgs, change.before);
+  if (patched !== null) return commentViolation(shown, addedComments(change.path, change.before, patched));
   const baselines = [change.before, ...patchRemovedLines(toolArgs)];
   const added = [...new Set(baselines.flatMap((before) => addedComments(change.path, before, change.after)))];
   return commentViolation(shown, added);
+}
+
+function patchedFile(toolArgs: Payload, before: string): string | null {
+  const hunks = getField(toolArgs, "keel_hunks");
+  if (getField(toolArgs, "keel_partial") !== true || !Array.isArray(hunks) || hunks.length === 0) return null;
+  if (!hunks.every((hunk) => Array.isArray(hunk) && hunk.every((line) => typeof line === "string"))) return null;
+  const lines = (hunks as string[][]).flat();
+  const changed = (sign: string) => lines.filter((line) => line.startsWith(sign)).map((line) => line.slice(1)).join("\n");
+  if (changed("+") !== getField(toolArgs, "content") || changed("-") !== getField(toolArgs, "keel_removed")) return null;
+  let text = before.split("\n");
+  let cursor = 0;
+  for (const hunk of hunks as string[][]) {
+    const oldLines = hunk.filter((line) => !line.startsWith("+")).map((line) => line.slice(1));
+    const newLines = hunk.filter((line) => !line.startsWith("-")).map((line) => line.slice(1));
+    const start = linesIndexOf(text, oldLines, cursor);
+    if (oldLines.length === 0 || start === -1) return null;
+    text = [...text.slice(0, start), ...newLines, ...text.slice(start + oldLines.length)];
+    cursor = start + newLines.length;
+  }
+  return text.join("\n");
+}
+
+function linesIndexOf(lines: readonly string[], block: readonly string[], from: number): number {
+  for (let start = from; start + block.length <= lines.length; start += 1) {
+    if (block.every((line, offset) => lines[start + offset] === line)) return start;
+  }
+  return -1;
 }
 
 function commentViolation(shown: string, added: readonly string[]): Violation[] {

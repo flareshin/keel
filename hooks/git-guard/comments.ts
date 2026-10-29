@@ -28,9 +28,15 @@ const COMMENT_MARKERS = /^(\/\*+|\/+|\*+\/?|#+|--+|[rRuUbB]?"""|[rRuUbB]?''')\s*
 const ALLOWED_BODY = new RegExp("^(" + [
   "eslint", "global ", "prettier-ignore", "biome-ignore", "@ts-", "istanbul ", "c8 ", "jshint", "tslint", "#__PURE__",
   "<reference ", "noqa", "type: ?ignore", "pylint:", "pyright:", "mypy:", "fmt: ?(off|on|skip)", "isort:", "-\\*- coding",
-  "(vim?: ?)?(file)?coding[:=]", "pragma", "nolint", "go:", "\\+build", "shellcheck ", "NOSONAR", "CHECKSTYLE", "noinspection",
+  "(vim?: ?)?(file)?(en)?coding[:=]", "pragma", "nolint", "go:", "\\+build", "shellcheck ", "NOSONAR", "CHECKSTYLE", "noinspection",
   "language=", "SPDX-License-Identifier:", "Copyright( \\(c\\)| ©| [0-9]{4})", "\\(c\\) [0-9]{4}", "© ?[0-9]{4}",
-].join("|") + ")", "u");
+  "frozen_string_literal:", "rubocop:", "@jsx ", "@jsxImportSource", "@jsxRuntime", "@vitest-environment", "@jest-environment",
+  "NOLINT", "NOLINTNEXTLINE", "NOLINTBEGIN", "NOLINTEND", "liquibase formatted sql", "changeset ", "webpack[A-Z][A-Za-z]*:", "swiftlint:",
+].map(wholeWord).join("|") + ")", "u");
+
+function wholeWord(directive: string): string {
+  return /[A-Za-z]$/u.test(directive) ? `${directive}(?![A-Za-z])` : directive;
+}
 
 type CommentFinder = (text: string) => string[];
 type SpanContent = "comment" | "string" | "heredoc";

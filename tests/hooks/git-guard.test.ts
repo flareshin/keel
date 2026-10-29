@@ -1555,6 +1555,32 @@ describe("CommentWriteTest", () => {
     assertCommentDenied(edit("Write", fromString), "# not a comment");
   });
 
+  it("codexPatch_passes_whenTheHunkClosesAStringInFileContext", () => {
+    const source = 'def f(cur, x):\n    cur.execute("""\n        SELECT * FROM t WHERE a = %s\n    """)\n    return cur\n';
+    const hunk = ["         SELECT * FROM t WHERE a = %s", '-    """)', '+    """, (x,))', "     return cur"];
+    const toolArgs = { file_path: codeFile("query.py", source), content: '    """, (x,))', keel_removed: '    """)', keel_partial: true, keel_hunks: [hunk] };
+
+    assertPassed(edit("Write", toolArgs));
+  });
+
+  it("codexPatch_denied_whenAHunkAddsADocstringUnderAContextLine", () => {
+    const source = "def double(x):\n    return x * 2\n\ndef half(x):\n    return x / 2\n";
+    const hunks = [[" def double(x):", "+    return x + x", "-    return x * 2"], [" def half(x):", '+    """Halves x."""', "     return x / 2"]];
+    const content = '    return x + x\n    """Halves x."""';
+    const toolArgs = { file_path: codeFile("math.py", source), content, keel_removed: "    return x * 2", keel_partial: true, keel_hunks: hunks };
+
+    assertCommentDenied(edit("Write", toolArgs), '"""Halves x."""');
+  });
+
+  it("codexPatch_judgesTheAddedLinesAlone_whenTheHunksDoNotFitTheCall", () => {
+    const source = 'TEXT = """\n# not a comment\n"""\n';
+    const forged = { file_path: codeFile("text.py", source), content: "# not a comment", keel_removed: "", keel_partial: true, keel_hunks: [[' TEXT = """']] };
+    const elsewhere = { file_path: codeFile("other.py", "x = 1\n"), content: "# brand new note", keel_removed: "", keel_partial: true, keel_hunks: [[" y = 2", "+# brand new note"]] };
+
+    assertCommentDenied(edit("Write", forged), "# not a comment");
+    assertCommentDenied(edit("Write", elsewhere), "# brand new note");
+  });
+
   it("codexPatch_passes_whenTheRemovedLinesAreNotText", () => {
     const toolArgs = { file_path: codeFile("keep.py", "x = 1\n# keeps x\n"), content: "# keeps x", keel_partial: true, keel_removed: 5 };
 
@@ -1698,6 +1724,33 @@ describe("CommentWriteTest", () => {
     assertPassed(edit("Write", { file_path: codeFile("run.sh"), content: shell }));
     assertPassed(edit("Write", { file_path: codeFile("log.js"), content: script }));
     assertPassed(edit("Write", { file_path: codeFile("names.py"), content: python }));
+  });
+
+  it("write_passes_forEachToolDirectiveAndNotice_butDeniesProseThatStartsLikeOne", () => {
+    const directives: Array<[file: string, comment: string]> = [
+      ["a.js", "// eslint-disable-next-line no-console"], ["a.js", "/* global window */"], ["a.js", "// prettier-ignore"],
+      ["a.js", "// biome-ignore lint: reason"], ["a.ts", "// @ts-expect-error"], ["a.js", "/* istanbul ignore next */"],
+      ["a.js", "/* c8 ignore next */"], ["a.js", "/* jshint esversion: 6 */"], ["a.ts", "// tslint:disable"], ["a.js", "/* #__PURE__ */"],
+      ["a.ts", '/// <reference types="node" />'], ["a.py", "# noqa: E501"], ["a.py", "# type: ignore[attr]"], ["a.py", "# pylint: disable=C0103"],
+      ["a.py", "# pyright: strict"], ["a.py", "# mypy: ignore-errors"], ["a.py", "# fmt: off"], ["a.py", "# isort: skip_file"],
+      ["a.py", "# -*- coding: utf-8 -*-"], ["a.py", "# vim: fileencoding=utf-8"], ["a.c", "#pragma once"], ["a.go", "//nolint:errcheck"],
+      ["a.go", "//go:build linux"], ["a.go", "// +build linux"], ["a.sh", "# shellcheck disable=SC2086"], ["a.java", "// NOSONAR"],
+      ["a.java", "// CHECKSTYLE:OFF"], ["a.java", "//noinspection unchecked"], ["a.java", "// language=SQL"],
+      ["a.ts", "// SPDX-License-Identifier: MIT"], ["a.ts", "// Copyright 2026 Example Corp"], ["a.ts", "// (c) 2026 Example Corp"],
+      ["a.ts", "// © 2026 Example Corp"], ["a.rb", "# frozen_string_literal: true"], ["a.rb", "# rubocop:disable Style/Foo"],
+      ["a.tsx", "/** @jsxImportSource @emotion/react */"], ["a.tsx", "/** @jsx h */"], ["a.ts", "// @vitest-environment jsdom"],
+      ["a.ts", "/** @jest-environment jsdom */"], ["a.cpp", "// NOLINT"], ["a.cpp", "// NOLINTNEXTLINE(bugprone-x)"],
+      ["a.sql", "--liquibase formatted sql"], ["a.sql", "--changeset dev:1"], ["a.ts", '/* webpackChunkName: "m" */'],
+      ["a.swift", "// swiftlint:disable force_cast"],
+    ];
+    const prose: Array<[file: string, comment: string]> = [
+      ["b.c", "// pragmatic shortcut for now"], ["b.js", "// eslintrc settings apply here"], ["b.cpp", "// NOLINTED by accident"],
+      ["b.rb", "# rubocop is strict here"], ["b.swift", "// swiftlint is noisy"], ["b.sql", "-- changesets merge here"],
+      ["b.py", "# noqable rows are skipped"],
+    ];
+
+    for (const [file, comment] of directives) assertPassed(edit("Write", { file_path: codeFile(file), content: `${comment}\nx = 1\n` }));
+    for (const [file, comment] of prose) assertCommentDenied(edit("Write", { file_path: codeFile(file), content: `${comment}\nx = 1\n` }), comment);
   });
 
   it("write_passes_whenCommentMarkersSitInsideStringsOrNonCodeFiles", () => {

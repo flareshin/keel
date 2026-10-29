@@ -1749,14 +1749,17 @@ describe("CommentWriteTest", () => {
       ["a.ts", "/** @jest-environment jsdom */"], ["a.cpp", "// NOLINT"], ["a.cpp", "// NOLINTNEXTLINE(bugprone-x)"],
       ["a.sql", "--liquibase formatted sql"], ["a.sql", "--changeset dev:1"], ["a.ts", '/* webpackChunkName: "m" */'],
       ["a.swift", "// swiftlint:disable force_cast"], ["a.tsx", "/** @jsxRuntime classic */"], ["a.cpp", "// NOLINTBEGIN(bugprone-x)"],
-      ["a.cpp", "// NOLINTEND(bugprone-x)"], ["a.sql", "--rollback DROP TABLE t;"], ["a.sql", "--comment: adds t"],
-      ["a.sql", "--preconditions onFail:MARK_RAN"], ["a.sql", "--precondition-sql-check expectedResult:0 SELECT 1"], ["a.py", "# ruff: noqa"],
-      ["a.cpp", "// clang-format off"], ["a.py", "# yapf: disable"], ["a.js", "// @flow"], ["a.ts", "// deno-lint-ignore no-explicit-any"],
+      ["a.cpp", "// NOLINTEND(bugprone-x)"], ["a.py", "# ruff: noqa"],
+      ["a.cpp", "// clang-format off"], ["a.cpp", "// clang-format on"], ["a.py", "# yapf: disable"], ["a.js", "// @flow"],
+      ["a.js", "// @flow strict"], ["a.js", "/* @flow weak */"], ["a.ts", "// deno-lint-ignore no-explicit-any"],
     ];
     const prose: Array<[file: string, comment: string]> = [
       ["b.c", "// pragmatic shortcut for now"], ["b.js", "// eslintrc settings apply here"], ["b.cpp", "// NOLINTED by accident"],
       ["b.rb", "# rubocop is strict here"], ["b.swift", "// swiftlint is noisy"], ["b.sql", "-- changesets merge here"],
       ["b.py", "# noqable rows are skipped"], ["b.js", "// @flowtype is legacy"],
+      ["Repo.java", "// rollback the transaction when the save fails"], ["b.java", "// comment: the cache is warm here"],
+      ["b.ts", "// preconditions are checked by the caller"], ["b.cpp", "// clang-format is set in the repo root"],
+      ["b.js", "// @flow control returns early here"],
     ];
 
     for (const [file, comment] of directives) assertPassed(edit("Write", { file_path: codeFile(file), content: `${comment}\nx = 1\n` }));

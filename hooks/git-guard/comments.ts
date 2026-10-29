@@ -32,7 +32,7 @@ const ALLOWED_BODY = new RegExp("^(" + [
   "language=", "SPDX-License-Identifier:", "Copyright( \\(c\\)| ©| [0-9]{4})", "\\(c\\) [0-9]{4}", "© ?[0-9]{4}",
   "frozen_string_literal:", "rubocop:", "@jsx ", "@jsxImportSource", "@jsxRuntime", "@vitest-environment", "@jest-environment",
   "NOLINT", "NOLINTNEXTLINE", "NOLINTBEGIN", "NOLINTEND", "liquibase formatted sql", "changeset ", "webpack[A-Z][A-Za-z]*:", "swiftlint:",
-  "rollback ", "comment:", "preconditions ", "precondition-", "ruff:", "clang-format ", "yapf:", "@flow", "deno-lint-ignore",
+  "ruff:", "clang-format (off|on)$", "yapf:", "@flow( strict(-local)?| weak)?$", "deno-lint-ignore",
 ].map(wholeWord).join("|") + ")", "u");
 
 function wholeWord(directive: string): string {

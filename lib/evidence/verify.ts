@@ -294,7 +294,8 @@ function failureText(error: unknown): string {
 
 function approvalReasons(outgoing: Outgoing, chain: Chain): Reason[] {
   const headId = chain.head.evidence_id;
-  if (!outgoing.needsApproval || boundEvidence('approval', chain.rootRunId, outgoing.repoKey, headId)) return [];
+  if (!outgoing.needsApproval || registry.mergesWithoutApproval(outgoing.row)) return [];
+  if (boundEvidence('approval', chain.rootRunId, outgoing.repoKey, headId)) return [];
   return [{ ruleId: K1, text: `no approval bound to chain head ${headId}: run \`keel approve ${chain.rootRunId}\`` }];
 }
 

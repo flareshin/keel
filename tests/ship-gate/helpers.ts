@@ -11,8 +11,9 @@ export const SHIP_GATE = join(KEEL_HOME, 'hooks', 'ship-gate', 'ship-gate.ts');
 const SETTINGS_PATH = join(KEEL_HOME, 'settings', 'core.json');
 export const DEFAULT_REGISTRY = ['acme/app\tcode\tmain\tacme\trequired'];
 export const PUSH_APPROVAL_REGISTRY = ['acme/app\tcode\tmain\tacme\trequired\ttrue'];
+export const AUTO_MERGE_REGISTRY = ['acme/app\tcode\tmain\tacme\trequired\ttrue\ttrue'];
 const REGISTRY_HEADER = 'origin\tgate\tintegration_base\trisk_rules\ttests';
-const REGISTRY_OPTIONAL_COLUMN = 'push_approval';
+const REGISTRY_OPTIONAL_COLUMNS = ['push_approval', 'auto_merge'];
 export const DEFAULT_RULES = ['acme\tsrc/*/billing/*\theavy', 'acme\tdocs/*\tlight', 'acme\t*.md\tlight',
   'overlay\tsettings/*\tsmoke-only', 'overlay\tledger.tsv\tsmoke-only'];
 export const LOGIC_WITH_TEST = { 'src/a.py': 'print(1)\n', 'tests/test_a.py': 'def test_a():\n    assert True\n' };
@@ -196,12 +197,10 @@ export class Sandbox {
   }
 
   writeRegistry(rows: string[]): void {
-    let header = REGISTRY_HEADER;
-    let lines = rows;
-    if (rows.some((row) => row.split('\t').length === REGISTRY_HEADER.split('\t').length + 1)) {
-      header += '\t' + REGISTRY_OPTIONAL_COLUMN;
-      lines = rows.map((row) => row.split('\t').length === header.split('\t').length ? row : row + '\tfalse');
-    }
+    const required = REGISTRY_HEADER.split('\t').length;
+    const optional = Math.max(...rows.map((row) => row.split('\t').length - required), 0);
+    const header = [REGISTRY_HEADER, ...REGISTRY_OPTIONAL_COLUMNS.slice(0, optional)].join('\t');
+    const lines = rows.map((row) => [row, ...Array(required + optional - row.split('\t').length).fill('false')].join('\t'));
     this.writeTsv('gated-repos.tsv', header, lines);
   }
 

@@ -699,4 +699,13 @@ describe("ReadTsvTest", () => {
     assert.deepEqual(readTsv(without, ["a", "b"], ["c"]), [{ a: "1", b: "2" }]);
     assert.throws(() => readTsv(withColumn, ["a", "b"]), OverlayDataError);
   });
+
+  it("readTsv_acceptsEachLeadingRunOfOptionalColumns_butNotAGap", () => {
+    const first = sandbox.write(join(sandbox.overlay, "p.tsv"), "a\tc\n1\t3\n");
+    const both = sandbox.write(join(sandbox.overlay, "q.tsv"), "a\tc\td\n1\t3\t4\n");
+    const gap = sandbox.write(join(sandbox.overlay, "r.tsv"), "a\td\n1\t4\n");
+    assert.deepEqual(readTsv(first, ["a"], ["c", "d"]), [{ a: "1", c: "3" }]);
+    assert.deepEqual(readTsv(both, ["a"], ["c", "d"]), [{ a: "1", c: "3", d: "4" }]);
+    assert.throws(() => readTsv(gap, ["a"], ["c", "d"]), OverlayDataError);
+  });
 });

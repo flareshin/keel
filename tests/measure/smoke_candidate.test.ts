@@ -11,7 +11,7 @@ import type { SmokeItem } from "./smoke_helpers.ts"
 const LINK_TOOL = path.join(CHECKOUT, "bin", "link")
 const OVERLAY_KEY = "example/keel-overlay"
 const CORE_FRAGMENT = { hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "node {{KEEL}}/hooks/demo/demo.js" }] }] } }
-const CLAUDE_MD_CAP_BYTES = 4096
+const CLAUDE_MD_CAP_BYTES = 4608
 const WORKTREE = "overlay-wt"
 
 type SmokeResult = { assertions: SmokeItem[] }

@@ -1159,6 +1159,13 @@ describe("ForcePushTest", () => {
     assertDenied(guard("git push --force-with-lease origin develop", repo), "F-force-push");
   });
 
+  it("push_readsTheIntegrationBase_whenTheRegistryAlsoCarriesAutoMerge", () => {
+    sandbox.write(join(sandbox.overlay, "gated-repos.tsv"),
+      "origin\tgate\tintegration_base\trisk_rules\ttests\tpush_approval\tauto_merge\nexample/app\tcode\tdevelop\t-\trequired\ttrue\ttrue\n");
+    assertDenied(guard("git push --force-with-lease origin develop", repo), "F-force-push");
+    assertPassed(guard("git push --force-with-lease origin feature", repo));
+  });
+
   it("push_passes_whenDeletingRemoteBranch", () => {
     assertPassed(guard("git push origin --delete old-feature", repo));
   });

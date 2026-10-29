@@ -7,7 +7,8 @@ import { spawnSync } from 'node:child_process';
 import { checkLiveCheckouts } from '../../hooks/git-guard/git-guard.ts';
 import { steps } from '../../hooks/lib/hookkit/shell.ts';
 import { approvedFastForward } from '../../lib/evidence/activation.ts';
-import { KEEL_HOME, Sandbox } from './helpers.ts';
+import { RegistryError, gatedRepos } from '../../lib/evidence/registry.ts';
+import { AUTO_MERGE_REGISTRY, KEEL_HOME, Sandbox } from './helpers.ts';
 import type { Repo } from './helpers.ts';
 
 class ActivationFixture {
@@ -16,8 +17,8 @@ class ActivationFixture {
   before: string;
   target: string;
 
-  constructor(t: TestContext) {
-    this.box = new Sandbox(t);
+  constructor(t: TestContext, registry?: string[]) {
+    this.box = new Sandbox(t, registry);
     this.repo = this.box.clone('acme', 'app');
     this.before = this.repo.head();
     this.repo.commit({ 'src/a.py': 'print(2)\n', 'tests/test_a.py': 'assert 2 == 2\n' });
@@ -80,6 +81,37 @@ describe('ActivationTest', () => {
     assert.equal(approved.stderr, '');
     assert.equal(ordinary.status, 2, ordinary.stderr);
     assert.match(ordinary.stderr, /\[C-isolation\]/);
+  });
+
+  test('activation_passesWithoutApproval_whenTheRegistryMergesThisRepoOnReviewAndTests', (t) => {
+    const f = new ActivationFixture(t, AUTO_MERGE_REGISTRY);
+    assert.equal(approvedFastForward(f.repo.path, f.target), true);
+    f.repo.write('dirty.txt', 'unreviewed\n');
+    assert.equal(approvedFastForward(f.repo.path, f.target), false);
+  });
+
+  test('registry_refusesAnAutoMergeFlagOtherThanTrueOrFalse', (t) => {
+    const f = new ActivationFixture(t, ['acme/app\tcode\tmain\tacme\trequired\tfalse\tyes']);
+    assert.throws(() => gatedRepos(), (error: Error) => error instanceof RegistryError && error.message.includes('auto_merge must be true or false'));
+    assert.equal(approvedFastForward(f.repo.path, f.target), false);
+  });
+
+  test('activation_refusesAnUnreviewedTree_whenTheRegistryMergesThisRepo', (t) => {
+    const f = new ActivationFixture(t, AUTO_MERGE_REGISTRY);
+    f.repo.git('checkout', '--detach', f.target);
+    f.repo.commit({ 'src/a.py': 'print(3)\n' });
+    const unreviewed = f.repo.head();
+    f.repo.git('checkout', '--detach', f.before);
+    assert.equal(approvedFastForward(f.repo.path, unreviewed), false);
+  });
+
+  test('activation_refusesExpiredTests_whenTheRegistryMergesThisRepo', (t) => {
+    const f = new ActivationFixture(t, AUTO_MERGE_REGISTRY);
+    const path = f.box.evidenceFiles('tests')[0]!;
+    const evidence = JSON.parse(readFileSync(path, 'utf8'));
+    evidence.expires_at = '2000-01-01T00:00:00Z';
+    writeFileSync(path, JSON.stringify(evidence));
+    assert.equal(approvedFastForward(f.repo.path, f.target), false);
   });
 
   test('activation_refusesDifferentCommitWithSameTree', (t) => {

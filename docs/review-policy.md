@@ -91,6 +91,18 @@ Start a full review when the requirement or review base changes, prior evidence
 is missing or invalid, or the new scope cannot be assessed as a bounded delta.
 Do not restart the entire review merely because a small fix was made.
 
+In a Claude fix delta (a `since` review that carries `priorFindings`), only
+impact high is merge-blocking. A prior finding the fix leaves unresolved comes
+back at impact high and still blocks; a new medium finding is listed as
+non-blocking and goes to the Worklog as a follow-up. Each delta finds fresh
+mediums, so letting them block kept chains running for many rounds. A root
+review and a delta after a PASS keep high and medium blocking. The Codex
+protocol keeps its existing blocking rule.
+
+Reviews do not report code comments, rule-checks K5.14 signals included:
+git-guard C-comments denies new and changed comments on the write paths it
+parses. The gaps the ledger row C-comments lists are accepted misses.
+
 A Claude review chain that reaches its third NEEDS_FIXES ends its report with a
 `Step back` line. Before another fix, reconsider the approach and tell the owner
 what keeps failing. `keel review prepare` counts the earlier NEEDS_FIXES links

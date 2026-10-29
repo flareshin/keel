@@ -21,6 +21,7 @@ const REVIEW_KIND = 'lens-review'
 const READABLE_KEY = 'readable-code'
 const RULE_CHECKS_KEY = 'rule-checks'
 const BLOCKING_IMPACT = ['high', 'medium']
+const FIX_DELTA_BLOCKING_IMPACT = ['high']
 const PRE_EXISTING = 'pre-existing'
 const NEEDS_FIXES_ROUND_CAP = 3
 const AUTHOR_TEXT_ARGS = ['readingGuide', 'guardrails', 'precheck']
@@ -60,8 +61,8 @@ const BLOB_SEPARATOR = ' · '
 const NO_BLOBS = 'none'
 const RERUN_SURVIVORS = /^rerun: survivors\b/m
 const DELTA_NOTE = 'A `since` diff is a delta review: the branch passed review at that tree, so judge only the change after it (read the surrounding code for context, and say so if the change breaks something the earlier PASS relied on).'
-const FIX_DELTA_NOTE = 'A `since` diff is a delta review of a fix: the review at that tree returned NEEDS_FIXES with the merge-blocking findings below, so judge only the change after it (read the surrounding code for context). Each finding below that the change leaves unresolved is a finding again, impact high, at its file:line.\nPrior merge-blocking findings:'
-const REVIEW_GUARDRAILS = 'Review rules: a finding is valid only as a failure scenario (input leads to wrong output, an exception or a broken caller) with file:line evidence; style or impression critique is void; nothing outside the request. Impact high or medium = merge-blocking (wrong behavior, data loss, security, a broken caller or contract, fake-green tests); low = non-blocking. A merge-blocking finding needs a repro: a command or input with the observed and the expected result, or `static: <caller|contract|security|concurrency|rule> at file:line` when nothing can be run; without one it is reported as non-blocking. K5.14 exception: a retained comment outside its two allowed categories is a rule-contract violation, not style; report it at impact medium with `static: rule at file:line`, naming the comment and why no category applies. Test obligation: changed logic with no test that would fail if the change were reverted is impact high, never low. Origin: set origin pre-existing only when the failing lines and the failure they cause are already present at the review base (read them with the review base command); otherwise introduced. A prior merge-blocking finding is introduced.'
+const FIX_DELTA_NOTE = 'A `since` diff is a delta review of a fix: the review at that tree returned NEEDS_FIXES with the merge-blocking findings below, so judge only the change after it (read the surrounding code for context). Each finding below that the change leaves unresolved is a finding again, impact high, at its file:line. In a fix delta only impact high is merge-blocking; a new medium finding is reported as non-blocking. This overrides the high-or-medium rule in the review rules.\nPrior merge-blocking findings:'
+const REVIEW_GUARDRAILS = 'Review rules: a finding is valid only as a failure scenario (input leads to wrong output, an exception or a broken caller) with file:line evidence; style or impression critique is void; nothing outside the request. Impact high or medium = merge-blocking (wrong behavior, data loss, security, a broken caller or contract, fake-green tests); low = non-blocking. A merge-blocking finding needs a repro: a command or input with the observed and the expected result, or `static: <caller|contract|security|concurrency|rule> at file:line` when nothing can be run; without one it is reported as non-blocking. Comments: git-guard C-comments denies new and changed code comments at write time, so a retained comment is not a finding, rule-checks K5.14 signals included. Test obligation: changed logic with no test that would fail if the change were reverted is impact high, never low. Origin: set origin pre-existing only when the failing lines and the failure they cause are already present at the review base (read them with the review base command); otherwise introduced. A prior merge-blocking finding is introduced.'
 const PREPARE_SCHEMA = {
   type: 'object',
   properties: {
@@ -99,7 +100,7 @@ if (precheck) log(`precheck: ${describePrecheck(precheck)}`)
 const audit = await runAudit(reviewed, lensSet, effort, precheck)
 if (audit.error) return failed(audit.error)
 
-const outcome = judge(audit, lensSet, reviewed.length, priorNeedsFixesRounds)
+const outcome = judge(audit, lensSet, reviewed.length, priorNeedsFixesRounds, PRIOR_FINDINGS ? FIX_DELTA_BLOCKING_IMPACT : BLOCKING_IMPACT)
 log(`${outcome.verdict}: ${outcome.blocking.length} merge-blocking, ${outcome.nonBlocking.length} non-blocking, ${audit.unverified.length} unverified, ${outcome.failedLenses.length} lens(es) not run, ${audit.refuted.length} refuted`)
 const evidenceLines = reviewed.map((target) => buildEvidenceLine(target, runId, rootRunId))
 const expectedReport = buildReport(outcome, audit, reviewed, evidenceLines, precheck)
@@ -365,7 +366,7 @@ function withReadingGuide(lens) {
 function buildReadableLens() {
   return {
     key: READABLE_KEY,
-    prompt: `Lens: readable-code. Load the /readable-code checklist and relevant full rule sections and judge new and changed lines against its rules, tagged K5.1-K5.16. K5.14 applies to new and changed comments; do not expand the task into unrelated legacy cleanup. Verify behavior from implementation, callers and tests; comments are not evidence, and an explanatory-comment-only change cannot establish a behavior fix. Tool-consumed directive changes are behavior changes and require failing reproduction and passing tool verification. Check the author's reading guide against the code (Entry point, Flow, Changed, Read first); a guide that misstates the code is a finding.\n${buildReadingGuideBlock()}`,
+    prompt: `Lens: readable-code. Load the /readable-code checklist and relevant full rule sections and judge new and changed lines against its rules, tagged K5.1-K5.16. Do not report comments (git-guard C-comments judges them at write time) and do not expand the task into unrelated legacy cleanup. Verify behavior from implementation, callers and tests; comments are not evidence, and an explanatory-comment-only change cannot establish a behavior fix. Tool-consumed directive changes are behavior changes and require failing reproduction and passing tool verification. Check the author's reading guide against the code (Entry point, Flow, Changed, Read first); a guide that misstates the code is a finding.\n${buildReadingGuideBlock()}`,
   }
 }
 
@@ -431,12 +432,12 @@ function describeDelta() {
   return PRIOR_FINDINGS ? `${FIX_DELTA_NOTE}\n${PRIOR_FINDINGS.map((f) => `- ${f}`).join('\n')}` : DELTA_NOTE
 }
 
-function judge(audit, lensSet, repoCount, priorNeedsFixesRounds) {
+function judge(audit, lensSet, repoCount, priorNeedsFixesRounds, blockingImpact) {
   const failedLenses = [...(audit.failedLenses || []), ...findUnprovenRuleChecks(audit, lensSet, repoCount)]
   const preExisting = audit.confirmed.filter(isPreExisting)
   const introduced = audit.confirmed.filter((f) => !isPreExisting(f))
-  const blocking = introduced.filter(isMergeBlocking)
-  const nonBlocking = introduced.filter((f) => !isMergeBlocking(f))
+  const blocking = introduced.filter((f) => isMergeBlocking(f, blockingImpact))
+  const nonBlocking = introduced.filter((f) => !isMergeBlocking(f, blockingImpact))
   const isIncomplete = audit.unverified.length > 0 || failedLenses.length > 0
   const verdict = blocking.length || isIncomplete ? 'NEEDS_FIXES' : 'PASS'
   return {
@@ -463,8 +464,8 @@ function isPreExisting(finding) {
   return finding.origin === PRE_EXISTING && finding.verdict?.origin === PRE_EXISTING
 }
 
-function isMergeBlocking(finding) {
-  return BLOCKING_IMPACT.includes(finding.impact) && hasRepro(finding)
+function isMergeBlocking(finding, blockingImpact) {
+  return blockingImpact.includes(finding.impact) && hasRepro(finding)
 }
 
 function hasRepro(finding) {

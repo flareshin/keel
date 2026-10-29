@@ -58,23 +58,23 @@ describe("link claude md", () => {
     assert.equal(result.json.claude_md_bytes, fs.statSync(box.dataPath("CLAUDE.md")).size)
   })
 
-  it("write_refusesAndWritesNothing_whenGeneratedFileExceeds4096Bytes", () => {
-    box.writeOverlay("PERSONAL.md", "x".repeat(4096))
+  it("write_refusesAndWritesNothing_whenGeneratedFileExceeds4608Bytes", () => {
+    box.writeOverlay("PERSONAL.md", "x".repeat(4608))
     const result = box.runLink("--write")
     assertExit(result, 3)
     assert.deepEqual(problemKinds(result), ["claude-md-drift"])
-    assert.ok(result.json.problems[0].detail.includes("4096-byte cap"))
+    assert.ok(result.json.problems[0].detail.includes("4608-byte cap"))
     assert.equal(fs.existsSync(box.dataPath("CLAUDE.md")), false)
     assert.equal(entryExists(box.dataPath("bin/keel")), false)
   })
 
-  it("write_succeeds_whenGeneratedFileIsExactly4096Bytes", () => {
+  it("write_succeeds_whenGeneratedFileIsExactly4608Bytes", () => {
     removePersonal()
-    const filler = 4096 - Buffer.byteLength(HEADER + "\n") - 1
+    const filler = 4608 - Buffer.byteLength(HEADER + "\n") - 1
     box.writeKeel("PRINCIPLES.md", "y".repeat(filler) + "\n")
     const result = box.runLink("--write")
     assertExit(result, 0)
-    assert.equal(Buffer.byteLength(box.readData("CLAUDE.md")), 4096)
+    assert.equal(Buffer.byteLength(box.readData("CLAUDE.md")), 4608)
   })
 
   it("write_refuses_whenExistingClaudeMdIsHandWrittenWithoutForce", () => {

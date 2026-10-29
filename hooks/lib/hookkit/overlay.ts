@@ -19,6 +19,7 @@ function isFile(path: string): boolean {
 export function readTsv(path: string, header: readonly string[], optional: readonly string[] = []): Array<Record<string, string>> {
   if (!isFile(path)) return [];
   const withOptional = [...header, ...optional];
+  const accepted = Array.from({ length: optional.length + 1 }, (_, count) => withOptional.slice(0, header.length + count));
   const rows: Array<Record<string, string>> = [];
   let columns: string[] | null = null;
   splitLines(readFileSync(path, "utf8")).forEach((line, index) => {
@@ -26,7 +27,7 @@ export function readTsv(path: string, header: readonly string[], optional: reado
     if (trimSpace(line) === "" || line.startsWith("#")) return;
     const cells = line.split("\t");
     if (columns === null) {
-      if (!arraysEqual(cells, header) && !arraysEqual(cells, withOptional)) {
+      if (!accepted.some((candidate) => arraysEqual(cells, candidate))) {
         throw new OverlayDataError(`${path}:${number}: header must be ${withOptional.join("\\t")}`);
       }
       columns = cells;

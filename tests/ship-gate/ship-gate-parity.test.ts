@@ -77,7 +77,7 @@ describe("ship-gate parity listed divergences", () => {
       "py-comment-deletion-ts-keel-0475", "py-comment-deletion-ts-keel-0476", "py-comment-deletion-ts-keel-0477",
       "stdin-ls-nested-10001", "stdin-ls-nested-200000", "stdin-push-nested-10001", "stdin-push-nested-200000",
       "extra-0018", "extra-0025", "extra-0026", "extra-0030", "extra-0031", "extra-0035", "extra-0514", "extra-0517", "extra-0518",
-      "extra-0539", "extra-0540", "extra-0549", "extra-0560", "extra-0562", "extra-0563", "extra-0565", "extra-0602", "extra-0604", "extra-0605",
+      "extra-0539", "extra-0540", "extra-0549", "extra-0603", "extra-0560", "extra-0562", "extra-0563", "extra-0565", "extra-0602", "extra-0604", "extra-0605",
       "python-keel-0119", "ts-keel-0119",
       "extra-0543", "extra-0544", "extra-0545", "extra-0548", "extra-0634", "extra-0635", "extra-0637",
       ...GH_ANSWER_OR_PAYLOAD_NOW_DENIED_OR_REWORDED,

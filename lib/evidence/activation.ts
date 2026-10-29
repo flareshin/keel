@@ -1,4 +1,5 @@
 import { buildChains } from './chain.ts';
+import type { Chain } from './chain.ts';
 import * as env from './env.ts';
 import * as gitcmd from './gitcmd.ts';
 import * as registry from './registry.ts';
@@ -18,10 +19,8 @@ export function approvedFastForward(repo: string, target: unknown): boolean {
     const tree = gitcmd.treeOfCommit(repo, target);
     const approved = new Set<string>();
     for (const chain of buildChains(store.loadReviews(key!))) {
-      const proof = verify.boundEvidence('approval', chain.rootRunId, key!, chain.head.evidence_id);
-      if (chain.head.reviewed_tree === tree && chain.head.verdict === 'PASS' && proof && (proof['commits'] ?? {})[key!] === target) {
-        approved.add(chain.rootRunId);
-      }
+      if (chain.head.reviewed_tree !== tree || chain.head.verdict !== 'PASS') continue;
+      if (registry.mergesWithoutApproval(row) || approvalNamesTarget(chain, key!, target)) approved.add(chain.rootRunId);
     }
     if (approved.size === 0) return false;
     const chains = buildChains(store.loadReviews(key!));
@@ -34,6 +33,11 @@ export function approvedFastForward(repo: string, target: unknown): boolean {
     if (isExpectedFailure(error)) return false;
     throw error;
   }
+}
+
+function approvalNamesTarget(chain: Chain, key: string, target: string): boolean {
+  const proof = verify.boundEvidence('approval', chain.rootRunId, key, chain.head.evidence_id);
+  return proof !== null && (proof['commits'] ?? {})[key] === target;
 }
 
 function isExpectedFailure(error: unknown): boolean {

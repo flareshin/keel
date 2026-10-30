@@ -1719,6 +1719,14 @@ describe("CommentWriteTest", () => {
     assertCommentDenied(guard(`tee --append ${path} <<< '# reads the rows' >/dev/null`), "# reads the rows");
   });
 
+  it("bash_judgesEveryShellFileWriteOfStdout_asTheWriteTargetsDoes", () => {
+    const path = codeFile("load.py", "rows = load()\n");
+
+    assertCommentDenied(guard(`cat <<'EOF' >& ${path}\n# reads the rows\nEOF`), "# reads the rows");
+    assertCommentDenied(guard(`cat <<'EOF' 1<> ${path}\n# reads the rows\nEOF`), "# reads the rows");
+    assertPassed(guard(`cat <> ${path} <<'EOF'\n# reads the rows\nEOF`));
+  });
+
   it("bash_judgesOnlyTheStdoutRedirect_whenStderrGoesToACodeFile", () => {
     assertPassed(guard(`cat <<'EOF' 2> ${codeFile("err.py")}\n# reads the rows\nEOF`));
     assertCommentDenied(guard(`cat <<'EOF' 1> ${codeFile("out.py")}\n# reads the rows\nEOF`), "# reads the rows");

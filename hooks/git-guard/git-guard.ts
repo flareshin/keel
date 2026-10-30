@@ -23,7 +23,7 @@ import { notebookCellChange } from "./notebook.ts";
 import type { CodeChange } from "./notebook.ts";
 import { currentBranch, findRepoKey, findToplevel, git, gitOutput, isCommit } from "../lib/hookkit/repo.ts";
 import {
-  ghSubcommandArgv, gitDirectory, gitSubcommandIndex, isConfigRead, operands, readPushArguments, resolveDirectory, steps, writeTargets,
+  fileWriteOf, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, isConfigRead, operands, readPushArguments, resolveDirectory, steps, writeTargets,
 } from "../lib/hookkit/shell.ts";
 import type { Step } from "../lib/hookkit/shell.ts";
 import { OSError, run, TimeoutExpired } from "../lib/hookkit/subprocess.ts";
@@ -37,10 +37,8 @@ const F_FORCE_PUSH = "F-force-push";
 const F_HOOKSKIP = "F-hookskip";
 const C_ISOLATION = "C-isolation";
 const C_COMMENTS = "C-comments";
-const STDOUT_REDIRECT_APPENDS: ReadonlyMap<string, boolean> = new Map([
-  [">", false], [">|", false], ["&>", false], [">>", true], ["&>>", true],
-]);
 const STDOUT_FD = "1";
+const READ_WRITE_REDIRECT = "<>";
 const TEE_SHORT_APPEND = /^-[^-]*a/u;
 export const DROP_COMMENTS = "Remove the listed comment lines and resubmit the edit; put the reasoning in the reading guide.";
 const EDIT_TOOLS: ReadonlySet<string> = new Set(["edit", "write", "notebookedit", "multiedit"]);
@@ -347,9 +345,9 @@ function shellWrites(step: Step): Array<{ target: string; appends: boolean }> {
 
 function stdoutRedirects(step: Step): Array<{ target: string; appends: boolean }> {
   return step.command.redirects.flatMap((redirect) => {
-    const appends = STDOUT_REDIRECT_APPENDS.get(redirect.op);
-    const toStdout = redirect.fd === undefined || redirect.fd === STDOUT_FD;
-    return appends === undefined || !toStdout ? [] : [{ target: redirect.target, appends }];
+    const write = fileWriteOf(redirect);
+    const toStdout = redirect.fd === undefined ? redirect.op !== READ_WRITE_REDIRECT : redirect.fd === STDOUT_FD;
+    return write === null || !toStdout ? [] : [write];
   });
 }
 

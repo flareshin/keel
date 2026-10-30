@@ -106,8 +106,10 @@ function resolveReviews(outgoing: Outgoing, entries: PathEntry[]): [Chain | null
 function stackedOverlapReasons(outgoing: Outgoing, entries: PathEntry[], stackable: Chain[], chains: Chain[]): Reason[] {
   const reasons: Reason[] = [];
   for (const entry of entries) {
-    const reviewers = stackable.filter((chain) => chain.reviewed.has(entry.path)).map((chain) => chain.rootRunId).sort(compareCodePoints);
-    if (gitcmd.isGitlink(entry) || reviewers.length < 2 || coveredByAny(outgoing, entry, chains)) continue;
+    const reviewing = stackable.filter((chain) => chain.reviewed.has(entry.path));
+    const reviewers = reviewing.map((chain) => chain.rootRunId).sort(compareCodePoints);
+    if (gitcmd.isGitlink(entry) || reviewers.length < 2 || coveredByAny(outgoing, entry, chains)
+      || reviewedChangesStackInto(outgoing, entry, reviewing)) continue;
     const commit = gitcmd.lastCommitTouching(outgoing.repoRoot, outgoing.mergeBase, outgoing.head, entry.path);
     const parent = gitcmd.commitSha(outgoing.repoRoot, commit + '^');
     reasons.push({
@@ -117,6 +119,16 @@ function stackedOverlapReasons(outgoing: Outgoing, entries: PathEntry[], stackab
     });
   }
   return reasons;
+}
+
+function reviewedChangesStackInto(outgoing: Outgoing, entry: PathEntry, reviewers: Chain[]): boolean {
+  if (gitcmd.isDeleted(entry)) return false;
+  let stacked = gitcmd.treeEntry(outgoing.repoRoot, outgoing.mergeBase, entry.path)?.[1] ?? null;
+  for (const chain of reviewers) {
+    stacked = reviewedChangeOnto(outgoing.repoRoot, chain, entry, stacked);
+    if (stacked === null) return false;
+  }
+  return commentCleanup.matchesContent(outgoing.repoRoot, entry.path, [entry.mode, stacked], [entry.mode, entry.blob]);
 }
 
 function coveredByAny(outgoing: Outgoing, entry: PathEntry, chains: Chain[]): boolean {
@@ -173,11 +185,26 @@ function* stackedPredecessors(outgoing: Outgoing, boundary: string, stackable: C
       return entry.blob !== start[0] || entry.mode !== start[1];
     }).map(([, entry]) => entry);
     for (const chain of stackable) {
-      if (reviewsEveryPath(chain, net) && coverageReasons(chain, net, outgoing.repoRoot).length === 0) {
+      if (reviewsEveryPath(chain, net) && net.every((entry) => coversStacked(outgoing.repoRoot, chain, entry, atStart.get(entry.path)![0]))) {
         yield [parent, chain.rootRunId];
       }
     }
   }
+}
+
+function coversStacked(repo: string, chain: Chain, entry: PathEntry, start: string | null): boolean {
+  if (coverageReasons(chain, [entry], repo).length === 0) return true;
+  if (gitcmd.isDeleted(entry)) return false;
+  const stacked = reviewedChangeOnto(repo, chain, entry, start);
+  return stacked !== null && commentCleanup.matchesContent(repo, entry.path, [entry.mode, stacked], [entry.mode, entry.blob]);
+}
+
+function reviewedChangeOnto(repo: string, chain: Chain, entry: PathEntry, start: string | null): string | null {
+  const reviewed = chain.reviewed.get(entry.path);
+  const base = gitcmd.treeEntry(repo, chain.root.review_base, entry.path);
+  if (!reviewed || reviewed[0] === null || reviewed[1] !== entry.mode || !base || start === null) return null;
+  if (!gitcmd.REGULAR_FILE_MODES.includes(entry.mode)) return null;
+  return gitcmd.mergedBlob(repo, start, base[1], reviewed[0]);
 }
 
 function reviewsEveryPath(chain: Chain, entries: PathEntry[]): boolean {

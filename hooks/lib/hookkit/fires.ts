@@ -6,6 +6,7 @@ import { joinPath } from "./paths.ts";
 import { pythonJsonDumps } from "./jsonout.ts";
 import { textOrEmpty } from "./fields.ts";
 import { truncate } from "./text.ts";
+import { firesLogName } from "../../../measure/lib/measurekit/fireslog.ts";
 
 export const DETAIL_LIMIT = 200;
 
@@ -30,7 +31,7 @@ export class FireLog {
       if (value === null || value === undefined) continue;
       record[key] = key === "detail" ? truncate(textOrEmpty(value, "detail"), DETAIL_LIMIT) : value;
     }
-    const path = joinPath(dataDir(), "logs", "keel-fires.jsonl");
+    const path = joinPath(dataDir(), "logs", firesLogName(this.session, dataDir()));
     try {
       mkdirSync(dirname(path), { recursive: true });
       appendFileSync(path, pythonJsonDumps(record) + "\n", "utf8");

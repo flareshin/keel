@@ -9,13 +9,14 @@ import { arraysEqual, lstripChar, partition, trimSpace, truncate, WORD_BOUNDARY,
 import { compareCodePoints } from "../../measure/lib/measurekit/json.ts";
 import { isFile } from "../lib/hookkit/files.ts";
 import { decodeStrict, splitLines } from "../../measure/lib/measurekit/files.ts";
+import { firesLogName } from "../../measure/lib/measurekit/fireslog.ts";
 import { shlexQuote } from "../../measure/lib/measurekit/shlex.ts";
 import { parseJson } from "../lib/hookkit/json.ts";
 import { AttributeError, describeError, pythonTypeName, RecursionError, ValueError } from "../lib/hookkit/errors.ts";
 import { readStdin, writeStderr } from "../lib/hookkit/stdio.ts";
 import * as shell from "../lib/hookkit/shell.ts";
 import type { Step } from "../lib/hookkit/shell.ts";
-import { appendRecord, iso, stateDir, utcNow } from "../../lib/evidence/env.ts";
+import { appendRecord, dataDir, iso, stateDir, utcNow } from "../../lib/evidence/env.ts";
 import * as gc from "../../lib/evidence/gc.ts";
 import * as gitcmd from "../../lib/evidence/gitcmd.ts";
 import * as registry from "../../lib/evidence/registry.ts";
@@ -211,7 +212,7 @@ class Report {
       if (value !== null && value !== undefined && value !== "") line[key] = value;
     }
     if (typeof line["detail"] === "string") line["detail"] = truncate(line["detail"], FIRES_DETAIL_LIMIT);
-    appendRecord("keel-fires.jsonl", line);
+    appendRecord(firesLogName(this.session, dataDir()), line);
   }
 }
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { userInfo } from "node:os";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { join } from "node:path";
@@ -306,6 +306,24 @@ describe("FireLog", () => {
   it("append_namesTheSessionAsDash_whenThePayloadHasNone", () => {
     withEnv({ KEEL_DATA_DIR: sandbox.data }, () => new FireLog("h", null).append("K1", "pass"));
     assert.equal(logged()[0]?.["session"], "-");
+  });
+
+  it("append_writesAProbeSessionToTheSyntheticLog_whenTheDataDirIsTheRealOne", () => {
+    const realLogs = join(sandbox.home, ".claude", "logs");
+    withEnv({ HOME: sandbox.home, KEEL_DATA_DIR: null }, () => new FireLog("h", "s1").append("K1", "deny"));
+    assert.equal(existsSync(join(realLogs, "keel-fires.jsonl")), false);
+    assert.equal(JSON.parse(readFileSync(join(realLogs, "keel-fires-synthetic.jsonl"), "utf8"))["session"], "s1");
+  });
+
+  it("append_keepsAgentAndSessionlessRecordsInTheRealLog_whenTheDataDirIsTheRealOne", () => {
+    const realLogs = join(sandbox.home, ".claude", "logs");
+    withEnv({ HOME: sandbox.home, KEEL_DATA_DIR: join(sandbox.home, ".claude/") }, () => {
+      new FireLog("h", "0f8fad5b-d9cb-469f-a165-70867728950e").append("K1", "deny");
+      new FireLog("h", null).append("C-handoff", "record");
+    });
+    const sessions = readFileSync(join(realLogs, "keel-fires.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line)["session"]);
+    assert.deepEqual(sessions, ["0f8fad5b-d9cb-469f-a165-70867728950e", "-"]);
+    assert.equal(existsSync(join(realLogs, "keel-fires-synthetic.jsonl")), false);
   });
 
   it("append_doesNotThrow_whenTheLogCannotBeWritten", () => {

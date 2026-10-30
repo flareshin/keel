@@ -431,6 +431,14 @@ describe('HookBehaviorTest', () => {
     assert.deepEqual(sandbox.fires(), []);
   });
 
+  test('hook_logsAProbeSessionToTheSyntheticLog_whenTheDataDirIsTheRealOne', (t) => {
+    const { sandbox, repo } = featureRepo(t);
+    const realLogs = join(sandbox.home, '.claude', 'logs');
+    sandbox.hook(sandbox.bashPayload(repo, 'git push origin feature', { session: 'probe' }), { KEEL_DATA_DIR: join(sandbox.home, '.claude') });
+    assert.equal(existsSync(join(realLogs, 'keel-fires.jsonl')), false);
+    assert.ok(existsSync(join(realLogs, 'keel-fires-synthetic.jsonl')));
+  });
+
   test('hook_passesSilently_whenTheEventIsNotPreToolUseBash', (t) => {
     const { sandbox, repo } = featureRepo(t, LOGIC_WITH_TEST);
     const afterPush = sandbox.bashPayload(repo, 'git push origin feature');

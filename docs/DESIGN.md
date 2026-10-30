@@ -33,7 +33,7 @@ Few principles, each at the strongest feasible layer; every rule enters and leav
 ## 4. Ledger
 
 Format: (b).
-- **Caps** (retired rows excluded): charter ≤ 7 · core ≤ 10 (floor rows excluded) · per stack ≤ 10 · stacks ≤ 5 · overlay ≤ 15 · hook script files ≤ 8 (distinct script paths in the merged settings `hooks`; 6 today) · generated CLAUDE.md ≤ 4608 bytes (`bin/link`) · each `projects/*/memory/MEMORY.md` ≤ 8192 bytes (per project, apart from CLAUDE.md; WARN) · smoke assertions ≤ 2 × active ledger rows + 40 (one assertion = one check kind × one scope, never per path).
+- **Caps** (retired rows excluded): charter ≤ 7 · core ≤ 10 (floor rows excluded) · per stack ≤ 10 · stacks ≤ 5 · overlay ≤ 15 · hook script files ≤ 8 (distinct script paths in the merged settings `hooks`; 5 today) · generated CLAUDE.md ≤ 4608 bytes (`bin/link`) · each `projects/*/memory/MEMORY.md` ≤ 8192 bytes (per project, apart from CLAUDE.md; WARN) · smoke assertions ≤ 2 × active ledger rows + 40 (one assertion = one check kind × one scope, never per path).
 - **Rule of two:** rows neither `scope=charter` nor `type=floor` need ≥ 2 distinct incident refs: `docs/incidents/<name>.md` (must exist in keel) or `private:<id>` (overlay ledger only). Failing rows are GRACE, not FAIL, while `grace_until` ≥ today. When a keel row fails or is in grace, memory files `feedback_*` are listed as incident candidates, never FAIL.
 - **Metric:** every active row has one (`measure/run`, (e)); zero recognized items = FAIL, GRACE while today ≤ `grace_until`.
 - **Expiry (proposals only):** non-charter, non-floor rows carry `review_by` (default creation + 60 days; charter and floor `-`). `measure/propose` (weekly overlay scheduled task) over rows past `review_by`: count 0 → propose demotion (`hook`→`skill`→`prose`→`status=retired`); count > 0 → `review_by` + 60 days; repo rows: failing existence check → re-check, zero violations never demotes. A metric whose runner errored (crash, non-zero exit, no JSON) is never count 0 and never yields a demote/retire proposal; it is a `recheck` with the error as reason. `--model-upgrade <model>`: one re-review proposal per active row (an A/B diff is a separate user-approved step). Output: stdout only. Nothing edits a ledger; the user applies an approved proposal by editing the row. `status=proposed-demote` = accepted for demotion at the next edit; still counted in caps. `type` is classification only, never a demotion axis.
@@ -199,7 +199,7 @@ Bulk-copy v1 rules; adopt a harness-generating plugin; delete the v1 repo; gener
 Relied-on Claude Code behaviors; a change is contract drift, logged by report-gate and ship-gate as `outcome=contract-miss` with `cc_version`:
 - Payload fields as in (g); `agent_id` only inside a subagent; `SubagentHandback` carrying the full subagent report in auto mode.
 - `"onFailure":"block"` (Claude Code 2.1.295, 2.1.296): a crash or timeout blocks the call; Stop, SubagentStop, TaskCompleted, TeammateIdle ignore it.
-- A missing registered script makes `node` exit 1, which does not block: the fail-open hooks (report-gate, model-assign, handoff, env-preflight) fail open, and ship-gate and git-guard still block through `"onFailure":"block"`; `link --check` and smoke `dangling` catch it.
+- A missing registered script makes `node` exit 1, which does not block: the fail-open hooks (report-gate, model-assign, env-preflight) fail open, and ship-gate and git-guard still block through `"onFailure":"block"`; `link --check` and smoke `dangling` catch it.
 
 ## 10. Removed and deferred (2026-10-11 audit)
 
@@ -266,6 +266,8 @@ id	scope	type	statement	layer	enforced_at	why_not_stronger	justification	inciden
 Seed rows, all `grace_until` 2026-12-10, `layer` = the `enforced_at` kind, metric `fires:<id>` (K4, K5: `evals:<id>`), `review_by` `-` for charter and floor else 2026-12-10, incidents `-`: K1, K2 (charter, incentive; `hook:ship-gate`, `hook:report-gate`) · K3 (charter, knowledge, `hook:ship-gate`) · K4, K5 (charter, knowledge; `skill:prompt-refine`, `skill:readable-code`) · risk (core, knowledge, `hook:ship-gate`) · F-irreversible (core, floor, `hook:ship-gate`) · F-secrets, F-attribution, F-force-push, F-hookskip (core, floor, `hook:git-guard`) · F-mod-trust (core, floor, `prose:docs/DESIGN.md`, metric `exists:~/git/keel:HEAD:measure/lib/measurekit/smoke_mods.ts`: no layer names a smoke check, and a mod acts before every hook) · C-dispatch (core, incentive, `hook:model-assign`) · C-handoff (core, knowledge, `hook:handoff`) · C-isolation (core, incentive, `hook:git-guard`) · S-jdk (`stack:spring-maven`, knowledge, `hook:env-preflight`).
 
 Incident refs added later (2026-10-30), two `docs/incidents/` files each: C-dispatch, C-isolation, S-jdk, C-precheck, C-comments. A hook deny counts as an incident when its file names the cost the deny prevented, as the overlay already does with guard denies.
+
+Retired 2026-10-30, with no incident to cite: C-review-command (its approval-explanation duty is K5's "Explain approval requests per `docs/review-policy.md`"), C-verbatim-fix (the rule stays as untagged prose in `docs/review-policy.md`), C-handoff (the PreCompact registration is removed; the handoff CLI modes stay for resume notes).
 
 Statements: K and F as in §1; C-dispatch "Every agent dispatch names a model and an effort."; C-handoff "Snapshot in-flight work before compaction."; C-isolation "A session edits only in its own worktree; the live keel and overlay checkouts move only by a user-run fast-forward merge."; S-jdk "Maven builds pin the JDK version the repo requires." `why_not_stronger`: K4 "Ambiguity is semantic; no deterministic trigger exists."; K5 "Readability needs judgment; lint-checkable parts descend per repo."; F-mod-trust "A mod runs inside Claude Code ahead of every hook, so no hook can stop it; smoke check mod-trust FAILs on an unreviewed one." Charter justifications (v1 evidence) are in `ledger.tsv`.
 
@@ -375,7 +377,7 @@ smoke checks (kind × scope): ledger-format, id-unique, caps (each), id-tagging 
 | report-gate | review evidence written / refused by `write-review` / skipped because the reviewer edited | K1 | record / warn |
 | report-gate, ship-gate | expected payload field missing (5.6) | the hook's first id here | contract-miss |
 | model-assign | model/effort check and rewrite | C-dispatch | deny / record / pass |
-| handoff | snapshot written | C-handoff | record |
+| handoff (CLI) | snapshot written | C-handoff | record |
 | env-preflight | JDK check and rewrite | S-jdk | deny / record / pass |
 | any | the hook's own internal error | the running check's id, else the hook's first id here | error |
 
@@ -394,7 +396,6 @@ A fragment is a JSON object with only `hooks`, `permissions`, `env`, in Claude C
 | report-gate | PreToolUse | `SubagentHandback` | `node {{KEEL}}/hooks/report-gate/report-gate.ts` | 30 | pass, logged | fail open (ship-gate K1 already denies without evidence) |
 | report-gate | SubagentStop | — | same | 30 | pass, logged | fail open (SubagentStop ignores `onFailure`) |
 | model-assign | PreToolUse | `Agent\|Workflow` | `node {{KEEL}}/hooks/model-assign/model-assign.ts` | 10 | pass, logged | fail open |
-| handoff | PreCompact | — | `node {{KEEL}}/hooks/handoff/handoff.ts --auto` | 30 | pass, logged | fail open |
 | env-preflight | PreToolUse | `Bash` | `node {{KEEL}}/stacks/spring-maven/hooks/env-preflight.ts` | 10 | pass, logged | fail open |
 
 - "On process failure" = Claude Code's action when the hook process crashes or times out. Only the two gate registrations carry `"onFailure":"block"` and an explicit `timeout` (else `link --check` `gate-onfailure-missing`); a broken blocking gate blocks every matching call, and the way out is the user's terminal.
@@ -406,7 +407,7 @@ Hook protocol:
 - Deny = exit 2, message on stderr. Warn = exit 0, stdout `{"hookSpecificOutput":{"hookEventName":"<event>","additionalContext":"<msg>"}}`. SubagentStop block = stdout `{"decision":"block","reason":"<msg>"}`. Input rewrite (model-assign) = `hookSpecificOutput.updatedInput`.
 - Message (`hookkit/protocol.ts`): line 1 `[<ID>] <hook>: <summary>` (`<ID>` = the first bullet's), then one `- [<ID>] …` line per finding; a deny ends with one last line (5.7), a warn does not; ≤ 2000 characters (a longer deny is cut before its last line, which survives).
 
-Ported from v1 minus company branches: report-gate = evidence-token and `[SCOPE]` checks, hand-back/stop dedup, review evidence (5.6). git-guard = attribution regex, parser, fail-closed; secrets via `measure/boundary --staged --generic-only` on `git commit`; force push (`--force`, `-f`, `+refspec` denied; `--force-with-lease` only to the integration base, `main` or `master`); 5.6 protections; overlay repo rules. model-assign = v1 agent-model-assign. handoff = `--auto` for PreCompact, CLI modes kept, snapshots in `$KEEL_DATA_DIR/handoff/`. env-preflight = repo→JDK map as overlay data.
+Ported from v1 minus company branches: report-gate = evidence-token and `[SCOPE]` checks, hand-back/stop dedup, review evidence (5.6). git-guard = attribution regex, parser, fail-closed; secrets via `measure/boundary --staged --generic-only` on `git commit`; force push (`--force`, `-f`, `+refspec` denied; `--force-with-lease` only to the integration base, `main` or `master`); 5.6 protections; overlay repo rules. model-assign = v1 agent-model-assign. handoff = CLI modes only (its PreCompact `--auto` registration was removed with C-handoff), snapshots in `$KEEL_DATA_DIR/handoff/`. env-preflight = repo→JDK map as overlay data.
 
 ### (h) Overlay data formats (invented example values)
 

@@ -37,7 +37,7 @@ git clone <keel repo url> ~/git/keel
 The overlay (`~/git/keel-overlay`, or `KEEL_OVERLAY_DIR`) holds your own rules and data. Every file in it is optional, so you can start without one. Until you add one:
 
 - No repo is gated. ship-gate warns once per session and lets pushes and merges through, except one it cannot attribute to one repo and branch, such as `git subtree push` or a `GIT_DIR` override, which it still denies.
-- `git-guard`, `report-gate`, `model-assign` and `handoff` still run in every repo. For example, `model-assign` assigns a model and an effort to an agent dispatch that names none, and denies a Workflow script whose `agent()` calls name none.
+- `git-guard`, `report-gate` and `model-assign` still run in every repo. For example, `model-assign` assigns a model and an effort to an agent dispatch that names none, and denies a Workflow script whose `agent()` calls name none.
 - The generated `CLAUDE.md` holds `PRINCIPLES.md` only.
 - `measure/smoke` fails until the overlay has `boundary/lexicon.txt`, and while any installed Claude Code mod is missing from the overlay's `reviewed-mods.txt`.
 
@@ -196,7 +196,6 @@ Registered in [`settings/core.json`](settings/core.json). `ship-gate` and `git-g
 | `git-guard` | `PreToolUse` Bash, Edit, Write, NotebookEdit | `F-secrets`, `F-attribution`, `F-force-push`, `F-hookskip`, `C-isolation`; protects evidence and fires logs |
 | `report-gate` | `PreToolUse` SubagentHandback, `SubagentStop` | K2 (evidence in done/pass claims); writes review evidence from a reviewer's report |
 | `model-assign` | `PreToolUse` Agent, Workflow | `C-dispatch`: every agent dispatch names a model and an effort |
-| `handoff` | `PreCompact` | `C-handoff`: snapshot in-flight work before compaction |
 | `env-preflight` | `PreToolUse` Bash (stack fragment, registered when the overlay's `stacks.txt` lists `spring-maven`) | `S-jdk`: Maven builds pin the JDK the repo requires |
 
 Each decision is logged to `$KEEL_DATA_DIR/logs/keel-fires.jsonl`: a deny or warn writes one line per `[ID]` in its message, a pass one line, and a call that is no decision (for example a Bash command that is no push, merge or protected write) nothing. Ledger metrics count these lines.

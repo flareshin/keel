@@ -109,7 +109,7 @@ what keeps failing. `keel review prepare` counts the earlier NEEDS_FIXES links
 of the `rootRunId` chain. The line is a prompt for the author and owner; it does
 not change the verdict or any gate.
 
-[C-verbatim-fix] A fix that applies a reviewer's exact replacement text
+A fix that applies a reviewer's exact replacement text
 verbatim, and changes nothing else, closes that finding without a delta review.
 The reviewer chose the text, so the author does not judge it. The text must come
 from a finding that stands, not one a verifier adjusted or refuted. In the report,

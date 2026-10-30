@@ -27,6 +27,13 @@ interface ListedDivergence {
   now: unknown;
 }
 
+interface ListedExpansion {
+  text: string;
+  step: number;
+  variable: string;
+  now: string;
+}
+
 interface UnexecutedLine {
   line: number;
   text: string;
@@ -62,6 +69,27 @@ const UNREACHABLE_LINES: readonly UnreachableLine[] = [
 ];
 
 type Json = unknown;
+
+const ASSIGNED_VARIABLE_EXPANSIONS: readonly ListedExpansion[] = [
+  { text: 'P=push; GP="$(git --exec-path)/git-$P"; $GP origin feature', step: 2, variable: "GP", now: "$(git --exec-path)/git-push" },
+  { text: 'P=push; GP="$(git --exec-path)/git-$P"; $GP origin main', step: 2, variable: "GP", now: "$(git --exec-path)/git-push" },
+  {
+    text: 'keel="${KEEL_DATA_DIR:-$HOME/.claude}/bin/keel"; "$keel" evidence show --repo /work/repo && git -C /work/repo merge-base --is-ancestor main HEAD',
+    step: 1, variable: "keel", now: "${KEEL_DATA_DIR:-/home/tester/.claude}/bin/keel",
+  },
+  {
+    text: 'keel="${KEEL_DATA_DIR:-$HOME/.claude}/bin/keel"; "$keel" evidence show --repo /work/repo && git -C /work/repo merge-base --is-ancestor main HEAD',
+    step: 2, variable: "keel", now: "${KEEL_DATA_DIR:-/home/tester/.claude}/bin/keel",
+  },
+  {
+    text: 'keel="${KEEL_DATA_DIR:-$HOME/.claude}/bin/keel"; python3 "$keel" test -- ./mvnw test -Dtest=\'*Merge*\'',
+    step: 1, variable: "keel", now: "${KEEL_DATA_DIR:-/home/tester/.claude}/bin/keel",
+  },
+  {
+    text: 'root=/work/repo && base=$(git -C "$root" merge-base main HEAD) && tree=$(cd "${KEEL_DATA_DIR:-$HOME/.claude}" && bin/keel snapshot "$root" | jq -r .tree)',
+    step: 2, variable: "base", now: '$(git -C "/work/repo" merge-base main HEAD)',
+  },
+];
 
 export const EXPECTED_DIVERGENCES: readonly ListedDivergence[] = OTHER_ACCOUNT_TARGETS.flatMap(([target, now]) =>
   ENVIRONMENTS.map((environment): ListedDivergence => ({ call: { fn: "resolve_directory", args: [CWD, target, environment] }, now })));
@@ -232,12 +260,16 @@ export function runParity(): ParityReport {
   const actual = runTypeScript(calls);
   const details: string[] = [];
   const replayed = new Set<ListedDivergence>();
+  const replayedExpansions = new Set<ListedExpansion>();
   let mismatches = 0;
   calls.forEach((call, index) => {
     const listed = EXPECTED_DIVERGENCES.find((divergence) => isDeepStrictEqual(divergence.call, call));
     const now = JSON.parse(JSON.stringify(actual[index]));
     if (listed !== undefined) replayed.add(listed);
-    const agrees = listed === undefined ? isDeepStrictEqual(now, expected[index]) : isDeepStrictEqual(now, listed.now) && !isDeepStrictEqual(expected[index], listed.now);
+    const expansions = ASSIGNED_VARIABLE_EXPANSIONS.filter((expansion) => call.fn === "steps" && call.args[0] === expansion.text);
+    for (const expansion of expansions) replayedExpansions.add(expansion);
+    const recorded = expansions.length === 0 ? expected[index] : withListedExpansions(expected[index], expansions);
+    const agrees = listed === undefined ? isDeepStrictEqual(now, recorded) : isDeepStrictEqual(now, listed.now) && !isDeepStrictEqual(expected[index], listed.now);
     if (agrees) return;
     mismatches += 1;
     if (details.length < MAX_MISMATCHES_SHOWN) {
@@ -248,11 +280,25 @@ export function runParity(): ParityReport {
     mismatches += 1;
     details.push(`listed divergence was not replayed: ${JSON.stringify(listed.call)}`);
   }
+  for (const expansion of ASSIGNED_VARIABLE_EXPANSIONS.filter((listedExpansion) => !replayedExpansions.has(listedExpansion))) {
+    mismatches += 1;
+    details.push(`listed expansion was not replayed: ${expansion.text}`);
+  }
   return {
     corpusSize: corpus.length, cases: calls.length, divergences: replayed.size, mismatches, details,
     executableLines: coverage.executable, executedLines: coverage.executed,
     allowlistedLines: UNREACHABLE_LINES.length, coverageGaps: coverageGaps(coverage.unexecuted),
   };
+}
+
+function withListedExpansions(recorded: Json, expansions: readonly ListedExpansion[]): Json {
+  const patched = JSON.parse(JSON.stringify(recorded)) as Array<{ expansion: Array<[string, string]> }>;
+  for (const { step, variable, now } of expansions) {
+    const pair = patched[step]?.expansion.find(([name]) => name === variable);
+    if (pair === undefined || pair[1] === now) return null;
+    pair[1] = now;
+  }
+  return patched;
 }
 
 function coverageGaps(unexecuted: readonly UnexecutedLine[]): string[] {

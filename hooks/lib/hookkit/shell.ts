@@ -251,7 +251,7 @@ class ShellScope {
     for (const arg of args) {
       const [variable, hasValue, value] = partition(arg, "=");
       if (hasValue) {
-        this.exported.set(variable, value);
+        this.exported.set(variable, expandVariables(value, this.directory, this.expansion()));
       } else if (this.variables.has(variable)) {
         this.exported.set(variable, this.variables.get(variable) ?? "");
         this.variables.delete(variable);
@@ -262,7 +262,7 @@ class ShellScope {
   private assign(assignments: readonly Assignment[]): void {
     for (const [variable, value] of assignments) {
       const target = this.exported.has(variable) ? this.exported : this.variables;
-      target.set(variable, value);
+      target.set(variable, expandVariables(value, this.directory, this.expansion()));
     }
   }
 
@@ -274,15 +274,18 @@ class ShellScope {
 }
 
 export function resolveDirectory(directory: string, target: string, environment: Variables): string {
+  return normalizePath(joinPath(directory, expandUser(expandVariables(target, directory, environment))));
+}
+
+function expandVariables(text: string, directory: string, environment: Variables): string {
   const lookup = (name: string): string | undefined => {
     if (environment.has(name)) return environment.get(name);
     if (name === "PWD") return directory;
     if (name === "OLDPWD") return undefined;
     return environmentValue(name);
   };
-  const expanded = target.replace(VARIABLE_RE, (whole, braced: string | undefined, bare: string | undefined) =>
+  return text.replace(VARIABLE_RE, (whole, braced: string | undefined, bare: string | undefined) =>
     lookup(braced ?? bare ?? "") ?? whole);
-  return normalizePath(joinPath(directory, expandUser(expanded)));
 }
 
 export function gitDirectory(argv: readonly string[], directory: string, environment: Variables): string {

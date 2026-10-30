@@ -413,6 +413,23 @@ describe("LiveCheckoutTest", () => {
     assertPassed(guard(`WT=${worktree}; cd "$WT" && echo x > notes.md`, live));
   });
 
+  it("bash_passes_whenTheVariableItCdsIntoIsBuiltFromAnotherAssignedVariable", () => {
+    assertPassed(guard(`S=${worktree}; D=$S/sub; mkdir -p $D; cd $D && echo x > notes.md`, live));
+    assertPassed(guard(`S=${worktree} D="\${S}"; cd "$D" && echo x > notes.md`, live));
+  });
+
+  it("bash_denied_whenTheVariableItCdsIntoIsBuiltFromAVariableNamingTheLiveCheckout", () => {
+    const result = guard(`S=${live}; D=$S/sub; mkdir -p $D; cd $D && echo x > notes.md`, worktree);
+    assertDenied(result, "C-isolation");
+    assert.ok(!result.stderr.includes("cannot resolve"), result.stderr);
+  });
+
+  it("bash_denialSaysTheCdIsUnresolved_whenTheAssignedVariableUsesAnUnknownOne", () => {
+    const result = guard(`D=$KEEL_NO_SUCH_VARIABLE/sub; cd $D && echo x > notes.md`, live);
+    assertDenied(result, "C-isolation");
+    assert.ok(result.stderr.includes("cannot resolve"), result.stderr);
+  });
+
   it("bash_denialSaysTheCdIsUnresolved_whenItJudgesWhereTheCallStarts", () => {
     const result = guard('cd "$(git rev-parse --show-toplevel)" && echo x > notes.md', live);
     assertDenied(result, "C-isolation");

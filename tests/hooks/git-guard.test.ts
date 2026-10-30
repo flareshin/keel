@@ -1810,6 +1810,7 @@ describe("CommentWriteTest", () => {
       ["a.cpp", "// NOLINTEND(bugprone-x)"], ["a.py", "# ruff: noqa"],
       ["a.cpp", "// clang-format off"], ["a.cpp", "// clang-format on"], ["a.py", "# yapf: disable"], ["a.js", "// @flow"],
       ["a.js", "// @flow strict"], ["a.js", "/* @flow weak */"], ["a.ts", "// deno-lint-ignore no-explicit-any"],
+      ["a.js", "/* globals describe, it: readonly */"], ["a.js", "/* global $:writable, jQuery */"],
     ];
     const prose: Array<[file: string, comment: string]> = [
       ["b.c", "// pragmatic shortcut for now"], ["b.js", "// eslintrc settings apply here"], ["b.cpp", "// NOLINTED by accident"],
@@ -1818,6 +1819,7 @@ describe("CommentWriteTest", () => {
       ["Repo.java", "// rollback the transaction when the save fails"], ["b.java", "// comment: the cache is warm here"],
       ["b.ts", "// preconditions are checked by the caller"], ["b.cpp", "// clang-format is set in the repo root"],
       ["b.js", "// @flow control returns early here"], ["b.sql", "--precondition-sql-check expectedResult:0 SELECT 1"],
+      ["b.js", "// global state is reset here"], ["b.js", "/* global state is reset here */"], ["b.js", "// global window"],
     ];
 
     for (const [file, comment] of directives) assertPassed(edit("Write", { file_path: codeFile(file), content: `${comment}\nx = 1\n` }));

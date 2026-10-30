@@ -110,6 +110,16 @@ describe("weekly", () => {
     assert.deepEqual(report.core_size, { non_test_loc: 5, design_md_bytes: 120 })
   })
 
+  it("weekly_countsTypeScriptSource_andSkipsEveryTestsDirectory", () => {
+    box.writeLedger("keel/ledger.tsv", [charterRow("K1")])
+    box.write("keel/hooks/gate.ts", "a\nb\nc\n")
+    box.write("keel/codex/tests/case.ts", "x\n".repeat(40))
+    box.write("keel/tests/hooks/gate.test.ts", "y\n".repeat(30))
+    box.commitAll(box.keel)
+    const [, report] = box.runJson("weekly")
+    assert.equal(report.core_size.non_test_loc, 3)
+  })
+
   it("weekly_reportsOverlayDefectRunners_andTheirErrors", () => {
     box.writeLedger("keel/ledger.tsv", [charterRow("K1")])
     box.write("overlay/measure/metrics/defects-reverts", '#!/bin/bash\necho \'{"count": 1, "items": ["abc"]}\'\n', true)

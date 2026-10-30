@@ -90,6 +90,7 @@ function copySeedLedgerWithDatesNeverReached(box: EvalSandbox): void {
     return cells.join("\t")
   })
   box.write("keel/ledger.tsv", [header, ...postponed].join("\n") + "\n")
+  fs.cpSync(path.join(CHECKOUT, "docs", "incidents"), path.join(box.keel, "docs", "incidents"), { recursive: true })
   box.linkShippedRunners()
 }
 

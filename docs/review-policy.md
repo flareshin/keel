@@ -59,7 +59,9 @@ Choose each run by what changed since the last passing run:
 - While iterating and after each review fix, run the test files of the changed
   modules and every test that imports, spawns or reads a changed path, found by
   grepping the tests for its file name, plus the tests that import a test helper
-  the grep finds: `keel test -- node --test <files>`.
+  the grep finds. When a script or module reads the changed path, such as
+  `rule-checks.ts` reading `references/rules.md`, grep the tests for that
+  reader's name too: `keel test -- node --test <files>`.
 - A smoke-only change (paths the overlay's risk rules class smoke-only, or a repo
   whose gate is smoke) needs no test run; the gate asks for smoke evidence
   instead. A light change (in keel: `docs/*`, `settings/*` and every `*.md`,

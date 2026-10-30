@@ -307,4 +307,9 @@ describe('Codex rollouts and runner output at their edges', () => {
     assert.deepEqual(recognize('\u0085Test Files  7 passed (7)\n'), [0, null]);
     assert.deepEqual(recognize('\ufeffTest Files  7 passed (7)\n'), [0, null]);
   });
+
+
+  test('the node spec reporter summary counts its pass line', () => {
+    assert.deepEqual(recognize('\u2139 tests 5\n\u2139 suites 1\n\u2139 pass 5\n\u2139 fail 0\n'), [5, 'spec']);
+  });
 });

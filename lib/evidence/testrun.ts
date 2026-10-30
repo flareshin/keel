@@ -21,6 +21,7 @@ export const COUNT_PATTERNS: Array<[name: string, pattern: RegExp]> = [
   ['surefire', /Tests run: ([0-9]+)/gu],
   ['unittest', new RegExp(`${LINE_START}Ran ([0-9]+) tests?${NOT_WORD_AFTER}`, 'gu')],
   ['tap', new RegExp(`${LINE_START}# pass ([0-9]+)`, 'gu')],
+  ['spec', new RegExp(`${LINE_START}\u2139 pass ([0-9]+)${NOT_WORD_AFTER}`, 'gu')],
   ['passed', new RegExp(
     `${LINE_START}(?!${SPACE_EITHER_WAY}*Test (?:Files|Suites)${NOT_WORD_AFTER})[^\\n]*?${NOT_WORD_BEFORE}([0-9]+) passed${NOT_WORD_AFTER}`, 'gu')],
 ];

@@ -2,6 +2,7 @@
 import fs from "node:fs"
 import path from "node:path"
 
+import { isTestPath } from "../lib/evidence/risk.ts"
 import { EXIT_OK, noPositionals, parseCommandLine, printJson, runMain } from "./lib/measurekit/cli.ts"
 import type { CommandSpec } from "./lib/measurekit/cli.ts"
 import { isDir, isFile } from "./lib/measurekit/files.ts"
@@ -19,7 +20,6 @@ const COMMAND: CommandSpec = {
   options: {},
 }
 const DEFECT_RUNNER_PREFIX = "defects-"
-const TESTS_DIRECTORY = "tests"
 const EXECUTABLE_MODE = "100755"
 const CODE_EXTENSIONS = new Set([".py", ".js", ".mjs", ".sh", ".ts"])
 const NEWLINE_BYTE = 0x0a
@@ -53,13 +53,9 @@ function measureCoreSize(keelHome: string): object {
     const meta = entry.slice(0, tab)
     const trackedPath = entry.slice(tab + 1)
     const isCode = meta.split(/\s+/)[0] === EXECUTABLE_MODE || CODE_EXTENSIONS.has(path.extname(trackedPath))
-    if (!isUnderTestsDirectory(trackedPath) && isCode) lines += countLines(path.join(keelHome, trackedPath))
+    if (!isTestPath(trackedPath) && isCode) lines += countLines(path.join(keelHome, trackedPath))
   }
   return { non_test_loc: lines, design_md_bytes: fileSize(path.join(keelHome, "docs", "DESIGN.md")) }
-}
-
-function isUnderTestsDirectory(trackedPath: string): boolean {
-  return trackedPath.split("/").slice(0, -1).includes(TESTS_DIRECTORY)
 }
 
 function countLines(file: string): number {

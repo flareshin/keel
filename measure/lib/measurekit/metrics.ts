@@ -6,7 +6,7 @@ import { gitSucceeds } from "./gitutil.ts"
 import { EMPTY } from "./ledger.ts"
 import type { LedgerRow } from "./ledger.ts"
 import { expandHome, isExecutable, isFile, isSystemError } from "./files.ts"
-import { FIRES_LOG, isSyntheticSession } from "./fireslog.ts"
+import { FIRES_LOG, isSyntheticSession, PROCEDURAL_KIND } from "./fireslog.ts"
 import { isJsonObject, parseJson } from "./json.ts"
 import type { JsonObject, JsonValue } from "./json.ts"
 import { runProcess, runProcessAsync, TimeoutExpired } from "./subprocess.ts"
@@ -70,7 +70,7 @@ function firesItems(ruleId: string, since: string): MetricItems {
   const { records } = readJsonl(path.join(env.logsDir(), FIRES_LOG))
   const items = records.filter(
     (record) => record["rule_id"] === ruleId && !NON_DECISION_OUTCOMES.has(record["outcome"] as string)
-      && !isSyntheticSession(record["session"]) && isWithinWindow(record, since),
+      && record["kind"] !== PROCEDURAL_KIND && !isSyntheticSession(record["session"]) && isWithinWindow(record, since),
   )
   return [items.length, items]
 }

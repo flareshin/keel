@@ -606,6 +606,7 @@ describe("KnownValuesTest", () => {
     assertDenied(result, "F-secrets");
     assert.ok(result.stderr.includes("conf.py:2 holds the value of DB_PASSWORD"), result.stderr);
     assert.ok(!result.stderr.includes(PASSWORD));
+    assert.deepEqual(assertFired(sandbox, "F-secrets", "deny", "git-guard").map((fire) => fire["kind"]), [undefined]);
   });
 
   it("commit_passes_whenStagedLinesAreClean", () => {
@@ -1021,6 +1022,11 @@ describe("SameCallStagingTest", () => {
 
   it("commit_deniedWithFSecrets_whenAddChainedBeforeIt", () => {
     assertDeniedForSameCallStaging(guard("git add s.txt && git commit -m wip", repo));
+  });
+
+  it("commit_logsTheSameCallStagingDenyAsProcedural_notAsADetection", () => {
+    guard("git add s.txt && git commit -m wip", repo);
+    assert.deepEqual(assertFired(sandbox, "F-secrets", "deny", "git-guard").map((fire) => fire["kind"]), ["procedural"]);
   });
 
   it("commit_denied_whenAddAllChainedBeforeIt", () => {

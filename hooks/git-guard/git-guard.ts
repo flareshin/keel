@@ -12,6 +12,7 @@ import { basename, expandUser, joinPath, normalizePath } from "../lib/hookkit/pa
 import { editTarget, FieldTypeError, getField, isNonEmptyString, isRecord, jsonTypeName, textField } from "../lib/hookkit/fields.ts";
 import { partition, SPACE_CHARS, SPACE_CLASS, splitlines, testCaseFolded, trimSpace, truncate, WORD_BOUNDARY } from "../lib/hookkit/text.ts";
 import { compareCodePoints } from "../../measure/lib/measurekit/json.ts";
+import { PROCEDURAL_KIND } from "../../measure/lib/measurekit/fireslog.ts";
 import { globMatches } from "../../lib/evidence/glob.ts";
 import { parseJson, parseJsonReadingNonFiniteNumbersAsZero, parsePayload } from "../lib/hookkit/json.ts";
 import { isDirectory, isFile, isSymlink, resolveSymlinksKeepingMissingTail, tryReadText } from "../lib/hookkit/files.ts";
@@ -111,6 +112,7 @@ interface Violation {
   ruleId: string;
   text: string;
   repo?: string | null;
+  kind?: typeof PROCEDURAL_KIND;
 }
 
 interface CommitOption {
@@ -145,7 +147,7 @@ function main(): number {
     return failClosed(raw, error);
   }
   if (violations.length === 0) return protocol.EXIT_PASS;
-  for (const violation of violations) fires.append(violation.ruleId, "deny", { repo: violation.repo, detail: violation.text });
+  for (const violation of violations) fires.append(violation.ruleId, "deny", { repo: violation.repo, detail: violation.text, kind: violation.kind });
   const bullets = violations.map((violation): protocol.Bullet => [violation.ruleId, violation.text]);
   return protocol.deny(protocol.formatMessage(HOOK, "blocked", bullets, nextStepFor(payload, violations)));
 }
@@ -550,7 +552,7 @@ function checkCommit(args: readonly string[], step: Step, repoDirectory: string,
   const repoKey = findRepoKey(toplevel);
   if (commitStagesFiles(args) || isStagedEarlierInCall(earlierSteps, toplevel)) {
     violations.push({
-      ruleId: F_SECRETS, repo: repoKey,
+      ruleId: F_SECRETS, repo: repoKey, kind: PROCEDURAL_KIND,
       text: "This commit stages files in its own call, so the secret and path checks cannot see them; stage in a separate call, then commit.",
     });
   }

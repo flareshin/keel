@@ -27,6 +27,7 @@ const NODE_DECODE_DETAIL = /\b(JsonSyntaxError: |payload is not JSON: )(?!hook p
 const DECODE_MESSAGE = "<JSON syntax error message>";
 const FIRE_DETAIL = /("detail": ")(?:[^"\\]|\\.)*(")/g;
 const FIRE_DETAIL_MASKED = "$1<detail>$2";
+const NODE_ONLY_PROCEDURAL_KIND = ', "kind": "procedural"';
 const DENY_EXIT_CODE = 2;
 const PASS_EXIT_CODE = 0;
 
@@ -266,7 +267,7 @@ function unmetOutcome(outcome: TsOutcome, actual: Observation): string[] {
 
 function compareWithRecorded(testCase: Case, run: Run): string[] {
   if (testCase.expected === undefined) return ["no recorded Python outcome for this case; the corpus changed or the case was never recorded"];
-  return differencesFromRecorded(withDecodeWordingAsNode(testCase.expected), withDecodeMessageMasked(run), testCase.root);
+  return differencesFromRecorded(withDecodeWordingAsNode(testCase.expected), withDecodeMessageMasked(withProceduralKindDropped(run)), testCase.root);
 }
 
 export function listedDifferences(listed: ListedDivergence, expected: ObservedDelta | undefined, run: Run, root: string): string[] {
@@ -303,6 +304,13 @@ function maskedDecodeDetail(fires: string): string {
   return fires
     .replace(PYTHON_DECODE_DETAIL, (_match, prefix: string) => `${prefix === "JSONDecodeError: " ? "JsonSyntaxError: " : prefix}${DECODE_MESSAGE}`)
     .replace(NODE_DECODE_DETAIL, (_match, prefix: string) => `${prefix}${DECODE_MESSAGE}`);
+}
+
+function withProceduralKindDropped(run: Run): Run {
+  const fires = run.observation.files.get(FIRES_PATH);
+  if (fires === undefined) return run;
+  const files = new Map(run.observation.files).set(FIRES_PATH, fires.replaceAll(NODE_ONLY_PROCEDURAL_KIND, ""));
+  return { ...run, observation: { ...run.observation, files } };
 }
 
 function withDecodeMessageMasked(run: Run): Run {

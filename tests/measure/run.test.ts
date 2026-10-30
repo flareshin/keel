@@ -38,6 +38,14 @@ describe("measure run", () => {
     assert.equal(result.count, 2)
   })
 
+  it("run_countsNoFire_markedProcedural", () => {
+    givenKeelRows(ledgerRow("C-demo"))
+    box.fire("C-demo")
+    box.appendLog("keel-fires.jsonl", { ts: NOW_TS, rule_id: "C-demo", hook: "git-guard", outcome: "deny", session: "-", kind: "procedural" })
+    const [, result] = box.runJson("run", ["C-demo"])
+    assert.equal(result.count, 1)
+  })
+
   it("run_countsNoFire_whoseTimestampIsNotAString", () => {
     givenKeelRows(ledgerRow("C-demo", { grace_until: PAST }))
     box.appendLog("keel-fires.jsonl", { ts: null, rule_id: "C-demo", hook: "ship-gate", outcome: "deny", session: "-" })

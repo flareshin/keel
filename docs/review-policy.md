@@ -69,9 +69,9 @@ Choose each run by what changed since the last passing run:
 - Run the full suite (`keel test -- npm test`) once per candidate, before
   requesting its root review, when the change touches code a hook runs:
   `hooks/**`, `lib/**`, `measure/lib/**`, `measure/boundary*`, `codex/hooks/**`,
-  `codex/lib/**`, `codex/bin/**`, `githooks/**` or `settings/core.json`. This
-  list overrides the light rule for the paths it names. Run it in the
-  background: it outlasts the foreground limit.
+  `codex/lib/**`, `skills/readable-code/scripts/**`, `githooks/**` or
+  `settings/core.json`. This list overrides the light rule for the paths it
+  names. Run it in the background: it outlasts the foreground limit.
 - After the full suite passed, a fix delta reruns only the tests the fix reaches,
   on the new tree. Do not rerun the full suite to confirm a passing focused run,
   or after a conflict-free merge of two passing sides; rerun the tests on the

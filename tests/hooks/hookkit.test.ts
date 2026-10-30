@@ -49,6 +49,19 @@ describe("StepsTest", () => {
     assert.deepEqual([later.environment.get("D"), later.environment.get("X")], ["/b", "/c"]);
   });
 
+  it("steps_expandAnAssignedValue_withTheCallsOwnVariablesOnly", () => {
+    withEnv({ KEEL_SENTINEL_SECRET: "ghp_SENTINEL" }, () => {
+      const later = steps("S=/a; export D=$S/x G=$KEEL_SENTINEL_SECRET/.git; echo $D", "/w").at(-1);
+      assert.ok(later);
+      assert.deepEqual([later.environment.get("D"), later.environment.get("G")], ["/a/x", "$KEEL_SENTINEL_SECRET/.git"]);
+    });
+  });
+
+  it("steps_expandEveryValueOfOneExport_againstTheVariablesBeforeIt", () => {
+    const views = stepViews("A=/old; export A=/x B=$A; cd $B && git status");
+    assert.equal(directoriesOf(views, ["git", "status"])[0], "/old");
+  });
+
   it("steps_keepPlainVariables_outOfTheChildEnvironment", () => {
     const later = steps("D=/a; echo $D", "/w").at(-1);
     assert.ok(later);

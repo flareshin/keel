@@ -74,18 +74,6 @@ const ASSIGNED_VARIABLE_EXPANSIONS: readonly ListedExpansion[] = [
   { text: 'P=push; GP="$(git --exec-path)/git-$P"; $GP origin feature', step: 2, variable: "GP", now: "$(git --exec-path)/git-push" },
   { text: 'P=push; GP="$(git --exec-path)/git-$P"; $GP origin main', step: 2, variable: "GP", now: "$(git --exec-path)/git-push" },
   {
-    text: 'keel="${KEEL_DATA_DIR:-$HOME/.claude}/bin/keel"; "$keel" evidence show --repo /work/repo && git -C /work/repo merge-base --is-ancestor main HEAD',
-    step: 1, variable: "keel", now: "${KEEL_DATA_DIR:-/home/tester/.claude}/bin/keel",
-  },
-  {
-    text: 'keel="${KEEL_DATA_DIR:-$HOME/.claude}/bin/keel"; "$keel" evidence show --repo /work/repo && git -C /work/repo merge-base --is-ancestor main HEAD',
-    step: 2, variable: "keel", now: "${KEEL_DATA_DIR:-/home/tester/.claude}/bin/keel",
-  },
-  {
-    text: 'keel="${KEEL_DATA_DIR:-$HOME/.claude}/bin/keel"; python3 "$keel" test -- ./mvnw test -Dtest=\'*Merge*\'',
-    step: 1, variable: "keel", now: "${KEEL_DATA_DIR:-/home/tester/.claude}/bin/keel",
-  },
-  {
     text: 'root=/work/repo && base=$(git -C "$root" merge-base main HEAD) && tree=$(cd "${KEEL_DATA_DIR:-$HOME/.claude}" && bin/keel snapshot "$root" | jq -r .tree)',
     step: 2, variable: "base", now: '$(git -C "/work/repo" merge-base main HEAD)',
   },

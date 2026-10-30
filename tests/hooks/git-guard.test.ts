@@ -424,6 +424,13 @@ describe("LiveCheckoutTest", () => {
     assert.ok(!result.stderr.includes("cannot resolve"), result.stderr);
   });
 
+  it("bash_judgesACdIntoAnExportedVariableBuiltFromAnotherExportedVariable", () => {
+    assertPassed(guard(`export S=${worktree}; export D=$S/sub; mkdir -p $D; cd $D && echo x > notes.md`, live));
+    const result = guard(`export S=${live}; export D=$S/sub; mkdir -p $D; cd $D && echo x > notes.md`, worktree);
+    assertDenied(result, "C-isolation");
+    assert.ok(!result.stderr.includes("cannot resolve"), result.stderr);
+  });
+
   it("bash_denialSaysTheCdIsUnresolved_whenTheAssignedVariableUsesAnUnknownOne", () => {
     const result = guard(`D=$KEEL_NO_SUCH_VARIABLE/sub; cd $D && echo x > notes.md`, live);
     assertDenied(result, "C-isolation");

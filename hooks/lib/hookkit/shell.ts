@@ -248,10 +248,11 @@ class ShellScope {
   }
 
   private exportAll(args: readonly string[]): void {
+    const before = this.expansion();
     for (const arg of args) {
       const [variable, hasValue, value] = partition(arg, "=");
       if (hasValue) {
-        this.exported.set(variable, expandVariables(value, this.directory, this.expansion()));
+        this.exported.set(variable, this.expandedValue(value, before));
       } else if (this.variables.has(variable)) {
         this.exported.set(variable, this.variables.get(variable) ?? "");
         this.variables.delete(variable);
@@ -262,8 +263,12 @@ class ShellScope {
   private assign(assignments: readonly Assignment[]): void {
     for (const [variable, value] of assignments) {
       const target = this.exported.has(variable) ? this.exported : this.variables;
-      target.set(variable, expandVariables(value, this.directory, this.expansion()));
+      target.set(variable, this.expandedValue(value, this.expansion()));
     }
+  }
+
+  private expandedValue(value: string, variables: Variables): string {
+    return expandVariables(value, (name) => callValue(name, this.directory, variables));
   }
 
   private changedDirectory(args: readonly string[]): string {
@@ -274,18 +279,19 @@ class ShellScope {
 }
 
 export function resolveDirectory(directory: string, target: string, environment: Variables): string {
-  return normalizePath(joinPath(directory, expandUser(expandVariables(target, directory, environment))));
+  const lookup = (name: string): string | undefined =>
+    callValue(name, directory, environment) ?? (name === "OLDPWD" ? undefined : environmentValue(name));
+  return normalizePath(joinPath(directory, expandUser(expandVariables(target, lookup))));
 }
 
-function expandVariables(text: string, directory: string, environment: Variables): string {
-  const lookup = (name: string): string | undefined => {
-    if (environment.has(name)) return environment.get(name);
-    if (name === "PWD") return directory;
-    if (name === "OLDPWD") return undefined;
-    return environmentValue(name);
-  };
+function expandVariables(text: string, lookup: (name: string) => string | undefined): string {
   return text.replace(VARIABLE_RE, (whole, braced: string | undefined, bare: string | undefined) =>
     lookup(braced ?? bare ?? "") ?? whole);
+}
+
+function callValue(name: string, directory: string, variables: Variables): string | undefined {
+  if (variables.has(name)) return variables.get(name);
+  return name === "PWD" ? directory : undefined;
 }
 
 export function gitDirectory(argv: readonly string[], directory: string, environment: Variables): string {

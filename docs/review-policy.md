@@ -50,6 +50,35 @@ tests and contract lenses to check, not evidence: it adds no evidence kind, and
 non-test path changed after it or an existing test line changed; rerun it then,
 and rerun it after adding tests so its survivors are not left open.
 
+## Test runs
+
+The gate's test check (K3) asks for one passing `keel test` run whose recorded
+content matches every outgoing changed file. It does not ask for the full suite.
+Choose each run by what changed since the last passing run:
+
+- While iterating and after each review fix, run the test files of the changed
+  modules and every test that imports, spawns or reads a changed path, found by
+  grepping the tests for its file name, plus the tests that import a test helper
+  the grep finds. When a script or module reads the changed path, such as
+  `rule-checks.ts` reading `references/rules.md`, grep the tests for that
+  reader's name too: `keel test -- node --test <files>`.
+- A smoke-only change (paths the overlay's risk rules class smoke-only, or a repo
+  whose gate is smoke) needs no test run; the gate asks for smoke evidence
+  instead. A light change (in keel: `docs/*`, `settings/*` and every `*.md`,
+  including skills and PRINCIPLES.md) still needs one passing run on its tree in
+  a repo whose tests are required: run the tests that read the changed files, or
+  the smallest test file that runs when no test reads them.
+- Run the full suite (`keel test -- npm test`) once per candidate, before
+  requesting its root review, when the change touches code a hook runs:
+  `hooks/**`, `lib/**`, `measure/lib/**`, `measure/boundary*`, `codex/hooks/**`,
+  `codex/lib/**`, `skills/readable-code/scripts/**`, `githooks/**` or
+  `settings/core.json`. This list overrides the light rule for the paths it
+  names. Run it in the background: it outlasts the foreground limit.
+- After the full suite passed, a fix delta reruns only the tests the fix reaches,
+  on the new tree. Do not rerun the full suite to confirm a passing focused run,
+  or after a conflict-free merge of two passing sides; rerun the tests on the
+  overlap.
+
 ## Explain before requesting approval
 
 [K5] Before presenting an owner approval command, explain the candidate in the

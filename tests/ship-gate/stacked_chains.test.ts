@@ -137,6 +137,26 @@ describe('StackedChainsTest', () => {
     assert.ok(!result.stderr.includes(STACKED_HINT), result.stderr);
   });
 
+  test('stacked_disjoint_hunks_with_an_unreviewed_mode_change_deny', (t) => {
+    const [sandbox, repo] = stack(t, { firstFiles: TOP_CHANGED, secondCommits: BOTTOM_CHANGED });
+    repo.git('update-index', '--chmod=+x', 'README.md');
+    repo.git('commit', '-q', '--amend', '-m', 'change');
+    sandbox.testsEvidence(repo);
+    const result = sandbox.push(repo, PUSH_FEATURE);
+    assert.equal(result.rc, 2);
+    assert.ok(result.stderr.includes('README.md (content or mode changed after review)'), result.stderr);
+  });
+
+  test('disjoint_hunks_squashed_into_one_commit_deny_with_the_hint', (t) => {
+    const [sandbox, repo] = stack(t, { firstFiles: TOP_CHANGED, secondCommits: BOTTOM_CHANGED });
+    repo.git('reset', '--soft', 'origin/main');
+    repo.git('commit', '-q', '-m', 'squash');
+    sandbox.testsEvidence(repo);
+    const result = sandbox.push(repo, PUSH_FEATURE);
+    assert.equal(result.rc, 2);
+    assert.ok(result.stderr.includes(STACKED_HINT), result.stderr);
+  });
+
   test('stacked_overlap_deny_names_the_commit_to_review_again', (t) => {
     const [sandbox, repo] = stack(t, OVERLAP);
     const overlapping = repo.head();

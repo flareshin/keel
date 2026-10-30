@@ -108,10 +108,10 @@ function stackedOverlapReasons(outgoing: Outgoing, entries: PathEntry[], stackab
   for (const entry of entries) {
     const reviewing = stackable.filter((chain) => chain.reviewed.has(entry.path));
     const reviewers = reviewing.map((chain) => chain.rootRunId).sort(compareCodePoints);
-    if (gitcmd.isGitlink(entry) || reviewers.length < 2 || coveredByAny(outgoing, entry, chains)
-      || reviewedChangesStackInto(outgoing, entry, reviewing)) continue;
+    if (gitcmd.isGitlink(entry) || reviewers.length < 2 || coveredByAny(outgoing, entry, chains)) continue;
     const commit = gitcmd.lastCommitTouching(outgoing.repoRoot, outgoing.mergeBase, outgoing.head, entry.path);
     const parent = gitcmd.commitSha(outgoing.repoRoot, commit + '^');
+    if (isOneReviewedChange(outgoing.repoRoot, reviewing, entry.path, parent!, commit)) continue;
     reasons.push({
       ruleId: K1,
       text: `${entry.path}: chains ${reviewers.join(', ')} each reviewed it, but no review saw the stacked content; review commit `
@@ -121,14 +121,9 @@ function stackedOverlapReasons(outgoing: Outgoing, entries: PathEntry[], stackab
   return reasons;
 }
 
-function reviewedChangesStackInto(outgoing: Outgoing, entry: PathEntry, reviewers: Chain[]): boolean {
-  if (gitcmd.isDeleted(entry)) return false;
-  let stacked = gitcmd.treeEntry(outgoing.repoRoot, outgoing.mergeBase, entry.path)?.[1] ?? null;
-  for (const chain of reviewers) {
-    stacked = reviewedChangeOnto(outgoing.repoRoot, chain, entry, stacked);
-    if (stacked === null) return false;
-  }
-  return commentCleanup.matchesContent(outgoing.repoRoot, entry.path, [entry.mode, stacked], [entry.mode, entry.blob]);
+function isOneReviewedChange(repo: string, reviewing: Chain[], path: string, parent: string, commit: string): boolean {
+  const change = gitcmd.diffEntries(repo, parent, commit).find((entry) => entry.path === path);
+  return change !== undefined && reviewing.some((chain) => coversStacked(repo, chain, change, change.oldBlob));
 }
 
 function coveredByAny(outgoing: Outgoing, entry: PathEntry, chains: Chain[]): boolean {

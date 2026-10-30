@@ -84,8 +84,10 @@ function judge(dataDir: string, sandbox: Sandbox, repo: Repo, head: string, base
 }
 
 const STACK_SEED = { 'README.md': 'top\n\n\n\n\nbottom\n' };
-const OVERLAP_FIRST = { 'README.md': 'top changed\n\n\n\n\nbottom\n' };
-const OVERLAP_SECOND = [{ 'README.md': 'top\n\n\n\n\nbottom changed\n' }];
+const TOP_CHANGED = { 'README.md': 'top changed\n\n\n\n\nbottom\n' };
+const BOTTOM_CHANGED = [{ 'README.md': 'top\n\n\n\n\nbottom changed\n' }];
+const TOP_REWORDED = [{ 'README.md': 'top reworded\n\n\n\n\nbottom\n' }];
+const OVERLAP_STACKED = { 'README.md': 'top changed and reworded\n\n\n\n\nbottom\n' };
 const SMOKE_REGISTRY = ['acme/app\tsmoke\tmain\t-\tnone'];
 const NO_TESTS_REGISTRY = ['acme/app\tcode\tmain\tacme\tnone'];
 
@@ -137,7 +139,8 @@ function adjacentReviews(sandbox: Sandbox, repo: Repo, options: { approveFirst?:
   sandbox.testsEvidence(repo);
 }
 
-function stackedChains(sandbox: Sandbox, repo: Repo, firstFiles: Record<string, string>, secondCommits: Array<Record<string, string>>): void {
+function stackedChains(sandbox: Sandbox, repo: Repo, firstFiles: Record<string, string>, secondCommits: Array<Record<string, string>>,
+  stackedFiles?: Record<string, string>): void {
   const base = repo.head();
   repo.branch('first');
   repo.commit({ ...LOGIC_WITH_TEST, ...firstFiles });
@@ -149,7 +152,8 @@ function stackedChains(sandbox: Sandbox, repo: Repo, firstFiles: Record<string, 
   sandbox.review(repo, { runId: 'rv-stack-0002', reviewBase: base });
   sandbox.approve('rv-stack-0002');
   repo.branch('feature', 'first');
-  repo.git('cherry-pick', `${base}..${second}`);
+  if (stackedFiles) repo.commit(stackedFiles);
+  else repo.git('cherry-pick', `${base}..${second}`);
   sandbox.testsEvidence(repo);
 }
 
@@ -330,14 +334,18 @@ describe('cross-implementation evidence compatibility', () => {
       judgedAsRecorded(gapped, gappedRepo, 'gap between reviews', true, { ok: false, reason: 'src/gap.py' }, true);
     });
 
-    test('parallel approved chains stacked by rebase are accepted, overlapping ones name the commit to review', (t) => {
+    test('parallel approved chains stacked by rebase are accepted, also on disjoint hunks of one file; overlapping ones name the commit to review', (t) => {
       const stacked = scenarioSandbox(t);
       const stackedRepo = stacked.clone('acme', 'app', undefined, STACK_SEED);
       stackedChains(stacked, stackedRepo, { 'src/first.py': 'first = 1\n' }, [{ 'src/second.py': 'second = 2\n' }]);
       judgedAsRecorded(stacked, stackedRepo, 'stacked chains', true, { ok: true, rootRunIds: ['rv-stack-0001', 'rv-stack-0002'] }, true);
+      const disjoint = scenarioSandbox(t);
+      const disjointRepo = disjoint.clone('acme', 'app', undefined, STACK_SEED);
+      stackedChains(disjoint, disjointRepo, TOP_CHANGED, BOTTOM_CHANGED);
+      judgedAsRecorded(disjoint, disjointRepo, 'disjoint stacked chains', true, { ok: true, rootRunIds: ['rv-stack-0001', 'rv-stack-0002'] }, true);
       const overlapping = scenarioSandbox(t);
       const overlappingRepo = overlapping.clone('acme', 'app', undefined, STACK_SEED);
-      stackedChains(overlapping, overlappingRepo, OVERLAP_FIRST, OVERLAP_SECOND);
+      stackedChains(overlapping, overlappingRepo, TOP_CHANGED, TOP_REWORDED, OVERLAP_STACKED);
       judgedAsRecorded(overlapping, overlappingRepo, 'overlapping stacked chains', true, { ok: false, reason: 'no review saw the stacked content' }, true);
     });
 

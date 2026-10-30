@@ -464,8 +464,15 @@ function lacksEvidence(report: string, needsEvidence: boolean, fires: FireLog): 
   const exempt = !(needsEvidence || VERDICT_RE.test(stripped)) || stripped.startsWith("{") || stripped.startsWith("[");
   if (exempt) return false;
   const hasToken = hasEvidenceToken(stripped);
-  fires.append("K2", hasToken ? "pass" : "deny");
+  if (hasToken) fires.append("K2", "pass");
+  else fires.append("K2", "deny", { detail: evidenceDenyDetail(stripped) });
   return !hasToken;
+}
+
+function evidenceDenyDetail(report: string): string {
+  const verdict = report.match(VERDICT_RE)?.[0];
+  const requiredBy = verdict ? `its verdict "${verdict}"` : `its file writes or ${EVIDENCE_MARKER} brief`;
+  return `no evidence token in a ${report.length}-char report; required by ${requiredBy}`;
 }
 
 function flagScopeViolations(transcript: AgentTranscript, state: TurnState, fires: FireLog): string[] {

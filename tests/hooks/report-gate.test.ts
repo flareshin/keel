@@ -70,6 +70,18 @@ describe("HandbackEvidenceTest", () => {
     assertFired(sandbox, "K2", "deny", "report-gate");
   });
 
+  it("handback_logsTheVerdictThatRequiredEvidence_onTheK2Deny", () => {
+    handback(UNPROVEN_REPORT);
+    const [deny] = assertFired(sandbox, "K2", "deny", "report-gate");
+    assert.equal(deny?.detail, 'no evidence token in a 29-char report; required by its verdict "VERDICT:"');
+  });
+
+  it("handback_logsTheWritesOrBriefThatRequiredEvidence_onTheK2Deny_whenTheReportHasNoVerdict", () => {
+    handback("Looked into it, looks fine.", { brief: "[EVIDENCE] check the thing" });
+    const [deny] = assertFired(sandbox, "K2", "deny", "report-gate");
+    assert.equal(deny?.detail, "no evidence token in a 27-char report; required by its file writes or [EVIDENCE] brief");
+  });
+
   it("handback_passesWithK2Pass_whenEvidenceTokenSpellsIWithDottedOrDotlessI", () => {
     for (const report of ["Done. VERDICT: PASS, 3 tests pass\u0131ng", "Done. VERDICT: PASS. NOT VER\u0130F\u0130ED", "Done. VERDICT: PASS, 4 f\u0131les changed"]) {
       assert.equal(handback(report).code, 0, report);

@@ -41,6 +41,8 @@ describe("seed ledger", () => {
   })
 
   it("seedLedger_namesAtLeastTwoCheckedInIncidentFiles_onEveryRowThatCitesIncidents", () => {
+    const citing = SEED_IDS.filter((rowId) => seedRow(rowId)["incidents"] !== "-")
+    assert.deepEqual(citing, ["C-dispatch", "C-isolation", "S-jdk", "C-precheck", "C-comments"])
     for (const rowId of SEED_IDS) {
       const incidents = seedRow(rowId)["incidents"]
       if (incidents === "-") continue

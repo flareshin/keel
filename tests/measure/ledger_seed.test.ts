@@ -40,6 +40,16 @@ describe("seed ledger", () => {
     for (const rowId of SEED_IDS) assert.equal(seedRow(rowId)["grace_until"], SEED_GRACE_UNTIL, rowId)
   })
 
+  it("seedLedger_namesAtLeastTwoCheckedInIncidentFiles_onEveryRowThatCitesIncidents", () => {
+    for (const rowId of SEED_IDS) {
+      const incidents = seedRow(rowId)["incidents"]
+      if (incidents === "-") continue
+      const refs = incidents.split(",")
+      assert.ok(new Set(refs).size >= 2, rowId)
+      for (const ref of refs) assert.ok(fs.statSync(path.join(CHECKOUT, ref)).isFile(), `${rowId}: ${ref}`)
+    }
+  })
+
   it("seedLedger_passesFormatUniquenessAndCaps", () => {
     const [, result] = box.runJson("smoke", ["--json-only"])
     const relevant = result.assertions.filter((item: { check: string }) => ["ledger-format", "id-unique", "caps"].includes(item.check))

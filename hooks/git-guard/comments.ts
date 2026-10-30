@@ -36,7 +36,8 @@ const ALLOWED_BODY = new RegExp("^(" + [
 ].map(wholeWord).join("|") + ")", "u");
 
 const GLOBAL_NAME = "[A-Za-z_$][\\w$]*(\\s*:\\s*[A-Za-z]+)?";
-const GLOBALS_DIRECTIVE = new RegExp(`^globals? ${GLOBAL_NAME}(\\s*,\\s*${GLOBAL_NAME})*$`, "u");
+const GLOBALS_DIRECTIVE = new RegExp(`^globals? ${GLOBAL_NAME}(\\s*,\\s*${GLOBAL_NAME})*(\\s+--+\\s.*)?$`, "u");
+const DOC_BLOCK_OPEN = "/**";
 
 function wholeWord(directive: string): string {
   return /[A-Za-z]$/u.test(directive) ? `${directive}(?![A-Za-z])` : directive;
@@ -247,6 +248,6 @@ function reported(comments: readonly string[]): string[] {
   return comments.filter((line) => {
     if (line.startsWith(SHEBANG)) return false;
     const body = trimSpace(line.replace(COMMENT_MARKERS, "").replace(/\*\/$|"""$|'''$/u, ""));
-    return body !== "" && !ALLOWED_BODY.test(body) && !(line.startsWith(BLOCK_OPEN) && GLOBALS_DIRECTIVE.test(body));
+    return body !== "" && !ALLOWED_BODY.test(body) && !(line.startsWith(BLOCK_OPEN) && !line.startsWith(DOC_BLOCK_OPEN) && GLOBALS_DIRECTIVE.test(body));
   });
 }

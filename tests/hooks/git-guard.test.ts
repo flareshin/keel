@@ -8,6 +8,7 @@ import {
 import type { HookResult } from "./helpers.ts";
 import { BOUNDARY_TIMEOUT_SECONDS, DROP_COMMENTS, GuardError, scanStagedSecrets } from "../../hooks/git-guard/git-guard.ts";
 import { GIT_TIMEOUT_SECONDS } from "../../hooks/lib/hookkit/repo.ts";
+import { MAX_JSON_DEPTH } from "../../measure/lib/measurekit/json.ts";
 
 const ATTRIBUTION_TRAILER = "Co-Authored-By: Claude <noreply@example.invalid>";
 const ROBOT = "\u{1F916}";
@@ -1562,6 +1563,18 @@ describe("CommentWriteTest", () => {
     assertPassed(edit("NotebookEdit", markdownReplace));
     assertPassed(edit("NotebookEdit", unparsable));
     assert.deepEqual(sandbox.fires().filter((fire) => fire.outcome === "error"), []);
+  });
+
+  it("notebookEdit_deniedFailClosed_whenTheNotebookNestsPastTheJsonDepthLimit", () => {
+    const deep = "[".repeat(MAX_JSON_DEPTH + 1) + "]".repeat(MAX_JSON_DEPTH + 1);
+    const notebook = `{"cells": [${JSON.stringify(loadCell)}], "metadata": {"language_info": {"name": "python"}, "deep": ${deep}}}`;
+    const toolArgs = { notebook_path: codeFile("deep.ipynb", notebook), cell_id: "a1", new_source: "# reads the rows\nrows = load(limit=10)\n" };
+
+    const result = edit("NotebookEdit", toolArgs);
+
+    assert.equal(result.code, 2);
+    assert.ok(result.stderr.includes("internal error"), result.stderr);
+    assert.equal(sandbox.fires().at(-1)?.detail, `RecursionError: JSON nesting is deeper than ${MAX_JSON_DEPTH} levels`);
   });
 
   it("codexPatch_denied_whenItCopiesACommentTheFileAlreadyHas", () => {

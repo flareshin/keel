@@ -172,7 +172,9 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
   - `stringifySorted` and `parseJsonKeepingIntegers` (`measure/lib/measurekit/json.ts`) handle the full 10,000 level nesting
     without running out of stack, except text nested past about two thousand levels that also holds an integer beyond
     2^53: parsing it runs out of stack, so an evidence file like that is an `EvidenceError` and stdin like that exits 70.
-  - `tests/ship-gate/ship-gate-parity.test.ts` still replays the 1,757 recorded hook runs. It compares fires lines by
+  - The ship-gate parity tests still replay the 1,757 recorded hook runs, split over eight shard files
+    (`tests/ship-gate/ship-gate-parity-shard-<n>.test.ts`) that `node --test` runs in parallel; `ship-gate-parity.test.ts`
+    checks that every case falls in exactly one shard and that each listed divergence is recorded once. The replay compares fires lines by
     content, masks the JSON decode wording, and lists each case whose wording or outcome changed with the exit code the
     hook must give (`EXPECTED_DIVERGENCES`). `codex/tests/hook-parity.ts` compares the fires lines it replays by content too.
   - `keel review prepare` reads deeply nested stdin: 200,000 nested arrays exit 2 as `stdin must be a JSON object`

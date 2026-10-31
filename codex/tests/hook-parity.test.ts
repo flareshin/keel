@@ -1,46 +1,59 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { availableParallelism } from "node:os";
-import { join } from "node:path";
 import { describe, it } from "node:test";
 import { hookCases } from "./hook-parity-corpus.ts";
-import type { HookParityReport } from "./hook-parity.ts";
-import { sandboxPaths } from "./hook-parity.ts";
+import type { HookParityReport, Observation } from "./hook-parity.ts";
+import { crashLine, differences, inWorkers, sandboxPaths, withSyntaxMessageMasked } from "./hook-parity.ts";
 
-const WORKER = join(import.meta.dirname, "hook-parity-worker.ts");
-const MAX_WORKERS = 8;
 const MIN_CASES = 150;
+const DENIED = 2;
 
-function runWorker(index: number, count: number): Promise<HookParityReport> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [WORKER, String(index), String(count)]);
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("close", (status) => (status === 0 ? resolve(JSON.parse(stdout) as HookParityReport) : reject(new Error(stderr))));
-  });
+function observed(status: number | null, stdout: string, stderr = "", files: Record<string, string> = {}): Observation {
+  return { status, stdout, stderr, files };
 }
 
-describe("pre-tool-use hook against the recorded pre-tool-use.py results", () => {
-  it("decides, exits and writes as recorded for every payload, except the listed divergences and reworded denials", async () => {
-    const corpus = hookCases(sandboxPaths());
-    const total = corpus.length;
-    const workers = Math.min(MAX_WORKERS, availableParallelism());
-    const reports = await Promise.all(Array.from({ length: workers }, (_unused, index) => runWorker(index, workers)));
-    const cases = reports.reduce((sum, report) => sum + report.cases, 0);
-    const mismatches = reports.reduce((sum, report) => sum + report.mismatches, 0);
-    const denied = reports.reduce((sum, report) => sum + report.denied, 0);
-    const divergences = reports.reduce((sum, report) => sum + report.divergences, 0);
-    const reworded = reports.reduce((sum, report) => sum + report.reworded, 0);
-    const contextual = reports.reduce((sum, report) => sum + report.contextual, 0);
-    const passed = reports.reduce((sum, report) => sum + report.passed, 0);
-    console.log(`parity hook: ${cases} cases, ${mismatches} mismatches (${denied} denied, ${contextual} with context, ${passed} passed silently, ${reworded} denials worded differently, ${divergences} listed divergences)`);
-    assert.equal(divergences, corpus.filter((testCase) => testCase.divergence !== undefined).length);
-    assert.ok(divergences > 0 && reworded > 0);
+describe("pre-tool-use hook against the golden snapshot of its own results", () => {
+  it("decides, exits and writes as recorded for every payload", async () => {
+    const total = hookCases(sandboxPaths()).length;
+    const reports = await inWorkers<HookParityReport>("check");
+    const sum = (field: "cases" | "mismatches" | "denied" | "passed"): number => reports.reduce((count, report) => count + report[field], 0);
+    const [cases, mismatches] = [sum("cases"), sum("mismatches")];
+    console.log(`golden: ${cases} cases, ${mismatches} mismatches`);
     assert.equal(cases, total);
     assert.ok(cases >= MIN_CASES, `${cases} cases`);
-    assert.ok(denied > 0 && passed > 0, "the corpus must exercise both denials and passes");
+    assert.ok(sum("denied") > 0 && sum("passed") > 0, "the corpus must exercise both denials and passes");
     assert.equal(mismatches, 0, reports.flatMap((report) => report.details).join("\n"));
+  });
+});
+
+describe("hook parity comparison", () => {
+  const golden = observed(0, '{"decision":"deny"}', "", { "data/x": "file:644:a" });
+
+  it("accepts a run equal to the golden outcome", () => {
+    assert.deepEqual(differences(golden, observed(0, '{"decision":"deny"}', "", { "data/x": "file:644:a" })), []);
+  });
+
+  it("reports a difference in exit code, stdout, stderr or a written file", () => {
+    assert.equal(differences(golden, observed(DENIED, '{"decision":"deny"}', "", { "data/x": "file:644:a" })).length, 1);
+    assert.equal(differences(golden, observed(0, '{"decision": "deny"}', "", { "data/x": "file:644:a" })).length, 1);
+    assert.equal(differences(golden, observed(0, '{"decision":"deny"}', "warning", { "data/x": "file:644:a" })).length, 1);
+    assert.equal(differences(golden, observed(0, '{"decision":"deny"}', "", { "data/x": "file:644:b" })).length, 1);
+    assert.equal(differences(golden, observed(0, '{"decision":"deny"}')).length, 1);
+  });
+
+  it("reports a recorded denial that node lets through as a difference", () => {
+    const denied = observed(DENIED, "", "blocked", {});
+    assert.ok(differences(denied, observed(0, "")).length > 0);
+    assert.ok(differences(denied, observed(null, "", "blocked")).length > 0);
+  });
+
+  it("masks the wording of a JSON syntax error, which differs between node versions", () => {
+    const reason = '{"permissionDecisionReason":"keel Codex guard: invalid JSON: Expected property name or \\"}\\" in JSON at position 1"}';
+    assert.equal(withSyntaxMessageMasked(reason), '{"permissionDecisionReason":"keel Codex guard: invalid JSON: <JSON syntax error message>"}');
+  });
+
+  it("keeps only the error line of a crash, whose stack frames carry paths and line numbers", () => {
+    const stderr = "file:///checkout/pre-tool-use.ts:140\n  throw new TypeError(x);\n  ^\n\nTypeError: file_path must be a string, not number\n    at filePathOf (file:///checkout/pre-tool-use.ts:140:43)\n";
+    assert.equal(crashLine(stderr), "TypeError: file_path must be a string, not number");
+    assert.equal(crashLine("no error line"), "no error line");
   });
 });

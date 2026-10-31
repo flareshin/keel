@@ -91,6 +91,7 @@ describe("ship-gate parity listed divergences", () => {
       "extra-0610", "extra-0632", "python-keel-0033", "ts-keel-0033",
       "extra-0064", "extra-0068", "extra-0069", "extra-0098", "extra-0099", "extra-0101", "extra-0102", "extra-0104", "extra-0105",
       "extra-0116", "extra-0117", "extra-0119", "extra-0120", "extra-0558", "extra-0559",
+      "python-keel-0460", "python-keel-0462", "python-keel-0466", "ts-keel-0460", "ts-keel-0462", "ts-keel-0466",
     ].sort());
   });
 

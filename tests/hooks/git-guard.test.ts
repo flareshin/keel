@@ -69,6 +69,10 @@ function assertDenied(result: HookResult, ruleId: string): void {
   assert.ok(result.stderr.includes(RUN_YOURSELF) || lastLine(result.stderr) === ASK_USER, result.stderr);
 }
 
+function cIsolationBullets(result: HookResult): string[] {
+  return result.stderr.split("\n").filter((line) => line.startsWith("- [C-isolation]"));
+}
+
 function assertPassed(result: HookResult): void {
   assert.equal(result.code, 0, result.stderr);
 }
@@ -541,6 +545,48 @@ describe("LiveCheckoutTest", () => {
 
   it("bash_denied_whenRedirectWritesIntoLiveKeel", () => {
     assertDenied(guard(`echo x > ${live}/notes.md`), "C-isolation");
+  });
+
+  it("bash_givesOneBulletAndOneFire_whenALinkIntoLiveKeelHasTwoCandidateTargets", () => {
+    const result = guard(`ln -s a ${live}/sub`);
+    assertDenied(result, "C-isolation");
+    const bullets = cIsolationBullets(result);
+    assert.equal(bullets.length, 1, result.stderr);
+    assert.ok(bullets[0]?.includes(`${live}/sub, ${live}/sub/a`), result.stderr);
+    assert.equal(sandbox.fires().filter((fire) => fire.rule_id === "C-isolation").length, 1);
+  });
+
+  it("bash_givesOneBullet_whenACopyOfSeveralFilesGoesIntoLiveKeel", () => {
+    const result = guard(`cp a b ${live}/dir`);
+    assertDenied(result, "C-isolation");
+    assert.equal(cIsolationBullets(result).length, 1, result.stderr);
+  });
+
+  it("bash_givesOneBulletPerLiveRoot_whenOneCallWritesIntoTwoLiveCheckouts", () => {
+    sandbox.git(sandbox.overlay, "init", "-q");
+    const result = guard(`echo x > ${live}/notes.md; echo y > ${sandbox.overlay}/ledger.tsv`);
+    assertDenied(result, "C-isolation");
+    const bullets = cIsolationBullets(result);
+    assert.equal(bullets.length, 2, result.stderr);
+    assert.ok(bullets.some((bullet) => bullet.includes(`${live}/notes.md`)), result.stderr);
+    assert.ok(bullets.some((bullet) => bullet.includes(`${sandbox.overlay}/ledger.tsv`)), result.stderr);
+  });
+
+  it("bash_keepsTheLiveRootAndTheWorktreeAdvice_whenACallWritesManyLongPathsIntoLiveKeel", () => {
+    const longName = "n".repeat(150);
+    const paths = Array.from({ length: 12 }, (_, index) => `${live}/${longName}${index}.md`);
+    const result = guard(`touch ${paths.join(" ")}`);
+    assertDenied(result, "C-isolation");
+    assert.ok(result.stderr.includes(`git -C ${live} worktree add`), result.stderr);
+    assert.ok(result.stderr.includes(`git -C ${live} merge --ff-only <branch>`), result.stderr);
+  });
+
+  it("bash_listsAPathOnce_whenOneCallWritesItTwiceIntoLiveKeel", () => {
+    const result = guard(`echo x > ${live}/notes.md; echo y > ${live}/notes.md`);
+    assertDenied(result, "C-isolation");
+    const bullets = cIsolationBullets(result);
+    assert.equal(bullets.length, 1, result.stderr);
+    assert.equal(bullets[0]?.split("notes.md").length, 2, result.stderr);
   });
 
   it("bash_denied_whenRedirectIntoLiveKeelUsesAnExportedVariable", () => {

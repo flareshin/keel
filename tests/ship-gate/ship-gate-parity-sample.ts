@@ -1,16 +1,9 @@
 import { isJsonObject } from "../../measure/lib/measurekit/json.ts";
 import { textOfBlob } from "../recorded-cases.ts";
 import type { ObservedDelta } from "../recorded-cases.ts";
+import { firesTail, masked, stderrReasons } from "../recorded-sample.ts";
 import type { RecordedCase, RecordedStore } from "./ship-gate-parity.ts";
 
-export const FIRES_LOG_NAME = "keel-fires.jsonl";
-const HEX_HASH = /\b[0-9a-f]{7,40}\b/g;
-const HASH_MASK = "<hash>";
-const COMPACT_TIMESTAMP = /\d{8}T\d{6}Z/g;
-const TIMESTAMP_MASK = "<timestamp>";
-const RETRY_HINT_PREFIX = "Run it yourself";
-const FIRES_TAIL_LINES = 2;
-const FIRES_FIELDS = ["hook", "outcome", "rule_id", "detail"] as const;
 const SPELLINGS_TEST = "test_everySpelling_getsItsExpectedVerdict";
 const BUNDLE_TEST = "test_gateSpellings_pass_whenABundleCoversTheBranch";
 const MERGE_SPELLINGS_TEST = "merge_spellings";
@@ -33,9 +26,8 @@ export function sampleCorpus(cases: readonly RecordedCase[], store: RecordedStor
 }
 
 export function fineClass(expected: ObservedDelta): string {
-  const reasons = expected.stderr.split("\n").filter((line) => line !== "" && !line.startsWith(RETRY_HINT_PREFIX)).map(masked);
   const writtenPaths = Object.keys(expected.set).map(masked).sort();
-  return JSON.stringify([expected.code, reasons, firesTail(expected.set), writtenPaths, expected.removed.map(masked).sort()]);
+  return JSON.stringify([expected.code, stderrReasons(expected.stderr), firesTail(expected.set), writtenPaths, expected.removed.map(masked).sort()]);
 }
 
 export function maskedOutcome(expected: ObservedDelta): string {
@@ -94,27 +86,4 @@ function byOccurrence(cases: readonly RecordedCase[], suite: RecordedCase["suite
     result.set(`${testCase.test}#${ordinal}`, testCase);
   }
   return result;
-}
-
-function firesTail(written: Record<string, string>): string[][] {
-  return Object.entries(written)
-    .filter(([path]) => path.endsWith(FIRES_LOG_NAME))
-    .sort(([left], [right]) => left.localeCompare(right))
-    .flatMap(([, content]) => content.split("\n").filter((line) => line !== "").slice(-FIRES_TAIL_LINES).map(firesSummary));
-}
-
-function firesSummary(line: string): string[] {
-  let record: unknown;
-  try {
-    record = JSON.parse(line);
-  } catch (error) {
-    if (!(error instanceof SyntaxError)) throw error;
-    return [masked(line)];
-  }
-  if (!isJsonObject(record)) return [masked(line)];
-  return FIRES_FIELDS.map((field) => masked(String(record[field] ?? "")));
-}
-
-function masked(text: string): string {
-  return text.replace(COMPACT_TIMESTAMP, TIMESTAMP_MASK).replace(HEX_HASH, HASH_MASK);
 }

@@ -4,6 +4,7 @@ import { availableParallelism, tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { recordedAnswers } from "../../tests/recorded.ts";
 import { ROOT_TOKEN } from "../../tests/recorded-cases.ts";
+import { fineClass, HOOK_NAME, sampleCases } from "./hook-parity-sample.ts";
 
 const ADAPTER = join(import.meta.dirname, "..");
 const TYPESCRIPT_HOOK = join(ADAPTER, "hooks", "pre-tool-use.ts");
@@ -27,6 +28,13 @@ export interface HookCase {
   config?: string | Buffer | null;
   crash?: boolean;
   env?: Record<string, string>;
+}
+
+export interface ParitySummary {
+  cases: number;
+  corpus: number;
+  mismatches: number;
+  sampled: boolean;
 }
 
 export interface Paths {
@@ -129,12 +137,19 @@ function snapshot(root: string): Record<string, string> {
   return Object.fromEntries(Object.entries(files).map(([key, value]) => [key, value.replace(TIMESTAMP, "<time>")]));
 }
 
+function configOf(testCase: HookCase): string | Buffer | null {
+  return testCase.config === undefined ? NORMAL_CONFIG : testCase.config;
+}
+
+function sandboxFiles(paths: Paths): Record<string, string> {
+  return Object.fromEntries(Object.entries(snapshot(paths.root)).map(([key, content]): [string, string] => [key, withSyntaxMessageMasked(content)]));
+}
+
 function observe(testCase: HookCase, paths: Paths): Observation {
-  buildSandbox(paths, testCase.config === undefined ? NORMAL_CONFIG : testCase.config);
+  buildSandbox(paths, configOf(testCase));
   const result = spawnSync(process.execPath, [TYPESCRIPT_HOOK], { input: testCase.stdin, env: environmentFor(paths, testCase.env), cwd: paths.repo, maxBuffer: 1 << 26 });
   const stderr = result.stderr.toString("utf8");
-  const files = Object.entries(snapshot(paths.root)).map(([key, content]): [string, string] => [key, withSyntaxMessageMasked(content)]);
-  return { status: result.status, stdout: withSyntaxMessageMasked(result.stdout.toString("utf8")), stderr: testCase.crash ? crashLine(stderr) : stderr, files: Object.fromEntries(files) };
+  return { status: result.status, stdout: withSyntaxMessageMasked(result.stdout.toString("utf8")), stderr: testCase.crash ? crashLine(stderr) : stderr, files: sandboxFiles(paths) };
 }
 
 export function withSyntaxMessageMasked(text: string): string {
@@ -158,8 +173,42 @@ function rootTokenized<Value>(value: Value, root: string): Value {
   return JSON.parse(JSON.stringify(value).replaceAll(JSON.stringify(root).slice(1, -1), ROOT_TOKEN)) as Value;
 }
 
+function goldenObservations(cases: readonly HookCase[], paths: Paths): Observation[] {
+  return recordedAnswers<unknown, Observation>(GOLDEN_DOCUMENT, cases.map(questionOf), { [ROOT_TOKEN]: paths.root });
+}
+
 function goldenObservation(testCase: HookCase, paths: Paths): Observation {
-  return recordedAnswers<unknown, Observation>(GOLDEN_DOCUMENT, [questionOf(testCase)], { [ROOT_TOKEN]: paths.root })[0] as Observation;
+  return goldenObservations([testCase], paths)[0] as Observation;
+}
+
+export function fullCorpusRequested(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env["CODEX_HOOK_PARITY_FULL"] === "1";
+}
+
+export function selectedCases(cases: readonly HookCase[], paths: Paths, full: boolean = fullCorpusRequested()): HookCase[] {
+  return full ? [...cases] : sampleCases(cases, (sampled) => outcomeClasses(sampled, paths));
+}
+
+export function outcomeClasses(cases: readonly HookCase[], paths: Paths): string[] {
+  const baselines = new Map<string, Record<string, string>>();
+  const baselineOf = (testCase: HookCase): Record<string, string> => {
+    const config = configOf(testCase);
+    const key = JSON.stringify(questionText(config));
+    if (!baselines.has(key)) {
+      buildSandbox(paths, config);
+      baselines.set(key, sandboxFiles(paths));
+    }
+    return baselines.get(key) as Record<string, string>;
+  };
+  const goldens = goldenObservations(cases, paths);
+  const classes = cases.map((testCase, position) => fineClass(HOOK_NAME, goldens[position] as Observation, baselineOf(testCase)));
+  rmSync(paths.root, { recursive: true, force: true });
+  return classes;
+}
+
+export function summary(replayed: ParitySummary): string {
+  if (!replayed.sampled) return `golden: ${replayed.cases} cases, ${replayed.mismatches} mismatches`;
+  return `golden: ${replayed.cases} of ${replayed.corpus} cases (sample), ${replayed.mismatches} mismatches`;
 }
 
 export function differences(golden: Observation, node: Observation): string[] {

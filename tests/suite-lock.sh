@@ -53,13 +53,13 @@ reclaim_suite_lock() {
     sleep "${KEEL_SUITE_LOCK_POLL_SECONDS:-5}"
     return 0
   fi
-  local removed=0
+  local removal_failure=""
   if [ "$(suite_lock_holder)" = "$judged" ] && suite_lock_is_stale "$judged"; then
-    rm -rf "$suite_lock_dir" 2>/dev/null || removed=1
+    removal_failure=$(LC_ALL=C rm -rf "$suite_lock_dir" 2>&1) || removal_failure="${removal_failure:-rm failed}"
   fi
   rmdir "$suite_reclaim_dir"
-  if [ "$removed" != 0 ]; then
-    echo "run-all: cannot remove the stale full suite lock $suite_lock_dir" >&2
+  if [ -n "$removal_failure" ]; then
+    echo "run-all: cannot remove the stale full suite lock $suite_lock_dir: $removal_failure" >&2
     return 1
   fi
 }

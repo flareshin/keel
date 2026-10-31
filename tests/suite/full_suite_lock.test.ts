@@ -132,7 +132,7 @@ describe("full suite lock", { timeout: 60_000 }, () => {
     const run = spawnRun(["-c", "source tests/suite-lock.sh; hold_suite_lock || exit 1; echo acquired"])
     assert.equal((await run.done).code, 1)
     assert.match(run.stderr(), /reclaim of the full suite lock stopped halfway/)
-    assert.ok(run.stderr().includes(`${lockDir}.reclaim`))
+    assert.ok(run.stderr().includes(`remove ${lockDir}.reclaim and ${lockDir} if`))
     assert.equal(run.stdout(), "")
   })
 
@@ -148,7 +148,8 @@ describe("full suite lock", { timeout: 60_000 }, () => {
     fs.chmodSync(lockDir, 0o555)
     const run = spawnRun(["-c", "source tests/suite-lock.sh; hold_suite_lock || exit 1; echo acquired"])
     assert.equal((await run.done).code, 1)
-    assert.match(run.stderr(), /cannot remove the stale full suite lock/)
+    assert.ok(run.stderr().includes(`cannot remove the stale full suite lock ${lockDir}: `))
+    assert.match(run.stderr(), /Permission denied/)
     assert.equal(run.stdout(), "")
     assert.equal(fs.existsSync(`${lockDir}.reclaim`), false)
   })

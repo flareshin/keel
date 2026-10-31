@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
 import { appendFileSync, chmodSync, existsSync, lstatSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { after, describe, it } from "node:test"
 import { GitError, snapshotTree } from "../../lib/evidence/gitcmd.ts"
 import { baselineTimeoutSeconds, materializeTree, runBaseline } from "../../lib/precheck/baseline.ts"
@@ -99,6 +99,37 @@ describe("precheck baseline", () => {
 
     assert.equal(git(directory, "config", "--type=bool", "remote.origin.mirror"), "true")
     assert.equal(git(directory, "remote", "get-url", "origin"), "https://example.test/owner/repo.git")
+  })
+
+  it("materializeTree_copiesOnlyTheRepoOwnRemoteKeys_soAGlobalPushUrlIsNotDoubled", () => {
+    const root = repo({ "lib/a.ts": "export const a = 1\n" })
+    git(root, "remote", "add", "origin", "https://example.test/owner/repo.git")
+    const home = mkdtempSync(join(tmpdir(), "precheck-home-"))
+    directories.push(home)
+    writeFileSync(join(home, "gitconfig"), '[remote "origin"]\n\tpushurl = https://global.example.test/owner/repo.git\n')
+    process.env.GIT_CONFIG_GLOBAL = join(home, "gitconfig")
+    try {
+      const directory = materializeTree(root, snapshotTree(root))
+      directories.push(directory)
+
+      assert.equal(git(directory, "remote", "get-url", "--push", "--all", "origin"), "https://global.example.test/owner/repo.git")
+    } finally {
+      delete process.env.GIT_CONFIG_GLOBAL
+    }
+  })
+
+  it("materializeTree_anchorsARelativePathRemote_atTheRepo_soItNamesTheSameDirectory", () => {
+    const root = repo({ "lib/a.ts": "export const a = 1\n" })
+    git(root, "remote", "add", "origin", "../mirror.git")
+    git(root, "remote", "add", "web", "https://example.test/owner/repo.git")
+    git(root, "remote", "add", "ssh", "git@example.test:owner/repo.git")
+
+    const directory = materializeTree(root, snapshotTree(root))
+    directories.push(directory)
+
+    assert.equal(git(directory, "remote", "get-url", "origin"), join(dirname(root), "mirror.git"))
+    assert.equal(git(directory, "remote", "get-url", "web"), "https://example.test/owner/repo.git")
+    assert.equal(git(directory, "remote", "get-url", "ssh"), "git@example.test:owner/repo.git")
   })
 
   it("materializeTree_leavesTheCheckoutWithoutRemotes_whenTheRepoHasNone", () => {

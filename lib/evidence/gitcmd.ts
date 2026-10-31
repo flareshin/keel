@@ -1,7 +1,7 @@
 import { closeSync, existsSync, mkdirSync, openSync, unlinkSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { decodeStrict, InvalidUtf8Error, isDir, resolveLinks } from '../../measure/lib/measurekit/files.ts';
 import { DELETED_MODE, GITLINK_MODE } from './env.ts';
 import { runCaptured } from './subprocess.ts';
@@ -18,6 +18,9 @@ const GH_RESOLVED_SUFFIX = '.gh-resolved';
 const REMOTE_PREFIX = 'remote.';
 const REMOTE_KEYS = '^remote\\.';
 const VALUELESS_KEY_MEANS = 'true';
+const REMOTE_URL_KEY = /\.(url|pushurl)$/;
+const URL_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
+const SCP_LIKE = /^[^/]*:/;
 const TEMP_INDEX_RANDOM_BYTES = 6;
 const OTHER_LINE_BREAK = /[\r\v\f\x1c-\x1e\x85\u2028\u2029]/;
 const OBJECT_ID = /^[0-9a-f]{40}$/;
@@ -328,13 +331,22 @@ export function checkoutSnapshot(repo: string, tree: string, directory: string):
 }
 
 function copyRemotes(repo: string, directory: string): void {
-  const listed = run(repo, ['config', '-z', '--get-regexp', REMOTE_KEYS], { check: false }).stdout;
+  const listed = run(repo, ['config', '--local', '-z', '--get-regexp', REMOTE_KEYS], { check: false }).stdout;
   for (const record of splitOnNul(listed).filter((entry) => entry.length > 0)) {
     const entry = record.toString();
     const separator = entry.indexOf('\n');
     if (separator < 0) run(directory, ['config', '--add', entry, VALUELESS_KEY_MEANS]);
-    else run(directory, ['config', '--add', entry.slice(0, separator), entry.slice(separator + 1)]);
+    else run(directory, ['config', '--add', entry.slice(0, separator), anchoredAtRepo(repo, entry.slice(0, separator), entry.slice(separator + 1))]);
   }
+}
+
+function anchoredAtRepo(repo: string, key: string, value: string): string {
+  if (!REMOTE_URL_KEY.test(key) || !isRelativePath(value)) return value;
+  return resolve(repo, value);
+}
+
+function isRelativePath(url: string): boolean {
+  return !isAbsolute(url) && !URL_SCHEME.test(url) && !SCP_LIKE.test(url);
 }
 
 function splitOnNul(bytes: Buffer): Buffer[] {

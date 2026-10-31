@@ -6,6 +6,7 @@ import { shlexSplit, ShlexError } from "./shlex.ts"
 
 const SCRIPT_INTERPRETERS = new Set(["python3", "python", "bash", "sh", "node"])
 const MATCH_ALL = new Set(["", "*"])
+const ENV_ASSIGNMENT_RE = /^[A-Za-z_][A-Za-z0-9_]*=/
 
 export class Registration {
   readonly event: string
@@ -30,7 +31,9 @@ export class Registration {
       if (error instanceof ShlexError) return this.command
       throw error
     }
-    return words.find((word) => !SCRIPT_INTERPRETERS.has(path.basename(word))) ?? this.command
+    const firstCommandWord = words.findIndex((word) => !ENV_ASSIGNMENT_RE.test(word))
+    if (firstCommandWord === -1) return this.command
+    return words.slice(firstCommandWord).find((word) => !SCRIPT_INTERPRETERS.has(path.basename(word))) ?? this.command
   }
 
   get hookName(): string {

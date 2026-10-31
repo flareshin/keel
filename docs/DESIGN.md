@@ -397,8 +397,9 @@ A fragment is a JSON object with only `hooks`, `permissions`, `env`, in Claude C
 | report-gate | PreToolUse | `SubagentHandback` | `node {{KEEL}}/hooks/report-gate/report-gate.ts` | 30 | pass, logged | fail open (ship-gate K1 already denies without evidence) |
 | report-gate | SubagentStop | — | same | 30 | pass, logged | fail open (SubagentStop ignores `onFailure`) |
 | model-assign | PreToolUse | `Agent\|Workflow` | `node {{KEEL}}/hooks/model-assign/model-assign.ts` | 10 | pass, logged | fail open |
-| env-preflight | PreToolUse | `Bash` | `node {{KEEL}}/stacks/spring-maven/hooks/env-preflight.ts` | 10 | pass, logged | fail open |
+| env-preflight | PreToolUse | `Bash`, `"if": "Bash(*mvn*)"` | `node {{KEEL}}/stacks/spring-maven/hooks/env-preflight.ts` | 10 | pass, logged | fail open |
 
+- Every command runs node with `NODE_COMPILE_CACHE="${KEEL_DATA_DIR:-$HOME/.claude}/state/keel/node-compile-cache"` before the `node {{KEEL}}/…` shown above; the cached compile saves about 30 ms per hook start. The env-preflight `if` rule keeps Claude Code from starting the hook for a call that never names `mvn`, the same test the hook itself applies first (`commandLine.includes("mvn")`); a call Claude Code cannot split still starts it.
 - "On process failure" = Claude Code's action when the hook process crashes or times out. Only the two gate registrations carry `"onFailure":"block"` and an explicit `timeout` (else `link --check` `gate-onfailure-missing`); a broken blocking gate blocks every matching call, and the way out is the user's terminal.
 - Each registered `timeout` exceeds the longest subprocess budget in that hook: git-guard gives each git call and the boundary scan 8 s; ship-gate gives each git call and fetch 20 s and `gh pr view` 12 s (`keel snapshot` and `keel test`, which no hook runs, give each snapshot git call 300 s); a merge path that still runs past its 60 s is killed and `onFailure: block` denies it; each hook's test reads the registered timeout from `settings/core.json`.
 

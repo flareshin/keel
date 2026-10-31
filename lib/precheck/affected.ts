@@ -3,9 +3,10 @@ import { globMatches } from '../evidence/glob.ts';
 import { candidateTests, isTestSupport } from './select.ts';
 
 const SHIP_GATE_PARITY_SHARDS = 8;
+const HOOK_PARITY_SHARDS = 8;
 export const CORPUS_TESTS = [
   ...Array.from({ length: SHIP_GATE_PARITY_SHARDS }, (_unused, index) => `tests/ship-gate/ship-gate-parity-shard-${index + 1}.test.ts`),
-  'tests/hooks/hook-parity.test.ts',
+  ...Array.from({ length: HOOK_PARITY_SHARDS }, (_unused, index) => `tests/hooks/hook-parity-shard-${index + 1}.test.ts`),
   'codex/tests/hook-parity.test.ts',
   'codex/tests/cli-parity.test.ts',
 ];

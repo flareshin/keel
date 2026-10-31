@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { before, describe, it } from "node:test";
 import type { Observation, ObservedDelta, Run } from "../recorded-cases.ts";
 import { GIT_GUARD, HANDOFF, MODEL_ASSIGN, REPORT_GATE, ENV_PREFLIGHT, SHIP_GATE } from "./helpers.ts";
-import { adversarialInputDigest, FIXTURE_DIRECTORY, fullCorpusRequested, goldenOf, judgeCase, runParity, summary, withCorpus } from "./hook-parity.ts";
-import type { ParityReport, RecordedAdversarial } from "./hook-parity.ts";
+import { adversarialInputDigest, FIXTURE_DIRECTORY, fullCorpusRequested, goldenOf, judgeCase, runParity, selectedCases, SHARD_COUNT, shardCases, summary, withCorpus } from "./hook-parity.ts";
+import type { ParityCase, ParityReport, RecordedAdversarial } from "./hook-parity.ts";
 import { buildAdversarialSet } from "./hook-parity-adversarial.ts";
 import { jsonLimitCases } from "./hook-parity-json-limits.ts";
 import { fineClass, sampleCases, samplingGroup } from "./hook-parity-sample.ts";
@@ -17,7 +17,7 @@ const MIN_ADVERSARIAL_CASES = 50;
 const MIN_SAMPLED_RECORDED_CASES = 100;
 const MIN_SAMPLED_ADVERSARIAL_CASES = 300;
 const MIN_WRONG_TYPE_CASES = 400;
-const PARITY_TIMEOUT_MS = 30 * 60_000;
+const SHARD_FILE = /^hook-parity-shard-\d+\.test\.ts$/;
 const HOOK_ENTRIES = [GIT_GUARD, HANDOFF, MODEL_ASSIGN, REPORT_GATE, ENV_PREFLIGHT, SHIP_GATE];
 const DENY = 2;
 const ROOT = "/root";
@@ -37,18 +37,74 @@ function run(code: number | null, stderr: string, fires = ""): Run {
   return { observation, initial: new Map() };
 }
 
-describe("hook parity with the golden snapshot of the node hooks", () => {
-  it("replays a sample of the recorded runs of the former Python hook tests and the adversarial payloads (all of them with HOOK_PARITY_FULL=1) through node and compares stdout, stderr, exit code and every file outside .git and remotes against the golden outcome", { timeout: PARITY_TIMEOUT_MS }, () => {
-    const report = runParity();
-    console.log(summary(report));
+describe("hook parity selected corpus", () => {
+  let corpus: ParityCase[];
+  let selected: ParityCase[];
+
+  before(() => {
+    corpus = withCorpus((cases) => cases);
+    selected = selectedCases(corpus, fullCorpusRequested());
+  });
+
+  it("selects enough recorded runs and adversarial payloads, some for every hook, and fewer than the corpus unless HOOK_PARITY_FULL=1", () => {
     const full = fullCorpusRequested();
-    const recordedCases = report.cases - report.adversarial;
-    assert.ok(recordedCases >= (full ? MIN_RECORDED_CASES : MIN_SAMPLED_RECORDED_CASES), `only ${recordedCases} cases replayed`);
-    assert.ok(report.adversarial >= (full ? MIN_ADVERSARIAL_CASES : MIN_SAMPLED_ADVERSARIAL_CASES), `only ${report.adversarial} adversarial cases replayed`);
-    assert.equal(report.sampled, !full);
-    assert.equal(report.cases < report.corpus, !full);
-    for (const entry of HOOK_ENTRIES) assert.ok((report.perHook.get(entry) ?? 0) > 0, `no case recorded for ${entry}`);
-    assert.equal(report.mismatches, 0, report.details.slice(0, 10).join("\n"));
+    const adversarial = selected.filter((testCase) => testCase.input !== undefined).length;
+    const recordedRuns = selected.length - adversarial;
+    assert.ok(recordedRuns >= (full ? MIN_RECORDED_CASES : MIN_SAMPLED_RECORDED_CASES), `only ${recordedRuns} cases selected`);
+    assert.ok(adversarial >= (full ? MIN_ADVERSARIAL_CASES : MIN_SAMPLED_ADVERSARIAL_CASES), `only ${adversarial} adversarial cases selected`);
+    assert.equal(selected.length < corpus.length, !full);
+    for (const entry of HOOK_ENTRIES) assert.ok(selected.some((testCase) => testCase.script === entry), `no case recorded for ${entry}`);
+  });
+
+  it("selects every case of the corpus with the full switch and a subset of it otherwise", () => {
+    assert.deepEqual(selectedCases(corpus, true).map((testCase) => testCase.id), corpus.map((testCase) => testCase.id));
+    const ids = new Set(corpus.map((testCase) => testCase.id));
+    assert.ok(selectedCases(corpus, false).every((testCase) => ids.has(testCase.id)));
+  });
+
+  it("gives every selected case to exactly one shard", () => {
+    const shares = Array.from({ length: SHARD_COUNT }, (_unused, index) => shardCases(selected, { index, count: SHARD_COUNT }));
+    assert.equal(shares.reduce((total, share) => total + share.length, 0), selected.length);
+    assert.equal(new Set(shares.flat().map((testCase) => testCase.id)).size, selected.length);
+    assert.ok(shares.every((share) => share.length > 0), "a shard replays no case");
+  });
+
+  it("has one shard test file for each shard", () => {
+    const files = readdirSync(import.meta.dirname).filter((name) => SHARD_FILE.test(name)).sort();
+    const expected = Array.from({ length: SHARD_COUNT }, (_unused, index) => `hook-parity-shard-${index + 1}.test.ts`).sort();
+    assert.deepEqual(files, expected);
+  });
+});
+
+describe("hook parity shards", () => {
+  it("takes the cases whose position leaves the shard's index modulo its count, in order", () => {
+    const cases = ["a", "b", "c", "d", "e", "f", "g"];
+    assert.deepEqual(shardCases(cases, { index: 0, count: 3 }), ["a", "d", "g"]);
+    assert.deepEqual(shardCases(cases, { index: 2, count: 3 }), ["c", "f"]);
+    assert.deepEqual(shardCases(cases, { index: 5, count: 9 }), ["f"]);
+    assert.deepEqual(shardCases(cases, { index: 8, count: 9 }), []);
+    assert.deepEqual(shardCases(cases, { index: 0, count: 1 }), cases);
+  });
+
+  it("rejects a shard that is not an index below a count of at least one", () => {
+    for (const shard of [{ index: 0, count: 0 }, { index: 3, count: 3 }, { index: -1, count: 3 }, { index: 0.5, count: 3 }, { index: 0, count: Number.NaN }]) {
+      assert.throws(() => runParity(shard, false), /is not a shard of the parity corpus/, JSON.stringify(shard));
+    }
+  });
+
+  it("replays only its share but reports the size of the whole corpus", () => {
+    const report = runParity({ index: 0, count: 10_000 }, false);
+    assert.equal(report.cases, 1);
+    assert.equal(report.mismatches, 0, report.details.join("\n"));
+    assert.equal(report.sampled, true);
+    assert.equal(report.corpus, withCorpus((cases) => cases.length));
+    assert.equal(summary(report), `golden: 1 of ${report.corpus} cases (sample), 0 mismatches`);
+  });
+
+  it("replays nothing when the shard's index is past the selected cases", () => {
+    const report = runParity({ index: 9_999, count: 10_000 }, false);
+    assert.equal(report.cases, 0);
+    assert.equal(report.perHook.size, 0);
   });
 });
 

@@ -9,6 +9,7 @@ import { KEEL_HOME } from "./helpers.ts";
 import { buildAdversarialSet } from "./hook-parity-adversarial.ts";
 import type { AdversarialCase, AdversarialSet } from "./hook-parity-adversarial.ts";
 import { sampleCases } from "./hook-parity-sample.ts";
+import type { SampleCandidate } from "./hook-parity-sample.ts";
 
 export const FIXTURE_DIRECTORY = join(import.meta.dirname, "fixtures", "hook-parity");
 export const RUN_TIMEOUT_MS = 60_000;
@@ -75,11 +76,20 @@ export interface GoldenOutcomes {
   adversarial: Record<string, RecordedAdversarial>;
 }
 
-export function runParity(full: boolean = fullCorpusRequested()): ParityReport {
+export interface Shard {
+  index: number;
+  count: number;
+}
+
+export const SHARD_COUNT = 8;
+const WHOLE_CORPUS: Shard = { index: 0, count: 1 };
+
+export function runParity(shard: Shard = WHOLE_CORPUS, full: boolean = fullCorpusRequested()): ParityReport {
+  assertValid(shard);
   const report: ParityReport = { cases: 0, corpus: 0, sampled: !full, adversarial: 0, mismatches: 0, perHook: new Map(), details: [] };
   withCorpus((corpus) => {
     report.corpus = corpus.length;
-    for (const testCase of full ? corpus : sampleCases(corpus)) {
+    for (const testCase of shardCases(selectedCases(corpus, full), shard)) {
       const run = observe(testCase);
       const differences = testCase.expected === undefined
         ? ["no golden outcome for this case; the corpus changed or the case was never recorded"]
@@ -94,6 +104,19 @@ export function runParity(full: boolean = fullCorpusRequested()): ParityReport {
     }
   });
   return report;
+}
+
+export function selectedCases<T extends SampleCandidate>(corpus: readonly T[], full: boolean = fullCorpusRequested()): T[] {
+  return full ? [...corpus] : sampleCases(corpus);
+}
+
+export function shardCases<T>(cases: readonly T[], shard: Shard): T[] {
+  return cases.filter((_testCase, position) => position % shard.count === shard.index);
+}
+
+function assertValid(shard: Shard): void {
+  const valid = Number.isInteger(shard.index) && Number.isInteger(shard.count) && shard.count >= 1 && shard.index >= 0 && shard.index < shard.count;
+  if (!valid) throw new Error(`shard ${shard.index} of ${shard.count} is not a shard of the parity corpus`);
 }
 
 export function goldenOutcomes(): GoldenOutcomes {

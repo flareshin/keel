@@ -213,7 +213,7 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
     `EXPECTED_DIVERGENCES`, the per-payload expected outcomes of the adversarial set
     (`tests/hooks/hook-parity-wrong-type-divergences.ts` and the `divergence` of each JSON limit payload) and the deny-to-pass count are gone.
   - The Codex adapter's parity tests compare it with golden snapshots of its own output instead of the retired Python
-    adapter's recorded answers. `codex/tests/hook-parity.test.ts` replays the 587 payloads of `hook-parity-corpus.ts` through
+    adapter's recorded answers. `codex/tests/hook-parity.test.ts` replays a sample of the 587 payloads of `hook-parity-corpus.ts` through
     `codex/hooks/pre-tool-use.ts` and compares exit code, stdout, stderr and every file of the sandbox with
     `tests/fixtures/python/codex-hook-parity.json.gz`; `codex/tests/cli-parity.test.ts` replays the 56 link and config scenarios
     (every step, including the ones whose arguments changed) against `codex-cli-parity.json`; `codex/tests/boundary.test.ts`
@@ -223,7 +223,16 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
     between node versions), and for a hook that crashes the error line of the stack trace (its frames carry paths
     and line numbers). The recorders write the answers sorted by key. An intended behavior change re-records them with `node codex/tests/hook-parity-record.ts`,
     `node codex/tests/cli-parity-record.ts` and `node codex/tests/boundary-record.ts`, and the diff of the fixtures is reviewed like any other change.
-    Each replay reports `golden: N cases, 0 mismatches`. The divergence lists (`DenyDivergence`, `JsonDepthDivergence`,
+    The hook recorder still records all 587. The hook replay drops, at load time, the payloads of three groups that native tests
+    cover unless a payload is the first of its outcome class within its group: the 42 `wrong-type ...` payloads
+    (`wrong-types.test.ts`), the 19 `stdin ...` payloads (`hook-stdin.test.ts`) and the 93 payloads that carry a NUL or an unpaired
+    surrogate escape (`paths.test.ts`). The class is the hook, the exit code, stdout, stderr without the retry hint, the hook,
+    outcome, rule and detail of the last two fires lines, and the paths of the files written or removed against the sandbox the
+    payload started from, with hashes and compact timestamps masked; the other 433 payloads stay. `CODEX_HOOK_PARITY_FULL=1` replays all
+    587. `codex/tests/hook-parity-sample.ts` holds the sample, and `hook-parity.test.ts` checks that it keeps every outcome class of
+    each group and every payload of the others, and that each group has a native test that mentions it. The hook replay reports
+    `golden: N of 587 cases (sample), K mismatches`, or `golden: N cases, K mismatches` with the switch; the other replays report
+    `golden: N cases, 0 mismatches`. The divergence lists (`DenyDivergence`, `JsonDepthDivergence`,
     `WRONG_TYPE_DIVERGENCES`, `PYTHON_WORDING`, `FOREIGN_FLOAT_SPELLINGS`, `changedByNativeParsing`, `EXPECTED_CHANGES`) and the
     deny-to-pass count are gone. The tests of the TOML port, the path helpers and the crash depths of the TOML
     parser (`toml.test.ts`, `paths.test.ts`, `hook-recursion.test.ts` and the crash-depth cases of `cli-parity.test.ts`) still compare with the recorded Python

@@ -356,6 +356,7 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
   logs deny, pass or record lines, so none drops to zero.
 
 ### Added
+- `no-comments` skill and `keel-comment-reviewer` agent (C-no-comments): before `keel review prepare`, a read-only reviewer that did not write the code judges every comment in the files the diff changes against K5.14; the author deletes what it lists as a comment-only commit, reshapes each `MUST KILL` symbol with a test and offers each `ENCODE` check to the owner. K5.14 now covers the pre-existing comments of changed files through this pass. Adapted from pstack (cursor/plugins at 4dd1d05, MIT).
 - `rule-checks.ts --module-repo <repo>` (repeatable): a changed gitlink whose submodule is not checked out (a parent repo
   that holds the module as a plain copy, or a deinitialized submodule) is scanned from the old to the new pinned commit in
   the first given repo that holds both commits, with its signals labelled under the gitlink path. It applies only when

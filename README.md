@@ -284,9 +284,9 @@ measure/       run, smoke, propose, boundary, weekly, evals/
 githooks/      pre-commit, pre-push (boundary scan)
 settings/      core.json (hook registration), links.tsv (link manifest)
 stacks/        spring-maven/ (env-preflight hook, settings fragment)
-skills/        prompt-refine/, readable-code/, descend/, improve/
+skills/        prompt-refine/, readable-code/, descend/, improve/, no-comments/
 workflows/     lens-review.js, adversarial-audit.js, review-lenses.json
-agents/        keel-auditor.md, keel-reporter.md (tool-limited review agent types)
+agents/        keel-auditor.md, keel-reporter.md, keel-comment-reviewer.md (tool-limited review agent types)
 codex/         Codex adapter
 docs/          DESIGN.md (binding spec), review-policy.md, codex-review.md
 examples/      overlay-shaped sample data with invented values
@@ -328,9 +328,10 @@ These published skills shaped keel's own skills:
 |---|---|---|
 | `improve` | Matt Pocock's [`improve-codebase-architecture`](https://github.com/mattpocock/skills) and [`codebase-design`](https://github.com/mattpocock/skills/blob/main/skills/engineering/codebase-design/SKILL.md) (at 49dd158, MIT) | The module, interface and depth vocabulary and the deletion test |
 | `improve` | pstack in [cursor/plugins](https://github.com/cursor/plugins) (at 6b78e9f, MIT) | The subtract-before-you-add and migrate-callers ordering rules |
+| `no-comments` and the `keel-comment-reviewer` agent | pstack `no-comments` and Comment Sicko in [cursor/plugins](https://github.com/cursor/plugins) (at 4dd1d05, MIT) | A comment pass by a context that did not write the comments, with reshape flags for surprises in our own code and an encoding offer for claimed constraints; keel keeps its narrower K5.14 exceptions |
 | `readable-code` (implementation guide) | Matt Pocock's `codebase-design`, Addy Osmani's [`incremental-implementation`](https://github.com/addyosmani/agent-skills/blob/main/skills/incremental-implementation/SKILL.md) and [pstack `architect`](https://github.com/cursor/plugins/blob/main/pstack/skills/architect/SKILL.md) (read on 2026-10-19) | Caller-first design and small behavior slices |
 
-The skill files name their sources too: `skills/improve/SKILL.md` and `skills/readable-code/references/implementation.md`.
+The skill files name their sources too: `skills/improve/SKILL.md`, `skills/no-comments/SKILL.md` and `skills/readable-code/references/implementation.md`.
 
 ## What keel does not do
 

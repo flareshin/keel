@@ -257,6 +257,21 @@ describe("keel precheck run", { skip: typescriptInstalled ? false : "typescript 
     assert.match(completed.stderr, /tsc --noEmit failed in .*\nrepo-tsc-ran$/m)
   })
 
+  it("keelPrecheckRun_refusesWithTheFirst20Lines_whenTscWritesMoreThanOneMebibyte", () => {
+    const root = committedRepo({ "tsconfig.json": TSCONFIG, "lib/a.ts": PICK })
+    roots.push(root)
+    const shim = "#!/bin/sh\ni=0\nwhile [ $i -lt 30000 ]; do echo \"lib/a.ts($i,1): error TS2322: Type 'string' is not assignable to type 'number'.\"; i=$((i+1)); done\nexit 1\n"
+    writeFiles(root, { "node_modules/.bin/tsc": shim })
+    chmodSync(join(root, "node_modules", ".bin", "tsc"), 0o755)
+
+    const completed = keel(["--repo", root, "--base", "HEAD"], scratchDir("keel-data-"))
+
+    assert.equal(completed.status, 3, completed.stderr.slice(0, 2000))
+    const shown = completed.stderr.split("tsc --noEmit failed in ")[1]!.trimEnd().split("\n").slice(1)
+    assert.equal(shown.length, 20, shown.join("\n"))
+    assert.match(shown[19]!, /^lib\/a\.ts\(19,1\)/)
+  })
+
   it("keelPrecheckRun_appendsTheRuleCheckSignalsAfterTheCensus_whenTscPasses", () => {
     const root = committedRepo({ "tsconfig.json": TSCONFIG, "lib/a.ts": PICK, "tests/a.test.ts": PICK_TEST })
     roots.push(root)

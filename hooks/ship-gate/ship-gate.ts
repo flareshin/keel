@@ -5,7 +5,7 @@ import * as protocol from "../lib/hookkit/protocol.ts";
 import type { Payload } from "../lib/hookkit/protocol.ts";
 import { basename, joinPath, normalizePath } from "../lib/hookkit/paths.ts";
 import { FieldTypeError, getField, isNonEmptyString, isRecord, jsonTypeName, textField } from "../lib/hookkit/fields.ts";
-import { arraysEqual, lstripChar, partition, trimSpace, truncate, WORD_BOUNDARY, WORD_CHARS } from "../lib/hookkit/text.ts";
+import { arraysEqual, partition, trimSpace, truncate, WORD_BOUNDARY, WORD_CHARS } from "../lib/hookkit/text.ts";
 import { compareCodePoints } from "../../measure/lib/measurekit/json.ts";
 import { isFile } from "../lib/hookkit/files.ts";
 import { decodeStrict, splitLines } from "../../measure/lib/measurekit/files.ts";
@@ -15,8 +15,8 @@ import { parseJson } from "../lib/hookkit/json.ts";
 import { AttributeError, describeError, pythonTypeName, RecursionError, ValueError } from "../lib/hookkit/errors.ts";
 import { readStdin, writeStderr } from "../lib/hookkit/stdio.ts";
 import {
-  attachedGhRepo, configKey, dashedGitSubcommand, GH_REPO_OPTIONS, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, isConfigRead,
-  readPushArguments,
+  attachedGhRepo, configKey, dashedGitSubcommand, GH_REPO_OPTIONS, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, interpretPush,
+  isConfigRead,
 } from "../lib/hookkit/gitargs.ts";
 import { RUN_TIME_WORD_RE } from "../lib/hookkit/commands.ts";
 import type { SimpleCommand } from "../lib/hookkit/commands.ts";
@@ -564,19 +564,15 @@ function routesPushes(key: string): boolean {
 }
 
 export function parsePush(words: string[], args: string[], workdir: string): Push {
-  const pushed = readPushArguments(args);
-  const given = pushed.refspecs.map((spec) => lstripChar(spec, "+"));
-  const refspecs = given.filter((spec) => !spec.startsWith(":")).map((spec): Refspec => {
-    const [source, , destination] = partition(spec, ":");
-    return { source, destination: destination || null };
-  });
-  const deletes = pushed.longOptions.includes("--delete") || pushed.shortFlags.includes("d");
+  const { options, refspecs: given, deletes } = interpretPush(args);
+  const refspecs = given.filter((spec) => !spec.deletesDestination)
+    .map((spec): Refspec => ({ source: spec.source, destination: spec.destination }));
   return {
-    kind: "push", workdir, words, remote: pushed.remote, refspecs,
+    kind: "push", workdir, words, remote: options.remote, refspecs,
     deletesOnly: deletes || (given.length > 0 && refspecs.length === 0),
-    tagsOnly: pushed.longOptions.includes("--tags") && given.length === 0,
-    wholeRepo: pushed.wholeRepo,
-    dryRun: pushed.longOptions.includes("--dry-run") || pushed.shortFlags.includes("n"),
+    tagsOnly: options.longOptions.includes("--tags") && given.length === 0,
+    wholeRepo: options.wholeRepo,
+    dryRun: options.longOptions.includes("--dry-run") || options.shortFlags.includes("n"),
   };
 }
 

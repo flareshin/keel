@@ -24,7 +24,7 @@ import { notebookCellChange } from "./notebook.ts";
 import type { CodeChange } from "./notebook.ts";
 import { currentBranch, findRepoKey, findToplevel, git, gitOutput, isCommit } from "../lib/hookkit/repo.ts";
 import { RUN_TIME_WORD_RE } from "../lib/hookkit/commands.ts";
-import { ghSubcommandArgv, gitDirectory, gitSubcommandIndex, isConfigRead, readPushArguments } from "../lib/hookkit/gitargs.ts";
+import { ghSubcommandArgv, gitDirectory, gitSubcommandIndex, interpretPush, isConfigRead } from "../lib/hookkit/gitargs.ts";
 import { steps } from "../lib/hookkit/steps.ts";
 import type { Step } from "../lib/hookkit/steps.ts";
 import { resolveDirectory } from "../lib/hookkit/variables.ts";
@@ -864,25 +864,23 @@ interface PushRequest {
   wholeRepo: boolean;
 }
 
-function readPush(args: readonly string[], branch: string | null): PushRequest {
-  const pushed = readPushArguments(args);
-  const deletes = pushed.longOptions.includes("--delete") || pushed.shortFlags.includes("d");
+export function readPush(args: readonly string[], branch: string | null): PushRequest {
+  const { options, refspecs, deletes } = interpretPush(args);
   const push: PushRequest = {
     sources: [],
     destinations: new Set(),
-    force: pushed.longOptions.includes("--force") || pushed.shortFlags.includes("f") || pushed.refspecs.some((spec) => spec.startsWith("+")),
-    forceWithLease: pushed.longOptions.some((option) => option.startsWith("--force-with-lease")),
-    wholeRepo: pushed.wholeRepo,
+    force: options.longOptions.includes("--force") || options.shortFlags.includes("f") || refspecs.some((spec) => spec.forced),
+    forceWithLease: options.longOptions.some((option) => option.startsWith("--force-with-lease")),
+    wholeRepo: options.wholeRepo,
   };
-  if (pushed.refspecs.length === 0 && !deletes) {
+  if (refspecs.length === 0 && !deletes) {
     push.sources = ["HEAD"];
     if (branch) push.destinations.add(branch);
   }
-  for (const spec of pushed.refspecs) {
-    const [source, , destinationName] = partition(spec.replace(/^\++/, ""), ":");
-    if (deletes || !source) continue;
-    push.sources.push(source);
-    let destination = destinationName || source;
+  for (const spec of refspecs) {
+    if (deletes || !spec.source) continue;
+    push.sources.push(spec.source);
+    let destination = spec.destination ?? spec.source;
     if (destination === "HEAD") destination = branch || destination;
     push.destinations.add(destination.replace(/^refs\/heads\//, ""));
   }

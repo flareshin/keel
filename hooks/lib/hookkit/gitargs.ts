@@ -1,5 +1,5 @@
 import { basename } from "./paths.ts";
-import { codePointLength, partition } from "./text.ts";
+import { codePointLength, lstripChar, partition } from "./text.ts";
 import { resolveDirectory } from "./variables.ts";
 import type { Variables } from "./variables.ts";
 
@@ -103,6 +103,30 @@ export function readPushArguments(args: readonly string[]): PushArguments {
     pushed.refspecs = [];
   }
   return pushed;
+}
+
+export interface PushedRefspec {
+  source: string;
+  destination: string | null;
+  forced: boolean;
+  deletesDestination: boolean;
+}
+
+export interface PushInterpretation {
+  options: PushArguments;
+  refspecs: PushedRefspec[];
+  deletes: boolean;
+}
+
+export function interpretPush(args: readonly string[]): PushInterpretation {
+  const options = readPushArguments(args);
+  const refspecs = options.refspecs.map((word): PushedRefspec => {
+    const spec = lstripChar(word, "+");
+    const [source, , destination] = partition(spec, ":");
+    return { source, destination: destination || null, forced: word.startsWith("+"), deletesDestination: spec.startsWith(":") };
+  });
+  const deletes = options.longOptions.includes("--delete") || options.shortFlags.includes("d");
+  return { options, refspecs, deletes };
 }
 
 export function isConfigRead(args: readonly string[]): boolean {

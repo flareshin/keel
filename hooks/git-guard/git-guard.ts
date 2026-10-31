@@ -21,7 +21,7 @@ import { readStdin } from "../lib/hookkit/stdio.ts";
 import { addedComments, withStraightQuotes } from "./comments.ts";
 import { notebookCellChange } from "./notebook.ts";
 import type { CodeChange } from "./notebook.ts";
-import { currentBranch, findRepoKey, findToplevel, git, gitOutput, isCommit } from "../lib/hookkit/repo.ts";
+import { currentBranch, findRepoKey, findToplevel, git, gitOutput, isCommit, isOutsideEveryRepository } from "../lib/hookkit/repo.ts";
 import {
   fileWriteOf, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, isConfigRead, operands, readPushArguments, resolveDirectory, steps, writeTargets,
 } from "../lib/hookkit/shell.ts";
@@ -205,6 +205,14 @@ function editViolations(shown: string, path: string, text: string): Violation[] 
 }
 
 function commentViolations(toolArgs: Payload, edits: readonly unknown[], shown: string, path: string): Violation[] {
+  return insideRepositoriesOnly(path, addedCommentViolations(toolArgs, edits, shown, path));
+}
+
+function insideRepositoriesOnly(path: string, violations: Violation[]): Violation[] {
+  return violations.length > 0 && isOutsideEveryRepository(path) ? [] : violations;
+}
+
+function addedCommentViolations(toolArgs: Payload, edits: readonly unknown[], shown: string, path: string): Violation[] {
   const change = codeChange(toolArgs, edits, path);
   if (change === null) return [];
   const patched = patchedFile(toolArgs, change.before);
@@ -308,7 +316,7 @@ function checkCommentWrites(call: readonly Step[]): Violation[] {
     return shellWrites(step).flatMap(({ target, appends }) => {
       const path = resolveDirectory(step.directory, target, step.expansion);
       const disk = (tryReadText(path) ?? "").replaceAll("\r\n", "\n");
-      return commentViolation(target, addedComments(path, disk, appends ? disk + body : body));
+      return insideRepositoriesOnly(path, commentViolation(target, addedComments(path, disk, appends ? disk + body : body)));
     });
   });
 }

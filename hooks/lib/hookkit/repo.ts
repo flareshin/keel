@@ -1,10 +1,13 @@
 import { statSync } from "node:fs";
+import { dirname } from "node:path";
 import { isSystemError } from "./files.ts";
 import { rstripChar, trimSpace } from "./text.ts";
-import { run } from "./subprocess.ts";
+import { OSError, run, TimeoutExpired } from "./subprocess.ts";
 import type { CompletedProcess } from "./subprocess.ts";
 
 export const GIT_TIMEOUT_SECONDS = 8;
+const NOT_A_REPOSITORY_STATUS = 128;
+const NOT_A_REPOSITORY_MESSAGE = "not a git repository";
 
 export function git(args: readonly string[], cwd: string): CompletedProcess {
   return run(["git", "-C", cwd, ...args], GIT_TIMEOUT_SECONDS);
@@ -28,6 +31,23 @@ export function gitOutput(args: readonly string[], cwd: string): string | null {
 
 export function findToplevel(path: string): string | null {
   return gitOutput(["rev-parse", "--show-toplevel"], path);
+}
+
+export function isOutsideEveryRepository(path: string): boolean {
+  const lookup = ["env", "LC_ALL=C", "git", "-C", nearestExistingDirectory(path), "rev-parse", "--show-toplevel"];
+  try {
+    const result = run(lookup, GIT_TIMEOUT_SECONDS);
+    return result.returncode === NOT_A_REPOSITORY_STATUS && result.stderr.includes(NOT_A_REPOSITORY_MESSAGE);
+  } catch (error) {
+    if (error instanceof TimeoutExpired || error instanceof OSError) return false;
+    throw error;
+  }
+}
+
+function nearestExistingDirectory(path: string): string {
+  let directory = dirname(path);
+  while (!isDirectory(directory) && dirname(directory) !== directory) directory = dirname(directory);
+  return directory;
 }
 
 export function normalizeRepoKey(url: string): string | null {

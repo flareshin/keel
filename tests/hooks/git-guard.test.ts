@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
+import { delimiter, dirname, join } from "node:path";
 import {
   assertBulletIdsSeeded, assertFired, bash, GIT_GUARD, HookSandbox, KEEL_HOME, preToolUse, withEnv,
 } from "./helpers.ts";
@@ -1337,6 +1338,25 @@ describe("FailClosedTest", () => {
 });
 
 describe("CommentWriteTest", () => {
+  let outsideRoots: string[];
+
+  beforeEach(() => {
+    sandbox.git(sandbox.root, "init", "-q");
+    outsideRoots = [];
+  });
+
+  afterEach(() => {
+    for (const root of outsideRoots) rmSync(root, { recursive: true, force: true });
+  });
+
+  function outsideRepositories(...segments: string[]): string {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "keel-outside-")));
+    outsideRoots.push(root);
+    const path = join(root, ...segments);
+    mkdirSync(dirname(path), { recursive: true });
+    return path;
+  }
+
   function assertCommentDenied(result: HookResult, line: string): void {
     assert.equal(result.code, 2, result.stderr);
     assert.ok(result.stderr.includes("[C-comments]"), result.stderr);
@@ -1960,5 +1980,71 @@ describe("CommentWriteTest", () => {
     const command = `cat > ${path} <<'EOF'\nconst n = 1; // counts\nEOF`;
 
     assertCommentDenied(guard(command), "// counts");
+  });
+
+  it("write_passes_whenTheTargetIsOutsideEveryGitRepository", () => {
+    const toolArgs = { file_path: outsideRepositories("scratch", "probe.ts"), content: "// note\nexport const n = 1;\n" };
+
+    assertPassed(edit("Write", toolArgs));
+    assert.deepEqual(sandbox.fires(), []);
+  });
+
+  it("edit_passes_whenTheTargetIsOutsideEveryGitRepository", () => {
+    const path = outsideRepositories("scratch", "probe.ts");
+    writeFileSync(path, "export const n = 1;\n");
+    const toolArgs = { file_path: path, old_string: "export const n = 1;", new_string: "// note\nexport const n = 1;" };
+
+    assertPassed(edit("Edit", toolArgs));
+  });
+
+  it("write_denied_whenTheTargetIsInsideAGitRepository", () => {
+    const result = edit("Write", { file_path: codeFile("probe.ts"), content: "// note\nexport const n = 1;\n" });
+
+    assertCommentDenied(result, "// note");
+  });
+
+  it("write_denied_whenTheTargetIsInANotYetCreatedDirectoryOfAGitRepository", () => {
+    const path = join(sandbox.root, "src", "not", "yet", "probe.ts");
+
+    assertCommentDenied(edit("Write", { file_path: path, content: "// note\nexport const n = 1;\n" }), "// note");
+  });
+
+  it("write_denied_whenTheTargetIsInsideALinkedWorktree", () => {
+    sandbox.git(sandbox.root, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "--allow-empty", "-q", "-m", "base");
+    const linked = outsideRepositories("linked", "probe.ts");
+    sandbox.git(sandbox.root, "worktree", "add", "-q", "--detach", dirname(linked));
+
+    assertCommentDenied(edit("Write", { file_path: linked, content: "// note\nexport const n = 1;\n" }), "// note");
+  });
+
+  it("bash_passes_whenAHeredocWritesACommentOutsideEveryGitRepository", () => {
+    const path = outsideRepositories("scratch", "probe.ts");
+
+    assertPassed(guard(`cat > ${path} <<'EOF'\n// c\nexport const n = 1;\nEOF`));
+    assertPassed(guard(`tee ${path} <<< '// c' >/dev/null`));
+  });
+
+  it("bash_denied_whenAHeredocWritesACommentInsideAGitRepository", () => {
+    const path = codeFile("probe.ts");
+
+    assertCommentDenied(guard(`cat > ${path} <<'EOF'\n// c\nexport const n = 1;\nEOF`), "// c");
+  });
+
+  it("write_denied_whenGitCannotSayWhetherTheTargetIsInARepository", () => {
+    const target = outsideRepositories("scratch", "probe.ts");
+    sandbox.stub("git", { exitCode: 128 });
+    sandbox.env["PATH"] = join(sandbox.root, "stubs") + delimiter + (process.env["PATH"] ?? "/usr/bin:/bin");
+
+    assertCommentDenied(edit("Write", { file_path: target, content: "// note\nexport const n = 1;\n" }), "// note");
+  });
+
+  it("write_deniedByItsOwnRule_whenAProtectedPathIsOutsideEveryGitRepository", () => {
+    const protectedFile = outsideRepositories("data", "state", "keel", "probe.ts");
+    sandbox.env["KEEL_DATA_DIR"] = join(dirname(protectedFile), "..", "..");
+
+    const result = edit("Write", { file_path: protectedFile, content: "// note\nexport const n = 1;\n" });
+
+    assertDenied(result, "K1");
+    assert.ok(!result.stderr.includes("[C-comments]"), result.stderr);
   });
 });

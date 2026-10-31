@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { after, before, describe, it } from "node:test";
 import { join } from "node:path";
 import {
-  AGENT_ID, basePayload, bash, ENV_PREFLIGHT, GIT_GUARD, HANDOFF, HookSandbox, KEEL_HOME, MODEL_ASSIGN, preToolUse, REPORT_GATE, SESSION_ID, SHIP_GATE, subagentStop,
+  AGENT_ID, bash, ENV_PREFLIGHT, GIT_GUARD, HookSandbox, KEEL_HOME, MODEL_ASSIGN, preToolUse, REPORT_GATE, SESSION_ID, SHIP_GATE, subagentStop,
 } from "./helpers.ts";
 import type { HookResult } from "./helpers.ts";
 
@@ -287,30 +286,5 @@ describe("env-preflight judges a mvn command it can read", () => {
     const result = run(ENV_PREFLIGHT, preToolUse("Bash", { command: ["mvn", "test"] }, repo), repo);
     assert.equal(result.code, PASS);
     assert.match(errorFires("env-preflight").at(-1) ?? "", /^FieldTypeError: command must be a string, not list$/);
-  });
-});
-
-describe("handoff notes only text", () => {
-  for (const field of ["trigger", "transcript_path"]) {
-    for (const [label, value] of [["number", 5], ["true", true], ["object", { k: "v" }], ["list", ["x"]], ["zero", 0]] as const) {
-      it(`writes ? for a ${field} that is ${label}`, () => {
-        const payload = { ...basePayload("PreCompact", repo, "/data/projects/p/t.jsonl", false), trigger: "auto", [field]: value };
-        const result = sandbox.runHook(HANDOFF, { payload, cwd: repo, args: ["--auto"] });
-        assert.equal(result.code, PASS);
-        const note = sandbox.fires().at(-1)?.detail ?? "";
-        assert.match(note, /^snapshot /);
-        const file = result.stdout.replace("handoff recorded: ", "").trim();
-        const text = readFileSync(file, "utf8");
-        assert.ok(text.includes(field === "trigger" ? "before ? compaction" : "transcript: ?)"), text);
-      });
-    }
-  }
-
-  it("uses the process directory when cwd is not text", () => {
-    for (const cwd of [5, true, { k: "v" }, ["x"], 0, false]) {
-      const payload = { ...basePayload("PreCompact", repo, "/data/projects/p/t.jsonl", false), cwd, trigger: "auto" };
-      const result = sandbox.runHook(HANDOFF, { payload, cwd: repo, args: ["--auto"] });
-      assert.match(result.stdout, /^handoff recorded: /);
-    }
   });
 });

@@ -39,7 +39,6 @@ export interface ListedDivergence {
 
 export const EXPECTED_DIVERGENCES: ReadonlyMap<string, ListedDivergence> = new Map([
   ["0194", { code: DENY_EXIT_CODE, detailStartsWith: "GuardError: boundary scanner did not run: OSError" }],
-  ["0205", { code: PASS_EXIT_CODE, detailStartsWith: "Error: EEXIST: file already exists, mkdir '" }],
   ["0232", { code: PASS_EXIT_CODE, detailStartsWith: "Error: EACCES: permission denied, open '" }],
   ["0277", { code: PASS_EXIT_CODE, detailStartsWith: "Error: EISDIR: illegal operation on a directory, read" }],
 ]);

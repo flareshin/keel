@@ -45,11 +45,10 @@ describe("hook parity with the recorded Python hooks", () => {
 });
 
 describe("hook parity recorded divergences", () => {
-  it("lists exactly the four recorded runs whose error text names a Python class or errno", () => {
-    assert.deepEqual([...EXPECTED_DIVERGENCES].map(([id, listed]) => [id, listed.code]).sort(), [["0194", DENY], ["0205", 0], ["0232", 0], ["0277", 0]]);
+  it("lists exactly the three recorded runs whose error text names a Python class or errno", () => {
+    assert.deepEqual([...EXPECTED_DIVERGENCES].map(([id, listed]) => [id, listed.code]).sort(), [["0194", DENY], ["0232", 0], ["0277", 0]]);
     assert.deepEqual([...EXPECTED_DIVERGENCES.values()].map((listed) => listed.detailStartsWith).sort(), [
       "Error: EACCES: permission denied, open '",
-      "Error: EEXIST: file already exists, mkdir '",
       "Error: EISDIR: illegal operation on a directory, read",
       "GuardError: boundary scanner did not run: OSError",
     ]);

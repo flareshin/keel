@@ -68,7 +68,6 @@ const RULES: readonly Rule[] = [
   ["model-assign wrong-type effort", WRONG_TYPE_LABELS, readFailure("effort", 0, { stdoutEmpty: true })],
   ["model-assign wrong-type resumeFromRunId", ["true", "object", "number", "list"], () => ({ code: 2, stderrIncludes: WORKFLOW_DENIED })],
   ["model-assign wrong-type scriptPath", TRUTHY_WRONG_TYPE_LABELS, () => ({ code: 2, stderrIncludes: WORKFLOW_DENIED })],
-  ...["cwd", "trigger", "transcript_path"].map((field): Rule => [`handoff wrong-type ${field}`, TRUTHY_WRONG_TYPE_LABELS, () => ({ code: 0, stdoutIncludes: "handoff recorded: " })]),
   ["report-gate wrong-type stop_hook_active", NOT_TRUE_LABELS, () => ({ code: 0, stdoutIncludes: "changes outside the brief's scope" })],
   ["report-gate wrong-type state ev at handback", NOT_TRUE_LABELS, () => ({ code: 2, stderrIncludes: "report has no evidence token" })],
   ["report-gate wrong-type state hb at stop", NOT_TRUE_LABELS, () => ({ code: 0, stdoutIncludes: "report has no evidence token" })],

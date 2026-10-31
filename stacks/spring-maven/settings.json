@@ -6,7 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node {{KEEL}}/stacks/spring-maven/hooks/env-preflight.ts",
+            "if": "Bash(*mvn*)",
+            "command": "NODE_COMPILE_CACHE=\"${KEEL_DATA_DIR:-$HOME/.claude}/state/keel/node-compile-cache\" node {{KEEL}}/stacks/spring-maven/hooks/env-preflight.ts",
             "timeout": 10
           }
         ]

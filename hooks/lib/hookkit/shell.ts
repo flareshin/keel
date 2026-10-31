@@ -12,6 +12,7 @@ const IDENTIFIER_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const HEREDOC_START_RE = /<<(-?)[ \t]*(?:'([^'\n]*)'|"([^"\n]*)"|\\?([A-Za-z0-9_.-]+))/y;
 
 const FILE_WRITE_REDIRECTS: ReadonlySet<string> = new Set([">", ">>", ">|", "&>", "&>>", "<>"]);
+const APPENDING_REDIRECTS: ReadonlySet<string> = new Set([">>", "&>>"]);
 const COPY_VERBS: ReadonlySet<string> = new Set(["cp", "mv", "install", "ln", "rsync"]);
 const REMOVE_VERBS: ReadonlySet<string> = new Set(["rm", "rmdir", "unlink", "shred"]);
 const CREATE_VERBS: ReadonlySet<string> = new Set(["touch", "truncate", "tee"]);
@@ -468,9 +469,14 @@ function gitSubcommand(argv: readonly string[]): string | null {
 
 function redirectTargets(command: SimpleCommand): string[] {
   return command.redirects
-    .filter((redirect) => redirect.target !== "/dev/null" && (FILE_WRITE_REDIRECTS.has(redirect.op) || (
-      redirect.op === ">&" && !(isDigits(redirect.target) || redirect.target === "-"))))
+    .filter((redirect) => redirect.target !== "/dev/null" && fileWriteOf(redirect) !== null)
     .map((redirect) => redirect.target);
+}
+
+export function fileWriteOf(redirect: Redirect): { target: string; appends: boolean } | null {
+  const duplicatesToAFile = redirect.op === ">&" && !(isDigits(redirect.target) || redirect.target === "-");
+  if (!FILE_WRITE_REDIRECTS.has(redirect.op) && !duplicatesToAFile) return null;
+  return { target: redirect.target, appends: APPENDING_REDIRECTS.has(redirect.op) };
 }
 
 function addCopyTargets(targets: WriteTargets, verb: string, args: readonly string[]): void {

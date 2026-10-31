@@ -26,7 +26,7 @@ const TRAILING_WORD = /[A-Za-z_$][\w$]*$/u;
 const TEXT_BLOCK_QUOTES: readonly string[] = ['"""', "'''"];
 const COMMENT_MARKERS = /^(\/\*+|\/+|\*+\/?|#+|--+|[rRuUbB]?"""|[rRuUbB]?''')\s*/u;
 const ALLOWED_BODY = new RegExp("^(" + [
-  "eslint", "global ", "prettier-ignore", "biome-ignore", "@ts-", "istanbul ", "c8 ", "jshint", "tslint", "#__PURE__",
+  "eslint", "prettier-ignore", "biome-ignore", "@ts-", "istanbul ", "c8 ", "jshint", "tslint", "#__PURE__",
   "<reference ", "noqa", "type: ?ignore", "pylint:", "pyright:", "mypy:", "fmt: ?(off|on|skip)", "isort:", "-\\*- coding",
   "(vim?: ?)?(file)?(en)?coding[:=]", "pragma", "nolint", "go:", "\\+build", "shellcheck ", "NOSONAR", "CHECKSTYLE", "noinspection",
   "language=", "SPDX-License-Identifier:", "Copyright( \\(c\\)| ©| [0-9]{4})", "\\(c\\) [0-9]{4}", "© ?[0-9]{4}",
@@ -34,6 +34,10 @@ const ALLOWED_BODY = new RegExp("^(" + [
   "NOLINT", "NOLINTNEXTLINE", "NOLINTBEGIN", "NOLINTEND", "liquibase formatted sql", "changeset ", "webpack[A-Z][A-Za-z]*:", "swiftlint:",
   "ruff:", "clang-format (off|on)$", "yapf:", "@flow( strict(-local)?| weak)?$", "deno-lint-ignore",
 ].map(wholeWord).join("|") + ")", "u");
+
+const GLOBAL_NAME = "[A-Za-z_$][\\w$]*(\\s*:\\s*[A-Za-z]+)?";
+const GLOBALS_DIRECTIVE = new RegExp(`^globals?\\s+${GLOBAL_NAME}(\\s*,\\s*${GLOBAL_NAME})*(\\s+--+\\s.*)?$`, "u");
+const DOC_BLOCK_OPEN = "/**";
 
 function wholeWord(directive: string): string {
   return /[A-Za-z]$/u.test(directive) ? `${directive}(?![A-Za-z])` : directive;
@@ -244,6 +248,6 @@ function reported(comments: readonly string[]): string[] {
   return comments.filter((line) => {
     if (line.startsWith(SHEBANG)) return false;
     const body = trimSpace(line.replace(COMMENT_MARKERS, "").replace(/\*\/$|"""$|'''$/u, ""));
-    return body !== "" && !ALLOWED_BODY.test(body);
+    return body !== "" && !ALLOWED_BODY.test(body) && !(line.startsWith(BLOCK_OPEN) && !line.startsWith(DOC_BLOCK_OPEN) && GLOBALS_DIRECTIVE.test(body));
   });
 }

@@ -1,4 +1,4 @@
-import { statSync } from "node:fs";
+import { lstatSync, realpathSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 import { isSystemError } from "./files.ts";
 import { rstripChar, trimSpace } from "./text.ts";
@@ -34,7 +34,9 @@ export function findToplevel(path: string): string | null {
 }
 
 export function isOutsideEveryRepository(path: string): boolean {
-  const lookup = ["env", "LC_ALL=C", "git", "-C", nearestExistingDirectory(path), "rev-parse", "--show-toplevel"];
+  const directory = realDirectoryOf(path);
+  if (directory === null) return false;
+  const lookup = ["env", "LC_ALL=C", "git", "-C", directory, "rev-parse", "--show-toplevel"];
   try {
     const result = run(lookup, GIT_TIMEOUT_SECONDS);
     return result.returncode === NOT_A_REPOSITORY_STATUS && result.stderr.includes(NOT_A_REPOSITORY_MESSAGE);
@@ -44,10 +46,28 @@ export function isOutsideEveryRepository(path: string): boolean {
   }
 }
 
-function nearestExistingDirectory(path: string): string {
-  let directory = dirname(path);
-  while (!isDirectory(directory) && dirname(directory) !== directory) directory = dirname(directory);
-  return directory;
+function realDirectoryOf(path: string): string | null {
+  const entry = nearestExistingEntry(path);
+  if (entry === null) return null;
+  try {
+    const real = realpathSync(entry);
+    return isDirectory(real) ? real : dirname(real);
+  } catch (error) {
+    if (isSystemError(error)) return null;
+    throw error;
+  }
+}
+
+function nearestExistingEntry(path: string): string | null {
+  for (let entry = path; ; entry = dirname(entry)) {
+    try {
+      lstatSync(entry);
+      return entry;
+    } catch (error) {
+      if (!isSystemError(error)) throw error;
+      if (error.code !== "ENOENT" || dirname(entry) === entry) return null;
+    }
+  }
 }
 
 export function normalizeRepoKey(url: string): string | null {

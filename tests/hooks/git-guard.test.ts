@@ -2017,6 +2017,44 @@ describe("CommentWriteTest", () => {
     assertCommentDenied(edit("Write", { file_path: linked, content: "// note\nexport const n = 1;\n" }), "// note");
   });
 
+  it("write_denied_whenASymlinkOutsideEveryGitRepositoryPointsIntoOne", () => {
+    const link = outsideRepositories("scratch", "link.ts");
+    symlinkSync(codeFile("probe.ts", "export const n = 1;\n"), link);
+
+    assertCommentDenied(edit("Write", { file_path: link, content: "// note\nexport const n = 1;\n" }), "// note");
+  });
+
+  it("write_denied_whenADanglingSymlinkOutsideEveryGitRepositoryPointsIntoOne", () => {
+    const link = outsideRepositories("scratch", "link.ts");
+    symlinkSync(codeFile("probe.ts"), link);
+
+    assertCommentDenied(edit("Write", { file_path: link, content: "// note\nexport const n = 1;\n" }), "// note");
+  });
+
+  it("write_denied_whenASymlinkedDirectoryOutsideEveryGitRepositoryLeadsIntoOne", () => {
+    const linkedDirectory = outsideRepositories("scratch", "src");
+    symlinkSync(dirname(codeFile("probe.ts")), linkedDirectory);
+    const path = join(linkedDirectory, "not", "yet", "probe.ts");
+
+    assertCommentDenied(edit("Write", { file_path: path, content: "// note\nexport const n = 1;\n" }), "// note");
+  });
+
+  it("write_passes_whenASymlinkOutsideEveryGitRepositoryPointsOutsideToo", () => {
+    const target = outsideRepositories("scratch", "probe.ts");
+    writeFileSync(target, "export const n = 1;\n");
+    const link = join(dirname(target), "link.ts");
+    symlinkSync(target, link);
+
+    assertPassed(edit("Write", { file_path: link, content: "// note\nexport const n = 1;\n" }));
+  });
+
+  it("bash_denied_whenAHeredocWritesACommentThroughASymlinkIntoAGitRepository", () => {
+    const link = outsideRepositories("scratch", "link.ts");
+    symlinkSync(codeFile("probe.ts", "export const n = 1;\n"), link);
+
+    assertCommentDenied(guard(`cat > ${link} <<'EOF'\n// c\nexport const n = 1;\nEOF`), "// c");
+  });
+
   it("bash_passes_whenAHeredocWritesACommentOutsideEveryGitRepository", () => {
     const path = outsideRepositories("scratch", "probe.ts");
 

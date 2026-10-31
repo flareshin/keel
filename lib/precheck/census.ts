@@ -1,9 +1,10 @@
 import { readFileSync, rmSync } from 'node:fs';
+import { availableParallelism, loadavg } from 'node:os';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import ts from 'typescript';
 import { diffEntries, REGULAR_FILE_MODES } from '../evidence/gitcmd.ts';
-import { materializeTree, runBaseline } from './baseline.ts';
+import { baselineTimeoutSeconds, materializeTree, runBaseline } from './baseline.ts';
 import type { Baseline } from './baseline.ts';
 import { bindPrecheck, DELETED_BLOB } from './binding.ts';
 import { addedLinesByPath, findConsumers, SCRIPT_FILE } from './consumers.ts';
@@ -45,7 +46,6 @@ export interface Census {
   consumers: ChangedName[];
 }
 
-const BASELINE_TIMEOUT_SECONDS = 300;
 const HOOK_DIRECTORY = 'hooks/';
 const HOOK_DIFF_MAX_PRIORITY = 3;
 const SNIPPET_LIMIT = 40;
@@ -87,7 +87,7 @@ export async function runCensus(repo: string, target: CensusTarget): Promise<Cen
 async function runMutation(repo: string, target: CensusTarget, sourcePaths: string[], scriptFiles: string[]): Promise<MutationCensus> {
   const directory = materializeTree(repo, target.tree);
   try {
-    const baseline = await runBaseline(directory, candidateTests(directory, sourcePaths), BASELINE_TIMEOUT_SECONDS);
+    const baseline = await runBaseline(directory, candidateTests(directory, sourcePaths), baselineTimeoutSeconds(loadavg()[0]!, availableParallelism()));
     if (baseline.outcome !== 'green') return { outcome: 'stopped', baseline };
     const sources = new Map(scriptFiles.map((path) => [path, readFileSync(join(directory, path), 'utf8')]));
     const targets = mutantTargets(sources, addedLinesByPath(repo, target.reviewBase, target.tree));

@@ -11,6 +11,7 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
 `node:path`, `node:fs`, `RegExp`, a fatal `TextDecoder` and `node:util` `parseArgs`. The hooks' shared kit (`hooks/lib/hookkit`) loses its Python runtime modules too (see Removed). Some Python semantics stay on purpose: the `splitlines` and `strip` character sets (`hooks/lib/hookkit/text.ts`, `apply_patch` text and guard output), CPython's recursion limit in the Codex TOML reader (`codex/lib/toml.ts`), the hooks' JSON spacing and error class names, and the exception names `rule-checks.ts` prints.
 
 ### Changed
+- `keel precheck run` scales each baseline test file's timeout with host load: 300s while the 1-minute load average is at most the CPU count, then 300s × load per CPU, capped at 2400s. A stop now names the limit (`baseline  timeout after 600s in <test> · precheck stopped`).
 - `tests/run-all.sh` (`npm test`) runs one full suite at a time per machine: a second run waits for the first and says which pid holds the lock, and a lock left by a run that died is taken over.
 - What stays the same: exit codes for every documented outcome, the field names and values of every JSON and JSONL
   line the tools print or write (`measure/{run,smoke,propose,weekly,boundary}`, `measure/evals/{eval,review-eval}`,

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { after, describe, it } from "node:test"
 import { GitError, snapshotTree } from "../../lib/evidence/gitcmd.ts"
-import { materializeTree, runBaseline } from "../../lib/precheck/baseline.ts"
+import { baselineTimeoutSeconds, materializeTree, runBaseline } from "../../lib/precheck/baseline.ts"
 import { committedRepo, executedLineNumbers, writeFiles as write } from "./fixture.ts"
 
 const EXECUTABLE_BITS = 0o111
@@ -204,6 +204,16 @@ describe("precheck baseline", () => {
 
     assert.equal(baseline.outcome, "timeout")
     assert.equal(baseline.test, "tests/slow.test.ts")
+    assert.equal(baseline.timeoutSeconds, 1)
     assert.equal(existsSync(join(directory, "marker")), false)
+  })
+
+  it("baselineTimeoutSeconds_keeps300sOnAnIdleHost_scalesWithLoadPerCpu_andCapsAt2400s", () => {
+    assert.equal(baselineTimeoutSeconds(0.5, 12), 300)
+    assert.equal(baselineTimeoutSeconds(12, 12), 300)
+    assert.equal(baselineTimeoutSeconds(13, 12), 325)
+    assert.equal(baselineTimeoutSeconds(24, 12), 600)
+    assert.equal(baselineTimeoutSeconds(96, 12), 2400)
+    assert.equal(baselineTimeoutSeconds(147, 12), 2400)
   })
 })

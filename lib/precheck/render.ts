@@ -43,7 +43,8 @@ function scopeOf(mutation: Ran): 'census' | 'partial' {
 
 function stoppedReason({ baseline }: Stopped): string {
   if (baseline.outcome === 'empty') return 'no candidate file ran a test · precheck stopped';
-  return `${baseline.outcome} in ${baseline.test} · precheck stopped`;
+  if (baseline.outcome === 'timeout') return `timeout after ${baseline.timeoutSeconds}s in ${baseline.test} · precheck stopped`;
+  return `red in ${baseline.test} · precheck stopped`;
 }
 
 function ranLines(blobs: Record<string, string>, mutation: Ran): string[] {

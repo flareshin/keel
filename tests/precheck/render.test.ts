@@ -89,7 +89,7 @@ describe("renderCensus", () => {
   it("renderCensus_dropsTheBlobsLine_whenTheBaselineStopsThePrecheck", () => {
     const stopped = [
       [{ outcome: "red", test: "tests/a.test.ts", output: "" }, "baseline  red in tests/a.test.ts · precheck stopped"],
-      [{ outcome: "timeout", test: "tests/b.test.ts", output: "" }, "baseline  timeout in tests/b.test.ts · precheck stopped"],
+      [{ outcome: "timeout", test: "tests/b.test.ts", output: "", timeoutSeconds: 600 }, "baseline  timeout after 600s in tests/b.test.ts · precheck stopped"],
       [{ outcome: "empty" }, "baseline  no candidate file ran a test · precheck stopped"],
     ] as const
 

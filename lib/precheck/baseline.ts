@@ -15,13 +15,21 @@ export interface BaselineFile {
 
 export type Baseline =
   | { outcome: 'green'; files: BaselineFile[]; withoutPasses: string[] }
-  | { outcome: 'red' | 'timeout'; test: string; output: string }
+  | { outcome: 'red'; test: string; output: string }
+  | { outcome: 'timeout'; test: string; output: string; timeoutSeconds: number }
   | { outcome: 'empty' };
 
-type FileRun = { outcome: 'ran'; file: BaselineFile } | { outcome: 'red' | 'timeout'; test: string; output: string };
+type FileRun = { outcome: 'ran'; file: BaselineFile } | Extract<Baseline, { outcome: 'red' | 'timeout' }>;
 
+const IDLE_TIMEOUT_SECONDS = 300;
+const MAX_LOAD_FACTOR = 8;
 const DEPENDENCY_DIRECTORY = 'node_modules';
 const LOCAL_EXCLUDE = join('.git', 'info', 'exclude');
+
+export function baselineTimeoutSeconds(load: number, cpus: number): number {
+  const loadFactor = Math.min(Math.max(load / cpus, 1), MAX_LOAD_FACTOR);
+  return Math.round(IDLE_TIMEOUT_SECONDS * loadFactor);
+}
 
 export function materializeTree(repo: string, tree: string): string {
   const directory = mkdtempSync(join(tmpdir(), 'keel-precheck-'));
@@ -59,7 +67,7 @@ async function runBaselineFile(directory: string, test: string, timeoutSeconds: 
   const coverageDirectory = mkdtempSync(join(tmpdir(), 'keel-precheck-coverage-'));
   try {
     const run = await runTestFile(directory, test, timeoutSeconds, { NODE_V8_COVERAGE: coverageDirectory });
-    if (run.outcome === 'timeout') return { outcome: 'timeout', test, output: run.output };
+    if (run.outcome === 'timeout') return { outcome: 'timeout', test, output: run.output, timeoutSeconds };
     if (run.returncode !== 0) return { outcome: 'red', test, output: run.output };
     return { outcome: 'ran', file: { test, passed: run.passed, durationMs: run.durationMs, coverage: readCoverage(coverageDirectory, directory) } };
   } finally {

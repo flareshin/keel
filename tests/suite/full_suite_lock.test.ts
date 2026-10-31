@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, it } from "node:test"
 
 const CHECKOUT = path.resolve(import.meta.dirname, "..", "..")
 const WAITING = "waiting for the full suite run"
-const TWO_MINUTES_AGO = new Date(Date.now() - 120_000)
+const PAST_THE_GRACE_MS = 90_000
+const TAKEOVER_DEADLINE_MS = 5_000
 
 type Run = { child: ChildProcess; stdout: () => string; stderr: () => string; done: Promise<{ code: number | null; signal: NodeJS.Signals | null }> }
 
@@ -28,6 +29,7 @@ describe("full suite lock", { timeout: 60_000 }, () => {
       try { process.kill(-(child.pid as number), "SIGKILL") } catch { }
     }
     fs.chmodSync(path.dirname(lockDir), 0o755)
+    if (fs.existsSync(lockDir)) fs.chmodSync(lockDir, 0o755)
     fs.rmSync(dataDir, { recursive: true, force: true })
   })
 
@@ -50,6 +52,11 @@ describe("full suite lock", { timeout: 60_000 }, () => {
       if (Date.now() > deadline) throw new Error("timed out waiting")
       await new Promise((resolve) => setTimeout(resolve, 20))
     }
+  }
+
+  const backdatePastTheGrace = (dir: string): void => {
+    const pastTheGrace = new Date(Date.now() - PAST_THE_GRACE_MS)
+    fs.utimesSync(dir, pastTheGrace, pastTheGrace)
   }
 
   const holderPid = (): string => fs.readFileSync(path.join(lockDir, "pid"), "utf8").trim()
@@ -107,12 +114,52 @@ describe("full suite lock", { timeout: 60_000 }, () => {
     assert.equal(fs.existsSync(`${lockDir}.reclaim`), false)
   })
 
-  it("anUnownedLockOlderThanAMinute_isTakenOver_butAFreshOneIsWaitedFor", async () => {
+  const reclaimRun = (judged: string): Run => spawnRun(["-c", `source tests/suite-lock.sh; reclaim_suite_lock '${judged}'`])
+
+  it("aReclaimWhileAnotherReclaimIsUnderWay_leavesTheLockAndTheOtherReclaim", async () => {
+    const dead = deadPid()
+    givenLockHeldBy(dead)
+    fs.mkdirSync(`${lockDir}.reclaim`)
+    assert.equal((await reclaimRun(dead).done).code, 0)
+    assert.equal(holderPid(), dead)
+    assert.equal(fs.existsSync(`${lockDir}.reclaim`), true)
+  })
+
+  it("aReclaimThatStoppedHalfway_failsTheRunWithAMessageNamingBothPaths", async () => {
+    givenLockHeldBy(deadPid())
+    fs.mkdirSync(`${lockDir}.reclaim`)
+    backdatePastTheGrace(`${lockDir}.reclaim`)
+    const run = spawnRun(["-c", "source tests/suite-lock.sh; hold_suite_lock || exit 1; echo acquired"])
+    assert.equal((await run.done).code, 1)
+    assert.match(run.stderr(), /reclaim of the full suite lock stopped halfway/)
+    assert.ok(run.stderr().includes(`${lockDir}.reclaim`))
+    assert.equal(run.stdout(), "")
+  })
+
+  it("aReclaimJudgedOnAnUnownedLock_leavesItWhileItIsStillWithinTheGrace", async () => {
+    givenLockHeldBy(null)
+    assert.equal((await reclaimRun("").done).code, 0)
+    assert.equal(fs.existsSync(lockDir), true)
+    assert.equal(fs.existsSync(`${lockDir}.reclaim`), false)
+  })
+
+  it("aStaleLockThatCannotBeRemoved_failsTheRunWithAMessage", async () => {
+    givenLockHeldBy(deadPid())
+    fs.chmodSync(lockDir, 0o555)
+    const run = spawnRun(["-c", "source tests/suite-lock.sh; hold_suite_lock || exit 1; echo acquired"])
+    assert.equal((await run.done).code, 1)
+    assert.match(run.stderr(), /cannot remove the stale full suite lock/)
+    assert.equal(run.stdout(), "")
+    assert.equal(fs.existsSync(`${lockDir}.reclaim`), false)
+  })
+
+  it("anUnownedLockPastTheGrace_isTakenOver_butAFreshOneIsWaitedFor", async () => {
     givenLockHeldBy(null)
     const waiting = underLock("true")
     await until(() => waiting.stderr().includes(`${WAITING} by pid unknown`))
-    fs.utimesSync(lockDir, TWO_MINUTES_AGO, TWO_MINUTES_AGO)
-    assert.equal((await waiting.done).code, 0)
+    backdatePastTheGrace(lockDir)
+    const timedOut = new Promise((resolve) => setTimeout(resolve, TAKEOVER_DEADLINE_MS, "still waiting"))
+    assert.deepEqual(await Promise.race([waiting.done, timedOut]), { code: 0, signal: null })
     assert.equal(fs.existsSync(lockDir), false)
   })
 

@@ -7,12 +7,12 @@ import type { ObservedDelta, Run, SnapshotStore } from "../recorded-cases.ts";
 import { normalizeRepoKey } from "../../lib/evidence/registry.ts";
 import { isJsonObject, stringifySorted } from "../../measure/lib/measurekit/json.ts";
 import { KEEL_HOME } from "./helpers.ts";
+import { FIRES_LOG_NAME, sampleCorpus } from "./ship-gate-parity-sample.ts";
 
 export const FIXTURE_DIRECTORY = join(import.meta.dirname, "fixtures", "ship-gate-parity");
 export const SUITES = ["python-keel", "ts-keel", "message-contract", "extra"] as const;
 const RUN_TIMEOUT_MS = 120_000;
 const MAX_MISMATCHES_SHOWN = 60;
-const FIRES_LOG_NAME = "keel-fires.jsonl";
 const TIMESTAMP_PLACEHOLDER = "<ts>";
 const DECODE_DETAIL = /\bJsonSyntaxError: [^\n]*/g;
 const DECODE_DETAIL_MASKED = "JsonSyntaxError: <JSON syntax error message>";
@@ -59,15 +59,22 @@ export interface RecordedStore extends SnapshotStore {
 
 export interface ShipGateParityReport {
   cases: number;
+  recorded: number;
+  sampled: boolean;
   mismatches: number;
   perSuite: Map<string, number>;
   details: string[];
 }
 
-export function runShipGateParity(shard: Shard = WHOLE_CORPUS, suites: readonly Suite[] = selectedSuites()): ShipGateParityReport {
-  const report: ShipGateParityReport = { cases: 0, mismatches: 0, perSuite: new Map(), details: [] };
-  const cases = shardCases(loadCases(suites, process.env["SHIP_GATE_PARITY_CASES"]), shard);
-  replayEach(cases, (testCase, run, root) => {
+export function runShipGateParity(shard: Shard = WHOLE_CORPUS, suites: readonly Suite[] = selectedSuites(), full: boolean = fullCorpusRequested()): ShipGateParityReport {
+  const only = process.env["SHIP_GATE_PARITY_CASES"];
+  const recordedMatches = selectCases(loadRecordedCases(), suites, only);
+  const replayedMatches = selectCases(replayedCorpus(full), suites, only);
+  if (only && recordedMatches.length > 0 && replayedMatches.length === 0) {
+    throw new Error(`SHIP_GATE_PARITY_CASES=${only} matches ${recordedMatches.length} recorded cases and the sample dropped all of them; set SHIP_GATE_PARITY_FULL=1 to replay them`);
+  }
+  const report: ShipGateParityReport = { cases: 0, recorded: shardCases(recordedMatches, shard).length, sampled: !full, mismatches: 0, perSuite: new Map(), details: [] };
+  replayEach(shardCases(replayedMatches, shard), (testCase, run, root) => {
     const problems = judgeCase(testCase.expected, run, root);
     report.cases += 1;
     report.perSuite.set(testCase.suite, (report.perSuite.get(testCase.suite) ?? 0) + 1);
@@ -86,7 +93,7 @@ export function goldenDeltas(cases: readonly RecordedCase[]): Map<string, Observ
 }
 
 function replayEach(cases: readonly RecordedCase[], visit: (testCase: RecordedCase, run: Run, root: string) => void): void {
-  const store = JSON.parse(readFixtureFile(FIXTURE_DIRECTORY, "snapshots.json")) as RecordedStore;
+  const store = loadStore();
   const root = paddedRoot(realpathSync(tmpdir()), store.rootLength);
   try {
     for (const testCase of cases) visit(testCase, replay(testCase, store, root), root);
@@ -96,7 +103,12 @@ function replayEach(cases: readonly RecordedCase[], visit: (testCase: RecordedCa
 }
 
 export function recordedCorpus(): RecordedCase[] {
-  return loadCases(SUITES);
+  return loadRecordedCases();
+}
+
+export function replayedCorpus(full: boolean = fullCorpusRequested()): RecordedCase[] {
+  const recorded = loadRecordedCases();
+  return full ? recorded : sampleCorpus(recorded, loadStore());
 }
 
 export function shardCases(cases: readonly RecordedCase[], shard: Shard): RecordedCase[] {
@@ -112,9 +124,21 @@ function selectedSuites(): readonly Suite[] {
   });
 }
 
-function loadCases(suites: readonly Suite[], only?: string): RecordedCase[] {
+export function fullCorpusRequested(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env["SHIP_GATE_PARITY_FULL"] === "1";
+}
+
+export function loadStore(): RecordedStore {
+  return JSON.parse(readFixtureFile(FIXTURE_DIRECTORY, "snapshots.json")) as RecordedStore;
+}
+
+function loadRecordedCases(): RecordedCase[] {
   const lines = readFixtureFile(FIXTURE_DIRECTORY, "cases.jsonl").split("\n").filter((line) => line !== "");
-  return lines.map((line) => JSON.parse(line) as RecordedCase).filter((testCase) => suites.includes(testCase.suite) && (!only || new RegExp(only).test(testCase.id)));
+  return lines.map((line) => JSON.parse(line) as RecordedCase);
+}
+
+function selectCases(cases: readonly RecordedCase[], suites: readonly Suite[], only?: string): RecordedCase[] {
+  return cases.filter((testCase) => suites.includes(testCase.suite) && (!only || new RegExp(only).test(testCase.id)));
 }
 
 function replay(testCase: RecordedCase, store: RecordedStore, root: string): Run {
@@ -207,7 +231,8 @@ export function judgeCase(expected: ObservedDelta, run: Run, root: string): stri
 }
 
 export function summary(report: ShipGateParityReport): string[] {
-  return [`golden: ${report.cases} cases, ${report.mismatches} mismatches`];
+  if (!report.sampled) return [`golden: ${report.cases} cases, ${report.mismatches} mismatches`];
+  return [`golden: ${report.cases} of ${report.recorded} cases (sample), ${report.mismatches} mismatches`];
 }
 
 if (import.meta.main) {

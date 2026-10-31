@@ -1219,6 +1219,23 @@ describe("SameCallStagingTest", () => {
     assertProceduralDenied(guard("git add no-such-file.txt && git commit -m wip", repo));
   });
 
+  it("commit_stillChecksTheRealIndex_whenTheStagingCannotBeReplayed", () => {
+    sandbox.git(repo, "add", "leak.txt");
+    const result = guard("git add -p && git commit -m wip", repo);
+    assertProceduralDenied(result);
+    assert.ok(result.stderr.includes("leak.txt:1 (generic:aws-access-key)"), result.stderr);
+    const kinds = assertFired(sandbox, "F-secrets", "deny", "git-guard").map((fire) => fire["kind"]);
+    assert.deepEqual(kinds, ["procedural", undefined]);
+  });
+
+  it("hook_deniesFailClosed_whenTheTemporaryDirectoryCannotBeCreated", () => {
+    const scratch = join(sandbox.root, "scratch");
+    mkdirSync(scratch, { mode: 0o500 });
+    sandbox.env["TMPDIR"] = scratch;
+    assert.equal(guard("git add clean.txt && git commit -m wip", repo).code, 2);
+    chmodSync(scratch, 0o700);
+  });
+
   it("hook_leavesTheRealIndexAndTheTemporaryDirectoryUntouched", () => {
     const scratch = join(sandbox.root, "scratch");
     mkdirSync(scratch);

@@ -566,10 +566,9 @@ function checkCommit(args: readonly string[], step: Step, repoDirectory: string,
 }
 
 function stagedContentViolations(staging: readonly StagingCommand[] | null, toplevel: string, repoKey: string | null): Violation[] {
-  if (staging === null) return [unreplayableStagingViolation(repoKey)];
-  if (staging.length === 0) return indexViolations(toplevel, repoKey, {});
-  const found = checkAgainstIndexCopy(toplevel, staging, (env) => indexViolations(toplevel, repoKey, env));
-  return found ?? [unreplayableStagingViolation(repoKey)];
+  if (staging !== null && staging.length === 0) return indexViolations(toplevel, repoKey, {});
+  const found = staging === null ? null : checkAgainstIndexCopy(toplevel, staging, (env) => indexViolations(toplevel, repoKey, env));
+  return found ?? [unreplayableStagingViolation(repoKey), ...indexViolations(toplevel, repoKey, {})];
 }
 
 function unreplayableStagingViolation(repoKey: string | null): Violation {

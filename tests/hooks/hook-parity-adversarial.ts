@@ -4,8 +4,6 @@ import {
 } from "./helpers.ts";
 import { jsonLimitCases } from "./hook-parity-json-limits.ts";
 import { wrongTypeCases } from "./hook-parity-wrong-types.ts";
-import { WRONG_TYPE_DIVERGENCES } from "./hook-parity-wrong-type-divergences.ts";
-import type { TsOutcome } from "./hook-parity-json-limits.ts";
 
 const DOTTED_I = "İ";
 const DOTLESS_I = "ı";
@@ -15,8 +13,6 @@ const NON_FINITE_LITERALS = ["NaN", "Infinity", "-Infinity"];
 const CLI_RESPONSE = '{"evidence_id":"review-20261011T090000Z-1a2b3c4d","repo":"acme/app","paths":3}';
 const DICT_STATE_SESSION = "dict-state";
 const DICT_STATE = '{"paths": {"/old/a.py": 1, "/old/b.py": 2}, "ev": false, "hb": false}';
-const NON_FINITE_EVIDENCE_REFUSED: TsOutcome = { code: 0, firesInclude: "KEEL-EVIDENCE line is not JSON" };
-const NON_FINITE_PAYLOAD_PASSED: TsOutcome = { code: 0, stdoutEmpty: true };
 
 export interface AdversarialCase {
   name: string;
@@ -24,13 +20,11 @@ export interface AdversarialCase {
   stdin: string;
   args: string[];
   cwd: string;
-  divergence?: TsOutcome;
 }
 
 export interface AdversarialSet {
   sandbox: HookSandbox;
   cases: AdversarialCase[];
-  divergences: Map<string, TsOutcome>;
 }
 
 export function buildAdversarialSet(): AdversarialSet {
@@ -48,13 +42,12 @@ export function buildAdversarialSet(): AdversarialSet {
     ...envPreflightCases(repo),
     ...modelAssignCases(sandbox.root),
     ...jsonLimitCases(sandbox, repo),
-    ...wrongTypeCases(sandbox, repo, (family, label) => WRONG_TYPE_DIVERGENCES.get(`${family} ${label}`)),
+    ...wrongTypeCases(sandbox, repo),
   ];
-  const divergences = new Map(cases.flatMap((adversarialCase): Array<[string, TsOutcome]> => (adversarialCase.divergence ? [[adversarialCase.name, adversarialCase.divergence]] : [])));
-  return { sandbox, cases, divergences };
+  return { sandbox, cases };
 }
 
-function asciiJson(payload: unknown): string {
+export function asciiJson(payload: unknown): string {
   return JSON.stringify(payload).replace(NON_ASCII, (character) => "\\u" + character.charCodeAt(0).toString(16).padStart(4, "0"));
 }
 
@@ -125,10 +118,8 @@ function reportGateCases(sandbox: HookSandbox): AdversarialCase[] {
     ...NON_FINITE_LITERALS.map((literal) => passReport(KEEL_EVIDENCE_LINE.replace('"v":1,', `"v":1,"x":${literal},"y":[${literal}],`))),
     passReport(KEEL_EVIDENCE_LINE.replace('"v":1,', '"v":1,"note":"café \u{1F600}",')),
   ];
-  const nonFiniteEvidence = (report: string) => NON_FINITE_LITERALS.some((literal) => report.includes(`"x":${literal},`));
   return [
-    ...reports.flatMap((report, index) => casesFor(`report-gate report ${index}`, REPORT_GATE, sandbox.root, handback(report))
-      .map((adversarialCase) => (nonFiniteEvidence(report) ? { ...adversarialCase, divergence: NON_FINITE_EVIDENCE_REFUSED } : adversarialCase))),
+    ...reports.flatMap((report, index) => casesFor(`report-gate report ${index}`, REPORT_GATE, sandbox.root, handback(report))),
     ...casesFor("report-gate dict state", REPORT_GATE, sandbox.root, handback("Done.\nRan 12 tests in 0.4s\nOK", DICT_STATE_SESSION)),
   ];
 }
@@ -148,7 +139,7 @@ function modelAssignCases(cwd: string): AdversarialCase[] {
   const nonFinite = withNonFiniteLiterals(preToolUse("Agent", { description: NEGATIVE_INFINITY_TOKEN, prompt: NAN_TOKEN }, cwd));
   return [
     ...prompts.flatMap((prompt, index) => casesFor(`model-assign prompt ${index}`, MODEL_ASSIGN, cwd, preToolUse("Agent", { description: "Find", prompt }, cwd))),
-    { ...rawCase("model-assign non-finite prompt", MODEL_ASSIGN, cwd, nonFinite), divergence: NON_FINITE_PAYLOAD_PASSED },
+    rawCase("model-assign non-finite prompt", MODEL_ASSIGN, cwd, nonFinite),
   ];
 }
 

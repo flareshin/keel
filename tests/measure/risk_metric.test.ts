@@ -315,9 +315,11 @@ describe("risk runner", () => {
     assert.deepEqual([rework.decided_ships, rework.shipped_lines, rework.reworked_lines], [1, 4, 1])
   })
 
-  const givenFetchHead = (repo: string, branch: string, fetchedDaysAgo: number, gitDir: string = ".git"): void => {
+  const ORIGIN_FETCH_URL = "https://example.invalid/example/keel"
+
+  const givenFetchHead = (repo: string, branch: string, fetchedDaysAgo: number, gitDir: string = ".git", url: string = ORIGIN_FETCH_URL): void => {
     const file = path.join(repo, gitDir, "FETCH_HEAD")
-    box.write(path.relative(box.root, file), `${"f".repeat(40)}\t\tbranch '${branch}' of https://example.invalid/app\n`)
+    box.write(path.relative(box.root, file), `${"f".repeat(40)}\t\tbranch '${branch}' of ${url}\n`)
     const fetchedAt = new Date(daysAgo(fetchedDaysAgo))
     fs.utimesSync(file, fetchedAt, fetchedAt)
   }
@@ -358,6 +360,45 @@ describe("risk runner", () => {
     track(repo)
     box.git(repo, "update-ref", "--no-deref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
     givenFetchHead(repo, "main", 1)
+    givenPass({ head, ts: OLD_SHIP_TS })
+    assert.deepEqual(itemFor(runMetric(), "light")["rework"]["not_computable"], { "default branch not fetched past the horizon": 1 })
+  })
+
+  it("rework_ofAQuietRepo_isNotComputable_whenTheDefaultBranchWasFetchedFromAnotherRemote", () => {
+    const { repo } = newRepo()
+    const head = mergedShip(repo)
+    track(repo)
+    givenFetchHead(repo, "main", 1, ".git", "https://example.invalid/fork/keel")
+    givenPass({ head, ts: OLD_SHIP_TS })
+    assert.deepEqual(itemFor(runMetric(), "light")["rework"]["not_computable"], { "default branch not fetched past the horizon": 1 })
+  })
+
+  it("rework_ofAQuietRepo_isDecided_whenOriginsUrlCarriesAUserThatFetchHeadLeavesOut", () => {
+    const { repo } = newRepo()
+    const head = mergedShip(repo)
+    track(repo)
+    box.git(repo, "remote", "set-url", "origin", "https://reader@example.invalid/example/keel.git/")
+    givenFetchHead(repo, "main", 1)
+    givenPass({ head, ts: OLD_SHIP_TS })
+    assert.equal(itemFor(runMetric(), "light")["rework"]["decided_ships"], 1)
+  })
+
+  it("rework_ofAQuietRepo_isDecided_whenAnScpLikeOriginWasFetched", () => {
+    const { repo } = newRepo()
+    const head = mergedShip(repo)
+    track(repo)
+    box.git(repo, "remote", "set-url", "origin", "git@example.invalid:example/keel.git")
+    givenFetchHead(repo, "main", 1, ".git", "example.invalid:example/keel")
+    givenPass({ head, ts: OLD_SHIP_TS })
+    assert.equal(itemFor(runMetric(), "light")["rework"]["decided_ships"], 1)
+  })
+
+  it("rework_ofAQuietRepo_isNotFetchedPastTheHorizon_whenNoOriginRemoteIsLeft", () => {
+    const { repo } = newRepo()
+    const head = mergedShip(repo)
+    track(repo)
+    givenFetchHead(repo, "main", 1)
+    box.git(repo, "config", "--remove-section", "remote.origin")
     givenPass({ head, ts: OLD_SHIP_TS })
     assert.deepEqual(itemFor(runMetric(), "light")["rework"]["not_computable"], { "default branch not fetched past the horizon": 1 })
   })

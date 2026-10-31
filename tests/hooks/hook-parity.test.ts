@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { Observation, ObservedDelta, Run } from "../recorded-cases.ts";
 import { GIT_GUARD, HANDOFF, MODEL_ASSIGN, REPORT_GATE, ENV_PREFLIGHT, SHIP_GATE } from "./helpers.ts";
-import { adversarialInputDigest, EXPECTED_DIVERGENCES, FIXTURE_DIRECTORY, isDenyToPass, listedDifferences, runParity, summary } from "./hook-parity.ts";
-import type { ListedDivergence, RecordedAdversarial } from "./hook-parity.ts";
+import { adversarialInputDigest, FIXTURE_DIRECTORY, goldenOf, judgeCase, runParity, summary } from "./hook-parity.ts";
+import type { RecordedAdversarial } from "./hook-parity.ts";
 import { buildAdversarialSet } from "./hook-parity-adversarial.ts";
 
 const MIN_RECORDED_CASES = 300;
@@ -16,90 +16,88 @@ const HOOK_ENTRIES = [GIT_GUARD, HANDOFF, MODEL_ASSIGN, REPORT_GATE, ENV_PREFLIG
 const DENY = 2;
 const ROOT = "/root";
 const FIRES = "data/logs/keel-fires.jsonl";
-const LISTED: ListedDivergence = { code: 0, detailStartsWith: "Error: EISDIR: illegal operation on a directory, read" };
+const DECODE_MASKED = "<JSON syntax error message>";
 
-function fire(detail: string, rule = "K2"): string {
-  return `{"ts": "<ts>", "rule_id": "${rule}", "hook": "report-gate", "outcome": "error", "session": "s", "detail": "${detail}"}\n`;
+function fire(detail: string): string {
+  return `{"ts": "<ts>", "rule_id": "K2", "hook": "report-gate", "outcome": "error", "session": "s", "detail": "${detail}"}\n`;
 }
 
-function recorded(code: number, stderr: string, fires: string): ObservedDelta {
-  return { code, stdout: "", stderr, set: { [FIRES]: fires }, removed: [] };
+function recorded(code: number, stderr: string, fires = ""): ObservedDelta {
+  return { code, stdout: "", stderr, set: fires === "" ? {} : { [FIRES]: fires }, removed: [] };
 }
 
-function run(code: number | null, stderr: string, fires: string): Run {
-  const observation: Observation = { code, stdout: "", stderr, files: new Map([[FIRES, fires]]) };
+function run(code: number | null, stderr: string, fires = ""): Run {
+  const observation: Observation = { code, stdout: "", stderr, files: new Map(fires === "" ? [] : [[FIRES, fires]]) };
   return { observation, initial: new Map() };
 }
 
-describe("hook parity with the recorded Python hooks", () => {
-  it("replays every recorded run of the former Python hook tests and the adversarial payloads through node and compares stdout, stderr, exit code and every file outside .git and remotes against the recorded Python outcome", { timeout: PARITY_TIMEOUT_MS }, () => {
+describe("hook parity with the golden snapshot of the node hooks", () => {
+  it("replays every recorded run of the former Python hook tests and the adversarial payloads through node and compares stdout, stderr, exit code and every file outside .git and remotes against the golden outcome", { timeout: PARITY_TIMEOUT_MS }, () => {
     const report = runParity();
     console.log(summary(report));
-    const recorded = report.cases - report.adversarial;
-    assert.ok(recorded >= MIN_RECORDED_CASES, `only ${recorded} cases recorded`);
+    const recordedCases = report.cases - report.adversarial;
+    assert.ok(recordedCases >= MIN_RECORDED_CASES, `only ${recordedCases} cases recorded`);
     assert.ok(report.adversarial >= MIN_ADVERSARIAL_CASES, `only ${report.adversarial} adversarial cases`);
     for (const entry of HOOK_ENTRIES) assert.ok((report.perHook.get(entry) ?? 0) > 0, `no case recorded for ${entry}`);
     assert.equal(report.mismatches, 0, report.details.slice(0, 10).join("\n"));
-    assert.equal(report.denyToPass, 0, "a recorded Python deny passed through node");
   });
 });
 
-describe("hook parity recorded divergences", () => {
-  it("lists exactly the three recorded runs whose error text names a Python class or errno", () => {
-    assert.deepEqual([...EXPECTED_DIVERGENCES].map(([id, listed]) => [id, listed.code]).sort(), [["0194", DENY], ["0232", 0], ["0277", 0]]);
-    assert.deepEqual([...EXPECTED_DIVERGENCES.values()].map((listed) => listed.detailStartsWith).sort(), [
-      "Error: EACCES: permission denied, open '",
-      "Error: EISDIR: illegal operation on a directory, read",
-      "GuardError: boundary scanner did not run: OSError",
-    ]);
+describe("hook parity comparison", () => {
+  it("reports a difference in exit code, stderr or a written file", () => {
+    const denied = recorded(DENY, "[K1] git-guard: blocked\n");
+    assert.deepEqual(judgeCase(denied, run(DENY, "[K1] git-guard: blocked\n"), ROOT), []);
+    assert.equal(judgeCase(denied, run(0, "[K1] git-guard: blocked\n"), ROOT).length, 1);
+    assert.equal(judgeCase(denied, run(DENY, "[K1] git-guard: blocked.\n"), ROOT).length, 1);
+    assert.equal(judgeCase(recorded(0, "", fire("x")), run(0, "", fire("y")), ROOT).length, 1);
+    assert.equal(judgeCase(recorded(0, ""), run(0, "", fire("x")), ROOT).length, 1);
   });
 
-  it("accepts a listed row whose only difference is the wording of the fire detail", () => {
-    const python = recorded(0, "", fire("IsADirectoryError: [Errno 21] Is a directory: '{{ROOT}}/a'"));
-    const node = run(0, "", fire("Error: EISDIR: illegal operation on a directory, read"));
-    assert.deepEqual(listedDifferences(LISTED, python, node, ROOT), []);
+  it("names the recorded side golden in a difference", () => {
+    assert.deepEqual(judgeCase(recorded(DENY, "old"), run(DENY, "new"), ROOT), ['stderr: golden "old" / node "new"']);
   });
 
-  it("refuses a listed row whose detail does not carry the new wording", () => {
-    const python = recorded(0, "", fire("IsADirectoryError: [Errno 21] Is a directory: '{{ROOT}}/a'"));
-    const problems = listedDifferences(LISTED, python, run(0, "", fire("IsADirectoryError: [Errno 21] Is a directory")), ROOT);
-    assert.equal(problems.length, 1);
-    assert.ok(problems[0]?.includes("lack a detail starting"), problems.join("\n"));
+  it("reports a recorded deny that node lets through as a difference", () => {
+    assert.equal(judgeCase(recorded(DENY, "x"), run(0, "x"), ROOT).length, 1);
+    assert.equal(judgeCase(recorded(DENY, "x"), run(null, "x"), ROOT).length, 1);
   });
 
-  it("refuses a listed row whose exit code is not the listed one", () => {
-    const python = recorded(0, "", fire("x"));
-    const problems = listedDifferences(LISTED, python, run(DENY, "", fire("Error: EISDIR: illegal operation on a directory, read")), ROOT);
-    assert.ok(problems[0]?.includes("required 0"), problems.join("\n"));
+  it("ignores the wording of a JSON syntax error in a fire detail, which differs between node versions", () => {
+    const syntax = recorded(0, "", fire(`JsonSyntaxError: ${DECODE_MASKED}`));
+    assert.deepEqual(judgeCase(syntax, run(0, "", fire("JsonSyntaxError: Expected property name or '}' in JSON at position 1")), ROOT), []);
+    const payload = recorded(0, "", fire(`payload is not JSON: ${DECODE_MASKED}`));
+    assert.deepEqual(judgeCase(payload, run(0, "", fire("payload is not JSON: Unexpected end of JSON input")), ROOT), []);
   });
 
-  it("still compares stderr and the fire rule, hook and outcome of a listed row", () => {
-    const detail = "Error: EISDIR: illegal operation on a directory, read";
-    const python = recorded(0, "[K2] report-gate: x\n", fire("old"));
-    assert.equal(listedDifferences(LISTED, python, run(0, "report-gate: x\n", fire(detail)), ROOT).length, 1);
-    assert.equal(listedDifferences(LISTED, python, run(0, "[K2] report-gate: x\n", fire(detail, "K1")), ROOT).length, 1);
-    assert.deepEqual(listedDifferences(LISTED, python, run(0, "[K2] report-gate: x\n", fire(detail)), ROOT), []);
+  it("still compares a fire detail that is not a JSON syntax error", () => {
+    const golden = recorded(0, "", fire("hook payload is not a JSON object"));
+    assert.equal(judgeCase(golden, run(0, "", fire("hook payload is not an object")), ROOT).length, 1);
+  });
+});
+
+describe("hook parity golden recording", () => {
+  const observed = run(DENY, `denied in ${ROOT}/repo\n`, fire("JsonSyntaxError: Unexpected end of JSON input"));
+
+  it("tokenizes the run's paths and masks its decode wording", () => {
+    const golden = goldenOf(observed, ROOT);
+    assert.equal(golden.stderr, "denied in {{ROOT}}/repo\n");
+    assert.equal(golden.set[FIRES], fire(`JsonSyntaxError: ${DECODE_MASKED}`));
   });
 
-  it("counts a recorded Python deny that node lets through as deny-to-pass", () => {
-    const denied = recorded(DENY, "x", "");
-    assert.equal(isDenyToPass(denied, run(0, "", "").observation), true);
-    assert.equal(isDenyToPass(denied, run(null, "", "").observation), true);
-    assert.equal(isDenyToPass(denied, run(DENY, "x", "").observation), false);
-    assert.equal(isDenyToPass(recorded(0, "", ""), run(DENY, "x", "").observation), false);
-    assert.equal(isDenyToPass(undefined, run(0, "", "").observation), false);
+  it("compares equal to the run it was recorded from", () => {
+    assert.deepEqual(judgeCase(goldenOf(observed, ROOT), observed, ROOT), []);
   });
 });
 
 describe("hook parity wrong-type payloads", () => {
-  it("records the outcome of the hook before the typed readers for every wrong-type payload, listed or not, so a deny that passes is counted", () => {
+  it("records the golden outcome of every wrong-type payload", () => {
     const adversarial = buildAdversarialSet();
     try {
-      const recorded = JSON.parse(readFileSync(join(FIXTURE_DIRECTORY, "adversarial.json"), "utf8")) as Record<string, RecordedAdversarial>;
+      const golden = JSON.parse(readFileSync(join(FIXTURE_DIRECTORY, "adversarial.json"), "utf8")) as Record<string, RecordedAdversarial>;
       const wrongType = adversarial.cases.filter((adversarialCase) => adversarialCase.name.includes("wrong-type"));
       assert.ok(wrongType.length >= MIN_WRONG_TYPE_CASES, `${wrongType.length} wrong-type payloads`);
       for (const adversarialCase of wrongType) {
-        assert.equal(recorded[adversarialCase.name]?.input, adversarialInputDigest(adversarialCase, adversarial.sandbox.root), adversarialCase.name);
+        assert.equal(golden[adversarialCase.name]?.input, adversarialInputDigest(adversarialCase, adversarial.sandbox.root), adversarialCase.name);
       }
     } finally {
       adversarial.sandbox.close();

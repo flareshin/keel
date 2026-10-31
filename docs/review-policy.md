@@ -53,6 +53,15 @@ tests and contract lenses to check, not evidence: it adds no evidence kind, and
 non-test path changed after it or an existing test line changed; rerun it then,
 and rerun it after adding tests so its survivors are not left open.
 
+[C-no-comments] For every candidate that changes a code file, run `/no-comments`
+after the tests are green and before `keel review prepare`: a
+`keel-comment-reviewer` agent judges every comment in the files the diff changes
+against K5.14, and the author deletes what it lists as a comment-only commit,
+reshapes each `MUST KILL` symbol with a test, and offers each `ENCODE` check to the
+owner. Its summary line and anything left open go in the reading guide's
+Decisions. Skip it for docs-only and smoke-only diffs and for a fix delta; a
+test-only diff still gets it, since K5.14 covers test code.
+
 ## Test runs
 
 The gate's test check (K3) asks for one passing `keel test` run whose recorded

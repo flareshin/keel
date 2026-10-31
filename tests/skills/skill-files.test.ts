@@ -8,7 +8,7 @@ import { splitlines } from "../../hooks/lib/hookkit/text.ts";
 import { scanFences } from "../../measure/lib/measurekit/fences.ts";
 import { AGENTS_DIR, agentPaths, bulletTags, GENERATED_HEADER, K5_SUB_IDS, KEEL_HOME, markdownPaths, PRINCIPLES, read, rulesSection, SKILLS_DIR, skillPaths, VALID_IDS } from "./helpers.ts";
 
-const EXPECTED_SKILLS = new Set(["prompt-refine", "readable-code", "descend", "improve"]);
+const EXPECTED_SKILLS = new Set(["prompt-refine", "readable-code", "descend", "improve", "no-comments"]);
 const CLAUDE_MD_CAP = 4608;
 const PERSONAL_BUDGET = 1024;
 const SKILL_LINE_CAP = 500;
@@ -111,6 +111,16 @@ describe("agent files", () => {
       const description = fields?.["description"] ?? "";
       assert.ok(description.length > 0 && description.length <= DESCRIPTION_CAP, path);
       assert.ok((fields?.["tools"] ?? "").length > 0, `${path} must list its tools; without tools: it inherits every tool`);
+    }
+  });
+
+  it("test_links_installEveryAgent_underDataAgents", () => {
+    const links = new Set(splitlines(read(join(KEEL_HOME, "settings", "links.tsv"))));
+    const paths = agentPaths();
+    assert.ok(paths.length > 0, "no agent files found (a vacuous pass)");
+    for (const path of paths) {
+      const name = basename(path);
+      assert.ok(links.has(`{{KEEL}}/agents/${name}\tagents/${name}`), `settings/links.tsv must install agents/${name}`);
     }
   });
 });

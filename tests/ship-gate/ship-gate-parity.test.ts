@@ -1,20 +1,11 @@
 import assert from "node:assert/strict";
 import { readdirSync } from "node:fs";
 import { describe, it } from "node:test";
-import { differencesFromRecorded } from "../recorded-cases.ts";
 import type { ObservedDelta, Observation, Run } from "../recorded-cases.ts";
-import {
-  DECISION_PATH_CHANGED, divergenceRecordingProblems, EXPECTED_DIVERGENCES, isDenyToPass, judgeCase, recordedCorpus, SHARD_COUNT, shardCases, withoutCheckoutRepoKey,
-} from "./ship-gate-parity.ts";
+import { goldenOf, judgeCase, recordedCorpus, SHARD_COUNT, shardCases, withoutCheckoutRepoKey } from "./ship-gate-parity.ts";
 
 const MIN_CASES = 600;
 const SHARD_FILE = /^ship-gate-parity-shard-\d+\.test\.ts$/;
-const rowIds = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_unused, index) => `extra-${String(from + index).padStart(4, "0")}`);
-const GH_ANSWER_OR_PAYLOAD_NOW_DENIED_OR_REWORDED = [
-  "extra-0051", "extra-0052", "extra-0063", "extra-0066", "extra-0070", "extra-0077", "extra-0078", "extra-0086", "extra-0087",
-  "extra-0097", "extra-0100", "extra-0103", "extra-0115", "extra-0118",
-  ...rowIds(449, 456), ...rowIds(465, 472), ...rowIds(479, 482), ...rowIds(489, 494), "extra-0497", "extra-0498", ...rowIds(503, 506),
-];
 const DENY = 2;
 const ROOT = "/root";
 
@@ -33,19 +24,39 @@ function run(code: number | null, stderr: string, files: Array<[string, string]>
 describe("ship-gate parity comparison", () => {
   it("reports a difference in exit code, stderr or a written file", () => {
     const denied = recorded(DENY, "[K1] ship-gate: denied");
-    assert.deepEqual(differencesFromRecorded(denied, run(DENY, "[K1] ship-gate: denied"), ROOT), []);
-    assert.equal(differencesFromRecorded(denied, run(0, "[K1] ship-gate: denied"), ROOT).length, 1);
-    assert.equal(differencesFromRecorded(denied, run(DENY, "[K1] ship-gate: denied."), ROOT).length, 1);
-    assert.equal(differencesFromRecorded(recorded(0, "", { "data/a": "x" }), run(0, "", [["data/a", "y"]]), ROOT).length, 1);
-    assert.equal(differencesFromRecorded(recorded(0, ""), run(0, "", [["data/a", "x"]]), ROOT).length, 1);
+    assert.deepEqual(judgeCase(denied, run(DENY, "[K1] ship-gate: denied"), ROOT), []);
+    assert.equal(judgeCase(denied, run(0, "[K1] ship-gate: denied"), ROOT).length, 1);
+    assert.equal(judgeCase(denied, run(DENY, "[K1] ship-gate: denied."), ROOT).length, 1);
+    assert.equal(judgeCase(recorded(0, "", { "data/a": "x" }), run(0, "", [["data/a", "y"]]), ROOT).length, 1);
+    assert.equal(judgeCase(recorded(0, ""), run(0, "", [["data/a", "x"]]), ROOT).length, 1);
   });
 
-  it("counts a recorded python deny that node lets through, by exit 0, exit 1 or a timeout, as deny-to-pass", () => {
-    assert.equal(isDenyToPass(recorded(DENY, "x"), observation(0, "")), true);
-    assert.equal(isDenyToPass(recorded(DENY, "x"), observation(1, "")), true);
-    assert.equal(isDenyToPass(recorded(DENY, "x"), observation(null, "")), true);
-    assert.equal(isDenyToPass(recorded(0, ""), observation(DENY, "x")), false);
-    assert.equal(isDenyToPass(recorded(DENY, "x"), observation(DENY, "x")), false);
+  it("names the recorded side golden in a difference", () => {
+    assert.deepEqual(judgeCase(recorded(DENY, "old"), run(DENY, "new"), ROOT), ['stderr: golden "old" / node "new"']);
+  });
+
+  it("reports a recorded deny that node lets through as a difference", () => {
+    assert.equal(judgeCase(recorded(DENY, "x"), run(0, "x"), ROOT).length, 1);
+    assert.equal(judgeCase(recorded(DENY, "x"), run(null, "x"), ROOT).length, 1);
+  });
+
+  it("ignores the wording of a JSON syntax error, which differs between node versions", () => {
+    const golden = recorded(0, "ship-gate: internal error: JsonSyntaxError: <JSON syntax error message>\n");
+    assert.deepEqual(judgeCase(golden, run(0, "ship-gate: internal error: JsonSyntaxError: Expected property name or '}' in JSON at position 1\n"), ROOT), []);
+  });
+});
+
+describe("ship-gate parity golden recording", () => {
+  const observed = run(DENY, `denied in ${ROOT}/repo: JsonSyntaxError: Unexpected end of JSON input\n`, [["repo/kept", `at ${ROOT}/repo`]]);
+
+  it("tokenizes the run's paths and masks its decode wording", () => {
+    const golden = goldenOf(observed, ROOT);
+    assert.equal(golden.stderr, "denied in {{ROOT}}/repo: JsonSyntaxError: <JSON syntax error message>\n");
+    assert.deepEqual(golden.set, { "repo/kept": "at {{ROOT}}/repo" });
+  });
+
+  it("compares equal to the run it was recorded from", () => {
+    assert.deepEqual(judgeCase(goldenOf(observed, ROOT), observed, ROOT), []);
   });
 });
 
@@ -66,80 +77,6 @@ describe("ship-gate parity checkout repo key", () => {
   });
 });
 
-describe("ship-gate parity listed divergences", () => {
-  const label = "gh-answer-nested-200000";
-
-  const rowsRequiring = (code: number) => [...EXPECTED_DIVERGENCES].filter(([, required]) => required === code).map(([row]) => row).sort();
-
-  it("lists the over-bound rows, the python comment deletions, and the rows whose JSON reading or wording changed, each with the exit node must give", () => {
-    assert.deepEqual(rowsRequiring(DENY), [
-      "command-list-nested-10001", "command-list-nested-9999", "evidence-file-nested-10001", "evidence-file-nested-200000", "gh-answer-nested-10001", "gh-answer-nested-200000",
-      "py-comment-deletion-python-keel-0003", "py-comment-deletion-python-keel-0469", "py-comment-deletion-python-keel-0470", "py-comment-deletion-python-keel-0474",
-      "py-comment-deletion-python-keel-0475", "py-comment-deletion-python-keel-0476", "py-comment-deletion-python-keel-0477",
-      "py-comment-deletion-ts-keel-0003", "py-comment-deletion-ts-keel-0469", "py-comment-deletion-ts-keel-0470", "py-comment-deletion-ts-keel-0474",
-      "py-comment-deletion-ts-keel-0475", "py-comment-deletion-ts-keel-0476", "py-comment-deletion-ts-keel-0477",
-      "stdin-ls-nested-10001", "stdin-ls-nested-200000", "stdin-push-nested-10001", "stdin-push-nested-200000",
-      "extra-0018", "extra-0025", "extra-0026", "extra-0030", "extra-0031", "extra-0035", "extra-0514", "extra-0517", "extra-0518",
-      "extra-0539", "extra-0540", "extra-0549", "extra-0603", "extra-0560", "extra-0562", "extra-0563", "extra-0565", "extra-0602", "extra-0604", "extra-0605",
-      "python-keel-0119", "ts-keel-0119",
-      "extra-0543", "extra-0544", "extra-0545", "extra-0548", "extra-0634", "extra-0635", "extra-0637",
-      ...GH_ANSWER_OR_PAYLOAD_NOW_DENIED_OR_REWORDED,
-      "python-keel-0027", "python-keel-0028", "python-keel-0029", "python-keel-0030", "python-keel-0031", "python-keel-0046", "python-keel-0047",
-      "ts-keel-0027", "ts-keel-0028", "ts-keel-0029", "ts-keel-0030", "ts-keel-0031", "ts-keel-0046", "ts-keel-0047",
-      "extra-0800",
-    ].sort());
-    assert.deepEqual(rowsRequiring(0), [
-      "extra-0019", "extra-0020", "extra-0036", "extra-0037", "extra-0041", "extra-0042", "extra-0046", "extra-0062",
-      "extra-0526", "extra-0527", "extra-0531", "extra-0532", "extra-0536", "extra-0561", "extra-0564",
-      "extra-0610", "extra-0632", "python-keel-0033", "ts-keel-0033",
-      "extra-0064", "extra-0068", "extra-0069", "extra-0098", "extra-0099", "extra-0101", "extra-0102", "extra-0104", "extra-0105",
-      "extra-0116", "extra-0117", "extra-0119", "extra-0120", "extra-0558", "extra-0559",
-      "python-keel-0460", "python-keel-0462", "python-keel-0466", "ts-keel-0460", "ts-keel-0462", "ts-keel-0466",
-    ].sort());
-  });
-
-  it("accepts a listed row only when node gives the required exit, whatever python did", () => {
-    assert.deepEqual(judgeCase(label, recorded(DENY, "python text"), run(DENY, "node text"), ROOT), { listed: true, problems: [] });
-    assert.deepEqual(judgeCase(label, recorded(0, ""), run(DENY, "node text"), ROOT), { listed: true, problems: [] });
-    const passed = judgeCase(label, recorded(DENY, "python text"), run(0, ""), ROOT);
-    assert.equal(passed.listed, false);
-    assert.ok(passed.problems[0]?.includes("requires node exit 2, got 0"), passed.problems.join("\n"));
-  });
-
-  it("waives the rule-tag and fires check only for listed rows whose decision path changed", () => {
-    assert.deepEqual([...DECISION_PATH_CHANGED].sort(), [
-      "command-list-nested-10001", "command-list-nested-9999",
-      "extra-0019", "extra-0020", "extra-0025", "extra-0026", "extra-0030", "extra-0031", "extra-0035",
-      "extra-0036", "extra-0037", "extra-0041", "extra-0042", "extra-0046",
-      "extra-0051", "extra-0052", "extra-0064", "extra-0068", "extra-0069", "extra-0800",
-      "py-comment-deletion-python-keel-0470", "py-comment-deletion-python-keel-0477",
-      "py-comment-deletion-ts-keel-0470", "py-comment-deletion-ts-keel-0477", "stdin-push-nested-10001",
-    ]);
-    for (const row of DECISION_PATH_CHANGED) assert.ok(EXPECTED_DIVERGENCES.has(row), `${row} is not a listed divergence`);
-    const lostTag = judgeCase("extra-0019", recorded(0, "[K1] python text\n"), run(0, "node text\n"), ROOT);
-    assert.deepEqual(lostTag, { listed: true, problems: [] });
-  });
-
-  it("still holds a listed row whose recorded exit matches to the rule tags on stderr and the rule, hook and outcome of each fire", () => {
-    const fires = (rule: string) => `{"detail":"python","hook":"ship-gate","outcome":"deny","rule_id":"${rule}"}\n`;
-    const firesKey = "home/.claude/state/keel-fires.jsonl";
-    assert.deepEqual(judgeCase(label, recorded(DENY, "[K1] python text\n", { [firesKey]: fires("K1") }), run(DENY, "[K1] node text\n", [[firesKey, fires("K1").replace("python", "node")]]), ROOT),
-      { listed: true, problems: [] });
-    const lostTag = judgeCase(label, recorded(DENY, "[K1] python text\n"), run(DENY, "node text\n"), ROOT);
-    assert.equal(lostTag.listed, false);
-    assert.ok(lostTag.problems[0]?.includes("rule tags"), lostTag.problems.join("\n"));
-    const otherRule = judgeCase(label, recorded(DENY, "", { [firesKey]: fires("K1") }), run(DENY, "", [[firesKey, fires("K2")]]), ROOT);
-    assert.equal(otherRule.listed, false);
-    assert.ok(otherRule.problems[0]?.includes("fires"), otherRule.problems.join("\n"));
-  });
-
-  it("holds an unlisted row to the strict comparison", () => {
-    assert.deepEqual(judgeCase("", recorded(DENY, "same"), run(DENY, "same"), ROOT), { listed: false, problems: [] });
-    assert.equal(judgeCase("", recorded(DENY, "python text"), run(DENY, "node text"), ROOT).problems.length, 1);
-    assert.equal(judgeCase("other-nested-5", recorded(DENY, "python text"), run(DENY, "node text"), ROOT).problems.length, 1);
-  });
-});
-
 describe("ship-gate parity recorded corpus", () => {
   const corpus = recordedCorpus();
 
@@ -148,13 +85,6 @@ describe("ship-gate parity recorded corpus", () => {
     for (const suite of ["python-keel", "ts-keel", "message-contract", "extra"]) {
       assert.ok(corpus.some((testCase) => testCase.suite === suite), `no case recorded for ${suite}`);
     }
-  });
-
-  it("records each listed divergence row exactly once", () => {
-    assert.deepEqual(divergenceRecordingProblems(corpus), []);
-    const [listed] = EXPECTED_DIVERGENCES.keys();
-    const withoutListed = corpus.filter((testCase) => (testCase.label || testCase.id) !== listed);
-    assert.deepEqual(divergenceRecordingProblems(withoutListed), [`expected divergence ${listed} was recorded 0 times, not once`]);
   });
 
   it("gives every case to exactly one shard", () => {

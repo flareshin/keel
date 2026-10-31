@@ -317,4 +317,8 @@ describe('Codex rollouts and runner output at their edges', () => {
     const output = 'ok 1 - replays\n# parity hook: 587 cases, 0 mismatches (196 passed silently)\n    # nested: 3 passed\n# pass 1\n';
     assert.deepEqual(recognize(output), [1, 'tap']);
   });
+
+  test('a runner summary relayed under a BuildKit step prefix is still counted', () => {
+    assert.deepEqual(recognize('#12 0.532 ===== 5 passed in 0.12s =====\n'), [5, 'passed']);
+  });
 });

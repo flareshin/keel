@@ -17,7 +17,7 @@ import { Usage } from './writers.ts';
 const NOT_WORD_AFTER = '(?![\\p{L}\\p{N}_])';
 const NOT_WORD_BEFORE = '(?<![\\p{L}\\p{N}_])';
 const LINE_START = '(?<![^\\n])';
-const NOT_IN_TAP_DIAGNOSTIC = '(?<!(?<![^\\r\\n])[ \\t]*#[^\\r\\n]*)';
+const NOT_IN_TAP_DIAGNOSTIC = '(?<!(?<![^\\r\\n])[ \\t]*#(?:[ \\t][^\\r\\n]*)?)';
 export const COUNT_PATTERNS: Array<[name: string, pattern: RegExp]> = [
   ['surefire', /Tests run: ([0-9]+)/gu],
   ['unittest', new RegExp(`${LINE_START}Ran ([0-9]+) tests?${NOT_WORD_AFTER}`, 'gu')],

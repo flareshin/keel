@@ -1,7 +1,6 @@
 import path from "node:path"
 
-import { SCRIPT_FILE } from "../../lib/precheck/consumers.ts"
-import { isTestPath } from "../../lib/evidence/risk.ts"
+import { isPrecheckSource, REQUIRED_SCRIPT_SOURCES } from "../../lib/precheck/binding.ts"
 import * as store from "../../lib/evidence/store.ts"
 import * as env from "../lib/measurekit/env.ts"
 import { dateOption, parseCommandLine, printJson, runMain, stringOption, EXIT_OK } from "../lib/measurekit/cli.ts"
@@ -17,7 +16,6 @@ const COMMAND: CommandSpec = {
   argumentHelp: [["--since YYYY-MM-DD", "window start"]],
   options: { since: { type: "string" } },
 }
-const MIN_SOURCE_FILES = 3
 const ISO_DATE_LENGTH = 10
 const NEEDS_FIXES = "NEEDS_FIXES"
 const TESTS_LENSES = new Set(["tests", "test-adequacy"])
@@ -75,14 +73,13 @@ function isCoveredFirstReview(review: JsonObject, since: string): boolean {
   const createdAt = review["created_at"]
   if (typeof createdAt !== "string" || createdAt.slice(0, ISO_DATE_LENGTH) < since) return false
   if (review["since"] != null || review["run_id"] !== review["root_run_id"]) return false
-  return sourceFileCount(review) >= MIN_SOURCE_FILES
+  return sourceFileCount(review) >= REQUIRED_SCRIPT_SOURCES
 }
 
 function sourceFileCount(review: JsonObject): number {
   const paths = Array.isArray(review["paths"]) ? review["paths"] : []
   return paths
-    .map((entry) => (isJsonObject(entry) ? entry["path"] : undefined))
-    .filter((changed): changed is string => typeof changed === "string" && SCRIPT_FILE.test(changed) && !isTestPath(changed))
+    .filter((entry) => isJsonObject(entry) && typeof entry["path"] === "string" && typeof entry["blob"] === "string" && isPrecheckSource(entry["path"], entry["blob"]))
     .length
 }
 

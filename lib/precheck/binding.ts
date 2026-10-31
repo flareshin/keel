@@ -6,7 +6,7 @@ import { isRunnableTest } from './select.ts';
 
 export const DELETED_BLOB = '0'.repeat(40);
 const PRECHECK_HEADER = /^precheck tree ([0-9a-f]{40})(?: ·|$)/u;
-const REQUIRED_SCRIPT_SOURCES = 3;
+export const REQUIRED_SCRIPT_SOURCES = 3;
 
 export interface PrecheckBinding {
   blobs: Record<string, string>;
@@ -30,8 +30,12 @@ export function bindPrecheck(repo: string, base: string, end: string, precheckTr
 }
 
 export function precheckRequirement(repo: string, base: string, end: string): PrecheckRequirement {
-  const sources = Object.entries(nonTestBlobs(repo, base, end)).filter(([path, blob]) => blob !== DELETED_BLOB && SCRIPT_FILE.test(path)).length;
+  const sources = Object.entries(nonTestBlobs(repo, base, end)).filter(([path, blob]) => isPrecheckSource(path, blob)).length;
   return { required: sources >= REQUIRED_SCRIPT_SOURCES && hasRunnableTest(repo, end), sources };
+}
+
+export function isPrecheckSource(path: string, blob: string): boolean {
+  return blob !== DELETED_BLOB && SCRIPT_FILE.test(path) && !isTestPath(path);
 }
 
 function hasRunnableTest(repo: string, end: string): boolean {

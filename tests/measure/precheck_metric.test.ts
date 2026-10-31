@@ -39,6 +39,7 @@ interface ReviewFields {
   createdAt?: string
   verdict?: string
   paths?: string[]
+  deleted?: string[]
   tree?: string
   head?: string
   transcript?: string | null
@@ -67,7 +68,10 @@ describe("C-precheck runner", () => {
       head: fields.head ?? null,
       snapshot_tree: fields.head === undefined ? fields.tree ?? TREE : null,
       reviewed_tree: fields.tree ?? TREE,
-      paths: (fields.paths ?? THREE_SOURCES).map((changed) => ({ path: changed, blob: "0".repeat(40), mode: "100644" })),
+      paths: [
+        ...(fields.paths ?? THREE_SOURCES).map((changed) => ({ path: changed, blob: "b".repeat(40), mode: "100644" })),
+        ...(fields.deleted ?? []).map((removed) => ({ path: removed, blob: "0".repeat(40), mode: "100644" })),
+      ],
       source: { agent_transcript_path: fields.transcript ?? null },
     }))
   }
@@ -125,10 +129,11 @@ describe("C-precheck runner", () => {
     assert.deepEqual(result.items.map((item: { prechecked: boolean; mutation_tests_findings: number }) => [item.prechecked, item.mutation_tests_findings]), [[false, 0]])
   })
 
-  it("deltaReviews_twoSourceFileDiffs_andReviewsBeforeTheWindow_areNotFirstReviewsTheRuleCovers", () => {
+  it("deltaReviews_twoSourceFileDiffs_aDeletedThirdSource_andReviewsBeforeTheWindow_areNotFirstReviewsTheRuleCovers", () => {
     givenReview({ runId: "rv-delta", since: "review-x" })
     givenReview({ runId: "rv-linked", rootRunId: "rv-root" })
     givenReview({ runId: "rv-small", paths: ["lib/a.ts", "lib/b.tsx", "tests/c.test.ts", "tests/d.test.ts", "README.md"] })
+    givenReview({ runId: "rv-deleted", paths: ["lib/a.ts", "lib/b.tsx"], deleted: ["lib/c.ts"] })
     givenReview({ runId: "rv-old", createdAt: addDays(TODAY, -90) + "T00:00:00Z" })
     givenPrecheck()
     const result = runMetric()

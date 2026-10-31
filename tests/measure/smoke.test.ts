@@ -316,6 +316,21 @@ describe("file checks", () => {
     assertStatus("id-tagging", "principles", "PASS")
   })
 
+  it("idTagging_checksRulesAfterALongerOuterFence_thatHoldsAShorterOne", () => {
+    harness.box.write("keel/skills/demo/SKILL.md", "# Demo\n\n## Rules\n\n- [K1] Tagged.\n````markdown\n```\n````\n- untagged real rule\n")
+    assertStatus("id-tagging", "skill:demo", "FAIL", "line 9: bullet without [ID]")
+  })
+
+  it("idTagging_keepsTheRulesSectionOpen_pastAHeadingInsideAFence", () => {
+    harness.box.write("keel/skills/demo/SKILL.md", "# Demo\n\n## Rules\n\n- [K1] Tagged.\n```markdown\n## Example\n```\n- untagged real rule\n")
+    assertStatus("id-tagging", "skill:demo", "FAIL", "line 9: bullet without [ID]")
+  })
+
+  it("idTagging_checksRulesAfterALineThatOpensWithInlineCode", () => {
+    harness.box.write("keel/PRINCIPLES.md", "```foo``` is inline code\n- untagged\n")
+    assertStatus("id-tagging", "principles", "FAIL", "line 2: bullet without [ID]")
+  })
+
   it("idTagging_warns_whenPrinciplesIsAbsent", () => {
     fs.rmSync(path.join(harness.box.keel, "PRINCIPLES.md"))
     assertStatus("id-tagging", "principles", "WARN", "absent")

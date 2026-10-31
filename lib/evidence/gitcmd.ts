@@ -208,6 +208,10 @@ export function lastCommitTouching(repo: string, base: string, head: string, pat
   return text(repo, ['log', '-1', '--format=%H', `${base}..${head}`, '--', path]);
 }
 
+export function mergedBlob(repo: string, current: string, base: string, other: string): string | null {
+  return exactOutputIfOk(repo, ['merge-file', '--object-id', current, base, other]);
+}
+
 export function fetch(repo: string, args: string[]): void {
   run(repo, ['fetch', '--quiet', ...args], { timeoutSeconds: FETCH_TIMEOUT_SECONDS });
 }

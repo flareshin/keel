@@ -5,7 +5,8 @@ import { basename, dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { gatedRepos } from "../../lib/evidence/registry.ts";
 import { splitlines } from "../../hooks/lib/hookkit/text.ts";
-import { bulletTags, GENERATED_HEADER, K5_SUB_IDS, KEEL_HOME, PRINCIPLES, read, rulesSection, SKILLS_DIR, skillPaths, VALID_IDS } from "./helpers.ts";
+import { scanFences } from "../../measure/lib/measurekit/fences.ts";
+import { AGENTS_DIR, agentPaths, bulletTags, GENERATED_HEADER, K5_SUB_IDS, KEEL_HOME, markdownPaths, PRINCIPLES, read, rulesSection, SKILLS_DIR, skillPaths, VALID_IDS } from "./helpers.ts";
 
 const EXPECTED_SKILLS = new Set(["prompt-refine", "readable-code", "descend", "improve"]);
 const CLAUDE_MD_CAP = 4608;
@@ -99,6 +100,29 @@ describe("frontmatter", () => {
   });
 });
 
+describe("agent files", () => {
+  it("test_agentFrontmatter_namesFileAndListsTools_forEveryAgent", () => {
+    const paths = agentPaths();
+    assert.ok(paths.length > 0, "no agent files found (a vacuous pass)");
+    for (const path of paths) {
+      const fields = parseFrontmatter(read(path));
+      assert.notEqual(fields, null, `${path} must open with a --- frontmatter block`);
+      assert.equal(fields?.["name"], basename(path, ".md"), path);
+      const description = fields?.["description"] ?? "";
+      assert.ok(description.length > 0 && description.length <= DESCRIPTION_CAP, path);
+      assert.ok((fields?.["tools"] ?? "").length > 0, `${path} must list its tools; without tools: it inherits every tool`);
+    }
+  });
+});
+
+describe("code fences", () => {
+  it("test_markdownFences_closeAndNest_forEverySkillAndAgentFile", () => {
+    const paths = markdownPaths();
+    assert.ok(paths.some((path) => path.endsWith("SKILL.md")) && paths.some((path) => dirname(path) === AGENTS_DIR), "skill or agent markdown missing (a vacuous pass)");
+    for (const path of paths) assert.deepEqual(scanFences(splitlines(read(path))).problems, [], path);
+  });
+});
+
 describe("id tagging", () => {
   function assertAllTagged(tagged: Array<[string, string | null]>, where: string): void {
     assert.ok(tagged.length > 0, `${where}: no bullet lines found (a vacuous pass)`);
@@ -133,6 +157,11 @@ describe("id tagging", () => {
   it("test_rulesSection_stopsAtNextHeading_andSkipsFences", () => {
     const text = "## Rules\n- [K4] in\n```\n## Rules\n- not a rule\n```\n## Output\n- out\n";
     assert.deepEqual(rulesSection(text), ["- [K4] in"]);
+  });
+
+  it("test_rulesSection_keepsRulesAfterALongerOuterFence_thatHoldsAShorterOne", () => {
+    const text = "## Rules\n- [K4] a\n````markdown\n```\n- example\n````\n- [K4] b\n## Output\n";
+    assert.deepEqual(rulesSection(text), ["- [K4] a", "- [K4] b"]);
   });
 
   it("test_rulesSection_readsAHeadingThatIsNotExactlyRules", () => {

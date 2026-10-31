@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { readUtf8 } from '../../measure/lib/measurekit/files.ts';
 import { parseJsonKeepingIntegers } from '../../measure/lib/measurekit/json.ts';
-import { bindPrecheck, precheckTreeOf } from '../precheck/binding.ts';
+import { bindPrecheck, precheckRequirement, precheckTreeOf } from '../precheck/binding.ts';
 import * as env from './env.ts';
 import * as gitcmd from './gitcmd.ts';
 import * as registry from './registry.ts';
@@ -16,7 +16,9 @@ export function review(request: JsonObject): JsonObject {
   const diffs = request['diffs'];
   if (!Array.isArray(diffs) || diffs.length === 0) throw new writers.Usage('review prepare needs a nonempty diffs list');
   const precheckTree = typeof request['precheck'] === 'string' ? precheckTreeOf(request['precheck']) : null;
-  const targets = diffs.map(prepareTarget).map((target) => precheckTree ? withPrecheckBinding(target, precheckTree) : target);
+  const prepared = diffs.map(prepareTarget).map((target) => precheckTree ? withPrecheckBinding(target, precheckTree) : target);
+  const requirable = request['precheck'] === undefined && prepared.length === 1 && !diffs[0]['since'];
+  const targets = requirable ? prepared.map(withPrecheckRequirement) : prepared;
   const lensesPath = join(env.dataDir(), 'workflows/review-lenses.json');
   const lenses: JsonObject = 'lenses' in request ? {} : parseJsonKeepingIntegers(readUtf8(lensesPath)) as JsonObject;
   return {
@@ -31,6 +33,16 @@ export function review(request: JsonObject): JsonObject {
 function withPrecheckBinding(target: JsonObject, precheckTree: string): JsonObject {
   const end = target['head'] || target['snapshot_tree'];
   return { ...target, precheck_binding: bindPrecheck(target['repo_root'], target['review_base'], end, precheckTree) };
+}
+
+function withPrecheckRequirement(target: JsonObject): JsonObject {
+  const end = target['head'] || target['snapshot_tree'];
+  try {
+    return { ...target, precheck_required: { ...precheckRequirement(target['repo_root'], target['review_base'], end) } };
+  } catch (error) {
+    if (error instanceof gitcmd.GitError) return { ...target, precheck_required: null };
+    throw error;
+  }
 }
 
 export function countNeedsFixesRounds(rootRunId: unknown): number {

@@ -1028,6 +1028,14 @@ test('lensReview_refusesARootReviewBeforeAnyAudit_whenThePrepareStepSaysThePrech
   assert.deepEqual(labels(rt), ['prepare'])
 })
 
+test('lensReview_refusesACliPreparedRootReview_whenItsTargetSaysThePrecheckIsRequiredAndNoneIsGiven', async () => {
+  const rt = createRuntime({ respond: responder() })
+  const result = await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES, prepared: requirementPrepared({ required: true, sources: 3 }) })
+  assert.equal(result.verdict, 'ERROR')
+  assert.match(result.error, /^this diff changes 3 non-test script sources/)
+  assert.deepEqual(labels(rt), [])
+})
+
 test('lensReview_runsTheReview_whenThePrecheckIsNotRequiredOrTheRequirementCouldNotBeRead', async () => {
   for (const requirement of [{ required: false, sources: 2 }, null]) {
     const { result } = await runWithPrecheck(undefined, requirementPrepared(requirement))

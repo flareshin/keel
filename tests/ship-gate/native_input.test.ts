@@ -312,4 +312,9 @@ describe('Codex rollouts and runner output at their edges', () => {
   test('the node spec reporter summary counts its pass line', () => {
     assert.deepEqual(recognize('\u2139 tests 5\n\u2139 suites 1\n\u2139 pass 5\n\u2139 fail 0\n'), [5, 'spec']);
   });
+
+  test('a TAP diagnostic line that says N passed is not counted as passing tests', () => {
+    const output = 'ok 1 - replays\n# parity hook: 587 cases, 0 mismatches (196 passed silently)\n    # nested: 3 passed\n# pass 1\n';
+    assert.deepEqual(recognize(output), [1, 'tap']);
+  });
 });

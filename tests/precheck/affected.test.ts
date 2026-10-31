@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { after, describe, it } from "node:test"
 import { affectedTests, changedSince, CORPUS_TESTS, FULL_SUITE_PATTERNS, fullSuitePaths } from "../../lib/precheck/affected.ts"
+import { SHARD_COUNT as HOOK_SHARD_COUNT } from "../hooks/hook-parity.ts"
 import { SHARD_COUNT } from "../ship-gate/ship-gate-parity.ts"
 import { committedRepo, writeFiles } from "./fixture.ts"
 
@@ -59,7 +60,8 @@ describe("affectedTests", () => {
 
   it("corpusTests_nameReplayFilesThatExistInThisRepo", () => {
     assert.equal(CORPUS_TESTS.filter((test) => test.startsWith("tests/ship-gate/ship-gate-parity-shard-")).length, SHARD_COUNT)
-    assert.equal(CORPUS_TESTS.length, SHARD_COUNT + 3)
+    assert.equal(CORPUS_TESTS.filter((test) => test.startsWith("tests/hooks/hook-parity-shard-")).length, HOOK_SHARD_COUNT)
+    assert.equal(CORPUS_TESTS.length, SHARD_COUNT + HOOK_SHARD_COUNT + 2)
     for (const test of CORPUS_TESTS) assert.ok(existsSync(join(KEEL_ROOT, test)), `${test} is missing`)
   })
 })

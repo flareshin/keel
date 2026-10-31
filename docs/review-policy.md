@@ -47,6 +47,10 @@ can observe it, and fix or note each consumer outside the diff. Pass the output
 verbatim as the lens-review `precheck` argument. lens-review refuses a single-repo
 root review without it when the diff changes three or more non-test TS/JS sources
 in a repo with tests `keel precheck run` can run (`keel precheck required` decides).
+`keel precheck run` first runs `tsc --noEmit` when the repo has a `tsconfig.json`
+and refuses with tsc's first lines on a type error; after the census it appends
+the readable-code rule-checks lines (`rule-checks signal …`, `rule-checks summary …`),
+which are signals to fix or explain before review, not findings.
 It is an author claim for the
 tests and contract lenses to check, not evidence: it adds no evidence kind, and
 "all killed" is not a pass claim. The review reports the precheck as stale when a

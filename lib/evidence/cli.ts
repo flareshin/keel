@@ -2,6 +2,7 @@ import { InvalidUtf8Error } from '../../measure/lib/measurekit/files.ts';
 import { compareCodePoints, isJsonObject, parseJsonKeepingIntegers, stringifySorted } from '../../measure/lib/measurekit/json.ts';
 import type { JsonValue } from '../../measure/lib/measurekit/json.ts';
 import * as affected from '../precheck/affected.ts';
+import { ruleCheckLines, typecheck } from '../precheck/author.ts';
 import { bindPrecheck, precheckRequirement } from '../precheck/binding.ts';
 import { renderCensus, summarizeCensus } from '../precheck/render.ts';
 import { buildChains } from './chain.ts';
@@ -142,8 +143,11 @@ async function precheckRun(rest: string[]): Promise<number> {
   const reviewBase = gitcmd.mergeBase(repoRoot, base!, 'HEAD');
   if (reviewBase === null) throw new writers.Refused(`${base} has no merge base with HEAD`);
   const { runCensus } = await loadCensus();
-  const census = await runCensus(repoRoot, { base: base!, reviewBase, tree: gitcmd.snapshotTree(repoRoot) });
-  printLine(renderCensus(census));
+  const typechecked = typecheck(repoRoot);
+  if (!typechecked.ok) throw new writers.Refused(`tsc --noEmit failed in ${repoRoot}\n${typechecked.head}`);
+  const tree = gitcmd.snapshotTree(repoRoot);
+  const census = await runCensus(repoRoot, { base: base!, reviewBase, tree });
+  printLine([renderCensus(census), ...ruleCheckLines(repoRoot, reviewBase, tree)].join('\n'));
   env.appendRecord(PRECHECK_LOG, { at: env.iso(env.utcNow()), repo: repoRoot, review_base: reviewBase, ...summarizeCensus(census) });
   return EXIT_OK;
 }

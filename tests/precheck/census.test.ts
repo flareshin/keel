@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { execFileSync, spawnSync } from "node:child_process"
-import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from "node:fs"
+import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
 import { after, afterEach, beforeEach, describe, it } from "node:test"
@@ -15,6 +15,7 @@ const { runCensus } = typescriptInstalled ? await import("../../lib/precheck/cen
 const KEEL = join(import.meta.dirname, "..", "..", "bin", "keel")
 const PICK = "export function pick(flag: boolean): number {\n  return 0\n}\n"
 const PICK_TEST = "import assert from 'node:assert/strict'\nimport { it } from 'node:test'\nimport { pick } from '../lib/a.ts'\nit('picks', () => assert.equal(pick(true), 1))\n"
+const TSCONFIG = JSON.stringify({ compilerOptions: { strict: true, noEmit: true }, include: ["lib"] })
 const CHANGED_PICK = "export function pick(flag: boolean): number {\n  if (flag) return 1\n  return 2\n}\n"
 
 describe("runCensus", { skip: typescriptInstalled ? false : "typescript is not installed; run npm ci" }, () => {
@@ -213,6 +214,37 @@ describe("keel precheck run", { skip: typescriptInstalled ? false : "typescript 
     assert.equal(logged[0].repo, root)
     assert.equal(logged[0].outcome, "census")
     assert.equal(logged[0].review_base, execFileSync("git", ["-C", root, "merge-base", "trunk", "HEAD"], { encoding: "utf8" }).trim())
+  })
+
+  it("keelPrecheckRun_refusesBeforeTheCensus_whenTscReportsATypeError", () => {
+    const root = committedRepo({ "tsconfig.json": TSCONFIG, "lib/a.ts": PICK, "tests/a.test.ts": PICK_TEST })
+    roots.push(root)
+    writeFiles(root, { "lib/a.ts": "export const pick: number = \"one\"\n" })
+    const dataDir = scratchDir("keel-data-")
+
+    const completed = keel(["--repo", root, "--base", "HEAD"], dataDir)
+
+    assert.equal(completed.status, 3, completed.stderr)
+    assert.match(completed.stderr, /keel: refused: tsc --noEmit failed in .*\n.*lib\/a\.ts.*TS2322/)
+    assert.equal(completed.stdout, "")
+    assert.equal(existsSync(join(dataDir, "logs", "keel-precheck.jsonl")), false)
+  })
+
+  it("keelPrecheckRun_appendsTheRuleCheckSignalsAfterTheCensus_whenTscPasses", () => {
+    const root = committedRepo({ "tsconfig.json": TSCONFIG, "lib/a.ts": PICK, "tests/a.test.ts": PICK_TEST })
+    roots.push(root)
+    writeFiles(root, { "lib/a.ts": `${CHANGED_PICK}const data = 1\nexport const shown = data\n` })
+
+    const completed = keel(["--repo", root, "--base", "HEAD"], scratchDir("keel-data-"))
+
+    assert.equal(completed.status, 0, completed.stderr)
+    const lines = completed.stdout.trimEnd().split("\n")
+    assert.match(lines[0]!, /^precheck tree [0-9a-f]{40} · base HEAD · /)
+    assert.deepEqual(lines.filter((line) => line.startsWith("rule-checks ")), [
+      "rule-checks signal K5.5 lib/a.ts:5 const data = 1",
+      "rule-checks summary repos=1 scanned_lines=4 signals=1 unscanned=none blocked=none",
+    ])
+    assert.equal(lines.at(-1), "rule-checks summary repos=1 scanned_lines=4 signals=1 unscanned=none blocked=none")
   })
 
   it("keelPrecheckRun_rejectsMissingOrDashedOptions_andABaseWithoutAMergeBase", () => {

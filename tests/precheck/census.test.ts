@@ -61,6 +61,16 @@ describe("runCensus", { skip: typescriptInstalled ? false : "typescript is not i
     assert.deepEqual(result.consumers.map((name) => name.name), ["pick"])
   })
 
+  it("runCensus_givesTheBaselineATimeoutScaledByHostLoad_whenTheLoadIsTwiceTheCpus", async () => {
+    const { root, reviewBase, tree } = changedRepo({ "lib/a.ts": PICK, "tests/a.test.ts": PICK_TEST }, { "lib/a.ts": CHANGED_PICK })
+
+    const result = await runCensus(root, { base: "main", reviewBase, tree }, { load: 24, cpus: 12 })
+
+    assert.equal(result.mutation.outcome, "ran")
+    if (result.mutation.outcome !== "ran") return
+    assert.equal(result.mutation.timeoutSeconds, 600)
+  })
+
   it("runCensus_recordsADeletedSourceFileAsZeros_withoutMutatingIt", async () => {
     const { root, reviewBase } = changedRepo({ "lib/a.ts": PICK, "lib/old.ts": "export const old = 1\n", "tests/a.test.ts": PICK_TEST }, { "lib/a.ts": CHANGED_PICK })
     git(root, "rm", "-q", "lib/old.ts")

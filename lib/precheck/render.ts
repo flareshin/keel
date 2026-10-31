@@ -54,7 +54,7 @@ function ranLines(blobs: Record<string, string>, mutation: Ran): string[] {
   const notRun = mutation.notRun.length > 0 ? [`not run ${mutation.notRun.length}`] : [];
   return [
     labelled('blobs', entries.length > 0 ? entries.join(SEPARATOR) : NO_BLOBS),
-    labelled('baseline', [`${mutation.baselineFiles} test files`, `${mutation.baselinePasses} pass`, 'coverage collected', ...withoutPasses].join(SEPARATOR)),
+    labelled('baseline', [`${mutation.baselineFiles} test files`, `${mutation.baselinePasses} pass`, 'coverage collected', ...withoutPasses, `timeout ${mutation.timeoutSeconds}s per file`].join(SEPARATOR)),
     labelled('mutants', [`candidates ${candidateCount(mutation)}`, ...VERDICT_ORDER.map((verdict) => `${verdict} ${counts[verdict]}`), ...notRun, duration(mutation.elapsedMs)].join(SEPARATOR)),
     ...section('survived', mutation.results.filter((result) => result.verdict.outcome === 'survived').map(survivedLine)),
     ...section('no test reaches', mutation.results.filter((result) => result.verdict.outcome === 'no test reaches').map(mutantLine)),

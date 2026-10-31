@@ -13,6 +13,7 @@ const result = (line: number, verdict: CensusResult["verdict"], coverage: Census
 
 const ran = (overrides: Partial<Extract<MutationCensus, { outcome: "ran" }>> = {}): MutationCensus => ({
   outcome: "ran",
+  timeoutSeconds: 600,
   baselineFiles: 4,
   baselinePasses: 118,
   withoutPasses: 0,
@@ -48,7 +49,7 @@ describe("renderCensus", () => {
     assert.deepEqual(lines.slice(0, 4), [
       `precheck tree ${TREE} · base origin/develop · 3 paths (2 source, 1 test) · census (all candidates ran)`,
       `blobs     lib/a.ts ${BLOB_A} · lib/gone.ts ${DELETED}`,
-      "baseline  4 test files · 118 pass · coverage collected",
+      "baseline  4 test files · 118 pass · coverage collected · timeout 600s per file",
       "mutants   candidates 5 · killed 1 · survived 1 · no test reaches 1 · invalid 1 · timeout 1 · 6m12s",
     ])
   })
@@ -82,7 +83,7 @@ describe("renderCensus", () => {
   it("renderCensus_countsBaselineFilesWithoutPasses_andWritesSecondsUnderAMinute", () => {
     const text = renderCensus(census(ran({ withoutPasses: 2, elapsedMs: 59_400 })))
 
-    assert.match(text, /\nbaseline  4 test files · 118 pass · coverage collected · 2 without passes\n/)
+    assert.match(text, /\nbaseline  4 test files · 118 pass · coverage collected · 2 without passes · timeout 600s per file\n/)
     assert.match(text, / · timeout 1 · 59s\n/)
   })
 

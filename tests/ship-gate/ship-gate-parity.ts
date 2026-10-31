@@ -68,9 +68,13 @@ export interface ShipGateParityReport {
 
 export function runShipGateParity(shard: Shard = WHOLE_CORPUS, suites: readonly Suite[] = selectedSuites(), full: boolean = fullCorpusRequested()): ShipGateParityReport {
   const only = process.env["SHIP_GATE_PARITY_CASES"];
-  const choose = (corpus: readonly RecordedCase[]): RecordedCase[] => shardCases(selectCases(corpus, suites, only), shard);
-  const report: ShipGateParityReport = { cases: 0, recorded: choose(loadRecordedCases()).length, sampled: !full, mismatches: 0, perSuite: new Map(), details: [] };
-  replayEach(choose(replayedCorpus(full)), (testCase, run, root) => {
+  const recordedMatches = selectCases(loadRecordedCases(), suites, only);
+  const replayedMatches = selectCases(replayedCorpus(full), suites, only);
+  if (only && recordedMatches.length > 0 && replayedMatches.length === 0) {
+    throw new Error(`SHIP_GATE_PARITY_CASES=${only} matches ${recordedMatches.length} recorded cases and the sample dropped all of them; set SHIP_GATE_PARITY_FULL=1 to replay them`);
+  }
+  const report: ShipGateParityReport = { cases: 0, recorded: shardCases(recordedMatches, shard).length, sampled: !full, mismatches: 0, perSuite: new Map(), details: [] };
+  replayEach(shardCases(replayedMatches, shard), (testCase, run, root) => {
     const problems = judgeCase(testCase.expected, run, root);
     report.cases += 1;
     report.perSuite.set(testCase.suite, (report.perSuite.get(testCase.suite) ?? 0) + 1);
@@ -120,8 +124,8 @@ function selectedSuites(): readonly Suite[] {
   });
 }
 
-function fullCorpusRequested(): boolean {
-  return process.env["SHIP_GATE_PARITY_FULL"] === "1";
+export function fullCorpusRequested(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env["SHIP_GATE_PARITY_FULL"] === "1";
 }
 
 export function loadStore(): RecordedStore {

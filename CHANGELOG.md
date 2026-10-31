@@ -185,7 +185,7 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
     payloads with a complete `gh` answer unless it is the first of its outcome class within that group (exit code, stderr without
     the retry hint, the hook, outcome, rule and detail of the last two fires lines, and the written and removed files, with hashes
     and timestamps masked); every other case stays. `SHIP_GATE_PARITY_FULL=1` replays all 1,757, and is needed to replay a case
-    the sample dropped with `SHIP_GATE_PARITY_CASES`. A run reports `golden: N of M cases (sample), K mismatches`, or `golden: N cases, K mismatches` with the switch.
+    the sample dropped with `SHIP_GATE_PARITY_CASES`: a filter that matches recorded cases but none the sample kept fails and names the switch. A run reports `golden: N of M cases (sample), K mismatches`, or `golden: N cases, K mismatches` with the switch.
     `ship-gate-parity.test.ts` checks that every case it replays falls in exactly one shard and that the sample keeps every outcome
     class. `EXPECTED_DIVERGENCES` and the deny-to-pass
     count are gone. `codex/tests/hook-parity.ts` compared the fires lines it replays by content (until its corpus became a golden of the adapter).

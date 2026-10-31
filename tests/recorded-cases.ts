@@ -72,11 +72,17 @@ export function materialize(store: SnapshotStore, identifier: string, destinatio
   for (const [path, mode] of directories.reverse()) chmodSync(path, mode)
 }
 
+const BINARY_BLOB_PREFIX = "b"
+
+export function textOfBlob(encoded: string): string | undefined {
+  return encoded.startsWith(BINARY_BLOB_PREFIX) ? undefined : encoded.slice(1)
+}
+
 function blobContent(store: SnapshotStore, reference: string, destination: string): Buffer {
   const encoded = store.blobs[reference]
   if (encoded === undefined) throw new Error(`no recorded blob ${reference}`)
-  const body = encoded.slice(1)
-  return encoded.startsWith("b") ? Buffer.from(body, "base64") : Buffer.from(restored(body, destination), "utf8")
+  const text = textOfBlob(encoded)
+  return text === undefined ? Buffer.from(encoded.slice(1), "base64") : Buffer.from(restored(text, destination), "utf8")
 }
 
 const SANDBOX_ENV_PREFIXES = ["KEEL_", "GIT_"]

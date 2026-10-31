@@ -1,4 +1,5 @@
 import { isJsonObject } from "../../measure/lib/measurekit/json.ts";
+import { textOfBlob } from "../recorded-cases.ts";
 import type { ObservedDelta } from "../recorded-cases.ts";
 import type { RecordedCase, RecordedStore } from "./ship-gate-parity.ts";
 
@@ -16,7 +17,6 @@ const MERGE_SPELLINGS_TEST = "merge_spellings";
 const GH_ANSWER_FILE = "gh.json";
 const GH_STUB_DIRECTORY = "responses/";
 const GH_ANSWER_FIELDS = ["state", "isDraft", "mergeable", "mergeStateStatus", "statusCheckRollup", "baseRefName", "headRefOid"];
-const TEXT_BLOB = "t";
 
 export function sampleCorpus(cases: readonly RecordedCase[], store: RecordedStore): RecordedCase[] {
   const diverging = divergingCases(cases);
@@ -60,10 +60,11 @@ function answersWithGhShape(store: RecordedStore, snapshot: string): boolean {
   if (entries.some(([path]) => path.startsWith(GH_STUB_DIRECTORY))) return false;
   const answer = entries.find(([path]) => path === GH_ANSWER_FILE);
   const blob = answer === undefined ? undefined : store.blobs[answer[3]];
-  if (blob === undefined || !blob.startsWith(TEXT_BLOB)) return false;
+  const text = blob === undefined ? undefined : textOfBlob(blob);
+  if (text === undefined) return false;
   let parsed: unknown;
   try {
-    parsed = JSON.parse(blob.slice(TEXT_BLOB.length));
+    parsed = JSON.parse(text);
   } catch (error) {
     if (!(error instanceof SyntaxError)) throw error;
     return false;

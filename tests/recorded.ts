@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto"
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { gunzipSync } from "node:zlib"
+import { gunzipSync, gzipSync } from "node:zlib"
 
 const FIXTURE_DIRECTORY = join(import.meta.dirname, "fixtures", "python")
 const PRINCIPLES_PATH = join(import.meta.dirname, "..", "PRINCIPLES.md")
@@ -32,6 +32,17 @@ export function recordedAnswers<Question, Answer>(name: string, questions: reado
   return answers
 }
 
+export function recordAnswers<Question, Answer>(name: string, entries: ReadonlyArray<readonly [Question, Answer]>, callerTokens: Tokens = {}): void {
+  const tokens = { "{{PRINCIPLES}}": readFileSync(PRINCIPLES_PATH, "utf8"), ...callerTokens }
+  const { python, platform } = readFixture(name)
+  const answers = Object.fromEntries(entries.map(([question, answer]): [string, unknown] => [
+    keyOf(question, tokens), JSON.parse(replaceTokens(JSON.stringify(answer) ?? "null", tokens)) as unknown,
+  ]).sort(([left], [right]) => (left < right ? -1 : 1)))
+  const file = fixtureFile(name)
+  const text = JSON.stringify({ python, platform, answers })
+  writeFileSync(file, file.endsWith(".gz") ? gzipSync(text) : text)
+}
+
 export function recordedPlatformMatches(): boolean {
   return process.platform === RECORDED_PLATFORM
 }
@@ -44,13 +55,14 @@ function fixturePath(name: string): string {
   return join(FIXTURE_DIRECTORY, `${name}.json`)
 }
 
+function fixtureFile(name: string): string {
+  return existsSync(fixturePath(name)) ? fixturePath(name) : `${fixturePath(name)}.gz`
+}
+
 function readFixtureText(name: string): string {
-  try {
-    return readFileSync(fixturePath(name), "utf8")
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
-    return gunzipSync(readFileSync(`${fixturePath(name)}.gz`)).toString("utf8")
-  }
+  const file = fixtureFile(name)
+  const content = readFileSync(file)
+  return (file.endsWith(".gz") ? gunzipSync(content) : content).toString("utf8")
 }
 
 function readFixture(name: string): Fixture {

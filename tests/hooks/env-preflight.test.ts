@@ -205,6 +205,11 @@ describe("FailureTest", () => {
   it("envPreflight_passes_whenPayloadIsNotJson", () => {
     assert.equal(sandbox.runHook(ENV_PREFLIGHT, { raw: "mvn" }).code, 0);
   });
+
+  it("envPreflight_passesWithoutFire_whenPayloadIsEmpty", () => {
+    assert.equal(sandbox.runHook(ENV_PREFLIGHT, { raw: "" }).code, 0);
+    assert.deepEqual(sandbox.fires(), []);
+  });
 });
 
 describe("JdkMapGlobTest", () => {

@@ -159,7 +159,7 @@ function main(): number {
     fires = new FireLog(HOOK, getField(payload, "session_id") as string | null);
     violations = findViolations(payload);
   } catch (error) {
-    return failClosed(raw, error);
+    return failClosedIfGuarded(raw, error);
   }
   if (violations.length === 0) return protocol.EXIT_PASS;
   for (const violation of violations) fires.append(violation.ruleId, "deny", { repo: violation.repo, detail: violation.text, kind: violation.kind });
@@ -956,7 +956,7 @@ function isClaudeSettingsFile(path: string): boolean {
   return basename(dirname(path)) === ".claude" && name.startsWith("settings") && name.endsWith(".json");
 }
 
-function failClosed(raw: string, error: unknown): number {
+function failClosedIfGuarded(raw: string, error: unknown): number {
   const { session, command } = salvage(raw);
   new FireLog(HOOK, session).append(F_ATTRIBUTION, "error", { detail: describeError(error) });
   if (!(error instanceof RecursionError) && !testCaseFolded(LOOKS_GUARDED_RE, raw)) return protocol.EXIT_PASS;

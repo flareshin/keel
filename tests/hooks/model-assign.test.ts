@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import { join } from "node:path";
 import { assertBulletIdsSeeded, assertFired, HookSandbox, MODEL_ASSIGN, preToolUse } from "./helpers.ts";
 import type { HookResult } from "./helpers.ts";
+import { MAX_JSON_DEPTH } from "../../measure/lib/measurekit/json.ts";
 
 let sandbox: HookSandbox;
 
@@ -119,6 +120,19 @@ describe("WorkflowScriptTest", () => {
 describe("FailureTest", () => {
   it("modelAssign_passes_whenPayloadIsNotJson", () => {
     assert.equal(sandbox.runHook(MODEL_ASSIGN, { raw: "{" }).code, 0);
+  });
+
+  it("modelAssign_passesWithoutFire_whenPayloadIsEmpty", () => {
+    assert.equal(sandbox.runHook(MODEL_ASSIGN, { raw: "" }).code, 0);
+    assert.deepEqual(sandbox.fires(), []);
+  });
+
+  it("modelAssign_passesAndLogsError_whenPayloadNestsPastTheJsonDepthLimit", () => {
+    const deep = "[".repeat(MAX_JSON_DEPTH + 1) + "]".repeat(MAX_JSON_DEPTH + 1);
+    const result = sandbox.runHook(MODEL_ASSIGN, { raw: `{"tool_name": "Agent", "deep": ${deep}}` });
+    assert.deepEqual([result.code, result.stdout], [0, ""]);
+    const [fire] = assertFired(sandbox, "C-dispatch", "error", "model-assign");
+    assert.equal(fire?.detail, `RecursionError: JSON nesting is deeper than ${MAX_JSON_DEPTH} levels`);
   });
 
   it("modelAssign_passesAndLogsError_whenScriptPathUnreadable", () => {

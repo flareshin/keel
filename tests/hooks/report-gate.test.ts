@@ -6,6 +6,7 @@ import {
   AGENT_ID, assertBulletIdsSeeded, assertFired, HookSandbox, KEEL_EVIDENCE_LINE, KEEL_HOME, preToolUse, REPORT_GATE, SESSION_ID, subagentStop,
 } from "./helpers.ts";
 import type { Fire, HookResult } from "./helpers.ts";
+import { MAX_JSON_DEPTH } from "../../measure/lib/measurekit/json.ts";
 import { evidenceMessage, hasEvidenceToken, REPORT_END, REPORT_START, withoutReportMarkers } from "../../hooks/report-gate/report-gate.ts";
 
 const PASS_REPORT = "VERDICT: PASS\nNo findings. 3 files changed, 40 insertions(+).\n" + KEEL_EVIDENCE_LINE;
@@ -579,4 +580,40 @@ describe("SubagentStopTest", () => {
     assert.equal(sandbox.runHook(REPORT_GATE, { raw: "not json" }).code, 0);
     assertFired(sandbox, "K2", "error", "report-gate");
   });
+
+  it("reportGate_passesAndLogsError_whenPayloadIsEmpty", () => {
+    assert.equal(sandbox.runHook(REPORT_GATE, { raw: "" }).code, 0);
+    assertFired(sandbox, "K2", "error", "report-gate");
+  });
+
+  it("handback_denied_whenPayloadNestsPastTheJsonDepthLimit", () => {
+    const result = sandbox.runHook(REPORT_GATE, { raw: tooDeep('"hook_event_name": "PreToolUse", "tool_name": "SubagentHandback"') });
+    assert.equal(result.code, 2);
+    assert.match(result.stderr, /could not check this report; refusing it/);
+    assertFired(sandbox, "K2", "error", "report-gate");
+  });
+
+  it("stop_blocked_whenPayloadNestsPastTheJsonDepthLimit", () => {
+    const result = sandbox.runHook(REPORT_GATE, { raw: tooDeep('"hook_event_name": "SubagentStop"') });
+    assert.equal(result.code, 0);
+    assert.match(result.stdout, /"decision": "block"/);
+    assertFired(sandbox, "K2", "error", "report-gate");
+  });
+
+  it("stop_passes_whenPayloadNestsPastTheJsonDepthLimitOnARetry", () => {
+    const result = sandbox.runHook(REPORT_GATE, { raw: tooDeep('"hook_event_name": "SubagentStop", "stop_hook_active": true') });
+    assert.deepEqual([result.code, result.stdout], [0, ""]);
+    assertFired(sandbox, "K2", "error", "report-gate");
+  });
+
+  it("reportGate_passesAndLogsError_whenAnOverDeepPayloadSpellsNeitherAHandbackNorAStop", () => {
+    const result = sandbox.runHook(REPORT_GATE, { raw: tooDeep('"hook_event_name": "PreToolUse", "tool_name": "Bash"') });
+    assert.deepEqual([result.code, result.stdout], [0, ""]);
+    assertFired(sandbox, "K2", "error", "report-gate");
+  });
 });
+
+function tooDeep(fields: string): string {
+  const nesting = "[".repeat(MAX_JSON_DEPTH + 1) + "]".repeat(MAX_JSON_DEPTH + 1);
+  return `{${fields}, "deep": ${nesting}}`;
+}

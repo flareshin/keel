@@ -1521,6 +1521,30 @@ describe("FailClosedTest", () => {
     assert.equal(sandbox.runHook(GIT_GUARD, { raw: '{"tool_input": {"command": "ls ~/git/keel-wt/core"' }).code, 0);
   });
 
+  it("guard_passesAndLogsError_whenPayloadIsEmptyOrNotAnObject", () => {
+    for (const raw of ["", "[]", "null"]) {
+      const result = sandbox.runHook(GIT_GUARD, { raw });
+      assert.deepEqual([result.code, result.stderr], [0, ""], raw);
+    }
+    assert.equal(assertFired(sandbox, "F-attribution", "error", "git-guard").length, 3);
+  });
+
+  it("guard_denies_whenPayloadNestsPastTheJsonDepthLimitEvenIfHarmless", () => {
+    const deep = "[".repeat(MAX_JSON_DEPTH + 1) + "]".repeat(MAX_JSON_DEPTH + 1);
+    const result = sandbox.runHook(GIT_GUARD, { raw: `{"tool_input": {"command": "ls"}, "deep": ${deep}}` });
+    assert.equal(result.code, 2);
+    assert.ok(result.stderr.includes("(RecursionError)"), result.stderr);
+    assert.equal(lastLine(result.stderr), ASK_USER);
+  });
+
+  it("guard_deniesAndLogsError_whenGitCannotBeStartedForACommit", () => {
+    sandbox.env["PATH"] = join(sandbox.root, "no-programs-here");
+    const result = guard("git commit -m wip");
+    assertDenied(result, "F-attribution");
+    assert.ok(result.stderr.includes("(OSError)"), result.stderr);
+    assertFired(sandbox, "F-attribution", "error", "git-guard");
+  });
+
   it("guard_passesWithoutFire_whenCommandIsNotADecisionPoint", () => {
     assertPassed(guard("ls -la && echo done"));
     assert.deepEqual(sandbox.fires(), []);

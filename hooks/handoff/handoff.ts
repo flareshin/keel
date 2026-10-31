@@ -102,7 +102,7 @@ function resumeNote(path: string): string {
   for (const line of splitlines(readFileSync(path, "utf8"))) {
     if (line === RESUME_HEADING) inside = true;
     else if (line === LOCATION_HEADING) inside = false;
-    else if (inside) noteLines.push(line);
+    else if (inside && !line.startsWith(LEGACY_AUTO_SNAPSHOT_PREFIX)) noteLines.push(line);
   }
   return trimCharacters(noteLines.join("\n"), "\n") + "\n";
 }

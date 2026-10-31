@@ -56,6 +56,17 @@ describe("CliModesTest", () => {
     assert.equal(JSON.parse(cli(["--status"]).stdout).hasResumePoint, false);
   });
 
+  it("status_reportsResumePoint_whenANoteStartsWithAnAutoSnapshotLineFollowedByText", () => {
+    cli(["(auto-snapshot x)\nnext: real step"]);
+    assert.equal(JSON.parse(cli(["--status"]).stdout).hasResumePoint, true);
+  });
+
+  it("status_reportsResumePoint_whenAnOlderVersionAppendedAnAutoSnapshotAfterAHandNote", () => {
+    const note = LEGACY_AUTO_SNAPSHOT_NOTE.replace("## Resume point\n", "## Resume point\nnext: real step\n");
+    sandbox.write(handoffFile(), note);
+    assert.equal(JSON.parse(cli(["--status"]).stdout).hasResumePoint, true);
+  });
+
   it("unknownMode_isRecordedAsTheNote_whenNotACommand", () => {
     const result = cli(["--auto"]);
     assert.equal(result.code, 0);

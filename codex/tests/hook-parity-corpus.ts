@@ -1,6 +1,5 @@
 import { join } from "node:path";
-import { divergenceForDepth } from "./json-depth-policy.ts";
-import type { DenyDivergence, HookCase, Paths } from "./hook-parity.ts";
+import type { HookCase, Paths } from "./hook-parity.ts";
 
 const PATCH_BEGIN = "*** Begin Patch\n";
 const PATCH_END = "\n*** End Patch";
@@ -9,11 +8,6 @@ const DISABLED_HOOKS = "[features]\nhooks = false\n";
 const OWNER_MODEL = 'model = "owner-model"\n';
 
 const DEEP_NESTING = [3000, 9998, 10001, 20000];
-const INVALID_UTF8: DenyDivergence = { kind: "deny", reason: /^keel Codex guard: stdin is not valid UTF-8$/ };
-const CWD_NOT_STRING: DenyDivergence = { kind: "deny", reason: /^keel Codex guard: cwd must be a string$/ };
-const NOT_JSON: DenyDivergence = { kind: "deny", reason: /^keel Codex guard: invalid JSON: / };
-const UNPAIRED_SURROGATE: DenyDivergence = { kind: "deny", reason: /^keel Codex guard: path holds a NUL character or an unpaired surrogate$/ };
-const FALSY_LITERALS = ["0.0", "-0.0"];
 const TWO_MATCHES = "[features]\nhooks = true\nx = true\n";
 const NOT_TEXT: ReadonlyArray<[string, unknown]> = [
   ["object", { k: "v" }], ["list", ["x"]], ["number", 5], ["zero", 0], ["true", true], ["false", false], ["empty list", []], ["empty object", {}], ["null", null],
@@ -22,23 +16,6 @@ const NOT_FLAG: ReadonlyArray<[string, unknown]> = [
   ["true", true], ["false", false], ["string", "yes"], ["empty string", ""], ["object", { k: 1 }], ["empty object", {}], ["number", 1],
   ["zero", 0], ["list", [1]], ["empty list", []], ["null", null],
 ];
-const KEEL_PARTIAL_REFUSED: DenyDivergence = { kind: "deny", reason: /^keel Codex guard: partial config patches cannot be verified; / };
-const REPLACE_ALL_NOT_TRUE: DenyDivergence = { kind: "deny", reason: /^keel Codex guard: config replacement does not identify an unambiguous result$/ };
-const FALSY_NOT_FALSE = ["zero", "empty string", "empty object", "empty list"];
-const WRONG_TYPE_DIVERGENCES: ReadonlyMap<string, DenyDivergence> = new Map([
-  ...["zero", "false", "empty list", "empty object"].map((label): [string, DenyDivergence] => [`cwd ${label}`, CWD_NOT_STRING]),
-  ...FALSY_NOT_FALSE.flatMap((label): Array<[string, DenyDivergence]> => [[`keel_partial edit ${label}`, KEEL_PARTIAL_REFUSED], [`keel_partial write ${label}`, KEEL_PARTIAL_REFUSED]]),
-  ...["string", "object", "number", "list"].map((label): [string, DenyDivergence] => [`replace_all ${label}`, REPLACE_ALL_NOT_TRUE]),
-]);
-
-function isValidUtf8(bytes: Buffer): boolean {
-  try {
-    new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 function deepArray(depth: number): string {
   return "[".repeat(depth) + "]".repeat(depth);
@@ -92,7 +69,7 @@ export function hookCases(paths: Paths): HookCase[] {
   add("json null", "null");
   add("json string", '"text"');
   add("json number", "12");
-  add("json NaN", "NaN", { divergence: NOT_JSON });
+  add("json NaN", "NaN");
   add("empty object", "{}");
   add("tool_input missing", '{"tool_name": "Bash"}');
   add("tool_input list", payload("Bash", []));
@@ -116,13 +93,13 @@ export function hookCases(paths: Paths): HookCase[] {
   add("apply_patch bad text", payload("apply_patch", { command: "bad" }));
   add("apply_patch empty text", payload("apply_patch", { command: "" }));
   add("apply_patch command number", payload("apply_patch", { command: 3 }));
-  add("invalid utf-8 start byte", Buffer.concat([Buffer.from('{"tool_name": "Bash", "tool_input": {"command": "'), Buffer.from([0xff]), Buffer.from('"}}')]), { divergence: INVALID_UTF8 });
-  add("truncated utf-8 sequence", Buffer.concat([Buffer.from('{"a": "'), Buffer.from([0xe2, 0x82]), Buffer.from('"}')]), { divergence: INVALID_UTF8 });
-  add("invalid continuation", Buffer.concat([Buffer.from('{"a": "'), Buffer.from([0xc3, 0x28]), Buffer.from('"}')]), { divergence: INVALID_UTF8 });
+  add("invalid utf-8 start byte", Buffer.concat([Buffer.from('{"tool_name": "Bash", "tool_input": {"command": "'), Buffer.from([0xff]), Buffer.from('"}}')]));
+  add("truncated utf-8 sequence", Buffer.concat([Buffer.from('{"a": "'), Buffer.from([0xe2, 0x82]), Buffer.from('"}')]));
+  add("invalid continuation", Buffer.concat([Buffer.from('{"a": "'), Buffer.from([0xc3, 0x28]), Buffer.from('"}')]));
   add("crlf whitespace json", payload("Bash", { command: "ls" }).replace(/,/g, ",\r\n"));
   add("bare cr in string", payload("Bash", { command: "ls" }).replace("ls", "l\\rs").replace("\\r", "\r"));
-  add("json constants inside tool_input", `{"tool_name": "Bash", "tool_input": {"command": "git status", "timeout": NaN, "limits": [Infinity, -Infinity]}, "cwd": "${repo}"}`, { divergence: NOT_JSON });
-  add("json constant as tool_input", '{"tool_name": "Bash", "tool_input": NaN}', { divergence: NOT_JSON });
+  add("json constants inside tool_input", `{"tool_name": "Bash", "tool_input": {"command": "git status", "timeout": NaN, "limits": [Infinity, -Infinity]}, "cwd": "${repo}"}`);
+  add("json constant as tool_input", '{"tool_name": "Bash", "tool_input": NaN}');
   add("deep unicode escapes", `{"tool_name": "Bash", "tool_input": {"command": "echo \\u00e9\\ud83d\\ude00 \\ud800"}, "cwd": "${repo}"}`);
   add("lone surrogate payload", `{"tool_name": "Bash", "tool_input": {"command": "echo \\ud800"}, "cwd": "${repo}"}`);
 
@@ -149,7 +126,7 @@ export function hookCases(paths: Paths): HookCase[] {
   bash("cwd missing", "git status", { cwd: undefined });
   bash("cwd nonexistent", "git status", { cwd: join(paths.root, "nowhere") });
   bash("cwd relative", "git status", { cwd: "repo" });
-  bash("cwd number", "git status", { cwd: 5 }, { divergence: CWD_NOT_STRING });
+  bash("cwd number", "git status", { cwd: 5 });
   bash("cwd empty", "git status", { cwd: "" });
   bash("pipeline of guarded commands", "git status && git push --force origin main | cat");
   bash("subshell", "(cd /tmp && git push -f origin main)");
@@ -337,16 +314,15 @@ export function hookCases(paths: Paths): HookCase[] {
   const protectedWrite = JSON.stringify({ file_path: `${profile}/hooks.json`, content: "x" });
   const benignWrite = JSON.stringify({ file_path: `${profile}/notes.txt`, content: "x" });
   for (const depth of DEEP_NESTING) {
-    const reachesGuard = { divergence: divergenceForDepth(depth) };
     add(`deep array beside protected write (${depth})`, rawPayload('"Write"', protectedWrite, `, "deep": ${deepArray(depth)}`));
     add(`deep object beside protected write (${depth})`, rawPayload('"Write"', protectedWrite, `, "deep": ${deepObject(depth)}`));
-    add(`deep array beside allowed write (${depth})`, rawPayload('"Write"', benignWrite, `, "deep": ${deepArray(depth)}`), reachesGuard);
-    add(`deep object beside allowed write (${depth})`, rawPayload('"Write"', benignWrite, `, "deep": ${deepObject(depth)}`), reachesGuard);
-    add(`deep array inside tool_input (${depth})`, rawPayload('"Write"', `{"file_path": ${JSON.stringify(`${profile}/notes.txt`)}, "content": ${deepArray(depth)}}`), reachesGuard);
-    add(`deep array beside force push (${depth})`, rawPayload('"Bash"', '{"command": "git push --force origin main"}', `, "deep": ${deepArray(depth)}`), reachesGuard);
+    add(`deep array beside allowed write (${depth})`, rawPayload('"Write"', benignWrite, `, "deep": ${deepArray(depth)}`));
+    add(`deep object beside allowed write (${depth})`, rawPayload('"Write"', benignWrite, `, "deep": ${deepObject(depth)}`));
+    add(`deep array inside tool_input (${depth})`, rawPayload('"Write"', `{"file_path": ${JSON.stringify(`${profile}/notes.txt`)}, "content": ${deepArray(depth)}}`));
+    add(`deep array beside force push (${depth})`, rawPayload('"Bash"', '{"command": "git push --force origin main"}', `, "deep": ${deepArray(depth)}`));
     add(`deep array as tool_name (${depth})`, rawPayload(deepArray(depth), "{}"));
     add(`deep object as tool_name (${depth})`, rawPayload(deepObject(depth), "{}"));
-    add(`deep array as cwd (${depth})`, `{"tool_name": "Bash", "tool_input": {"command": "git status"}, "cwd": ${deepArray(depth)}}`, { divergence: CWD_NOT_STRING });
+    add(`deep array as cwd (${depth})`, `{"tool_name": "Bash", "tool_input": {"command": "git status"}, "cwd": ${deepArray(depth)}}`);
     add(`deep array then malformed tail (${depth})`, rawPayload('"Write"', protectedWrite, `, "deep": ${deepArray(depth)} x`));
   }
 
@@ -371,16 +347,15 @@ export function hookCases(paths: Paths): HookCase[] {
     ["surrogate after dotdot", "sub/../\ud800"],
   ];
   for (const [name, suffix] of surrogateTargets) {
-    const options: Partial<HookCase> = name === "escaped byte alone" || name === "escaped byte range edges" ? { divergence: UNPAIRED_SURROGATE } : {};
-    write(`write target with ${name}`, `${repo}/${suffix}`, "x", options);
-    write(`write profile target with ${name}`, `${profile}/${suffix}`, "x", options);
-    write(`write relative target with ${name}`, suffix, "x", options);
-    edit(`edit target with ${name}`, `${repo}/${suffix}`, { old_string: "a", new_string: "b" }, options);
-    patch(`patch target with ${name}`, `*** Add File: ${suffix}\n+x`, options);
-    bash(`shell redirect to ${name}`, `echo x > ${repo}/${suffix}`, {}, options);
-    bash(`shell rm of ${name}`, `rm ${repo}/${suffix}`, {}, options);
-    bash(`shell tee into profile with ${name}`, `echo x | tee ${profile}/${suffix}`, {}, options);
-    bash(`shell cp to ${name}`, `cp x ${repo}/${suffix}`, {}, options);
+    write(`write target with ${name}`, `${repo}/${suffix}`, "x");
+    write(`write profile target with ${name}`, `${profile}/${suffix}`, "x");
+    write(`write relative target with ${name}`, suffix, "x");
+    edit(`edit target with ${name}`, `${repo}/${suffix}`, { old_string: "a", new_string: "b" });
+    patch(`patch target with ${name}`, `*** Add File: ${suffix}\n+x`);
+    bash(`shell redirect to ${name}`, `echo x > ${repo}/${suffix}`);
+    bash(`shell rm of ${name}`, `rm ${repo}/${suffix}`);
+    bash(`shell tee into profile with ${name}`, `echo x | tee ${profile}/${suffix}`);
+    bash(`shell cp to ${name}`, `cp x ${repo}/${suffix}`);
   }
   bash("shell glob with surrogate", `rm ${repo}/\ud800*`);
   bash("shell glob over profile with surrogate", `rm ${profile}/\ud800*`);
@@ -402,8 +377,8 @@ export function hookCases(paths: Paths): HookCase[] {
   const FLOAT_LITERALS = ["1.0", "100.0", "-0.0", "0.0", "1e16", "1E22", "0.5", "2.5", "1e400", "-1e400"];
   const withCwd = (cwd: string): string => `{"tool_name": "Write", "tool_input": {"file_path": "hj", "content": "x"}, "cwd": ${cwd}}`;
   for (const literal of FLOAT_LITERALS) {
-    add(`float cwd ${literal}`, withCwd(literal), { divergence: CWD_NOT_STRING });
-    add(`float cwd ${literal} in a list`, withCwd(`[${literal}]`), { divergence: CWD_NOT_STRING });
+    add(`float cwd ${literal}`, withCwd(literal));
+    add(`float cwd ${literal} in a list`, withCwd(`[${literal}]`));
     add(`float tool_name ${literal}`, `{"tool_name": ${literal}, "tool_input": {}, "cwd": ${JSON.stringify(repo)}}`);
     add(`float tool_name ${literal} in a list`, `{"tool_name": [${literal}, "x"], "tool_input": {}, "cwd": ${JSON.stringify(repo)}}`);
     add(`float tool_name ${literal} in a dict`, `{"tool_name": {"k": ${literal}}, "tool_input": {}, "cwd": ${JSON.stringify(repo)}}`);
@@ -412,12 +387,12 @@ export function hookCases(paths: Paths): HookCase[] {
     add(`float payload ${literal}`, literal);
     add(`float Bash command ${literal}`, `{"tool_name": "Bash", "tool_input": {"command": ${literal}}, "cwd": ${JSON.stringify(repo)}}`);
     add(`float apply_patch command ${literal}`, `{"tool_name": "apply_patch", "tool_input": {"command": ${literal}}, "cwd": ${JSON.stringify(repo)}}`);
-    add(`float keel_partial ${literal}`, `{"tool_name": "Edit", "tool_input": {"file_path": ${JSON.stringify(`${profile}/config.toml`)}, "old_string": "true", "new_string": "false", "keel_partial": ${literal}}, "cwd": ${JSON.stringify(repo)}}`, FALSY_LITERALS.includes(literal) ? { divergence: KEEL_PARTIAL_REFUSED } : {});
-    add(`float replace_all ${literal}`, `{"tool_name": "Edit", "tool_input": {"file_path": ${JSON.stringify(`${profile}/config.toml`)}, "old_string": "e", "new_string": "E", "replace_all": ${literal}}, "cwd": ${JSON.stringify(repo)}}`, FALSY_LITERALS.includes(literal) ? {} : { divergence: REPLACE_ALL_NOT_TRUE });
+    add(`float keel_partial ${literal}`, `{"tool_name": "Edit", "tool_input": {"file_path": ${JSON.stringify(`${profile}/config.toml`)}, "old_string": "true", "new_string": "false", "keel_partial": ${literal}}, "cwd": ${JSON.stringify(repo)}}`);
+    add(`float replace_all ${literal}`, `{"tool_name": "Edit", "tool_input": {"file_path": ${JSON.stringify(`${profile}/config.toml`)}, "old_string": "e", "new_string": "E", "replace_all": ${literal}}, "cwd": ${JSON.stringify(repo)}}`);
     add(`float beside force push ${literal}`, `{"tool_name": "Bash", "tool_input": {"command": "git push --force origin main"}, "cwd": ${JSON.stringify(repo)}, "extra": [${literal}, {"k": ${literal}}]}`);
   }
-  add("integral float cwd beside a decoy integer directory", withCwd("1.0"), { divergence: CWD_NOT_STRING });
-  add("integer cwd", withCwd("1"), { divergence: CWD_NOT_STRING });
+  add("integral float cwd beside a decoy integer directory", withCwd("1.0"));
+  add("integer cwd", withCwd("1"));
 
   const asciiPayload = `{"tool_name": "Bash", "tool_input": {"command": "echo hi"}, "cwd": ${JSON.stringify(repo)}}`;
   const insideCommand = (middle: number[]): Buffer =>
@@ -443,21 +418,14 @@ export function hookCases(paths: Paths): HookCase[] {
     ["bad continuation", Buffer.concat([Buffer.from('{"tool_name": "Bash", "tool_input": {"command": "echo '), Buffer.from([0xc3, 0x28]), Buffer.from(`"}, "cwd": ${JSON.stringify(repo)}}`)])],
     ["invalid byte before a protected write", Buffer.concat([Buffer.from(`{"tool_name": "Write", "tool_input": {"file_path": ${JSON.stringify(`${profile}/hooks.json`)}, "content": "`), Buffer.from([0xc3, 0x28]), Buffer.from(`"}, "cwd": ${JSON.stringify(repo)}}`)])],
   ];
-  for (const [inputName, stdin] of textInputs) {
-    const valid = isValidUtf8(stdin);
-    add(`stdin ${inputName} with default`, stdin, valid ? {} : { divergence: INVALID_UTF8 });
-  }
+  for (const [inputName, stdin] of textInputs) add(`stdin ${inputName} with default`, stdin);
 
-  const listed = (key: string): Partial<HookCase> => {
-    const divergence = WRONG_TYPE_DIVERGENCES.get(key);
-    return divergence === undefined ? {} : { divergence };
-  };
-  for (const [label, value] of NOT_TEXT) bash(`wrong-type cwd ${label}`, "git status", { cwd: value }, listed(`cwd ${label}`));
+  for (const [label, value] of NOT_TEXT) bash(`wrong-type cwd ${label}`, "git status", { cwd: value });
   for (const [label, value] of NOT_FLAG) {
     const config = `${profile}/config.toml`;
-    edit(`wrong-type keel_partial on an edit ${label}`, config, { old_string: "true", new_string: "true", keel_partial: value }, listed(`keel_partial edit ${label}`));
-    add(`wrong-type keel_partial on a write ${label}`, payload("Write", { file_path: config, content: NORMAL_CONFIG, keel_partial: value }, { cwd: repo }), listed(`keel_partial write ${label}`));
-    edit(`wrong-type replace_all ${label}`, config, { old_string: "true", new_string: "true", replace_all: value }, { config: TWO_MATCHES, ...listed(`replace_all ${label}`) });
+    edit(`wrong-type keel_partial on an edit ${label}`, config, { old_string: "true", new_string: "true", keel_partial: value });
+    add(`wrong-type keel_partial on a write ${label}`, payload("Write", { file_path: config, content: NORMAL_CONFIG, keel_partial: value }, { cwd: repo }));
+    edit(`wrong-type replace_all ${label}`, config, { old_string: "true", new_string: "true", replace_all: value }, { config: TWO_MATCHES });
   }
 
   return cases;

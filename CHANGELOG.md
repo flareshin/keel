@@ -11,6 +11,7 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
 `node:path`, `node:fs`, `RegExp`, a fatal `TextDecoder` and `node:util` `parseArgs`. The hooks' shared kit (`hooks/lib/hookkit`) loses its Python runtime modules too (see Removed). Some Python semantics stay on purpose: the `splitlines` and `strip` character sets (`hooks/lib/hookkit/text.ts`, `apply_patch` text and guard output), CPython's recursion limit in the Codex TOML reader (`codex/lib/toml.ts`), the hooks' JSON spacing and error class names, and the exception names `rule-checks.ts` prints.
 
 ### Changed
+- `tests/run-all.sh` (`npm test`) runs one full suite at a time per machine: a second run waits for the first and says which pid holds the lock, and a lock left by a run that died is taken over.
 - What stays the same: exit codes for every documented outcome, the field names and values of every JSON and JSONL
   line the tools print or write (`measure/{run,smoke,propose,weekly,boundary}`, `measure/evals/{eval,review-eval}`,
   `bin/link`, the `keel-*.jsonl` logs and raw-dir files), the `[ID]` tags in messages, and the CLI flags with their
@@ -95,11 +96,11 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
     2); `-h` is honoured wherever it appears (`link --write --check -h` prints help and exits 0, it
     exited 2); a value that starts with `-` after `--home` or `--file` (`--home -5`) exits 2, it was read as a value when it
     looked like a number.
-  - The files and tests that checked the Python emulation are replaced by comparisons with the recorded Python runs that
-    accept the listed changes: the hook corpus lists 71 payloads whose outcome changed (99 once the wrong-type fields below are counted) and counts the denials worded
-    differently, the link and config scenarios skip the steps whose arguments changed, and
-    `codex/tests/boundary.test.ts` pins 823 input boundaries (line breaks, Unicode spaces, number forms, invalid UTF-8,
-    symlink chains, sort order, command lines) against the outcomes the old adapter gave and lists the 58 that differ (65 with the `cwd` values `0`, `false`, `[]` and `{}`).
+  - The files and tests that checked the Python emulation are replaced by comparisons with golden snapshots of the adapter's
+    own output (see the golden entry under Changed below): the hook corpus (587 payloads), the link and config scenarios
+    (56 scenarios, 149 invocations, the steps whose arguments changed included) and `codex/tests/boundary.test.ts`, which pins 823 input
+    boundaries (line breaks, Unicode spaces, number forms, invalid UTF-8, symlink chains, sort order, command lines). The 65
+    boundaries whose outcome differs from the old adapter's (58, and 7 more with the `cwd` values `0`, `false`, `[]` and `{}`) are recorded as the adapter now gives them.
 - `keel` (`bin/keel`, `lib/evidence`), what stays the same: the exit codes (0, 2 usage, 3 refused, 4 for a green run
   with no recognized tests, 70 internal error, otherwise the test command's own code), the `keel` subcommands and flags,
   the field names and values of every evidence record under `state/keel/evidence`, of `keel-tests.jsonl`, of the
@@ -180,7 +181,7 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
     `keel-fires.jsonl` timestamp, `cc_version`, the checkout's repo key and the JSON syntax error wording masked. An intended behavior change re-records it with
     `node tests/ship-gate/ship-gate-parity-record.ts`, and the diff of `cases.jsonl.gz` is reviewed like any other change.
     `ship-gate-parity.test.ts` checks that every case falls in exactly one shard. `EXPECTED_DIVERGENCES` and the deny-to-pass
-    count are gone. `codex/tests/hook-parity.ts` compares the fires lines it replays by content.
+    count are gone. `codex/tests/hook-parity.ts` compared the fires lines it replays by content (until its corpus became a golden of the adapter).
   - The hook parity test (`tests/hooks/hook-parity.test.ts`) replays the 344 recorded runs of the former Python hook tests and
     the 784 adversarial payloads and compares each with a golden snapshot of the node hooks' own output (`cases.jsonl` and
     `adversarial.json` under `tests/hooks/fixtures/hook-parity`) instead of the retired Python hooks' recorded answers. The golden
@@ -190,6 +191,22 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
     of the two fixtures is reviewed like any other change. The replay reports `golden: N cases, 0 mismatches`.
     `EXPECTED_DIVERGENCES`, the per-payload expected outcomes of the adversarial set
     (`tests/hooks/hook-parity-wrong-type-divergences.ts` and the `divergence` of each JSON limit payload) and the deny-to-pass count are gone.
+  - The Codex adapter's parity tests compare it with golden snapshots of its own output instead of the retired Python
+    adapter's recorded answers. `codex/tests/hook-parity.test.ts` replays the 587 payloads of `hook-parity-corpus.ts` through
+    `codex/hooks/pre-tool-use.ts` and compares exit code, stdout, stderr and every file of the sandbox with
+    `tests/fixtures/python/codex-hook-parity.json.gz`; `codex/tests/cli-parity.test.ts` replays the 56 link and config scenarios
+    (every step, including the ones whose arguments changed) against `codex-cli-parity.json`; `codex/tests/boundary.test.ts`
+    replays the 823 input boundaries against `tests/fixtures/codex/boundary-recorded.json`. The sandbox root and checkout paths are
+    tokenized and only nondeterministic text is masked: timestamps in written files, the runtime path, hook digests and temporary
+    file names in link and config output, the wording of a JSON syntax error in a denial reason or a `link` refusal (it differs
+    between node versions), and for a hook that crashes the error line of the stack trace (its frames carry paths
+    and line numbers). The recorders write the answers sorted by key. An intended behavior change re-records them with `node codex/tests/hook-parity-record.ts`,
+    `node codex/tests/cli-parity-record.ts` and `node codex/tests/boundary-record.ts`, and the diff of the fixtures is reviewed like any other change.
+    Each replay reports `golden: N cases, 0 mismatches`. The divergence lists (`DenyDivergence`, `JsonDepthDivergence`,
+    `WRONG_TYPE_DIVERGENCES`, `PYTHON_WORDING`, `FOREIGN_FLOAT_SPELLINGS`, `changedByNativeParsing`, `EXPECTED_CHANGES`) and the
+    deny-to-pass count are gone. The tests of the TOML port, the path helpers and the crash depths of the TOML
+    parser (`toml.test.ts`, `paths.test.ts`, `hook-recursion.test.ts` and the crash-depth cases of `cli-parity.test.ts`) still compare with the recorded Python
+    answers, which are their specification.
   - `keel review prepare` reads deeply nested stdin: 200,000 nested arrays exit 2 as `stdin must be a JSON object`
     instead of exit 70.
 - `git-guard` `repo-rules.tsv` and `env-preflight` `jdk.tsv` globs match through the same `globMatches` as
@@ -314,8 +331,8 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
     0 mismatches, deny-to-pass 0 (the golden run now reports `golden: 1128 cases, 0 mismatches`); fire logs written with compact JSON (`ship-gate`) now have their `ts` masked as well.
     `tests/ship-gate/ship-gate-parity.test.ts` listed 61 more rows (146 in all): a `command`, `cwd` or `session_id` that is not
     text, and `gh` answers whose `statusCheckRollup`, a check or `baseRefName` has the wrong type; 1,757 cases, 0 mismatches,
-    deny-to-pass 0 (those listings are replaced by the golden snapshot). `codex/tests/hook-parity-corpus.ts` adds 42 wrong-type payloads (recorded from the adapter as it was) and lists
-    28 changed ones (587 cases, 99 listed). `tests/hooks/shell-parity.test.ts` gains a listed-divergence set of its own for the
+    deny-to-pass 0 (those listings are replaced by the golden snapshot). `codex/tests/hook-parity-corpus.ts` adds 42 wrong-type payloads (recorded from the adapter as it was) and listed
+    28 changed ones (587 cases, 99 listed, until its corpus became a golden of the adapter). `tests/hooks/shell-parity.test.ts` gains a listed-divergence set of its own for the
     six `resolve_directory` calls on `~root`.
 
 ### Fixed

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { execFileSync, spawnSync } from "node:child_process"
-import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from "node:fs"
+import { chmodSync, cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
 import { after, afterEach, beforeEach, describe, it } from "node:test"
@@ -230,6 +230,33 @@ describe("keel precheck run", { skip: typescriptInstalled ? false : "typescript 
     assert.equal(existsSync(join(dataDir, "logs", "keel-precheck.jsonl")), false)
   })
 
+  it("keelPrecheckRun_showsOnlyTheFirst20TscLines_whenTscReportsMoreErrors", () => {
+    const root = committedRepo({ "tsconfig.json": TSCONFIG, "lib/a.ts": PICK })
+    roots.push(root)
+    const wrongLines = Array.from({ length: 25 }, (_, index) => `export const wrong${index}: number = "x"`)
+    writeFiles(root, { "lib/a.ts": `${wrongLines.join("\n")}\n` })
+
+    const completed = keel(["--repo", root, "--base", "HEAD"], scratchDir("keel-data-"))
+
+    assert.equal(completed.status, 3, completed.stderr)
+    const shown = completed.stderr.split("tsc --noEmit failed in ")[1]!.trimEnd().split("\n").slice(1)
+    assert.equal(shown.length, 20, shown.join("\n"))
+    assert.match(shown[0]!, /lib\/a\.ts\(1,14\).*TS2322/)
+    assert.match(shown[19]!, /lib\/a\.ts\(20,14\).*TS2322/)
+  })
+
+  it("keelPrecheckRun_runsTheReposOwnTsc_whenItHasOne", () => {
+    const root = committedRepo({ "tsconfig.json": TSCONFIG, "lib/a.ts": PICK })
+    roots.push(root)
+    writeFiles(root, { "node_modules/.bin/tsc": "#!/bin/sh\necho repo-tsc-ran\nexit 1\n" })
+    chmodSync(join(root, "node_modules", ".bin", "tsc"), 0o755)
+
+    const completed = keel(["--repo", root, "--base", "HEAD"], scratchDir("keel-data-"))
+
+    assert.equal(completed.status, 3, completed.stderr)
+    assert.match(completed.stderr, /tsc --noEmit failed in .*\nrepo-tsc-ran$/m)
+  })
+
   it("keelPrecheckRun_appendsTheRuleCheckSignalsAfterTheCensus_whenTscPasses", () => {
     const root = committedRepo({ "tsconfig.json": TSCONFIG, "lib/a.ts": PICK, "tests/a.test.ts": PICK_TEST })
     roots.push(root)
@@ -242,9 +269,9 @@ describe("keel precheck run", { skip: typescriptInstalled ? false : "typescript 
     assert.match(lines[0]!, /^precheck tree [0-9a-f]{40} · base HEAD · /)
     assert.deepEqual(lines.filter((line) => line.startsWith("rule-checks ")), [
       "rule-checks signal K5.5 lib/a.ts:5 const data = 1",
-      "rule-checks summary repos=1 scanned_lines=4 signals=1 unscanned=none blocked=none",
+      "rule-checks totals repos=1 scanned_lines=4 signals=1 unscanned=none blocked=none",
     ])
-    assert.equal(lines.at(-1), "rule-checks summary repos=1 scanned_lines=4 signals=1 unscanned=none blocked=none")
+    assert.equal(lines.at(-1), "rule-checks totals repos=1 scanned_lines=4 signals=1 unscanned=none blocked=none")
   })
 
   it("keelPrecheckRun_rejectsMissingOrDashedOptions_andABaseWithoutAMergeBase", () => {

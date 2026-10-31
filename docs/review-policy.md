@@ -49,7 +49,8 @@ root review without it when the diff changes three or more non-test TS/JS source
 in a repo with tests `keel precheck run` can run (`keel precheck required` decides).
 `keel precheck run` first runs `tsc --noEmit` when the repo has a `tsconfig.json`
 and refuses with tsc's first lines on a type error; after the census it appends
-the readable-code rule-checks lines (`rule-checks signal …`, `rule-checks summary …`),
+the readable-code rule-checks lines (`rule-checks signal …`, and the summary as
+`rule-checks totals …` so a review never counts it as its own rule-checks summary),
 which are signals to fix or explain before review, not findings.
 It is an author claim for the
 tests and contract lenses to check, not evidence: it adds no evidence kind, and

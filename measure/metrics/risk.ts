@@ -29,6 +29,7 @@ const UNCLASSIFIED = "unclassified"
 const REWORK_DAYS = 14
 const REFACTOR_ONLY_SUBJECT = /^(?:refactor|rename|move)\b/i
 const DEFAULT_BRANCH_REF = "refs/remotes/origin/HEAD"
+const ORIGIN_BRANCH_PREFIX = "refs/remotes/origin/"
 const MS_PER_MINUTE = 60_000
 const PERCENT = 100
 const ESCAPED_DEFECTS_NO_SOURCE = "no source"
@@ -271,10 +272,17 @@ function defaultBranchSeenPast(checkout: string, horizonDate: string): boolean {
   const horizon = Date.parse(horizonDate)
   const tipDate = runGit(checkout, ["log", "-1", "--format=%cI", DEFAULT_BRANCH_REF]).trim()
   if (Date.parse(tipDate) >= horizon) return true
-  const fetchHead = path.resolve(checkout, runGit(checkout, ["rev-parse", "--git-path", "FETCH_HEAD"]).trim())
-  if (!fs.existsSync(fetchHead) || fs.statSync(fetchHead).mtimeMs < horizon) return false
-  const branch = runGit(checkout, ["rev-parse", "--abbrev-ref", DEFAULT_BRANCH_REF]).trim().replace(/^origin\//, "")
-  return fs.readFileSync(fetchHead, "utf8").split("\n").some((line) => line.includes(`\tbranch '${branch}' of `))
+  const branch = runGit(checkout, ["symbolic-ref", DEFAULT_BRANCH_REF]).trim().slice(ORIGIN_BRANCH_PREFIX.length)
+  return fetchHeadsOfRepo(checkout)
+    .filter((fetchHead) => fs.statSync(fetchHead).mtimeMs >= horizon)
+    .some((fetchHead) => fs.readFileSync(fetchHead, "utf8").split("\n").some((line) => line.includes(`\tbranch '${branch}' of `)))
+}
+
+function fetchHeadsOfRepo(checkout: string): string[] {
+  const commonDir = path.resolve(checkout, runGit(checkout, ["rev-parse", "--git-common-dir"]).trim())
+  const worktreesDir = path.join(commonDir, "worktrees")
+  const worktreeDirs = fs.existsSync(worktreesDir) ? fs.readdirSync(worktreesDir).map((name) => path.join(worktreesDir, name)) : []
+  return [commonDir, ...worktreeDirs].map((gitDir) => path.join(gitDir, "FETCH_HEAD")).filter((fetchHead) => fs.existsSync(fetchHead))
 }
 
 function isAncestor(checkout: string, ancestor: string, descendant: string): boolean {

@@ -315,8 +315,8 @@ describe("risk runner", () => {
     assert.deepEqual([rework.decided_ships, rework.shipped_lines, rework.reworked_lines], [1, 4, 1])
   })
 
-  const givenFetchHead = (repo: string, branch: string, fetchedDaysAgo: number): void => {
-    const file = path.join(repo, ".git", "FETCH_HEAD")
+  const givenFetchHead = (repo: string, branch: string, fetchedDaysAgo: number, gitDir: string = ".git"): void => {
+    const file = path.join(repo, gitDir, "FETCH_HEAD")
     box.write(path.relative(box.root, file), `${"f".repeat(40)}\t\tbranch '${branch}' of https://example.invalid/app\n`)
     const fetchedAt = new Date(daysAgo(fetchedDaysAgo))
     fs.utimesSync(file, fetchedAt, fetchedAt)
@@ -330,6 +330,26 @@ describe("risk runner", () => {
     givenPass({ head, ts: OLD_SHIP_TS })
     const rework = itemFor(runMetric(), "light")["rework"]
     assert.deepEqual([rework.decided_ships, rework.shipped_lines, rework.reworked_lines], [1, 4, 0])
+  })
+
+  it("rework_ofAQuietRepo_isDecided_whenAnotherWorktreeOfTheRepoFetchedTheDefaultBranch", () => {
+    const { repo } = newRepo()
+    const head = mergedShip(repo)
+    track(repo)
+    box.git(repo, "worktree", "add", "-q", path.join(path.dirname(repo), "topic"), "-b", "topic")
+    givenFetchHead(repo, "main", 1, path.join(".git", "worktrees", "topic"))
+    givenPass({ head, ts: OLD_SHIP_TS })
+    assert.equal(itemFor(runMetric(), "light")["rework"]["decided_ships"], 1)
+  })
+
+  it("rework_ofAQuietRepo_isDecided_whenALocalBranchSharesTheRemoteDefaultBranchName", () => {
+    const { repo } = newRepo()
+    const head = mergedShip(repo)
+    track(repo)
+    box.git(repo, "branch", "origin/main")
+    givenFetchHead(repo, "main", 1)
+    givenPass({ head, ts: OLD_SHIP_TS })
+    assert.equal(itemFor(runMetric(), "light")["rework"]["decided_ships"], 1)
   })
 
   it("rework_ofAQuietRepo_isNotComputable_whenTheLastFetchWasAnotherBranchOrBeforeTheHorizon", () => {

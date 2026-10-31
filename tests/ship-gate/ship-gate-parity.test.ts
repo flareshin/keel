@@ -3,7 +3,7 @@ import { readdirSync } from "node:fs";
 import { describe, it } from "node:test";
 import { textOfBlob } from "../recorded-cases.ts";
 import type { ObservedDelta, Observation, Run } from "../recorded-cases.ts";
-import { fullCorpusRequested, goldenOf, judgeCase, loadStore, recordedCorpus, replayedCorpus, runShipGateParity, SHARD_COUNT, shardCases, summary, withoutCheckoutRepoKey } from "./ship-gate-parity.ts";
+import { fullCorpusRequested, goldenOf, judgeCase, loadStore, recordedCorpus, replayedCorpus, runShipGateParity, SHARD_COUNT, SUITES, shardCases, summary, withoutCheckoutRepoKey } from "./ship-gate-parity.ts";
 import type { RecordedCase, RecordedStore, ShipGateParityReport } from "./ship-gate-parity.ts";
 import { fineClass, maskedOutcome, sampleCorpus, samplingGroup } from "./ship-gate-parity-sample.ts";
 
@@ -244,7 +244,8 @@ describe("ship-gate parity run selection and report", () => {
   });
 
   describe("with SHIP_GATE_PARITY_CASES", () => {
-    const sampledOut = recordedCorpus().find((testCase) => !replayedCorpus(false).some((kept) => kept.id === testCase.id)) as RecordedCase;
+    const sampledIds = new Set(replayedCorpus(false).map((testCase) => testCase.id));
+    const sampledOut = recordedCorpus().find((testCase) => !sampledIds.has(testCase.id)) as RecordedCase;
 
     function withCasesFilter<T>(pattern: string, action: () => T): T {
       const previous = process.env["SHIP_GATE_PARITY_CASES"];
@@ -259,11 +260,11 @@ describe("ship-gate parity run selection and report", () => {
 
     it("fails and names the full switch when the filter matches only cases the sample dropped", () => {
       assert.ok(sampledOut, "the sample dropped no case");
-      assert.throws(() => withCasesFilter(`^${sampledOut.id}$`, () => runShipGateParity(undefined, undefined, false)), /matches 1 recorded cases.*SHIP_GATE_PARITY_FULL=1/);
+      assert.throws(() => withCasesFilter(`^${sampledOut.id}$`, () => runShipGateParity(undefined, SUITES, false)), /matches 1 recorded cases.*SHIP_GATE_PARITY_FULL=1/);
     });
 
     it("replays nothing and does not fail when the filter matches no recorded case", () => {
-      const result = withCasesFilter("^no-such-case$", () => runShipGateParity(undefined, undefined, false));
+      const result = withCasesFilter("^no-such-case$", () => runShipGateParity(undefined, SUITES, false));
       assert.equal(result.cases, 0);
       assert.equal(result.recorded, 0);
     });

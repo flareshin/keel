@@ -8,7 +8,7 @@ export interface FenceScan {
 interface FenceLine {
   marker: string
   length: number
-  info: string
+  infoString: string
 }
 
 export function scanFences(lines: readonly string[]): FenceScan {
@@ -21,7 +21,7 @@ export function scanFences(lines: readonly string[]): FenceScan {
     if (fence === null) continue
     if (open === null) open = { ...fence, line: index + 1 }
     else if (fence.marker === open.marker && fence.length >= open.length) {
-      if (fence.info === "") open = null
+      if (fence.infoString === "") open = null
       else problems.push(`line ${index + 1}: a fence with an info string inside the block opened at line ${open.line} does not nest; lengthen the outer fence`)
     }
   }
@@ -33,8 +33,8 @@ function fenceLine(line: string): FenceLine | null {
   const match = FENCE.exec(line)
   if (match === null) return null
   const run = match[1] as string
-  const info = (match[2] as string).trim()
+  const infoString = (match[2] as string).trim()
   const marker = run.charAt(0)
-  if (marker === "`" && info.includes("`")) return null
-  return { marker, length: run.length, info }
+  if (marker === "`" && infoString.includes("`")) return null
+  return { marker, length: run.length, infoString }
 }

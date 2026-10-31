@@ -33,6 +33,7 @@ export class TimeoutExpired extends Error {
 export interface RunOptions {
   cwd?: string;
   input?: string;
+  env?: NodeJS.ProcessEnv;
 }
 
 export function run(command: readonly string[], timeoutSeconds: number, options: RunOptions = {}): CompletedProcess {
@@ -42,6 +43,7 @@ export function run(command: readonly string[], timeoutSeconds: number, options:
     encoding: "utf8",
     cwd: options.cwd,
     input: options.input,
+    env: options.env === undefined ? undefined : { ...process.env, ...options.env },
     timeout: timeoutSeconds * 1000,
     maxBuffer: UNLIMITED_OUTPUT_BYTES,
   });

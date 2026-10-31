@@ -249,8 +249,7 @@ function checkoutHolding(repo: string, head: string, reviews: ReviewRecord[]): s
 function reworkInCheckout(checkout: string, head: string, earlierHeads: string[], horizonDate: string): Rework {
   if (!gitSucceeds(checkout, ["rev-parse", "--verify", "--quiet", DEFAULT_BRANCH_REF])) return { state: "not computable", reason: "no origin/HEAD" }
   if (!isAncestor(checkout, head, DEFAULT_BRANCH_REF)) return { state: "not computable", reason: "head not on the default branch" }
-  const tipDate = runGit(checkout, ["log", "-1", "--format=%cI", DEFAULT_BRANCH_REF]).trim()
-  if (Date.parse(tipDate) < Date.parse(horizonDate)) return { state: "not computable", reason: "default branch not fetched past the horizon" }
+  if (!defaultBranchSeenPast(checkout, horizonDate)) return { state: "not computable", reason: "default branch not fetched past the horizon" }
   const horizon = runGit(checkout, ["rev-list", "-1", "--first-parent", `--before=${horizonDate}`, DEFAULT_BRANCH_REF]).trim()
   if (horizon === "" || !isAncestor(checkout, head, horizon)) return { state: "not computable", reason: "head reached the default branch after the horizon" }
   const base = shipBase(checkout, head, earlierHeads)
@@ -266,6 +265,16 @@ function reworkInCheckout(checkout: string, head: string, earlierHeads: string[]
     survived += gitSucceeds(checkout, ["cat-file", "-e", `${horizon}:${later}`]) ? blamedToShip(checkout, horizon, later, shipCommits, refactorCommits) : 0
   }
   return { state: "decided", shipped, reworked: Math.max(shipped - survived, 0) }
+}
+
+function defaultBranchSeenPast(checkout: string, horizonDate: string): boolean {
+  const horizon = Date.parse(horizonDate)
+  const tipDate = runGit(checkout, ["log", "-1", "--format=%cI", DEFAULT_BRANCH_REF]).trim()
+  if (Date.parse(tipDate) >= horizon) return true
+  const fetchHead = path.resolve(checkout, runGit(checkout, ["rev-parse", "--git-path", "FETCH_HEAD"]).trim())
+  if (!fs.existsSync(fetchHead) || fs.statSync(fetchHead).mtimeMs < horizon) return false
+  const branch = runGit(checkout, ["rev-parse", "--abbrev-ref", DEFAULT_BRANCH_REF]).trim().replace(/^origin\//, "")
+  return fs.readFileSync(fetchHead, "utf8").split("\n").some((line) => line.includes(`\tbranch '${branch}' of `))
 }
 
 function isAncestor(checkout: string, ancestor: string, descendant: string): boolean {

@@ -101,6 +101,10 @@ describe("risk runner", () => {
 
   const publish = (repo: string): void => {
     gitAt(repo, daysAgo(5), "commit", "-q", "--no-verify", "--allow-empty", "-m", "Later work")
+    track(repo)
+  }
+
+  const track = (repo: string): void => {
     box.git(repo, "update-ref", "refs/remotes/origin/main", "main")
     box.git(repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
     givenReview("review-recent", { repoRoot: repo })
@@ -309,6 +313,34 @@ describe("risk runner", () => {
     box.git(repo, "update-ref", "refs/remotes/origin/main", "main")
     const rework = itemFor(runMetric(), "light")["rework"]
     assert.deepEqual([rework.decided_ships, rework.shipped_lines, rework.reworked_lines], [1, 4, 1])
+  })
+
+  const givenFetchHead = (repo: string, branch: string, fetchedDaysAgo: number): void => {
+    const file = path.join(repo, ".git", "FETCH_HEAD")
+    box.write(path.relative(box.root, file), `${"f".repeat(40)}\t\tbranch '${branch}' of https://example.invalid/app\n`)
+    const fetchedAt = new Date(daysAgo(fetchedDaysAgo))
+    fs.utimesSync(file, fetchedAt, fetchedAt)
+  }
+
+  it("rework_ofAQuietRepo_isDecided_whenTheDefaultBranchWasFetchedAfterTheHorizon", () => {
+    const { repo } = newRepo()
+    const head = mergedShip(repo)
+    track(repo)
+    givenFetchHead(repo, "main", 1)
+    givenPass({ head, ts: OLD_SHIP_TS })
+    const rework = itemFor(runMetric(), "light")["rework"]
+    assert.deepEqual([rework.decided_ships, rework.shipped_lines, rework.reworked_lines], [1, 4, 0])
+  })
+
+  it("rework_ofAQuietRepo_isNotComputable_whenTheLastFetchWasAnotherBranchOrBeforeTheHorizon", () => {
+    const { repo } = newRepo()
+    const head = mergedShip(repo)
+    track(repo)
+    givenPass({ head, ts: OLD_SHIP_TS })
+    givenFetchHead(repo, "feature", 1)
+    assert.deepEqual(itemFor(runMetric(), "light")["rework"]["not_computable"], { "default branch not fetched past the horizon": 1 })
+    givenFetchHead(repo, "main", 20)
+    assert.deepEqual(itemFor(runMetric(), "light")["rework"]["not_computable"], { "default branch not fetched past the horizon": 1 })
   })
 
   it("rework_withACacheFileItCannotRead_isComputedAgain", () => {

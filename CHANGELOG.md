@@ -302,10 +302,10 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
     (`EXPECTED_DIVERGENCES`, each with the exit code the hook must give and the start of the new detail). Everything else
     of those runs, stderr, stdout and every written file, was still compared, and the test failed on a recorded Python
     deny that passes in node (until its corpus became a golden of the node hooks). Its adversarial set adds four `MultiEdit` payloads with a string or object `edits` aimed at the
-    overlay and at `state/keel`, with the outcome of the previous release's hook recorded for them. `tests/ship-gate/ship-gate-parity.test.ts` listed 25 more rows the same way, until its corpus became a golden of the node hook.
+    overlay and at `state/keel`, with the outcome of the previous release's hook recorded for them (until its corpus became a golden of the node hooks). `tests/ship-gate/ship-gate-parity.test.ts` listed 25 more rows the same way, until its corpus became a golden of the node hook.
     The wrong-type payloads (494 in `tests/hooks/hook-parity-wrong-types.ts` for `git-guard`, `ship-gate`, `env-preflight`,
     `model-assign`, `handoff` and `report-gate`: each field that holds text or a flag, set to an object, a list, a number,
-    `true`, `false`, `0`, `[]`, `{}` or `null`) are recorded from the hooks as they were before the typed readers. 325 end
+    `true`, `false`, `0`, `[]`, `{}` or `null`) were recorded from the hooks as they were before the typed readers. 325 end
     differently and were listed in `tests/hooks/hook-parity-wrong-type-divergences.ts` with the exit and a text the hook must give (until its corpus became a golden of the node hooks)
     (every unchanged one was compared in full, and none of the 494 let a recorded deny pass; the corpus includes an `Edit` whose `file_path` is of the wrong type beside an absolute `notebook_path` in the overlay or in `state/keel`, from a `cwd` that protects nothing). The three `git-guard command nested
     in N lists` payloads below the depth bound were listed too: a command that is a list used to be judged on its Python `str()`

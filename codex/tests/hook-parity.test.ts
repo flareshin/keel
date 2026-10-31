@@ -295,6 +295,16 @@ describe("hook parity sample over the recorded golden", () => {
     }
   });
 
+  it("keeps cases whose recorded outcomes differ and drops the repeat of an outcome it already kept", () => {
+    const keptNames = new Set(sample.map((testCase) => testCase.name));
+    const kept = (names: string[]): boolean[] => names.map((name) => keptNames.has(name));
+    assert.deepEqual(kept(["wrong-type cwd object", "wrong-type cwd list", "wrong-type cwd null"]), [true, false, true]);
+    assert.deepEqual(kept(["wrong-type keel_partial on an edit true", "wrong-type replace_all false", "wrong-type replace_all string"]), [true, true, false]);
+    assert.deepEqual(kept(["stdin empty input with default", "stdin incomplete signature first byte with default", "stdin ascii only with default"]), [true, true, true]);
+    assert.deepEqual(kept(["stdin incomplete signature second byte with default", "stdin valid non-ascii with default"]), [false, false]);
+    assert.deepEqual(kept(["write file_path nul byte", "write target with lone high surrogate", "deep unicode escapes", "tool_name astral and lone surrogate"]), [true, false, true, true]);
+  });
+
   it("keeps the first case of each class, once, in corpus order", () => {
     assert.deepEqual(sample, corpus.filter((testCase) => sampleMembers.has(testCase)));
     const firstOfClass = new Map<string, HookCase>();

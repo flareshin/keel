@@ -1,16 +1,9 @@
 import childProcess from 'node:child_process';
 import { constants } from 'node:os';
+import { TimeoutExpired } from '../../measure/lib/measurekit/timeout.ts';
 
 const UNLIMITED_OUTPUT = Infinity;
 const SIGNAL_NUMBERS: Record<string, number> = constants.signals;
-
-export class TimeoutExpired extends Error {
-  override name = 'TimeoutExpired';
-
-  constructor(command: string[], timeoutSeconds: number) {
-    super(`Command ${JSON.stringify(command)} timed out after ${timeoutSeconds} seconds`);
-  }
-}
 
 export interface Completed {
   returncode: number;
@@ -79,10 +72,14 @@ export function runProcessGroup(command: string[], options: Omit<RunOptions, 'in
     });
     child.on('close', (status, signal) => {
       clearTimeout(timer);
-      if (timedOut) reject(new TimeoutExpired(command, options.timeoutSeconds ?? 0));
+      if (timedOut) reject(timeoutExpired(command, options.timeoutSeconds ?? 0));
       else resolve({ returncode: returnCode(status, signal), stdout: Buffer.concat(stdout), stderr: Buffer.concat(stderr) });
     });
   });
+}
+
+function timeoutExpired(command: string[], timeoutSeconds: number): TimeoutExpired {
+  return new TimeoutExpired(`Command ${JSON.stringify(command)} timed out after ${timeoutSeconds} seconds`, timeoutSeconds);
 }
 
 function killGroup(leader: number): void {
@@ -94,7 +91,7 @@ function killGroup(leader: number): void {
 }
 
 function spawnFailure(error: NodeJS.ErrnoException, command: string[], timeoutSeconds: number | undefined): Error {
-  return error.code === 'ETIMEDOUT' ? new TimeoutExpired(command, timeoutSeconds ?? 0) : error;
+  return error.code === 'ETIMEDOUT' ? timeoutExpired(command, timeoutSeconds ?? 0) : error;
 }
 
 export function returnCode(status: number | null, signal: NodeJS.Signals | null): number {

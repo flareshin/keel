@@ -13,7 +13,8 @@ import { NonFiniteJsonNumber, parseFiniteJson, parseJson, parsePayload } from ".
 import { AttributeError, describeError, errorName, pythonTypeName, RecursionError, ValueError } from "../lib/hookkit/errors.ts";
 import { readStdin } from "../lib/hookkit/stdio.ts";
 import { SPACE_CHARS, SPACE_CLASS, testCaseFolded, trimCharacters, trimSpace, WORD_BOUNDARY, WORD_CHARS } from "../lib/hookkit/text.ts";
-import { OSError, run, TimeoutExpired } from "../lib/hookkit/subprocess.ts";
+import { TimeoutExpired } from "../../measure/lib/measurekit/timeout.ts";
+import { OSError, run } from "../lib/hookkit/subprocess.ts";
 import type { CompletedProcess } from "../lib/hookkit/subprocess.ts";
 import { commandWritesFiles } from "../lib/hookkit/shell.ts";
 import { contentOf, iterEntries, roleOf, textOf, toolUses } from "../lib/hookkit/transcript.ts";

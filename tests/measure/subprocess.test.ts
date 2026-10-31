@@ -4,7 +4,8 @@ import os from "node:os"
 import path from "node:path"
 import { describe, it } from "node:test"
 
-import { runProcess, runProcessAsync, TimeoutExpired } from "../../measure/lib/measurekit/subprocess.ts"
+import { runProcess, runProcessAsync } from "../../measure/lib/measurekit/subprocess.ts"
+import { TimeoutExpired } from "../../measure/lib/measurekit/timeout.ts"
 
 describe("runProcess", () => {
   it("runProcess_returnsOutputAsPrinted_andKeepsPartialOutputOnATimeout", () => {

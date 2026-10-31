@@ -1,4 +1,4 @@
-import { diffEntries, diffStats, objectType, text } from '../evidence/gitcmd.ts';
+import { diffEntries, diffStats, objectType, textOrThrow } from '../evidence/gitcmd.ts';
 import type { PathEntry, PathStat } from '../evidence/gitcmd.ts';
 import { isTestPath } from '../evidence/risk.ts';
 import { SCRIPT_FILE } from './consumers.ts';
@@ -39,7 +39,7 @@ export function isPrecheckSource(path: string, blob: string): boolean {
 }
 
 function hasRunnableTest(repo: string, end: string): boolean {
-  return text(repo, ['ls-tree', '-r', '--name-only', end]).split('\n').some(isRunnableTest);
+  return textOrThrow(repo, ['ls-tree', '-r', '--name-only', end]).split('\n').some(isRunnableTest);
 }
 
 function nonTestBlobs(repo: string, base: string, end: string): Record<string, string> {

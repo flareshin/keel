@@ -7,7 +7,7 @@ import {
 } from "./helpers.ts";
 import type { HookResult } from "./helpers.ts";
 import { BOUNDARY_TIMEOUT_SECONDS, DROP_COMMENTS, GuardError, scanStagedSecrets } from "../../hooks/git-guard/git-guard.ts";
-import { GIT_TIMEOUT_SECONDS } from "../../hooks/lib/hookkit/repo.ts";
+import { HOOK_GIT_TIMEOUT_SECONDS } from "../../hooks/lib/hookkit/repo.ts";
 import { MAX_JSON_DEPTH } from "../../measure/lib/measurekit/json.ts";
 
 const ATTRIBUTION_TRAILER = "Co-Authored-By: Claude <noreply@example.invalid>";
@@ -1021,7 +1021,7 @@ describe("SubprocessTimeoutTest", () => {
   it("subprocessTimeouts_stayBelowTheRegisteredTimeout", () => {
     const registered = registeredTimeout("git-guard/git-guard");
     assert.ok(BOUNDARY_TIMEOUT_SECONDS + DECISION_MARGIN_SECONDS < registered);
-    assert.ok(GIT_TIMEOUT_SECONDS + DECISION_MARGIN_SECONDS < registered);
+    assert.ok(HOOK_GIT_TIMEOUT_SECONDS + DECISION_MARGIN_SECONDS < registered);
   });
 
   it("boundaryScan_raisesGuardError_whenTheScannerOutlastsItsTimeout", () => {

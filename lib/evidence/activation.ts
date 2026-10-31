@@ -4,7 +4,7 @@ import * as env from './env.ts';
 import * as gitcmd from './gitcmd.ts';
 import * as registry from './registry.ts';
 import * as store from './store.ts';
-import { TimeoutExpired } from './subprocess.ts';
+import { TimeoutExpired } from '../../measure/lib/measurekit/timeout.ts';
 import * as verify from './verify.ts';
 
 export function approvedFastForward(repo: string, target: unknown): boolean {
@@ -13,7 +13,7 @@ export function approvedFastForward(repo: string, target: unknown): boolean {
     const key = registry.originKey(repo);
     const row = registry.lookup(key);
     if (!row || row.gate !== 'code' || gitcmd.objectType(repo, target) !== 'commit') return false;
-    if (gitcmd.text(repo, ['status', '--porcelain', '--untracked-files=all'])) return false;
+    if (gitcmd.textOrThrow(repo, ['status', '--porcelain', '--untracked-files=all'])) return false;
     const head = gitcmd.commitSha(repo, 'HEAD');
     if (!head || gitcmd.mergeBase(repo, head, target) !== head) return false;
     const tree = gitcmd.treeOfCommit(repo, target);

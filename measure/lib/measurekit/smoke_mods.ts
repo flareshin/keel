@@ -2,12 +2,13 @@ import path from "node:path"
 
 import { dataLines } from "./datafiles.ts"
 import { InvalidUtf8Error, isFile, isSystemError, readUtf8, resolveLinks } from "./files.ts"
-import { GitError, runGit } from "./gitutil.ts"
+import { GitError, runGitOrThrow } from "./gitutil.ts"
 import { isJsonObject, parseJson } from "./json.ts"
 import type { JsonObject, JsonValue } from "./json.ts"
 import { FAIL, PASS, stderrExcerpt, WARN } from "./metrics.ts"
 import { isUnder, mainWorktreeOverlay } from "./overlay_checkout.ts"
-import { runProcess, TimeoutExpired } from "./subprocess.ts"
+import { runProcess } from "./subprocess.ts"
+import { TimeoutExpired } from "./timeout.ts"
 import { assertion, firstItems } from "./smoke_context.ts"
 import type { Assertion, SmokeContext } from "./smoke_context.ts"
 
@@ -104,9 +105,9 @@ function isCommittedOverlayMod(installPath: string, overlay: string | null): boo
   let tracked: Set<string>
   let changes: string
   try {
-    tracked = new Set(runGit(overlay, ["ls-files", "-z", "--", pathspec]).split("\0"))
+    tracked = new Set(runGitOrThrow(overlay, ["ls-files", "-z", "--", pathspec]).split("\0"))
     tracked.delete("")
-    changes = runGit(overlay, ["status", "--porcelain", "--", pathspec])
+    changes = runGitOrThrow(overlay, ["status", "--porcelain", "--", pathspec])
   } catch (error) {
     if (error instanceof GitError || isSystemError(error)) return false
     throw error

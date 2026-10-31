@@ -4,10 +4,10 @@ import { rstripChar, trimSpace } from "./text.ts";
 import { run } from "./subprocess.ts";
 import type { CompletedProcess } from "./subprocess.ts";
 
-export const GIT_TIMEOUT_SECONDS = 8;
+export const HOOK_GIT_TIMEOUT_SECONDS = 8;
 
 export function git(args: readonly string[], cwd: string, env?: NodeJS.ProcessEnv): CompletedProcess {
-  return run(["git", "-C", cwd, ...args], GIT_TIMEOUT_SECONDS, { env });
+  return run(["git", "-C", cwd, ...args], HOOK_GIT_TIMEOUT_SECONDS, { env });
 }
 
 function isDirectory(path: string): boolean {
@@ -19,7 +19,7 @@ function isDirectory(path: string): boolean {
   }
 }
 
-export function gitOutput(args: readonly string[], cwd: string, env?: NodeJS.ProcessEnv): string | null {
+export function gitOutputOrNull(args: readonly string[], cwd: string, env?: NodeJS.ProcessEnv): string | null {
   if (!isDirectory(cwd)) return null;
   const result = git(args, cwd, env);
   if (result.returncode !== 0) return null;
@@ -27,7 +27,7 @@ export function gitOutput(args: readonly string[], cwd: string, env?: NodeJS.Pro
 }
 
 export function findToplevel(path: string): string | null {
-  return gitOutput(["rev-parse", "--show-toplevel"], path);
+  return gitOutputOrNull(["rev-parse", "--show-toplevel"], path);
 }
 
 export function normalizeRepoKey(url: string): string | null {
@@ -39,24 +39,24 @@ export function normalizeRepoKey(url: string): string | null {
 }
 
 export function findRepoKey(toplevel: string): string | null {
-  const url = gitOutput(["remote", "get-url", "origin"], toplevel);
+  const url = gitOutputOrNull(["remote", "get-url", "origin"], toplevel);
   return url ? normalizeRepoKey(url) : null;
 }
 
 export function findSuperproject(toplevel: string): string | null {
-  return gitOutput(["rev-parse", "--show-superproject-working-tree"], toplevel) || null;
+  return gitOutputOrNull(["rev-parse", "--show-superproject-working-tree"], toplevel) || null;
 }
 
 export function isCommit(toplevel: string, ref: string): boolean {
-  return gitOutput(["rev-parse", "-q", "--verify", ref + "^{commit}"], toplevel) !== null;
+  return gitOutputOrNull(["rev-parse", "-q", "--verify", ref + "^{commit}"], toplevel) !== null;
 }
 
 export function findUpstream(toplevel: string, ref: string): string | null {
-  const upstream = gitOutput(["rev-parse", "--abbrev-ref", `${ref}@{u}`], toplevel);
+  const upstream = gitOutputOrNull(["rev-parse", "--abbrev-ref", `${ref}@{u}`], toplevel);
   return upstream && isCommit(toplevel, upstream) ? upstream : null;
 }
 
 export function currentBranch(toplevel: string): string | null {
-  const branch = gitOutput(["rev-parse", "--abbrev-ref", "HEAD"], toplevel);
+  const branch = gitOutputOrNull(["rev-parse", "--abbrev-ref", "HEAD"], toplevel);
   return branch === null || branch === "HEAD" ? null : branch;
 }

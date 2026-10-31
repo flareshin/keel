@@ -8,7 +8,7 @@ import { dumpsAscii } from "../lib/hookkit/jsonout.ts";
 import { isFile } from "../lib/hookkit/files.ts";
 import { printLine, writeStderr } from "../lib/hookkit/stdio.ts";
 import { splitlines, trimCharacters, trimSpace } from "../lib/hookkit/text.ts";
-import { findToplevel, findUpstream, gitOutput } from "../lib/hookkit/repo.ts";
+import { findToplevel, findUpstream, gitOutputOrNull } from "../lib/hookkit/repo.ts";
 
 const HOOK = "handoff";
 const RULE = "C-handoff";
@@ -30,7 +30,7 @@ class RepoPlace {
   constructor(toplevel: string) {
     this.toplevel = toplevel;
     this.main = mainRepo(toplevel);
-    this.branch = gitOutput(["rev-parse", "--abbrev-ref", "HEAD"], toplevel) || "?";
+    this.branch = gitOutputOrNull(["rev-parse", "--abbrev-ref", "HEAD"], toplevel) || "?";
     this.file = joinPath(dataDir(), "handoff", this.main.replace(NON_ALPHANUMERIC, "-") + ".md");
   }
 
@@ -72,7 +72,7 @@ function writeHandoff(place: RepoPlace, note: string): void {
 
 function renderHandoff(place: RepoPlace, note: string): string {
   const toplevel = place.toplevel;
-  const dirty = gitOutput(["status", "--porcelain"], toplevel) || "";
+  const dirty = gitOutputOrNull(["status", "--porcelain"], toplevel) || "";
   const dirtyCount = splitlines(dirty).filter((line) => line !== "").length;
   const lines = [
     `# HANDOFF — ${basename(place.main)}`,
@@ -86,13 +86,13 @@ function renderHandoff(place: RepoPlace, note: string): string {
     LOCATION_HEADING,
     `- Main repo: \`${place.main}\``,
     ...place.locationLines(),
-    `- HEAD: \`${gitOutput(["log", "-1", "--pretty=%h %s"], toplevel) || "?"}\``,
+    `- HEAD: \`${gitOutputOrNull(["log", "-1", "--pretty=%h %s"], toplevel) || "?"}\``,
   ];
   const upstreamPosition = upstreamPositionOf(toplevel);
   if (upstreamPosition) lines.push(`- upstream: ${upstreamPosition}`);
   lines.push("", `## Uncommitted (${dirtyCount})`);
   lines.push(...(dirtyCount > 0 ? ["```", dirty, "```"] : ["(none — working tree clean)"]));
-  const recent = gitOutput(["log", "-3", "--pretty=%h %ad %s", "--date=short"], toplevel) || "?";
+  const recent = gitOutputOrNull(["log", "-3", "--pretty=%h %ad %s", "--date=short"], toplevel) || "?";
   return [...lines, "", "## Recent commits", "```", recent, "```", ""].join("\n");
 }
 
@@ -114,14 +114,14 @@ function hasResumePoint(path: string): boolean {
 }
 
 function mainRepo(toplevel: string): string {
-  const common = gitOutput(["rev-parse", "--path-format=absolute", "--git-common-dir"], toplevel);
+  const common = gitOutputOrNull(["rev-parse", "--path-format=absolute", "--git-common-dir"], toplevel);
   if (!common || SUBMODULE_GIT_DIR_RE.test(common + "/")) return toplevel;
   return dirname(common);
 }
 
 function upstreamPositionOf(toplevel: string): string | null {
   const upstream = findUpstream(toplevel, "HEAD");
-  const counts = upstream && gitOutput(["rev-list", "--left-right", "--count", `${upstream}...HEAD`], toplevel);
+  const counts = upstream && gitOutputOrNull(["rev-list", "--left-right", "--count", `${upstream}...HEAD`], toplevel);
   if (!upstream || !counts) return null;
   const [behind, ahead] = trimSpace(counts).split(/\s+/);
   return `${behind} behind / ${ahead} ahead (vs ${upstream})`;

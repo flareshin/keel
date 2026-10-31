@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { constants } from "node:os";
+import { TimeoutExpired } from "../../../measure/lib/measurekit/timeout.ts";
 
 const UNLIMITED_OUTPUT_BYTES = 1 << 30;
 const NEWLINES = /\r\n|\r/g;
@@ -17,16 +18,6 @@ export class OSError extends Error {
     super(message);
     this.name = "OSError";
     this.code = code;
-  }
-}
-
-export class TimeoutExpired extends Error {
-  readonly timeoutSeconds: number;
-
-  constructor(command: readonly string[], timeoutSeconds: number) {
-    super(`Command '${command.join(" ")}' timed out after ${timeoutSeconds} seconds`);
-    this.name = "TimeoutExpired";
-    this.timeoutSeconds = timeoutSeconds;
   }
 }
 
@@ -49,7 +40,7 @@ export function run(command: readonly string[], timeoutSeconds: number, options:
   });
   const code = (result.error as NodeJS.ErrnoException | undefined)?.code;
   if (result.error && code !== "EPIPE") {
-    if (code === "ETIMEDOUT") throw new TimeoutExpired(command, timeoutSeconds);
+    if (code === "ETIMEDOUT") throw new TimeoutExpired(`Command '${command.join(" ")}' timed out after ${timeoutSeconds} seconds`, timeoutSeconds);
     throw new OSError(result.error.message, code);
   }
   const returncode = result.status ?? -(constants.signals[result.signal as keyof typeof constants.signals] ?? 0);

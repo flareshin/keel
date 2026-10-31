@@ -398,24 +398,17 @@ export function checkLiveCheckouts(call: readonly Step[]): Violation[] {
     const targets = writeTargets(step.command);
     for (const path of [...targets.written, ...targets.removed]) {
       const [root, unresolvedCd] = liveRootOfWrite(live, step, path, call[0]?.directory ?? "");
-      collectLive(hits, unresolvedCd ? `${path} (after a \`cd\` the hook cannot resolve, judged where the call starts)` : path, root);
+      collect(hits, root, unresolvedCd ? `${path} (after a \`cd\` the hook cannot resolve, judged where the call starts)` : path);
     }
     const index = gitSubcommandIndex(step.argv);
     const subcommand = index === null ? undefined : step.argv[index];
     if (index !== null && subcommand !== undefined && LIVE_MOVING_SUBCOMMANDS.has(subcommand)) {
       const toplevel = findToplevel(gitDirectory(step.argv, step.directory, step.expansion));
       if (toplevel && live.rootOf(toplevel) === toplevel && isApprovedFastForward(step.argv.slice(index), toplevel)) continue;
-      collectLive(hits, `git ${subcommand}`, toplevel ? live.rootOf(toplevel) : null);
+      collect(hits, toplevel ? live.rootOf(toplevel) : null, `git ${subcommand}`);
     }
   }
-  return Array.from(hits, ([root, whats]) => liveViolation(protocol.listed(whats), root));
-}
-
-function collectLive(hits: Map<string, string[]>, what: string, root: string | null): void {
-  if (!root) return;
-  const whats = hits.get(root) ?? [];
-  if (!whats.includes(what)) whats.push(what);
-  hits.set(root, whats);
+  return Array.from(hits, ([root, whats]) => liveViolation(protocol.listed([...new Set(whats)]), root));
 }
 
 function isApprovedFastForward(args: readonly string[], repo: string): boolean {
@@ -423,12 +416,13 @@ function isApprovedFastForward(args: readonly string[], repo: string): boolean {
   return approvedFastForward(repo, args[2] ?? "");
 }
 
-function liveViolation(what: string, root: string): Violation {
+function liveViolation(whats: string, root: string): Violation {
   const parent = basename(root);
   return {
     ruleId: C_ISOLATION,
-    text: `${what} is inside the live checkout ${root}. Work in a worktree: \`git -C ${root} worktree add ../${parent}-wt/<topic> -b <topic>\`; ` +
-      `the live checkout needs an exact-commit owner-approved, gate-verified fast-forward; otherwise the user runs \`git -C ${root} merge --ff-only <branch>\`.`,
+    text: `${root} is a live checkout. Work in a worktree: \`git -C ${root} worktree add ../${parent}-wt/<topic> -b <topic>\`; ` +
+      `the live checkout needs an exact-commit owner-approved, gate-verified fast-forward; otherwise the user runs \`git -C ${root} merge --ff-only <branch>\`. ` +
+      `Inside it: ${whats}.`,
   };
 }
 

@@ -571,6 +571,23 @@ describe("LiveCheckoutTest", () => {
     assert.ok(bullets.some((bullet) => bullet.includes(`${sandbox.overlay}/ledger.tsv`)), result.stderr);
   });
 
+  it("bash_keepsTheLiveRootAndTheWorktreeAdvice_whenACallWritesManyLongPathsIntoLiveKeel", () => {
+    const longName = "n".repeat(150);
+    const paths = Array.from({ length: 12 }, (_, index) => `${live}/${longName}${index}.md`);
+    const result = guard(`touch ${paths.join(" ")}`);
+    assertDenied(result, "C-isolation");
+    assert.ok(result.stderr.includes(`git -C ${live} worktree add`), result.stderr);
+    assert.ok(result.stderr.includes(`git -C ${live} merge --ff-only <branch>`), result.stderr);
+  });
+
+  it("bash_listsAPathOnce_whenOneCallWritesItTwiceIntoLiveKeel", () => {
+    const result = guard(`echo x > ${live}/notes.md; echo y > ${live}/notes.md`);
+    assertDenied(result, "C-isolation");
+    const bullets = cIsolationBullets(result);
+    assert.equal(bullets.length, 1, result.stderr);
+    assert.equal(bullets[0]?.split("notes.md").length, 2, result.stderr);
+  });
+
   it("bash_denied_whenRedirectIntoLiveKeelUsesAnExportedVariable", () => {
     assertDenied(guard(`export L=${live}; echo x > $L/notes.md`), "C-isolation");
   });

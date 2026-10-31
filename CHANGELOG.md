@@ -172,11 +172,14 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
   - `stringifySorted` and `parseJsonKeepingIntegers` (`measure/lib/measurekit/json.ts`) handle the full 10,000 level nesting
     without running out of stack, except text nested past about two thousand levels that also holds an integer beyond
     2^53: parsing it runs out of stack, so an evidence file like that is an `EvidenceError` and stdin like that exits 70.
-  - The ship-gate parity tests still replay the 1,757 recorded hook runs, split over eight shard files
-    (`tests/ship-gate/ship-gate-parity-shard-<n>.test.ts`) that `node --test` runs in parallel; `ship-gate-parity.test.ts`
-    checks that every case falls in exactly one shard and that each listed divergence is recorded once. The replay compares fires lines by
-    content, masks the JSON decode wording, and lists each case whose wording or outcome changed with the exit code the
-    hook must give (`EXPECTED_DIVERGENCES`). `codex/tests/hook-parity.ts` compares the fires lines it replays by content too.
+  - The ship-gate parity tests replay the 1,757 recorded hook runs, split over eight shard files
+    (`tests/ship-gate/ship-gate-parity-shard-<n>.test.ts`) that `node --test` runs in parallel, and compare each with a golden
+    snapshot of the node hook's own output (`cases.jsonl.gz`) instead of the retired Python hook's recorded answers. The golden
+    holds exit code, stdout, stderr and every written or removed file, with only the `keel-fires.jsonl` timestamp, `cc_version`,
+    the checkout's repo key and the JSON syntax error wording masked. An intended behavior change re-records it with
+    `node tests/ship-gate/ship-gate-parity-record.ts`, and the diff of `cases.jsonl.gz` is reviewed like any other change.
+    `ship-gate-parity.test.ts` checks that every case falls in exactly one shard. `EXPECTED_DIVERGENCES` and the deny-to-pass
+    count are gone. `codex/tests/hook-parity.ts` compares the fires lines it replays by content.
   - `keel review prepare` reads deeply nested stdin: 200,000 nested arrays exit 2 as `stdin must be a JSON object`
     instead of exit 70.
 - `git-guard` `repo-rules.tsv` and `env-preflight` `jdk.tsv` globs match through the same `globMatches` as
@@ -289,7 +292,7 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
     (`EXPECTED_DIVERGENCES`, each with the exit code the hook must give and the start of the new detail). Everything else
     of those runs, stderr, stdout and every written file, is still compared, and the test fails on a recorded Python
     deny that passes in node. Its adversarial set adds four `MultiEdit` payloads with a string or object `edits` aimed at the
-    overlay and at `state/keel`, with the outcome of the previous release's hook recorded for them. `tests/ship-gate/ship-gate-parity.test.ts` lists 25 more rows the same way.
+    overlay and at `state/keel`, with the outcome of the previous release's hook recorded for them. `tests/ship-gate/ship-gate-parity.test.ts` listed 25 more rows the same way, until its corpus became a golden of the node hook.
     The wrong-type payloads (494 in `tests/hooks/hook-parity-wrong-types.ts` for `git-guard`, `ship-gate`, `env-preflight`,
     `model-assign`, `handoff` and `report-gate`: each field that holds text or a flag, set to an object, a list, a number,
     `true`, `false`, `0`, `[]`, `{}` or `null`) are recorded from the hooks as they were before the typed readers. 325 end
@@ -299,9 +302,9 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
     text, in which a quote inside an element let the rest of the element run as shell words (`F-hookskip` denied it), and it is
     now refused as an internal error. The run reports 344 recorded + 784 adversarial cases, 465 listed divergences (137 before),
     0 mismatches, deny-to-pass 0; fire logs written with compact JSON (`ship-gate`) now have their `ts` masked as well.
-    `tests/ship-gate/ship-gate-parity.test.ts` lists 61 more rows (146 in all): a `command`, `cwd` or `session_id` that is not
+    `tests/ship-gate/ship-gate-parity.test.ts` listed 61 more rows (146 in all): a `command`, `cwd` or `session_id` that is not
     text, and `gh` answers whose `statusCheckRollup`, a check or `baseRefName` has the wrong type; 1,757 cases, 0 mismatches,
-    deny-to-pass 0. `codex/tests/hook-parity-corpus.ts` adds 42 wrong-type payloads (recorded from the adapter as it was) and lists
+    deny-to-pass 0 (those listings are replaced by the golden snapshot). `codex/tests/hook-parity-corpus.ts` adds 42 wrong-type payloads (recorded from the adapter as it was) and lists
     28 changed ones (587 cases, 99 listed). `tests/hooks/shell-parity.test.ts` gains a listed-divergence set of its own for the
     six `resolve_directory` calls on `~root`.
 

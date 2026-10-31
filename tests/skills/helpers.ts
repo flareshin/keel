@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync
 import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { splitlines } from "../../hooks/lib/hookkit/text.ts";
+import { scanFences } from "../../measure/lib/measurekit/fences.ts";
 
 export const KEEL_HOME = realpathSync(join(import.meta.dirname, "..", ".."));
 export const SKILLS_DIR = join(KEEL_HOME, "skills");
@@ -47,22 +48,19 @@ export function markdownPaths(): string[] {
 }
 
 export function rulesSection(text: string): string[] {
-  const lines: string[] = [];
+  const lines = splitlines(text);
+  const { fenced } = scanFences(lines);
+  const section: string[] = [];
   let inside = false;
-  let fenced = false;
-  for (const line of splitlines(text)) {
-    if (line.startsWith("```")) {
-      fenced = !fenced;
-      continue;
-    }
-    if (fenced) continue;
+  for (const [index, line] of lines.entries()) {
+    if (fenced[index]) continue;
     if (line.startsWith("## ")) {
       inside = RULES_HEADING.test(line);
       continue;
     }
-    if (inside) lines.push(line);
+    if (inside) section.push(line);
   }
-  return lines;
+  return section;
 }
 
 export function bulletTags(lines: readonly string[]): Array<[string, string | null]> {

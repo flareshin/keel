@@ -8,6 +8,7 @@ import { entryExists, InvalidUtf8Error, isDir, isExecutable, isFile, isSymlink, 
 import { GitError, isGitRepo, runGit } from "./gitutil.ts"
 import { iterRegistrations } from "./hook_settings.ts"
 import { addDays } from "./dates.ts"
+import { scanFences } from "./fences.ts"
 import { compareCodePoints, displayText, isJsonObject, parseJson } from "./json.ts"
 import type { JsonObject, JsonValue } from "./json.ts"
 import { FAIL, isWithinWindow, PASS, stderrExcerpt, WARN } from "./metrics.ts"
@@ -22,7 +23,6 @@ const K5_SUBCHECK_IDS = new Set(Array.from({ length: 16 }, (_, index) => `K5.${i
 const BULLET = /^\s*(?:[-*+]|\d+\.)\s+/
 const ID_TAG = /^\[([A-Za-z0-9.-]+)\]/
 const RULES_HEADING = /^##\s+Rules\b/i
-const FENCE = "```"
 const LINKED_DIRS = ["skills", "commands", "agents", "workflows", "bin", "mcp"]
 const REPO_RULES_HEADER = ["origin_glob", "action", "pattern", "rule_id", "message"]
 const LINK_CHECK_TIMEOUT_SECONDS = 60
@@ -117,29 +117,20 @@ function skillRulesTotal(skillPaths: string[]): Assertion {
 
 function checkedLines(file: string, rulesSectionOnly: boolean): NumberedLine[] {
   const lines = splitLines(readUtf8(file))
-  const numbered = rulesSectionOnly ? rulesSection(lines) : lines.map((line, index): NumberedLine => [index + 1, line])
-  return outsideFences(numbered)
+  const { fenced } = scanFences(lines)
+  const numbered = lines.map((line, index): NumberedLine => [index + 1, line]).filter((_line, index) => !fenced[index])
+  return rulesSectionOnly ? rulesSection(numbered) : numbered
 }
 
-function rulesSection(lines: string[]): NumberedLine[] {
+function rulesSection(numbered: NumberedLine[]): NumberedLine[] {
   const section: NumberedLine[] = []
   let inside = false
-  lines.forEach((line, index) => {
+  for (const [number, line] of numbered) {
     if (RULES_HEADING.test(line)) inside = true
     else if (line.startsWith("## ")) inside = false
-    else if (inside) section.push([index + 1, line])
-  })
-  return section
-}
-
-function outsideFences(numbered: NumberedLine[]): NumberedLine[] {
-  const kept: NumberedLine[] = []
-  let inFence = false
-  for (const [number, line] of numbered) {
-    if (line.trimStart().startsWith(FENCE)) inFence = !inFence
-    else if (!inFence) kept.push([number, line])
+    else if (inside) section.push([number, line])
   }
-  return kept
+  return section
 }
 
 function tagProblem(number: number, line: string, knownIds: Set<string>): string | null {

@@ -23,11 +23,12 @@ import { addedComments, withStraightQuotes } from "./comments.ts";
 import { notebookCellChange } from "./notebook.ts";
 import type { CodeChange } from "./notebook.ts";
 import { currentBranch, findRepoKey, findToplevel, git, gitOutput, isCommit } from "../lib/hookkit/repo.ts";
-import {
-  fileWriteOf, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, isConfigRead, operands, readPushArguments, resolveDirectory, RUN_TIME_WORD_RE, steps,
-  writeTargets,
-} from "../lib/hookkit/shell.ts";
-import type { Step } from "../lib/hookkit/shell.ts";
+import { RUN_TIME_WORD_RE } from "../lib/hookkit/commands.ts";
+import { ghSubcommandArgv, gitDirectory, gitSubcommandIndex, isConfigRead, readPushArguments } from "../lib/hookkit/gitargs.ts";
+import { steps } from "../lib/hookkit/steps.ts";
+import type { Step } from "../lib/hookkit/steps.ts";
+import { resolveDirectory } from "../lib/hookkit/variables.ts";
+import { fileWriteOf, operands, writeTargets } from "../lib/hookkit/writes.ts";
 import { OSError, run, TimeoutExpired } from "../lib/hookkit/subprocess.ts";
 import type { CompletedProcess } from "../lib/hookkit/subprocess.ts";
 

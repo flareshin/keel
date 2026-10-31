@@ -15,7 +15,7 @@ import { readStdin } from "../lib/hookkit/stdio.ts";
 import { SPACE_CHARS, SPACE_CLASS, testCaseFolded, trimCharacters, trimSpace, WORD_BOUNDARY, WORD_CHARS } from "../lib/hookkit/text.ts";
 import { OSError, run, TimeoutExpired } from "../lib/hookkit/subprocess.ts";
 import type { CompletedProcess } from "../lib/hookkit/subprocess.ts";
-import { commandWritesFiles } from "../lib/hookkit/shell.ts";
+import { commandWritesFiles } from "../lib/hookkit/writes.ts";
 import { contentOf, iterEntries, roleOf, textOf, toolUses } from "../lib/hookkit/transcript.ts";
 
 const HOOK = "report-gate";

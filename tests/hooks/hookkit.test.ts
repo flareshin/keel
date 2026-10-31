@@ -7,10 +7,13 @@ import * as knownvalues from "../../hooks/lib/hookkit/knownvalues.ts";
 import { OverlayDataError, readTsv } from "../../hooks/lib/hookkit/overlay.ts";
 import * as protocol from "../../hooks/lib/hookkit/protocol.ts";
 import { normalizeRepoKey } from "../../hooks/lib/hookkit/repo.ts";
+import { unwrap } from "../../hooks/lib/hookkit/commands.ts";
 import {
-  commandWritesFiles, configKey, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, isConfigRead, parseCommands,
-  readPushArguments, steps, unwrap, writeTargets,
-} from "../../hooks/lib/hookkit/shell.ts";
+  configKey, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, isConfigRead, readPushArguments,
+} from "../../hooks/lib/hookkit/gitargs.ts";
+import { parseCommands } from "../../hooks/lib/hookkit/parser.ts";
+import { steps } from "../../hooks/lib/hookkit/steps.ts";
+import { commandWritesFiles, writeTargets } from "../../hooks/lib/hookkit/writes.ts";
 import { Sandbox, withEnv } from "./helpers.ts";
 
 function argvs(text: string): string[][] {

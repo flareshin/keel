@@ -5,7 +5,7 @@ import { describe, test } from 'node:test';
 import type { TestContext } from 'node:test';
 import { spawnSync } from 'node:child_process';
 import { checkLiveCheckouts } from '../../hooks/git-guard/git-guard.ts';
-import { steps } from '../../hooks/lib/hookkit/shell.ts';
+import { steps } from '../../hooks/lib/hookkit/steps.ts';
 import { approvedFastForward } from '../../lib/evidence/activation.ts';
 import { RegistryError, gatedRepos } from '../../lib/evidence/registry.ts';
 import { AUTO_MERGE_REGISTRY, KEEL_HOME, Sandbox } from './helpers.ts';

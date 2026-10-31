@@ -181,6 +181,15 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
     `node tests/ship-gate/ship-gate-parity-record.ts`, and the diff of `cases.jsonl.gz` is reviewed like any other change.
     `ship-gate-parity.test.ts` checks that every case falls in exactly one shard. `EXPECTED_DIVERGENCES` and the deny-to-pass
     count are gone. `codex/tests/hook-parity.ts` compares the fires lines it replays by content.
+  - The hook parity test (`tests/hooks/hook-parity.test.ts`) replays the 344 recorded runs of the former Python hook tests and
+    the 784 adversarial payloads and compares each with a golden snapshot of the node hooks' own output (`cases.jsonl` and
+    `adversarial.json` under `tests/hooks/fixtures/hook-parity`) instead of the retired Python hooks' recorded answers. The golden
+    holds exit code, stdout, stderr and every file written or removed outside `.git` and `remotes`, with the sandbox root and
+    checkout paths tokenized and only the `keel-fires.jsonl` and handoff timestamps and the JSON syntax error wording of a
+    fire detail masked. An intended behavior change re-records it with `node tests/hooks/hook-parity-record.ts`, and the diff
+    of the two fixtures is reviewed like any other change. The replay reports `golden: N cases, 0 mismatches`.
+    `EXPECTED_DIVERGENCES`, the per-payload expected outcomes of the adversarial set
+    (`tests/hooks/hook-parity-wrong-type-divergences.ts` and the `divergence` of each JSON limit payload) and the deny-to-pass count are gone.
   - `keel review prepare` reads deeply nested stdin: 200,000 nested arrays exit 2 as `stdin must be a JSON object`
     instead of exit 70.
 - `git-guard` `repo-rules.tsv` and `env-preflight` `jdk.tsv` globs match through the same `globMatches` as
@@ -212,8 +221,8 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
     and sends no review request, where it used to forward `NaN` or `Infinity`, which `keel evidence write-review` refuses.
   - The detail of a fire for malformed JSON names `JsonSyntaxError` and V8's message (it named `JSONDecodeError` with
     Python's message); a `RecursionError:` detail keeps its prefix.
-  - `tests/hooks/hook-parity.test.ts` compares the recorded Python runs with the decode error message masked on both sides
-    (`JSONDecodeError` reads as `JsonSyntaxError`) and lists 31 more payloads whose outcome changed: the non-finite
+  - `tests/hooks/hook-parity.test.ts` compared the recorded Python runs with the decode error message masked on both sides
+    (`JSONDecodeError` reads as `JsonSyntaxError`) and listed 31 more payloads whose outcome changed, until its corpus became a golden of the node hooks: the non-finite
     numbers above and the integers of more than 4,300 digits, which the hooks now judge like any other payload.
   - Error text in every hook (`describeError`, the `detail` of an `error` fire and the `internal error` line a hook
     prints) is `<name>: <message>` with Node's own message, and the errno-to-Python-class table is gone. What stays the
@@ -289,20 +298,20 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
     - `expandUser` expands `~`, `~/...` and `~<name>` only for the current account (`~root/x` stays `~root/x` and is joined to
       the working directory); it no longer asks directory services or `/etc/passwd` for other accounts. `shell-parity` lists the
       six `resolve_directory` calls this changes.
-  - `tests/hooks/hook-parity.test.ts` lists the four recorded runs whose fire text changed with this wording
+  - `tests/hooks/hook-parity.test.ts` listed the four recorded runs whose fire text changed with this wording
     (`EXPECTED_DIVERGENCES`, each with the exit code the hook must give and the start of the new detail). Everything else
-    of those runs, stderr, stdout and every written file, is still compared, and the test fails on a recorded Python
-    deny that passes in node. Its adversarial set adds four `MultiEdit` payloads with a string or object `edits` aimed at the
-    overlay and at `state/keel`, with the outcome of the previous release's hook recorded for them. `tests/ship-gate/ship-gate-parity.test.ts` listed 25 more rows the same way, until its corpus became a golden of the node hook.
+    of those runs, stderr, stdout and every written file, was still compared, and the test failed on a recorded Python
+    deny that passes in node (until its corpus became a golden of the node hooks). Its adversarial set adds four `MultiEdit` payloads with a string or object `edits` aimed at the
+    overlay and at `state/keel`, with the outcome of the previous release's hook recorded for them (until its corpus became a golden of the node hooks). `tests/ship-gate/ship-gate-parity.test.ts` listed 25 more rows the same way, until its corpus became a golden of the node hook.
     The wrong-type payloads (494 in `tests/hooks/hook-parity-wrong-types.ts` for `git-guard`, `ship-gate`, `env-preflight`,
     `model-assign`, `handoff` and `report-gate`: each field that holds text or a flag, set to an object, a list, a number,
-    `true`, `false`, `0`, `[]`, `{}` or `null`) are recorded from the hooks as they were before the typed readers. 325 end
-    differently and are listed in `tests/hooks/hook-parity-wrong-type-divergences.ts` with the exit and a text the hook must give
-    (every unchanged one is compared in full, and none of the 494 lets a recorded deny pass; the corpus includes an `Edit` whose `file_path` is of the wrong type beside an absolute `notebook_path` in the overlay or in `state/keel`, from a `cwd` that protects nothing). The three `git-guard command nested
-    in N lists` payloads below the depth bound are listed too: a command that is a list used to be judged on its Python `str()`
+    `true`, `false`, `0`, `[]`, `{}` or `null`) were recorded from the hooks as they were before the typed readers. 325 end
+    differently and were listed in `tests/hooks/hook-parity-wrong-type-divergences.ts` with the exit and a text the hook must give (until its corpus became a golden of the node hooks)
+    (every unchanged one was compared in full, and none of the 494 let a recorded deny pass; the corpus includes an `Edit` whose `file_path` is of the wrong type beside an absolute `notebook_path` in the overlay or in `state/keel`, from a `cwd` that protects nothing). The three `git-guard command nested
+    in N lists` payloads below the depth bound were listed too: a command that is a list used to be judged on its Python `str()`
     text, in which a quote inside an element let the rest of the element run as shell words (`F-hookskip` denied it), and it is
-    now refused as an internal error. The run reports 344 recorded + 784 adversarial cases, 465 listed divergences (137 before),
-    0 mismatches, deny-to-pass 0; fire logs written with compact JSON (`ship-gate`) now have their `ts` masked as well.
+    now refused as an internal error. The run reported 344 recorded + 784 adversarial cases, 465 listed divergences (137 before),
+    0 mismatches, deny-to-pass 0 (the golden run now reports `golden: 1128 cases, 0 mismatches`); fire logs written with compact JSON (`ship-gate`) now have their `ts` masked as well.
     `tests/ship-gate/ship-gate-parity.test.ts` listed 61 more rows (146 in all): a `command`, `cwd` or `session_id` that is not
     text, and `gh` answers whose `statusCheckRollup`, a check or `baseRefName` has the wrong type; 1,757 cases, 0 mismatches,
     deny-to-pass 0 (those listings are replaced by the golden snapshot). `codex/tests/hook-parity-corpus.ts` adds 42 wrong-type payloads (recorded from the adapter as it was) and lists

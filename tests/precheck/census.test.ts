@@ -181,7 +181,7 @@ describe("runCensus", { skip: typescriptInstalled ? false : "typescript is not i
 describe("keel precheck run", { skip: typescriptInstalled ? false : "typescript is not installed; run npm ci" }, () => {
   const roots: string[] = []
   after(() => roots.forEach((root) => rmSync(root, { recursive: true, force: true })))
-  const keel = (args: string[], dataDir: string) => spawnSync(KEEL, ["precheck", "run", ...args], { encoding: "utf8", env: { ...process.env, KEEL_DATA_DIR: dataDir } })
+  const keel = (args: string[], dataDir: string) => spawnSync(KEEL, ["precheck", "run", ...args], { encoding: "utf8", maxBuffer: Infinity, env: { ...process.env, KEEL_DATA_DIR: dataDir } })
   const scratchDir = (prefix: string): string => {
     const directory = mkdtempSync(join(tmpdir(), prefix))
     roots.push(directory)
@@ -287,6 +287,21 @@ describe("keel precheck run", { skip: typescriptInstalled ? false : "typescript 
       "rule-checks totals repos=1 scanned_lines=4 signals=1 unscanned=none blocked=none",
     ])
     assert.equal(lines.at(-1), "rule-checks totals repos=1 scanned_lines=4 signals=1 unscanned=none blocked=none")
+  })
+
+  it("keelPrecheckRun_appendsEveryRuleCheckSignal_whenRuleChecksWritesMoreThanOneMebibyte", () => {
+    const root = committedRepo({ "lib/a.ts": PICK, "tests/a.test.ts": PICK_TEST })
+    roots.push(root)
+    const flagged = `const data = "${"x".repeat(150)}"`
+    writeFiles(root, { "lib/b.ts": `${Array.from({ length: 8000 }, () => flagged).join("\n")}\n` })
+
+    const completed = keel(["--repo", root, "--base", "HEAD"], scratchDir("keel-data-"))
+
+    assert.equal(completed.status, 0, completed.stderr.slice(0, 2000))
+    const lines = completed.stdout.trimEnd().split("\n")
+    assert.equal(lines.filter((line) => line.startsWith("rule-checks signal K5.5 lib/b.ts:")).length, 8000)
+    assert.ok(lines.some((line) => line.startsWith("rule-checks signal K5.7 (diff) 8000 changed lines")), lines.slice(-3).join("\n"))
+    assert.equal(lines.at(-1), "rule-checks totals repos=1 scanned_lines=8000 signals=8001 unscanned=none blocked=none")
   })
 
   it("keelPrecheckRun_rejectsMissingOrDashedOptions_andABaseWithoutAMergeBase", () => {

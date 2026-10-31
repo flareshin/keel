@@ -26,10 +26,10 @@ this reference shapes only the behavior and interfaces the current task needs.
 - [K5.4] Use one domain name per concept and normalize external names at boundaries.
 - [K5.5] Name behavior and side effects explicitly.
 - [K5.6] Name meaningful constants; avoid ambiguous sentinels.
-- [K5.7] Split by meaning; size thresholds are signals, not automatic findings.
-- [K5.8] Decide domain rules once; inspect reuse before adding another implementation.
+- [K5.7] Split by meaning and by domain knowledge, not execution step; size thresholds are signals, not automatic findings.
+- [K5.8] Decide domain rules once; inspect reuse before adding another implementation; derive or test hand-synced lists.
 - [K5.9] Make side effects, transactions and rollback behavior visible and verified; a state-changing operation converges when it runs twice or after a run that stopped halfway.
-- [K5.10] Give each variable one meaning; prefer immutable state.
+- [K5.10] Give each variable one meaning; prefer immutable state; model a lifecycle as one state value, not agreeing booleans.
 - [K5.11] Carry meaning in types; validate untyped external boundaries.
 - [K5.12] Handle failures explicitly; do not swallow errors or infer exception types from messages.
 - [K5.13] Validate external values once at the boundary, with security exceptions where necessary.
@@ -56,5 +56,5 @@ changes need a skim.
 
 For a candidate rule violation, open its full section before deciding it. Reuse
 existing exact-target test evidence; rerun only when behavior, coverage or evidence
-validity requires it. FE and Spring practice references are optional and apply
-only to those stacks; they do not add independent blocking rules.
+validity requires it. FE, TypeScript and Spring practice references are optional and
+apply only to those stacks; they do not add independent blocking rules.

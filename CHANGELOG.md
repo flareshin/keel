@@ -12,6 +12,7 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
 
 ### Changed
 - lens-review refuses a single-repo root review that comes without a precheck when the diff changes three or more non-test TS/JS sources in a repo with tests `keel precheck run` can run; the error names the `keel precheck run` command to run first. The new `keel precheck required --repo <path> --base <sha> --end <sha>` prints `{"required", "sources"}`, and both Prepare paths carry it as the target's `precheck_required` (`keel review prepare` and the fallback prepare agent). Delta reviews, multi-repo reviews and repos without such tests (FE vitest, Java) are not refused. Ledger row C-precheck moves from prose to skill:lens-review.
+- `readable-code` gains a TypeScript type-design writing reference (`references/typescript-types.md`, from pstack `typescript-best-practices`), and K5.7, K5.8 and K5.10 add domain-grouped modules with a 30-second reader test, hand-synced lists and one way per task, and lifecycle state as one value instead of agreeing booleans. `improve` asks about importable internals, execution-step splits and hand-synced lists.
 - `tests/run-all.sh` (`npm test`) runs one full suite at a time per machine: a second run waits for the first and says which pid holds the lock, and a lock left by a run that died is taken over.
 - What stays the same: exit codes for every documented outcome, the field names and values of every JSON and JSONL
   line the tools print or write (`measure/{run,smoke,propose,weekly,boundary}`, `measure/evals/{eval,review-eval}`,

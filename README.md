@@ -329,9 +329,10 @@ These published skills shaped keel's own skills:
 | `improve` | Matt Pocock's [`improve-codebase-architecture`](https://github.com/mattpocock/skills) and [`codebase-design`](https://github.com/mattpocock/skills/blob/main/skills/engineering/codebase-design/SKILL.md) (at 49dd158, MIT) | The module, interface and depth vocabulary and the deletion test |
 | `improve` | pstack in [cursor/plugins](https://github.com/cursor/plugins) (at 6b78e9f, MIT) | The subtract-before-you-add and migrate-callers ordering rules |
 | `no-comments` and the `keel-comment-reviewer` agent | pstack `no-comments` and Comment Sicko in [cursor/plugins](https://github.com/cursor/plugins) (at 4dd1d05, MIT) | A comment pass by a context that did not write the comments, with reshape flags for surprises in our own code and an encoding offer for claimed constraints; keel keeps its narrower K5.14 exceptions |
+| `readable-code` (rules K5.7, K5.8, K5.10 and `references/typescript-types.md`) and `improve` (friction questions) | pstack `typescript-best-practices`, `principle-type-system-discipline`, `principle-model-the-domain`, `principle-minimize-reader-load` and `architect/references/design-red-flags.md` in [cursor/plugins](https://github.com/cursor/plugins) (at 4dd1d05, MIT) | The TypeScript type-design reference, lifecycle state as one value, domain-grouped modules, hand-synced lists and the 30-second reader test |
 | `readable-code` (implementation guide) | Matt Pocock's `codebase-design`, Addy Osmani's [`incremental-implementation`](https://github.com/addyosmani/agent-skills/blob/main/skills/incremental-implementation/SKILL.md) and [pstack `architect`](https://github.com/cursor/plugins/blob/main/pstack/skills/architect/SKILL.md) (read on 2026-10-19) | Caller-first design and small behavior slices |
 
-The skill files name their sources too: `skills/improve/SKILL.md`, `skills/no-comments/SKILL.md` and `skills/readable-code/references/implementation.md`.
+The skill files name their sources too: `skills/improve/SKILL.md`, `skills/no-comments/SKILL.md`, `skills/readable-code/references/implementation.md` and `skills/readable-code/references/typescript-types.md`.
 
 ## What keel does not do
 

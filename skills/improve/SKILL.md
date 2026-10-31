@@ -57,7 +57,9 @@ Three tests decide most candidates:
    - Where does understanding one concept mean bouncing between many small modules?
    - Which modules fail the deletion test, or are seams with one adapter?
    - Where were pure functions extracted for testing while the bugs live in how they are called?
-   - Where does a caller have to know a module's internal rules to use it?
+   - Where does a caller have to know a module's internal rules to use it, or import a module's internals instead of its public entry?
+   - Where is one format or rule known by several modules split by execution step (fetch, transform, save)?
+   - Which hand-maintained lists must change together, and which concept has its decision split across files?
    - What is dead: unreferenced code, flags fixed to one value, a second way to do something the codebase already does one way?
    - What is hard to test through its current interface, or untested?
 

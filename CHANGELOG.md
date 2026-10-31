@@ -221,8 +221,8 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
     and sends no review request, where it used to forward `NaN` or `Infinity`, which `keel evidence write-review` refuses.
   - The detail of a fire for malformed JSON names `JsonSyntaxError` and V8's message (it named `JSONDecodeError` with
     Python's message); a `RecursionError:` detail keeps its prefix.
-  - `tests/hooks/hook-parity.test.ts` compares the recorded Python runs with the decode error message masked on both sides
-    (`JSONDecodeError` reads as `JsonSyntaxError`) and lists 31 more payloads whose outcome changed: the non-finite
+  - `tests/hooks/hook-parity.test.ts` compared the recorded Python runs with the decode error message masked on both sides
+    (`JSONDecodeError` reads as `JsonSyntaxError`) and listed 31 more payloads whose outcome changed, until its corpus became a golden of the node hooks: the non-finite
     numbers above and the integers of more than 4,300 digits, which the hooks now judge like any other payload.
   - Error text in every hook (`describeError`, the `detail` of an `error` fire and the `internal error` line a hook
     prints) is `<name>: <message>` with Node's own message, and the errno-to-Python-class table is gone. What stays the
@@ -307,8 +307,8 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
     `model-assign`, `handoff` and `report-gate`: each field that holds text or a flag, set to an object, a list, a number,
     `true`, `false`, `0`, `[]`, `{}` or `null`) are recorded from the hooks as they were before the typed readers. 325 end
     differently and were listed in `tests/hooks/hook-parity-wrong-type-divergences.ts` with the exit and a text the hook must give (until its corpus became a golden of the node hooks)
-    (every unchanged one is compared in full, and none of the 494 lets a recorded deny pass; the corpus includes an `Edit` whose `file_path` is of the wrong type beside an absolute `notebook_path` in the overlay or in `state/keel`, from a `cwd` that protects nothing). The three `git-guard command nested
-    in N lists` payloads below the depth bound are listed too: a command that is a list used to be judged on its Python `str()`
+    (every unchanged one was compared in full, and none of the 494 let a recorded deny pass; the corpus includes an `Edit` whose `file_path` is of the wrong type beside an absolute `notebook_path` in the overlay or in `state/keel`, from a `cwd` that protects nothing). The three `git-guard command nested
+    in N lists` payloads below the depth bound were listed too: a command that is a list used to be judged on its Python `str()`
     text, in which a quote inside an element let the rest of the element run as shell words (`F-hookskip` denied it), and it is
     now refused as an internal error. The run reported 344 recorded + 784 adversarial cases, 465 listed divergences (137 before),
     0 mismatches, deny-to-pass 0 (the golden run now reports `golden: 1128 cases, 0 mismatches`); fire logs written with compact JSON (`ship-gate`) now have their `ts` masked as well.

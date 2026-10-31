@@ -24,8 +24,8 @@ import { notebookCellChange } from "./notebook.ts";
 import type { CodeChange } from "./notebook.ts";
 import { currentBranch, findRepoKey, findToplevel, git, gitOutput, isCommit } from "../lib/hookkit/repo.ts";
 import {
-  fileWriteOf, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, isConfigRead, operands, readPushArguments, resolveDirectory, RUN_TIME_WORD_RE, steps,
-  writeTargets,
+  fileWriteOf, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, isConfigRead, operands, readPushArguments, redirectTargets, resolveDirectory, RUN_TIME_WORD_RE,
+  steps, writeTargets,
 } from "../lib/hookkit/shell.ts";
 import type { Step } from "../lib/hookkit/shell.ts";
 import { OSError, run, TimeoutExpired } from "../lib/hookkit/subprocess.ts";
@@ -76,7 +76,7 @@ const COMMIT_SHORT_ATTACHED_VALUE_FLAGS: ReadonlySet<string> = new Set(["S", "u"
 const COMMIT_NO_VERIFY_SHORT_FLAG = "n";
 const STAGING_SUBCOMMANDS: ReadonlySet<string> = new Set(["add", "stage"]);
 const SHELL_STATE_COMMANDS: ReadonlySet<string> = new Set(["", "cd", "pushd", "popd", "export"]);
-const DISCARDED_OUTPUT = "/dev/null";
+const RUNS_COMMANDS_AT_RUN_TIME_RE = /\$\(|`|[<>]\(/;
 const PR_FILE_OPTIONS: ReadonlySet<string> = new Set(["-F", "--body-file"]);
 const PR_TEXT_SUBCOMMANDS: ReadonlySet<string> = new Set(["create", "edit", "merge"]);
 const UNPUSHED = ["--not", "--remotes"];
@@ -312,7 +312,8 @@ function checkBash(command: string, cwd: string): Violation[] {
     ...checkKeelCommands(call), ...checkProtectedWrites(call), ...checkLiveCheckouts(call), ...checkHookSkips(call),
     ...checkHookDisablingWrites(call), ...checkCommentWrites(call),
   ];
-  call.forEach((step, index) => violations.push(...checkGitOrPr(step, call, index, callHeredocs)));
+  const runsCommandsAtRunTime = RUNS_COMMANDS_AT_RUN_TIME_RE.test(command);
+  call.forEach((step, index) => violations.push(...checkGitOrPr(step, call, index, callHeredocs, runsCommandsAtRunTime)));
   return unique(violations);
 }
 
@@ -533,13 +534,17 @@ function gitHookSkip(step: Step, index: number): string | null {
   return null;
 }
 
-function checkGitOrPr(step: Step, call: readonly Step[], index: number, callHeredocs: readonly string[]): Violation[] {
+function checkGitOrPr(
+  step: Step, call: readonly Step[], index: number, callHeredocs: readonly string[], runsCommandsAtRunTime: boolean,
+): Violation[] {
   if (step.name === "gh") return checkPrText(ghSubcommandArgv(step.argv), step, callHeredocs);
   const argv = step.argv;
   const position = gitSubcommandIndex(argv);
   if (position === null) return [];
   const repoDirectory = gitDirectory(argv, step.directory, step.expansion);
-  if (argv[position] === "commit") return checkCommit(argv.slice(position + 1), step, repoDirectory, call.slice(0, index), callHeredocs);
+  if (argv[position] === "commit") {
+    return checkCommit(argv.slice(position + 1), step, repoDirectory, call.slice(0, index), callHeredocs, runsCommandsAtRunTime);
+  }
   if (argv[position] === "push") return checkPush(argv.slice(position + 1), repoDirectory);
   return [];
 }
@@ -555,7 +560,10 @@ function checkPrText(ghArgv: readonly string[], step: Step, callHeredocs: readon
   }];
 }
 
-function checkCommit(args: readonly string[], step: Step, repoDirectory: string, earlierSteps: readonly Step[], callHeredocs: readonly string[]): Violation[] {
+function checkCommit(
+  args: readonly string[], step: Step, repoDirectory: string, earlierSteps: readonly Step[], callHeredocs: readonly string[],
+  runsCommandsAtRunTime: boolean,
+): Violation[] {
   const violations: Violation[] = [];
   if (testCaseFolded(ATTRIBUTION_RE, commitMessageTexts(args, step, callHeredocs).join("\n"))) {
     violations.push({ ruleId: F_ATTRIBUTION, text: "AI-tool attribution in the commit message; remove it." });
@@ -563,7 +571,7 @@ function checkCommit(args: readonly string[], step: Step, repoDirectory: string,
   const toplevel = findToplevel(repoDirectory);
   if (toplevel === null) return violations;
   const repoKey = findRepoKey(toplevel);
-  const staging = sameCallStaging(args, repoDirectory, earlierSteps, toplevel);
+  const staging = sameCallStaging(args, repoDirectory, earlierSteps, toplevel, runsCommandsAtRunTime);
   return [...violations, ...stagedContentViolations(staging, toplevel, repoKey)];
 }
 
@@ -599,10 +607,10 @@ interface StagingCommand {
 type EarlierStaging = StagingCommand | typeof NOT_STAGING | typeof UNREPLAYABLE;
 
 function sameCallStaging(
-  args: readonly string[], repoDirectory: string, earlierSteps: readonly Step[], toplevel: string,
+  args: readonly string[], repoDirectory: string, earlierSteps: readonly Step[], toplevel: string, runsCommandsAtRunTime: boolean,
 ): StagingCommand[] | null {
   const commands: StagingCommand[] = [];
-  let worktreeMayHaveChanged = false;
+  let worktreeMayHaveChanged = runsCommandsAtRunTime;
   for (const step of earlierSteps) {
     const staging = earlierStaging(step, toplevel);
     if (staging === UNREPLAYABLE) return null;
@@ -619,9 +627,7 @@ function sameCallStaging(
 }
 
 function mayChangeWorktree(step: Step): boolean {
-  const writesAFile = step.command.redirects.some((redirect) => redirect.target !== DISCARDED_OUTPUT && fileWriteOf(redirect) !== null);
-  const words = [...step.command.argv, ...step.command.assignments.map(([, value]) => value)];
-  return writesAFile || words.some((word) => RUN_TIME_WORD_RE.test(word)) || !SHELL_STATE_COMMANDS.has(step.name);
+  return redirectTargets(step.command).length > 0 || !SHELL_STATE_COMMANDS.has(step.name);
 }
 
 function earlierStaging(step: Step, toplevel: string): EarlierStaging {

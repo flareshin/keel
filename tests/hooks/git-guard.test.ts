@@ -1263,6 +1263,23 @@ describe("SameCallStagingTest", () => {
     assertProceduralDenied(guard("X=`cat leak.txt > t.txt`; git commit -am wip", repo));
   });
 
+  it("commit_denied_whenAHereStringOrHeredocRunsACommandSubstitutionBeforeTheStaging", () => {
+    commitTracked("t.txt", "start\n");
+    assertProceduralDenied(guard('cd . <<< "$(cat leak.txt > t.txt)"; git commit -am wip', repo));
+    assertProceduralDenied(guard("cd . <<EOF\n$(cat leak.txt > t.txt)\nEOF\ngit commit -am wip", repo));
+  });
+
+  it("commit_denied_whenTheCommitItselfRunsACommandSubstitutionWhileStaging", () => {
+    commitTracked("t.txt", "start\n");
+    assertProceduralDenied(guard('git commit -am "wip $(cat leak.txt > t.txt)"', repo));
+    assertProceduralDenied(guard("git add clean.txt && git commit -m \"`cat leak.txt > t.txt`\"", repo));
+  });
+
+  it("commit_denied_whenAProcessSubstitutionRunsBeforeTheStaging", () => {
+    commitTracked("t.txt", "start\n");
+    assertProceduralDenied(guard("cd . < <(cat leak.txt > t.txt); git commit -am wip", repo));
+  });
+
   it("commit_passes_whenAnEarlierShellStateStepOnlyRedirectsToDevNull", () => {
     assertPassed(guard("pushd . > /dev/null && git add clean.txt && git commit -m wip", repo));
   });

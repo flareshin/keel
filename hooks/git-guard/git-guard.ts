@@ -1,4 +1,4 @@
-import { copyFileSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { copyFileSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { shlexQuote } from "../../measure/lib/measurekit/shlex.ts";
@@ -75,6 +75,10 @@ const COMMIT_SHORT_VALUE_FLAGS: ReadonlySet<string> = new Set(["m", "F", "C", "c
 const COMMIT_SHORT_ATTACHED_VALUE_FLAGS: ReadonlySet<string> = new Set(["S", "u"]);
 const COMMIT_NO_VERIFY_SHORT_FLAG = "n";
 const STAGING_SUBCOMMANDS: ReadonlySet<string> = new Set(["add", "stage"]);
+const WORKTREE_KEEPING_COMMANDS: ReadonlySet<string> = new Set(["", "cd", "pushd", "popd", "export", "echo", "printf", "true"]);
+const WORKTREE_KEEPING_GIT_SUBCOMMANDS: ReadonlySet<string> = new Set([
+  "add", "stage", "rm", "mv", "status", "diff", "log", "show", "rev-parse",
+]);
 const PR_FILE_OPTIONS: ReadonlySet<string> = new Set(["-F", "--body-file"]);
 const PR_TEXT_SUBCOMMANDS: ReadonlySet<string> = new Set(["create", "edit", "merge"]);
 const UNPUSHED = ["--not", "--remotes"];
@@ -600,13 +604,27 @@ function sameCallStaging(
   args: readonly string[], repoDirectory: string, earlierSteps: readonly Step[], toplevel: string,
 ): StagingCommand[] | null {
   const commands: StagingCommand[] = [];
+  let worktreeMayHaveChanged = false;
   for (const step of earlierSteps) {
     const staging = earlierStaging(step, toplevel);
     if (staging === UNREPLAYABLE) return null;
-    if (staging !== NOT_STAGING) commands.push(staging);
+    if (staging === NOT_STAGING) {
+      worktreeMayHaveChanged ||= mayChangeWorktree(step);
+      continue;
+    }
+    if (worktreeMayHaveChanged) return null;
+    commands.push(staging);
   }
   const own = commitStaging(args, repoDirectory, toplevel);
-  return own === null ? null : [...commands, ...own];
+  if (own === null || (own.length > 0 && worktreeMayHaveChanged)) return null;
+  return [...commands, ...own];
+}
+
+function mayChangeWorktree(step: Step): boolean {
+  if (step.command.redirects.some((redirect) => fileWriteOf(redirect) !== null)) return true;
+  const index = gitSubcommandIndex(step.argv);
+  if (index === null) return !WORKTREE_KEEPING_COMMANDS.has(step.name);
+  return !WORKTREE_KEEPING_GIT_SUBCOMMANDS.has(step.argv[index] ?? "");
 }
 
 function earlierStaging(step: Step, toplevel: string): EarlierStaging {
@@ -711,7 +729,10 @@ function copyIndex(toplevel: string, destination: string): boolean {
   const source = gitOutput(["rev-parse", "--git-path", "index"], toplevel);
   if (source === null) return false;
   try {
-    copyFileSync(resolve(toplevel, source), destination);
+    const index = resolve(toplevel, source);
+    copyFileSync(index, destination);
+    const { atime, mtime } = statSync(index);
+    utimesSync(destination, atime, mtime);
   } catch (error) {
     if (!isSystemError(error) || error.code !== "ENOENT") throw error;
   }

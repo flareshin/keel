@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readdirSync, readFileSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { dirname, join } from "node:path";
 import {
@@ -1213,6 +1213,50 @@ describe("SameCallStagingTest", () => {
   it("commit_denied_whenThePathspecListComesFromStandardInput", () => {
     commitTracked("t.txt", "changed\n");
     assertProceduralDenied(guard("git commit --pathspec-from-file=- -m wip", repo));
+  });
+
+  it("commit_denied_whenTheAddReadsItsPathspecListFromStandardInput", () => {
+    sandbox.write(join(repo, "paths.lst"), "leak.txt\n");
+    assertProceduralDenied(guard("git add --pathspec-from-file=- < paths.lst && git commit -m wip", repo));
+  });
+
+  it("commit_denied_whenAnEarlierStepRedirectsTheSecretIntoATrackedFile", () => {
+    commitTracked("t.txt", "start\n");
+    assertProceduralDenied(guard("cat leak.txt > t.txt && git commit -am wip", repo));
+  });
+
+  it("commit_denied_whenAnEarlierStepCopiesTheSecretBeforeTheAdd", () => {
+    assertProceduralDenied(guard("cp leak.txt clean.txt && git add clean.txt && git commit -m wip", repo));
+  });
+
+  it("commit_denied_whenAnEarlierStepRunsAProgramThatMayWriteFiles", () => {
+    assertProceduralDenied(guard("python3 gen.py && git add -A && git commit -m wip", repo));
+  });
+
+  it("commit_denied_whenAnEarlierGitStepRewritesTheWorkingTree", () => {
+    commitTracked("t.txt", "changed\n");
+    assertProceduralDenied(guard("git checkout HEAD -- t.txt && git commit -am wip", repo));
+  });
+
+  it("commit_deniedWithTheSecret_whenARacilyCleanTrackedFileHoldsIt", () => {
+    const tracked = join(repo, "t.txt");
+    const stampSeconds = Math.floor(Date.now() / 1000) - 100;
+    sandbox.commitFile(repo, "t.txt", "x".repeat(SECRET_LINE.length - 1) + "\n", "Add t.txt");
+    sandbox.git(repo, "config", "core.trustctime", "false");
+    utimesSync(tracked, stampSeconds, stampSeconds);
+    sandbox.git(repo, "update-index", "--refresh");
+    sandbox.write(tracked, SECRET_LINE);
+    utimesSync(tracked, stampSeconds, stampSeconds);
+    utimesSync(join(repo, ".git", "index"), stampSeconds, stampSeconds);
+    assertSecretDenied(guard("git commit -am wip", repo), "t.txt");
+  });
+
+  it("commit_passes_whenAnEarlierStepWritesFilesButTheCallStagesNothing", () => {
+    assertPassed(guard("python3 gen.py > out.txt && git commit -m wip", repo));
+  });
+
+  it("commit_passes_whenAFileIsWrittenOnlyAfterTheLastStagingStep", () => {
+    assertPassed(guard("git add clean.txt && echo done > notes.out && git commit -m wip", repo));
   });
 
   it("commit_denied_whenTheStagingCannotBeReplayed", () => {

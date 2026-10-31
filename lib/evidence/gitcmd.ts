@@ -8,7 +8,7 @@ import { runCaptured } from './subprocess.ts';
 import { stripEitherWay } from './text.ts';
 import type { Completed } from './subprocess.ts';
 
-export const GIT_TIMEOUT_SECONDS = 20;
+export const LOCAL_GIT_TIMEOUT_SECONDS = 20;
 export const FETCH_TIMEOUT_SECONDS = 20;
 export const SNAPSHOT_TIMEOUT_SECONDS = 300;
 const DEFAULT_REMOTE = 'origin';
@@ -55,7 +55,6 @@ export interface GhDefault {
 }
 
 export interface GitOptions {
-  check?: boolean;
   env?: NodeJS.ProcessEnv;
   timeoutSeconds?: number;
 }
@@ -68,37 +67,41 @@ export function isGitlink(entry: PathEntry): boolean {
   return entry.mode === GITLINK_MODE || (isDeleted(entry) && entry.oldMode === GITLINK_MODE);
 }
 
-export function run(repo: string, args: string[], options: GitOptions = {}): Completed {
-  const completed = runCaptured(['git', '-C', repo, ...args],
-    { env: options.env, timeoutSeconds: options.timeoutSeconds ?? GIT_TIMEOUT_SECONDS });
-  if ((options.check ?? true) && completed.returncode !== 0) {
+export function runUnchecked(repo: string, args: string[], options: GitOptions = {}): Completed {
+  return runCaptured(['git', '-C', repo, ...args],
+    { env: options.env, timeoutSeconds: options.timeoutSeconds ?? LOCAL_GIT_TIMEOUT_SECONDS });
+}
+
+export function runOrThrow(repo: string, args: string[], options: GitOptions = {}): Completed {
+  const completed = runUnchecked(repo, args, options);
+  if (completed.returncode !== 0) {
     throw new GitError(`git ${args.join(' ')}: ${stripEitherWay(completed.stderr.toString())}`);
   }
   return completed;
 }
 
-export function text(repo: string, args: string[], options: GitOptions = {}): string {
-  return withoutFinalNewline(run(repo, args, options).stdout.toString());
+export function textOrThrow(repo: string, args: string[], options: GitOptions = {}): string {
+  return withoutFinalNewline(runOrThrow(repo, args, options).stdout.toString());
 }
 
 function withoutFinalNewline(output: string): string {
   return output.endsWith('\n') ? output.slice(0, -1) : output;
 }
 
-function exactOutputIfOk(repo: string, args: string[]): string | null {
-  const completed = run(repo, args, { check: false });
+function exactOutputOrNull(repo: string, args: string[]): string | null {
+  const completed = runUnchecked(repo, args);
   if (completed.returncode !== 0) return null;
   return withoutFinalNewline(completed.stdout.toString()) || null;
 }
 
-function outputIfOk(repo: string, args: string[]): string | null {
-  const lines = linesIfOk(repo, args);
+function outputOrNull(repo: string, args: string[]): string | null {
+  const lines = linesOrEmpty(repo, args);
   if (lines.length > 1) throw new GitError(`git ${args.join(' ')}: the output holds more than one line`);
   return lines[0] ?? null;
 }
 
-function linesIfOk(repo: string, args: string[]): string[] {
-  const completed = run(repo, args, { check: false });
+function linesOrEmpty(repo: string, args: string[]): string[] {
+  const completed = runUnchecked(repo, args);
   return completed.returncode === 0 ? gateLines(args, completed.stdout.toString()) : [];
 }
 
@@ -118,7 +121,7 @@ function refuseOtherLineBreaks(args: string[], pieces: string[]): void {
 }
 
 export function toplevel(path: string): string | null {
-  const root = isDir(path) ? exactOutputIfOk(path, ['rev-parse', '--show-toplevel']) : null;
+  const root = isDir(path) ? exactOutputOrNull(path, ['rev-parse', '--show-toplevel']) : null;
   return root ? resolveLinks(root) : null;
 }
 
@@ -127,15 +130,15 @@ export function originUrl(repo: string): string | null {
 }
 
 export function remoteUrl(repo: string, remote: string): string | null {
-  return outputIfOk(repo, ['remote', 'get-url', remote]);
+  return outputOrNull(repo, ['remote', 'get-url', remote]);
 }
 
 export function pushUrls(repo: string, remote: string): string[] {
-  return linesIfOk(repo, ['remote', 'get-url', '--push', '--all', remote]);
+  return linesOrEmpty(repo, ['remote', 'get-url', '--push', '--all', remote]);
 }
 
 export function remotes(repo: string): string[] {
-  return linesIfOk(repo, ['remote']);
+  return linesOrEmpty(repo, ['remote']);
 }
 
 export function pushRemote(repo: string): string {
@@ -143,14 +146,14 @@ export function pushRemote(repo: string): string {
   const keys = branch === null ? ['remote.pushDefault']
     : [`branch.${branch}.pushRemote`, 'remote.pushDefault', `branch.${branch}.remote`];
   for (const key of keys) {
-    const configured = outputIfOk(repo, ['config', '--get', key]);
+    const configured = outputOrNull(repo, ['config', '--get', key]);
     if (configured) return configured;
   }
   return DEFAULT_REMOTE;
 }
 
 export function ghDefaultRemote(repo: string): GhDefault | null {
-  const listed = linesIfOk(repo, ['config', '--get-regexp', GH_DEFAULT_REMOTE_KEYS]);
+  const listed = linesOrEmpty(repo, ['config', '--get-regexp', GH_DEFAULT_REMOTE_KEYS]);
   if (listed.length === 0) return null;
   const firstLine = listed[0]!;
   const separator = firstLine.indexOf(' ');
@@ -160,34 +163,34 @@ export function ghDefaultRemote(repo: string): GhDefault | null {
 }
 
 export function commitSha(repo: string, rev: string): string | null {
-  return outputIfOk(repo, ['rev-parse', '--verify', '-q', rev + '^{commit}']);
+  return outputOrNull(repo, ['rev-parse', '--verify', '-q', rev + '^{commit}']);
 }
 
 export function treeOfCommit(repo: string, sha: string): string {
-  return text(repo, ['rev-parse', '--verify', sha + '^{tree}']);
+  return textOrThrow(repo, ['rev-parse', '--verify', sha + '^{tree}']);
 }
 
 export function objectType(repo: string, sha: string): string | null {
-  return outputIfOk(repo, ['cat-file', '-t', sha]);
+  return outputOrNull(repo, ['cat-file', '-t', sha]);
 }
 
 export function refExists(repo: string, fullRef: string): boolean {
-  return run(repo, ['show-ref', '--verify', '-q', fullRef], { check: false }).returncode === 0;
+  return runUnchecked(repo, ['show-ref', '--verify', '-q', fullRef]).returncode === 0;
 }
 
 export function currentBranch(repo: string): string | null {
-  return outputIfOk(repo, ['symbolic-ref', '-q', '--short', 'HEAD']);
+  return outputOrNull(repo, ['symbolic-ref', '-q', '--short', 'HEAD']);
 }
 
 export function mergeBase(repo: string, left: string, right: string): string | null {
-  return outputIfOk(repo, ['merge-base', left, right]);
+  return outputOrNull(repo, ['merge-base', left, right]);
 }
 
 export function isAncestor(repo: string, ancestor: string, descendant: string): boolean {
   const key = [repo, ancestor, descendant].join('\0');
   const known = ancestryAnswers.get(key);
   if (known !== undefined) return known;
-  const completed = run(repo, ['merge-base', '--is-ancestor', ancestor, descendant], { check: false });
+  const completed = runUnchecked(repo, ['merge-base', '--is-ancestor', ancestor, descendant]);
   if (completed.returncode !== 0 && completed.returncode !== 1) {
     throw new GitError(`merge-base --is-ancestor ${ancestor} ${descendant}: ${completed.stderr.toString()}`);
   }
@@ -198,28 +201,28 @@ export function isAncestor(repo: string, ancestor: string, descendant: string): 
 
 export function firstParentAncestors(repo: string, head: string, stop: string): string[] {
   const args = ['rev-list', '--first-parent', head + '^', '^' + stop];
-  const line = gateLines(args, run(repo, args).stdout.toString());
+  const line = gateLines(args, runOrThrow(repo, args).stdout.toString());
   const last = line.length > 0 ? line.at(-1)! : head;
   if (commitSha(repo, last + '^') !== stop) return [];
   return [...line, stop];
 }
 
 export function lastCommitTouching(repo: string, base: string, head: string, path: string): string {
-  return text(repo, ['log', '-1', '--format=%H', `${base}..${head}`, '--', path]);
+  return textOrThrow(repo, ['log', '-1', '--format=%H', `${base}..${head}`, '--', path]);
 }
 
 export function mergedBlob(repo: string, current: string, base: string, other: string): string | null {
-  return exactOutputIfOk(repo, ['merge-file', '--object-id', current, base, other]);
+  return exactOutputOrNull(repo, ['merge-file', '--object-id', current, base, other]);
 }
 
 export function fetch(repo: string, args: string[]): void {
-  run(repo, ['fetch', '--quiet', ...args], { timeoutSeconds: FETCH_TIMEOUT_SECONDS });
+  runOrThrow(repo, ['fetch', '--quiet', ...args], { timeoutSeconds: FETCH_TIMEOUT_SECONDS });
 }
 
 export const REGULAR_FILE_MODES = ['100644', '100755'];
 
 export function diffEntries(repo: string, oldTree: string, newTree: string): PathEntry[] {
-  const fields = splitOnNul(run(repo, ['diff-tree', '-r', '-z', '--no-renames', '--no-abbrev',
+  const fields = splitOnNul(runOrThrow(repo, ['diff-tree', '-r', '-z', '--no-renames', '--no-abbrev',
     '--ignore-submodules=none', oldTree, newTree]).stdout);
   const entries: PathEntry[] = [];
   for (let index = 0; index + 1 < fields.length; index += 2) {
@@ -239,7 +242,7 @@ export function diffEntries(repo: string, oldTree: string, newTree: string): Pat
 }
 
 export function diffStats(repo: string, oldTree: string, newTree: string): Map<string, PathStat> {
-  const raw = run(repo, ['diff-tree', '-r', '--numstat', '-z', '--no-renames', '--ignore-submodules=none',
+  const raw = runOrThrow(repo, ['diff-tree', '-r', '--numstat', '-z', '--no-renames', '--ignore-submodules=none',
     oldTree, newTree]).stdout;
   const stats = new Map<string, PathStat>();
   for (const record of splitOnNul(raw).filter((item) => item.length > 0)) {
@@ -259,7 +262,7 @@ function treeListing(repo: string, tree: string): Map<string, TreeEntry> {
   const cached = treeListings.get(key);
   if (cached) return cached;
   const listing = new Map<string, TreeEntry>();
-  for (const record of splitOnNul(run(repo, ['ls-tree', '-r', '-t', '-z', tree]).stdout)) {
+  for (const record of splitOnNul(runOrThrow(repo, ['ls-tree', '-r', '-t', '-z', tree]).stdout)) {
     if (record.length === 0) continue;
     const text = utf8OrNull(record);
     if (text === null) continue;
@@ -282,18 +285,18 @@ function utf8OrNull(record: Buffer): string | null {
 
 export function submoduleRoots(repo: string): string[] {
   const args = ['submodule', 'foreach', '--quiet', '--recursive', 'pwd'];
-  const roots = gateLines(args, run(repo, args).stdout.toString());
+  const roots = gateLines(args, runOrThrow(repo, args).stdout.toString());
   return roots.map((root) => resolveLinks(root));
 }
 
 export function submoduleUrl(repo: string, commit: string, path: string): string | null {
-  const completed = run(repo, ['config', '--blob', commit + ':.gitmodules', '-z', '--get-regexp', '^submodule\\..*\\.path$'], { check: false });
+  const completed = runUnchecked(repo, ['config', '--blob', commit + ':.gitmodules', '-z', '--get-regexp', '^submodule\\..*\\.path$']);
   if (completed.returncode !== 0) return null;
   for (const record of completed.stdout.toString().split('\0')) {
     const [key, value] = record.split('\n');
     if (value !== path || key === undefined) continue;
     const name = key.slice('submodule.'.length, -'.path'.length);
-    return exactOutputIfOk(repo, ['config', '--blob', commit + ':.gitmodules', '--get', `submodule.${name}.url`]);
+    return exactOutputOrNull(repo, ['config', '--blob', commit + ':.gitmodules', '--get', `submodule.${name}.url`]);
   }
   return null;
 }
@@ -305,23 +308,23 @@ export function snapshotTree(repo: string): string {
   const env = { ...process.env, GIT_INDEX_FILE: index };
   const options = { env, timeoutSeconds: SNAPSHOT_TIMEOUT_SECONDS };
   try {
-    run(repo, ['--work-tree', repo, 'read-tree', 'HEAD'], options);
-    run(repo, ['--work-tree', repo, 'add', '-A'], options);
-    return text(repo, ['--work-tree', repo, 'write-tree'], options);
+    runOrThrow(repo, ['--work-tree', repo, 'read-tree', 'HEAD'], options);
+    runOrThrow(repo, ['--work-tree', repo, 'add', '-A'], options);
+    return textOrThrow(repo, ['--work-tree', repo, 'write-tree'], options);
   } finally {
     if (existsSync(index)) unlinkSync(index);
   }
 }
 
 export function checkoutSnapshot(repo: string, tree: string, directory: string): void {
-  run(directory, ['init', '-q', '--template=']);
-  const objects = text(repo, ['rev-parse', '--path-format=absolute', '--git-path', 'objects']);
+  runOrThrow(directory, ['init', '-q', '--template=']);
+  const objects = textOrThrow(repo, ['rev-parse', '--path-format=absolute', '--git-path', 'objects']);
   mkdirSync(join(directory, '.git', 'objects', 'info'), { recursive: true });
   writeFileSync(join(directory, '.git', 'objects', 'info', 'alternates'), objects + '\n');
-  const parent = text(repo, ['rev-parse', 'HEAD']);
-  const commit = text(directory, ['commit-tree', '--no-gpg-sign', tree, '-p', parent, '-m', SNAPSHOT_COMMIT_MESSAGE],
+  const parent = textOrThrow(repo, ['rev-parse', 'HEAD']);
+  const commit = textOrThrow(directory, ['commit-tree', '--no-gpg-sign', tree, '-p', parent, '-m', SNAPSHOT_COMMIT_MESSAGE],
     { env: { ...process.env, ...SNAPSHOT_IDENTITY } });
-  run(directory, ['reset', '-q', '--hard', commit], { timeoutSeconds: SNAPSHOT_TIMEOUT_SECONDS });
+  runOrThrow(directory, ['reset', '-q', '--hard', commit], { timeoutSeconds: SNAPSHOT_TIMEOUT_SECONDS });
 }
 
 function splitOnNul(bytes: Buffer): Buffer[] {

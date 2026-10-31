@@ -193,7 +193,7 @@ describe('SnapshotTest', () => {
     gitcmd.snapshotTree('/nowhere');
     const timeouts = spawn.mock.calls.map((call) => (call.arguments[2] as { timeout: number }).timeout);
     assert.equal(timeouts.length, 3);
-    assert.ok(!timeouts.includes(gitcmd.GIT_TIMEOUT_SECONDS * 1000));
+    assert.ok(!timeouts.includes(gitcmd.LOCAL_GIT_TIMEOUT_SECONDS * 1000));
     assert.deepEqual(new Set(timeouts), new Set([gitcmd.SNAPSHOT_TIMEOUT_SECONDS * 1000]));
   });
 });

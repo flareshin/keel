@@ -21,8 +21,8 @@ export function affectedTests(root: string, changedPaths: string[]): string[] {
 }
 
 export function changedSince(root: string, mergeBase: string): string[] {
-  const tracked = gitcmd.text(root, ['diff', '--name-only', '--no-renames', '-z', mergeBase]);
-  const untracked = gitcmd.text(root, ['ls-files', '--others', '--exclude-standard', '-z']);
+  const tracked = gitcmd.textOrThrow(root, ['diff', '--name-only', '--no-renames', '-z', mergeBase]);
+  const untracked = gitcmd.textOrThrow(root, ['ls-files', '--others', '--exclude-standard', '-z']);
   return [...new Set(`${tracked}${untracked}`.split('\0').filter(Boolean))].sort();
 }
 

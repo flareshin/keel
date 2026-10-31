@@ -22,13 +22,14 @@ import { readStdin } from "../lib/hookkit/stdio.ts";
 import { addedComments, withStraightQuotes } from "./comments.ts";
 import { notebookCellChange } from "./notebook.ts";
 import type { CodeChange } from "./notebook.ts";
-import { currentBranch, findRepoKey, findToplevel, git, gitOutput, isCommit, isOutsideEveryRepository } from "../lib/hookkit/repo.ts";
+import { currentBranch, findRepoKey, findToplevel, git, gitOutputOrNull, isCommit, isOutsideEveryRepository } from "../lib/hookkit/repo.ts";
 import {
   fileWriteOf, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, isConfigRead, operands, readPushArguments, resolveDirectory, RUN_TIME_WORD_RE, steps,
   writeTargets,
 } from "../lib/hookkit/shell.ts";
 import type { Step } from "../lib/hookkit/shell.ts";
-import { OSError, run, TimeoutExpired } from "../lib/hookkit/subprocess.ts";
+import { TimeoutExpired } from "../../measure/lib/measurekit/timeout.ts";
+import { OSError, run } from "../lib/hookkit/subprocess.ts";
 import type { CompletedProcess } from "../lib/hookkit/subprocess.ts";
 
 const HOOK = "git-guard";
@@ -592,7 +593,7 @@ function unreplayableStagingViolation(repoKey: string | null): Violation {
 }
 
 function indexViolations(toplevel: string, repoKey: string | null, env: NodeJS.ProcessEnv): Violation[] {
-  const staged = splitlines(gitOutput(["diff", "--cached", "--name-only"], toplevel, env) || "");
+  const staged = splitlines(gitOutputOrNull(["diff", "--cached", "--name-only"], toplevel, env) || "");
   return [
     ...repoRuleViolations(repoKey, staged, [ACTION_DENY_COMMIT, ACTION_DENY_PATH]),
     ...scanStagedSecrets(toplevel, repoKey, env),
@@ -734,7 +735,7 @@ function replayStaging(toplevel: string, commands: readonly StagingCommand[], en
 }
 
 function copyIndex(toplevel: string, destination: string): boolean {
-  const source = gitOutput(["rev-parse", "--git-path", "index"], toplevel);
+  const source = gitOutputOrNull(["rev-parse", "--git-path", "index"], toplevel);
   if (source === null) return false;
   try {
     const index = resolve(toplevel, source);
@@ -776,13 +777,13 @@ function pushedRanges(toplevel: string, push: PushRequest): Array<[revisions: st
 
 function checkPushRange(toplevel: string, repoKey: string | null, revisions: readonly string[], label: string): Violation[] {
   const violations: Violation[] = [];
-  if (testCaseFolded(ATTRIBUTION_RE, gitOutput(["log", "--pretty=%B", ...revisions], toplevel) || "")) {
+  if (testCaseFolded(ATTRIBUTION_RE, gitOutputOrNull(["log", "--pretty=%B", ...revisions], toplevel) || "")) {
     violations.push({
       ruleId: F_ATTRIBUTION, repo: repoKey,
       text: `AI-tool attribution in a commit message of ${label}; reword it (last commit: \`git commit --amend\`) before pushing.`,
     });
   }
-  const names = trimSpace(gitOutput(["log", "--name-only", "--pretty=", ...revisions], toplevel) || "").split(new RegExp(`${SPACE_CLASS}+`));
+  const names = trimSpace(gitOutputOrNull(["log", "--name-only", "--pretty=", ...revisions], toplevel) || "").split(new RegExp(`${SPACE_CLASS}+`));
   const paths = [...new Set(names.filter((name) => name !== ""))].sort(compareCodePoints);
   return [...violations, ...repoRuleViolations(repoKey, paths, [ACTION_DENY_PATH])];
 }

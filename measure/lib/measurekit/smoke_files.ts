@@ -5,14 +5,15 @@ import path from "node:path"
 import { BoundaryUsageError, fileLines, loadRules, scan } from "./boundary.ts"
 import { readJsonl, readTsvRecords, TsvError } from "./datafiles.ts"
 import { entryExists, InvalidUtf8Error, isDir, isExecutable, isFile, isSymlink, isSystemError, readUtf8, splitLines } from "./files.ts"
-import { GitError, isGitRepo, runGit } from "./gitutil.ts"
+import { GitError, isGitRepo, runGitOrThrow } from "./gitutil.ts"
 import { iterRegistrations } from "./hook_settings.ts"
 import { addDays } from "./dates.ts"
 import { scanFences } from "./fences.ts"
 import { compareCodePoints, displayText, isJsonObject, parseJson } from "./json.ts"
 import type { JsonObject, JsonValue } from "./json.ts"
 import { FAIL, isWithinWindow, PASS, stderrExcerpt, WARN } from "./metrics.ts"
-import { runProcess, TimeoutExpired } from "./subprocess.ts"
+import { runProcess } from "./subprocess.ts"
+import { TimeoutExpired } from "./timeout.ts"
 import type { RunResult } from "./subprocess.ts"
 import { assertion, firstItems } from "./smoke_context.ts"
 import type { Assertion, SmokeContext } from "./smoke_context.ts"
@@ -186,7 +187,7 @@ export function checkBoundary(ctx: SmokeContext): Assertion[] {
   let tracked: string[]
   try {
     rules = loadRules(ctx.overlayDir, !lexiconPresent)
-    tracked = runGit(ctx.keelHome, ["ls-files", "-z"]).split("\0").filter((trackedPath) => trackedPath !== "")
+    tracked = runGitOrThrow(ctx.keelHome, ["ls-files", "-z"]).split("\0").filter((trackedPath) => trackedPath !== "")
   } catch (error) {
     if (error instanceof BoundaryUsageError || error instanceof GitError) return [assertion("boundary", "keel", FAIL, error.message)]
     throw error

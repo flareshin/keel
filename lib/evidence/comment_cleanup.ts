@@ -53,7 +53,7 @@ function measureBlobs(repo: string, path: string, oldBlob: string, newBlob: stri
     const sizes = [oldBlob, newBlob].map((blob) => blobSize(repo, blob));
     if (sizes.some(Number.isNaN)) return false;
     if (!(0 < sizes[1]! && sizes[1]! < sizes[0]! && sizes[0]! <= MAX_SOURCE_BYTES)) return false;
-    const [before, after] = [oldBlob, newBlob].map((blob) => gitcmd.run(repo, ['cat-file', 'blob', blob]).stdout);
+    const [before, after] = [oldBlob, newBlob].map((blob) => gitcmd.runOrThrow(repo, ['cat-file', 'blob', blob]).stdout);
     return onlyCommentDeletions(path, before!, after!);
   } catch (error) {
     if (error instanceof gitcmd.GitError) return false;
@@ -65,7 +65,7 @@ function blobSize(repo: string, blob: string): number {
   const key = [repo, blob].join('\0');
   const known = blobSizes.get(key);
   if (known !== undefined) return known;
-  const size = Number.parseInt(gitcmd.text(repo, ['cat-file', '-s', blob]), 10);
+  const size = Number.parseInt(gitcmd.textOrThrow(repo, ['cat-file', '-s', blob]), 10);
   blobSizes.set(key, size);
   return size;
 }

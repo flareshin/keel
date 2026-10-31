@@ -10,7 +10,7 @@ import { dateOption, parseCommandLine, printJson, runMain, stringOption, EXIT_OK
 import type { CommandSpec } from "../lib/measurekit/cli.ts"
 import { readJsonl } from "../lib/measurekit/datafiles.ts"
 import { FIRES_LOG } from "../lib/measurekit/fireslog.ts"
-import { GitError, gitSucceeds, runGit } from "../lib/measurekit/gitutil.ts"
+import { GitError, gitSucceeds, runGitOrThrow } from "../lib/measurekit/gitutil.ts"
 import { compareCodePoints, isJsonObject, parseJson, stringifySorted } from "../lib/measurekit/json.ts"
 import type { JsonObject } from "../lib/measurekit/json.ts"
 import { isCountedFire, isWithinWindow } from "../lib/measurekit/metrics.ts"
@@ -251,16 +251,16 @@ function reworkInCheckout(checkout: string, head: string, earlierHeads: string[]
   if (!gitSucceeds(checkout, ["rev-parse", "--verify", "--quiet", DEFAULT_BRANCH_REF])) return { state: "not computable", reason: "no origin/HEAD" }
   if (!isAncestor(checkout, head, DEFAULT_BRANCH_REF)) return { state: "not computable", reason: "head not on the default branch" }
   if (!defaultBranchSeenPast(checkout, horizonDate)) return { state: "not computable", reason: "default branch not fetched past the horizon" }
-  const horizon = runGit(checkout, ["rev-list", "-1", "--first-parent", `--before=${horizonDate}`, DEFAULT_BRANCH_REF]).trim()
+  const horizon = runGitOrThrow(checkout, ["rev-list", "-1", "--first-parent", `--before=${horizonDate}`, DEFAULT_BRANCH_REF]).trim()
   if (horizon === "" || !isAncestor(checkout, head, horizon)) return { state: "not computable", reason: "head reached the default branch after the horizon" }
   const base = shipBase(checkout, head, earlierHeads)
   if (base === null) return { state: "not computable", reason: "no earlier ship bounds a fast-forwarded head" }
-  const shipCommits = new Set(lines(runGit(checkout, ["rev-list", "--first-parent", `${base}..${head}`])))
+  const shipCommits = new Set(lines(runGitOrThrow(checkout, ["rev-list", "--first-parent", `${base}..${head}`])))
   const refactorCommits = refactorOnlyCommits(checkout, head, horizon)
   const renames = renamesBetween(checkout, head, horizon)
   let shipped = 0
   let survived = 0
-  for (const file of lines(runGit(checkout, ["diff", "--name-only", "--diff-filter=AMR", base, head]))) {
+  for (const file of lines(runGitOrThrow(checkout, ["diff", "--name-only", "--diff-filter=AMR", base, head]))) {
     shipped += blamedToShip(checkout, head, file, shipCommits, [])
     const later = renames.get(file) ?? file
     survived += gitSucceeds(checkout, ["cat-file", "-e", `${horizon}:${later}`]) ? blamedToShip(checkout, horizon, later, shipCommits, refactorCommits) : 0
@@ -270,19 +270,19 @@ function reworkInCheckout(checkout: string, head: string, earlierHeads: string[]
 
 function defaultBranchSeenPast(checkout: string, horizonDate: string): boolean {
   const horizon = Date.parse(horizonDate)
-  const tipDate = runGit(checkout, ["log", "-1", "--format=%cI", DEFAULT_BRANCH_REF]).trim()
+  const tipDate = runGitOrThrow(checkout, ["log", "-1", "--format=%cI", DEFAULT_BRANCH_REF]).trim()
   if (Date.parse(tipDate) >= horizon) return true
   if (!gitSucceeds(checkout, ["symbolic-ref", "-q", DEFAULT_BRANCH_REF])) return false
   if (!gitSucceeds(checkout, ["remote", "get-url", "origin"])) return false
-  const branch = runGit(checkout, ["symbolic-ref", DEFAULT_BRANCH_REF]).trim().slice(ORIGIN_BRANCH_PREFIX.length)
-  const originFetch = `\tbranch '${branch}' of ${asFetchHeadUrl(runGit(checkout, ["remote", "get-url", "origin"]).trim())}`
+  const branch = runGitOrThrow(checkout, ["symbolic-ref", DEFAULT_BRANCH_REF]).trim().slice(ORIGIN_BRANCH_PREFIX.length)
+  const originFetch = `\tbranch '${branch}' of ${asFetchHeadUrl(runGitOrThrow(checkout, ["remote", "get-url", "origin"]).trim())}`
   return fetchHeadsOfRepo(checkout)
     .filter((fetchHead) => fs.statSync(fetchHead).mtimeMs >= horizon)
     .some((fetchHead) => fs.readFileSync(fetchHead, "utf8").split("\n").some((line) => line.endsWith(originFetch)))
 }
 
 function fetchHeadsOfRepo(checkout: string): string[] {
-  const commonDir = path.resolve(checkout, runGit(checkout, ["rev-parse", "--git-common-dir"]).trim())
+  const commonDir = path.resolve(checkout, runGitOrThrow(checkout, ["rev-parse", "--git-common-dir"]).trim())
   const worktreesDir = path.join(commonDir, "worktrees")
   const worktreeDirs = fs.existsSync(worktreesDir) ? fs.readdirSync(worktreesDir).map((name) => path.join(worktreesDir, name)) : []
   return [commonDir, ...worktreeDirs].map((gitDir) => path.join(gitDir, "FETCH_HEAD")).filter((fetchHead) => fs.existsSync(fetchHead))
@@ -298,15 +298,15 @@ function isAncestor(checkout: string, ancestor: string, descendant: string): boo
 }
 
 function shipBase(checkout: string, head: string, earlierHeads: string[]): string | null {
-  const landing = lines(runGit(checkout, ["rev-list", "--first-parent", "--ancestry-path", `${head}..${DEFAULT_BRANCH_REF}`])).at(-1)
-  const landedByMerge = landing !== undefined && runGit(checkout, ["rev-parse", `${landing}^1`]).trim() !== head
-  if (landedByMerge) return runGit(checkout, ["merge-base", head, `${landing}^1`]).trim()
-  const firstParentChain = new Set(lines(runGit(checkout, ["rev-list", "--first-parent", head])))
+  const landing = lines(runGitOrThrow(checkout, ["rev-list", "--first-parent", "--ancestry-path", `${head}..${DEFAULT_BRANCH_REF}`])).at(-1)
+  const landedByMerge = landing !== undefined && runGitOrThrow(checkout, ["rev-parse", `${landing}^1`]).trim() !== head
+  if (landedByMerge) return runGitOrThrow(checkout, ["merge-base", head, `${landing}^1`]).trim()
+  const firstParentChain = new Set(lines(runGitOrThrow(checkout, ["rev-list", "--first-parent", head])))
   return earlierHeads.find((earlier) => firstParentChain.has(earlier)) ?? null
 }
 
 function refactorOnlyCommits(checkout: string, head: string, horizon: string): string[] {
-  return lines(runGit(checkout, ["log", "--format=%H %s", `${head}..${horizon}`]))
+  return lines(runGitOrThrow(checkout, ["log", "--format=%H %s", `${head}..${horizon}`]))
     .map((line) => [line.slice(0, line.indexOf(" ")), line.slice(line.indexOf(" ") + 1)] as const)
     .filter(([, subject]) => REFACTOR_ONLY_SUBJECT.test(subject))
     .map(([commit]) => commit)
@@ -314,7 +314,7 @@ function refactorOnlyCommits(checkout: string, head: string, horizon: string): s
 
 function renamesBetween(checkout: string, from: string, to: string): Map<string, string> {
   const renames = new Map<string, string>()
-  for (const line of lines(runGit(checkout, ["diff", "--name-status", "-M", "--diff-filter=R", from, to]))) {
+  for (const line of lines(runGitOrThrow(checkout, ["diff", "--name-status", "-M", "--diff-filter=R", from, to]))) {
     const [, oldPath, newPath] = line.split("\t")
     if (oldPath !== undefined && newPath !== undefined) renames.set(oldPath, newPath)
   }
@@ -323,7 +323,7 @@ function renamesBetween(checkout: string, from: string, to: string): Map<string,
 
 function blamedToShip(checkout: string, revision: string, file: string, shipCommits: Set<string>, ignored: string[]): number {
   const ignoreArgs = ignored.flatMap((commit) => ["--ignore-rev", commit])
-  const porcelain = runGit(checkout, ["blame", "--line-porcelain", "-w", ...ignoreArgs, revision, "--", file])
+  const porcelain = runGitOrThrow(checkout, ["blame", "--line-porcelain", "-w", ...ignoreArgs, revision, "--", file])
   return porcelain.split("\n").filter((line) => /^[0-9a-f]{40} /.test(line) && shipCommits.has(line.slice(0, 40))).length
 }
 

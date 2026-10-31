@@ -6,7 +6,7 @@ import { isTestPath } from "../lib/evidence/risk.ts"
 import { EXIT_OK, noPositionals, parseCommandLine, printJson, runMain } from "./lib/measurekit/cli.ts"
 import type { CommandSpec } from "./lib/measurekit/cli.ts"
 import { isDir, isFile } from "./lib/measurekit/files.ts"
-import { runGit } from "./lib/measurekit/gitutil.ts"
+import { runGitOrThrow } from "./lib/measurekit/gitutil.ts"
 import type { JsonValue } from "./lib/measurekit/json.ts"
 import { collectMetricItems, MetricError } from "./lib/measurekit/metrics.ts"
 import { buildExpiryProposals } from "./lib/measurekit/propose.ts"
@@ -46,7 +46,7 @@ function buildWeeklyReport(ctx: SmokeContext): object {
 }
 
 function measureCoreSize(keelHome: string): object {
-  const index = runGit(keelHome, ["ls-files", "-s", "-z"])
+  const index = runGitOrThrow(keelHome, ["ls-files", "-s", "-z"])
   let lines = 0
   for (const entry of index.split("\0").filter((candidate) => candidate !== "")) {
     const tab = entry.indexOf("\t")

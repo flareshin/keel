@@ -64,7 +64,7 @@ describe('git output is data: only its final newline is removed', () => {
     test('text() returns a config value ending in ' + JSON.stringify(edge) + ' exactly', () => {
       const repo = newRepo();
       git(repo, 'config', 'custom.note', 'kept' + edge);
-      assert.equal(gitcmd.text(repo, ['config', '--get', 'custom.note']), 'kept' + edge);
+      assert.equal(gitcmd.textOrThrow(repo, ['config', '--get', 'custom.note']), 'kept' + edge);
     });
   }
 

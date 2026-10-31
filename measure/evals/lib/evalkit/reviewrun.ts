@@ -3,7 +3,7 @@ import os from "node:os"
 import path from "node:path"
 
 import { InvalidUtf8Error, isDir, isSystemError, readUtf8, resolveLinks, splitLines } from "../../../lib/measurekit/files.ts"
-import { GitError, runGit } from "../../../lib/measurekit/gitutil.ts"
+import { GitError, runGitOrThrow } from "../../../lib/measurekit/gitutil.ts"
 import { displayText, isJsonObject, parseJson } from "../../../lib/measurekit/json.ts"
 import type { JsonObject } from "../../../lib/measurekit/json.ts"
 import { projectDirFor } from "./liveconfig.ts"
@@ -63,13 +63,13 @@ export function buildCaseRepo(reviewCase: ReviewCase, parent: string): CaseRepo 
   let base: string
   let head: string
   try {
-    runGit(repo, ["init", "-q"])
-    runGit(repo, ["add", "-A"])
-    runGit(repo, [...UNSIGNED, "commit", "-q", "--allow-empty", "-m", "base"], identity)
-    runGit(repo, ["apply", "--whitespace=nowarn", reviewCase.changePath])
-    runGit(repo, ["add", "-A"])
-    runGit(repo, [...UNSIGNED, "commit", "-q", "-m", "change"], identity)
-    ;[base, head] = runGit(repo, ["rev-parse", "HEAD~1", "HEAD"]).trim().split(/\s+/) as [string, string]
+    runGitOrThrow(repo, ["init", "-q"])
+    runGitOrThrow(repo, ["add", "-A"])
+    runGitOrThrow(repo, [...UNSIGNED, "commit", "-q", "--allow-empty", "-m", "base"], identity)
+    runGitOrThrow(repo, ["apply", "--whitespace=nowarn", reviewCase.changePath])
+    runGitOrThrow(repo, ["add", "-A"])
+    runGitOrThrow(repo, [...UNSIGNED, "commit", "-q", "-m", "change"], identity)
+    ;[base, head] = runGitOrThrow(repo, ["rev-parse", "HEAD~1", "HEAD"]).trim().split(/\s+/) as [string, string]
   } catch (error) {
     if (error instanceof GitError) throw new BuildError(`${reviewCase.id}: ${error.message}`)
     throw error

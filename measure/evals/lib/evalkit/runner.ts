@@ -3,8 +3,9 @@ import os from "node:os"
 import path from "node:path"
 
 import { InvalidUtf8Error, isDir, isExecutable, isSystemError, readUtf8, splitLines } from "../../../lib/measurekit/files.ts"
-import { runGit } from "../../../lib/measurekit/gitutil.ts"
-import { runProcess, TimeoutExpired } from "../../../lib/measurekit/subprocess.ts"
+import { runGitOrThrow } from "../../../lib/measurekit/gitutil.ts"
+import { runProcess } from "../../../lib/measurekit/subprocess.ts"
+import { TimeoutExpired } from "../../../lib/measurekit/timeout.ts"
 import { QUESTION_MARKER } from "./grade.ts"
 import { projectDirFor } from "./liveconfig.ts"
 import { RunFacts, summarizeStream } from "./stream.ts"
@@ -53,7 +54,7 @@ export function runOnce(prompt: string, fixture: string, command: string[], conf
   try {
     prepareFixtureRepo(fixture, work, project)
     const claudeRun = runClaude(command, prompt, work, timeoutSeconds)
-    const changed = runGit(work, ["status", "--porcelain", "--", ...OUTSIDE_FIXTURE]).trim() !== ""
+    const changed = runGitOrThrow(work, ["status", "--porcelain", "--", ...OUTSIDE_FIXTURE]).trim() !== ""
     const leftover = projectDirFor(work, configDir)
     const facts = new RunFacts({
       stream: summarizeStream(splitLines(claudeRun.streamText)), exitCode: claudeRun.exitCode, timedOut: claudeRun.timedOut,
@@ -89,9 +90,9 @@ function readmeTitle(fixture: string): string {
 
 function prepareFixtureRepo(fixture: string, work: string, project: string): void {
   fs.cpSync(fixture, work, { recursive: true, dereference: true })
-  runGit(work, ["init", "-q"])
-  runGit(work, ["add", "-A"])
-  runGit(work, [...UNSIGNED, "commit", "-q", "-m", "init"], projectIdentity(project))
+  runGitOrThrow(work, ["init", "-q"])
+  runGitOrThrow(work, ["add", "-A"])
+  runGitOrThrow(work, [...UNSIGNED, "commit", "-q", "-m", "init"], projectIdentity(project))
 }
 
 export function projectIdentity(project: string): Record<string, string> {
@@ -111,6 +112,6 @@ export function runClaude(command: string[], prompt: string, cwd: string, timeou
 }
 
 function diffOfChanges(work: string): string {
-  runGit(work, ["add", "-A", "--", ...OUTSIDE_FIXTURE])
-  return runGit(work, ["diff", "--cached"])
+  runGitOrThrow(work, ["add", "-A", "--", ...OUTSIDE_FIXTURE])
+  return runGitOrThrow(work, ["diff", "--cached"])
 }

@@ -1,6 +1,8 @@
 import { spawn, spawnSync } from "node:child_process"
 import os from "node:os"
 
+import { TimeoutExpired } from "./timeout.ts"
+
 export interface RunOptions {
   input?: string
   cwd?: string
@@ -14,15 +16,6 @@ export interface RunResult {
   returncode: number
   stdout: string
   stderr: string
-}
-
-export class TimeoutExpired extends Error {
-  readonly partialStdout: string
-
-  constructor(command: string[] | string, timeoutSeconds: number, partialStdout: string) {
-    super(`command ${JSON.stringify(command)} timed out after ${timeoutSeconds} seconds`)
-    this.partialStdout = partialStdout
-  }
 }
 
 export function runProcess(command: string[] | string, options: RunOptions = {}): RunResult {
@@ -42,7 +35,7 @@ export function runProcess(command: string[] | string, options: RunOptions = {})
     stdio: [inputGiven ? "pipe" : options.stdin ?? "inherit", "pipe", "pipe"],
   })
   const error = result.error as NodeJS.ErrnoException | undefined
-  if (error?.code === "ETIMEDOUT") throw new TimeoutExpired(command, options.timeoutSeconds ?? 0, result.stdout ?? "")
+  if (error?.code === "ETIMEDOUT") throw timeoutExpired(command, options.timeoutSeconds ?? 0, result.stdout ?? "")
   if (error) throw error
   return { returncode: exitCode(result.status, result.signal), stdout: result.stdout ?? "", stderr: result.stderr ?? "" }
 }
@@ -62,7 +55,7 @@ export function runProcessAsync(command: string[], options: Pick<RunOptions, "ti
       }
       child.stdout.destroy()
       child.stderr.destroy()
-      reject(new TimeoutExpired(command, options.timeoutSeconds ?? 0, stdout))
+      reject(timeoutExpired(command, options.timeoutSeconds ?? 0, stdout))
     }, options.timeoutSeconds * 1000)
     child.stdout.setEncoding("utf8").on("data", (chunk: string) => { stdout += chunk })
     child.stderr.setEncoding("utf8").on("data", (chunk: string) => { stderr += chunk })
@@ -75,6 +68,10 @@ export function runProcessAsync(command: string[], options: Pick<RunOptions, "ti
       resolve({ returncode: exitCode(status, signal), stdout, stderr })
     })
   })
+}
+
+function timeoutExpired(command: string[] | string, timeoutSeconds: number, partialStdout: string): TimeoutExpired {
+  return new TimeoutExpired(`command ${JSON.stringify(command)} timed out after ${timeoutSeconds} seconds`, timeoutSeconds, partialStdout)
 }
 
 function killProcessGroup(leader: number): void {

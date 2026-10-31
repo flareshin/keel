@@ -819,7 +819,7 @@ describe('EarlyWarningTest', () => {
 describe('SubprocessBudgetTest', () => {
   test('subprocessTimeouts_fitUnderTheRegisteredTimeout', () => {
     const registered = shipGateTimeout();
-    assert.ok(gitcmd.GIT_TIMEOUT_SECONDS + DECISION_MARGIN_SECONDS < registered);
+    assert.ok(gitcmd.LOCAL_GIT_TIMEOUT_SECONDS + DECISION_MARGIN_SECONDS < registered);
     const mergeNetwork = 2 * gitcmd.FETCH_TIMEOUT_SECONDS + GH_TIMEOUT_SECONDS;
     assert.ok(mergeNetwork + DECISION_MARGIN_SECONDS < registered);
   });

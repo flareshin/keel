@@ -5,7 +5,7 @@ import * as protocol from "../lib/hookkit/protocol.ts";
 import type { Payload } from "../lib/hookkit/protocol.ts";
 import { basename, joinPath, normalizePath } from "../lib/hookkit/paths.ts";
 import { FieldTypeError, getField, isNonEmptyString, isRecord, jsonTypeName, textField } from "../lib/hookkit/fields.ts";
-import { arraysEqual, lstripChar, partition, trimSpace, truncate, WORD_BOUNDARY, WORD_CHARS } from "../lib/hookkit/text.ts";
+import { arraysEqual, partition, trimSpace, truncate, WORD_BOUNDARY, WORD_CHARS } from "../lib/hookkit/text.ts";
 import { compareCodePoints } from "../../measure/lib/measurekit/json.ts";
 import { isFile } from "../lib/hookkit/files.ts";
 import { decodeStrict, splitLines } from "../../measure/lib/measurekit/files.ts";
@@ -14,8 +14,15 @@ import { shlexQuote } from "../../measure/lib/measurekit/shlex.ts";
 import { parseJson } from "../lib/hookkit/json.ts";
 import { AttributeError, describeError, pythonTypeName, RecursionError, ValueError } from "../lib/hookkit/errors.ts";
 import { readStdin, writeStderr } from "../lib/hookkit/stdio.ts";
-import * as shell from "../lib/hookkit/shell.ts";
-import type { Step } from "../lib/hookkit/shell.ts";
+import {
+  attachedGhRepo, configKey, dashedGitSubcommand, GH_REPO_OPTIONS, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, interpretPush,
+  isConfigRead,
+} from "../lib/hookkit/gitargs.ts";
+import { RUN_TIME_WORD_RE } from "../lib/hookkit/commands.ts";
+import type { SimpleCommand } from "../lib/hookkit/commands.ts";
+import { SHELLS } from "../lib/hookkit/parser.ts";
+import { steps } from "../lib/hookkit/steps.ts";
+import type { Step } from "../lib/hookkit/steps.ts";
 import { appendRecord, dataDir, iso, stateDir, utcNow } from "../../lib/evidence/env.ts";
 import * as gc from "../../lib/evidence/gc.ts";
 import * as gitcmd from "../../lib/evidence/gitcmd.ts";
@@ -55,7 +62,7 @@ const GH_API_VALUE_OPTIONS: ReadonlySet<string> = new Set([
   "--cache",
 ]);
 const URL_FORM = /^[^/]*:/u;
-const PROGRAMS_THAT_MAY_PUSH: ReadonlySet<string> = new Set(["git", "gh", ...shell.SHELLS]);
+const PROGRAMS_THAT_MAY_PUSH: ReadonlySet<string> = new Set(["git", "gh", ...SHELLS]);
 export const ARGV_FORWARDERS: ReadonlySet<string> = new Set([
   "xargs", "parallel", "env", "sudo", "exec", "nice", "nohup", "time", "timeout", "gtimeout", "command",
 ]);
@@ -297,7 +304,7 @@ function guardBash(payload: Payload, report: Report): void {
 
 export function mayPushOrMerge(call: string): boolean {
   const unquoted = unquote(call);
-  const runtimeGitOrGh = DECISION_HINT.test(unquoted) && shell.RUN_TIME_WORD_RE.test(unquoted);
+  const runtimeGitOrGh = DECISION_HINT.test(unquoted) && RUN_TIME_WORD_RE.test(unquoted);
   return spellsPushOrMerge(call) || runtimeGitOrGh;
 }
 
@@ -312,8 +319,8 @@ function unquote(command: string): string {
 
 export function callActions(call: string, cwd: string): Action[] {
   const actions: Action[] = [];
-  const unattributable = new Set<shell.SimpleCommand>();
-  for (const step of shell.steps(call, cwd)) {
+  const unattributable = new Set<SimpleCommand>();
+  for (const step of steps(call, cwd)) {
     if (runsUnder(step.command, unattributable)) continue;
     const stepActions = actionsOf(step, call, cwd);
     if (stepActions.some((action) => action.kind === "unattributable")) unattributable.add(step.command);
@@ -322,7 +329,7 @@ export function callActions(call: string, cwd: string): Action[] {
   return actions;
 }
 
-function runsUnder(command: shell.SimpleCommand, runners: ReadonlySet<shell.SimpleCommand>): boolean {
+function runsUnder(command: SimpleCommand, runners: ReadonlySet<SimpleCommand>): boolean {
   for (let parent = command.parent; parent !== null; parent = parent.parent) {
     if (runners.has(parent)) return true;
   }
@@ -339,8 +346,8 @@ export function actionsOf(step: Step, call: string = "", callCwd: string = ""): 
   }
   const program = basename(first);
   if (program === "git") return gitActions(step, call, callCwd);
-  if (program === "gh") return ghActions(shell.ghSubcommandArgv(words), workdir, step.environment, call, callCwd);
-  if (shell.RUN_TIME_WORD_RE.test(first) && runtimeNameMayPushOrMerge(words, call)) {
+  if (program === "gh") return ghActions(ghSubcommandArgv(words), workdir, step.environment, call, callCwd);
+  if (RUN_TIME_WORD_RE.test(first) && runtimeNameMayPushOrMerge(words, call)) {
     return [resolvedAtRunTime(workdir, words, `\`${first}\` is resolved only at run time`, call, callCwd)];
   }
   return [];
@@ -377,15 +384,15 @@ function ghApiHidesItsTarget(args: string[]): boolean {
   const [options, operands] = readGhApi(args);
   const fields = options.filter(([option]) => GH_API_FIELD_OPTIONS.includes(option)).map(([, value]) => partition(value, "="));
   const runTimeQuery = fields.some(([name, , value]) =>
-    shell.RUN_TIME_WORD_RE.test(name) || (name === "query" && shell.RUN_TIME_WORD_RE.test(value)));
-  const runTimeWord = [...operands, ...options.map(([option]) => option)].some((word) => shell.RUN_TIME_WORD_RE.test(word));
+    RUN_TIME_WORD_RE.test(name) || (name === "query" && RUN_TIME_WORD_RE.test(value)));
+  const runTimeWord = [...operands, ...options.map(([option]) => option)].some((word) => RUN_TIME_WORD_RE.test(word));
   return (runTimeQuery || runTimeWord) && ghApiWrites(args);
 }
 
 function ghApiWrites(args: string[]): boolean {
   const [options, operands] = readGhApi(args);
-  if (options.some(([option]) => shell.RUN_TIME_WORD_RE.test(option))) return true;
-  if (operands.length > 1 && operands.some((word) => shell.RUN_TIME_WORD_RE.test(word))) return true;
+  if (options.some(([option]) => RUN_TIME_WORD_RE.test(option))) return true;
+  if (operands.length > 1 && operands.some((word) => RUN_TIME_WORD_RE.test(word))) return true;
   const methods = options.filter(([option]) => GH_API_METHOD_OPTIONS.has(option)).map(([, value]) => value);
   const lastMethod = methods.at(-1);
   if (lastMethod !== undefined) return !READ_METHODS.has(lastMethod.toUpperCase());
@@ -442,18 +449,18 @@ function hidesPushOrMerge(step: Step, call: string): boolean {
   if (!(keptForwarder || step.unattributableOptions.length > 0)) return false;
   const forwarded = step.command.argv.slice(1);
   const runsOpaque = forwarded.some((word) =>
-    PROGRAMS_THAT_MAY_PUSH.has(basename(word)) || shell.dashedGitSubcommand(word) !== null || shell.RUN_TIME_WORD_RE.test(word));
+    PROGRAMS_THAT_MAY_PUSH.has(basename(word)) || dashedGitSubcommand(word) !== null || RUN_TIME_WORD_RE.test(word));
   return runsOpaque && (spellsPushOrMerge(call) || forwarded.some((word) => PUSH_OR_MERGE_WORDS.has(word)));
 }
 
 function gitActions(step: Step, call: string, callCwd: string): Action[] {
-  const index = shell.gitSubcommandIndex(step.argv);
+  const index = gitSubcommandIndex(step.argv);
   if (index === null) return [];
   const subcommand = step.argv[index] ?? "";
   const args = step.argv.slice(index + 1);
-  const workdir = shell.gitDirectory(step.argv, step.directory, step.expansion);
+  const workdir = gitDirectory(step.argv, step.directory, step.expansion);
   const words = [...withoutDirectoryOptions(step.argv.slice(0, index)), ...step.argv.slice(index)];
-  if (shell.RUN_TIME_WORD_RE.test(subcommand)) {
+  if (RUN_TIME_WORD_RE.test(subcommand)) {
     return [resolvedAtRunTime(workdir, words, `the git subcommand \`${subcommand}\` is resolved only at run time`, call, callCwd)];
   }
   if (PUSHES_OUTSIDE_GIT_PUSH.has(subcommand) || (subcommand === "subtree" && args.includes("push"))) {
@@ -467,7 +474,7 @@ function gitActions(step: Step, call: string, callCwd: string): Action[] {
     return [resolvedAtRunTime(workdir, words, `\`${reconfigured}\` changes git config the gate reads from the clone`, call, callCwd)];
   }
   const push = parsePush(words, args, workdir);
-  if (push.remote && shell.RUN_TIME_WORD_RE.test(push.remote)) {
+  if (push.remote && RUN_TIME_WORD_RE.test(push.remote)) {
     return [resolvedAtRunTime(workdir, words, `the push remote \`${push.remote}\` is resolved only at run time`, call, callCwd)];
   }
   return [push];
@@ -515,16 +522,16 @@ function configOverride(globalWords: string[], environment: Environment): string
 }
 
 function configChangeIn(call: string, callCwd: string): string | null {
-  for (const step of call ? shell.steps(call, callCwd) : []) {
-    const index = shell.gitSubcommandIndex(step.argv);
+  for (const step of call ? steps(call, callCwd) : []) {
+    const index = gitSubcommandIndex(step.argv);
     if (index !== null && changesConfig(step.argv[index] ?? "", step.argv.slice(index + 1))) return shellJoin(step.argv);
   }
   return null;
 }
 
 function ghDefaultChangeIn(call: string, callCwd: string): string | null {
-  for (const step of shell.steps(call, callCwd)) {
-    const words = shell.ghSubcommandArgv(step.argv);
+  for (const step of steps(call, callCwd)) {
+    const words = ghSubcommandArgv(step.argv);
     const setsDefault = arraysEqual(words.slice(1, 3), ["repo", "set-default"]);
     if (step.name === "gh" && setsDefault && !words.slice(3).some((word) => GH_DEFAULT_VIEW_OPTIONS.has(word))) {
       return shellJoin(step.argv);
@@ -547,8 +554,8 @@ function changesConfig(subcommand: string, args: string[]): boolean {
 }
 
 function writesPushRouting(configArgs: string[]): boolean {
-  if (shell.isConfigRead(configArgs)) return false;
-  const key = shell.configKey(configArgs);
+  if (isConfigRead(configArgs)) return false;
+  const key = configKey(configArgs);
   return key === null || routesPushes(key);
 }
 
@@ -557,19 +564,15 @@ function routesPushes(key: string): boolean {
 }
 
 export function parsePush(words: string[], args: string[], workdir: string): Push {
-  const pushed = shell.readPushArguments(args);
-  const given = pushed.refspecs.map((spec) => lstripChar(spec, "+"));
-  const refspecs = given.filter((spec) => !spec.startsWith(":")).map((spec): Refspec => {
-    const [source, , destination] = partition(spec, ":");
-    return { source, destination: destination || null };
-  });
-  const deletes = pushed.longOptions.includes("--delete") || pushed.shortFlags.includes("d");
+  const { options, refspecs: given, deletes } = interpretPush(args);
+  const refspecs = given.filter((spec) => !spec.deletesDestination)
+    .map((spec): Refspec => ({ source: spec.source, destination: spec.destination }));
   return {
-    kind: "push", workdir, words, remote: pushed.remote, refspecs,
+    kind: "push", workdir, words, remote: options.remote, refspecs,
     deletesOnly: deletes || (given.length > 0 && refspecs.length === 0),
-    tagsOnly: pushed.longOptions.includes("--tags") && given.length === 0,
-    wholeRepo: pushed.wholeRepo,
-    dryRun: pushed.longOptions.includes("--dry-run") || pushed.shortFlags.includes("n"),
+    tagsOnly: options.longOptions.includes("--tags") && given.length === 0,
+    wholeRepo: options.wholeRepo,
+    dryRun: options.longOptions.includes("--dry-run") || options.shortFlags.includes("n"),
   };
 }
 
@@ -580,8 +583,8 @@ export function parseMerge(words: string[], workdir: string, repoEnv: string | n
   let auto = false;
   const remaining = words.slice(3).values();
   for (const arg of remaining) {
-    const attachedRepo = shell.attachedGhRepo(arg);
-    if (shell.GH_REPO_OPTIONS.has(arg)) {
+    const attachedRepo = attachedGhRepo(arg);
+    if (GH_REPO_OPTIONS.has(arg)) {
       repoFlag = nextOrNull(remaining);
     } else if (attachedRepo !== null) {
       repoFlag = attachedRepo;

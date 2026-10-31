@@ -23,11 +23,12 @@ import { addedComments, withStraightQuotes } from "./comments.ts";
 import { notebookCellChange } from "./notebook.ts";
 import type { CodeChange } from "./notebook.ts";
 import { currentBranch, findRepoKey, findToplevel, git, gitOutputOrNull, isCommit, isOutsideEveryRepository } from "../lib/hookkit/repo.ts";
-import {
-  fileWriteOf, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, isConfigRead, operands, readPushArguments, resolveDirectory, RUN_TIME_WORD_RE, steps,
-  writeTargets,
-} from "../lib/hookkit/shell.ts";
-import type { Step } from "../lib/hookkit/shell.ts";
+import { RUN_TIME_WORD_RE } from "../lib/hookkit/commands.ts";
+import { ghSubcommandArgv, gitDirectory, gitSubcommandIndex, interpretPush, isConfigRead } from "../lib/hookkit/gitargs.ts";
+import { steps } from "../lib/hookkit/steps.ts";
+import type { Step } from "../lib/hookkit/steps.ts";
+import { resolveDirectory } from "../lib/hookkit/variables.ts";
+import { fileWriteOf, operands, writeTargets } from "../lib/hookkit/writes.ts";
 import { TimeoutExpired } from "../../measure/lib/measurekit/timeout.ts";
 import { OSError, run } from "../lib/hookkit/subprocess.ts";
 import type { CompletedProcess } from "../lib/hookkit/subprocess.ts";
@@ -872,25 +873,23 @@ interface PushRequest {
   wholeRepo: boolean;
 }
 
-function readPush(args: readonly string[], branch: string | null): PushRequest {
-  const pushed = readPushArguments(args);
-  const deletes = pushed.longOptions.includes("--delete") || pushed.shortFlags.includes("d");
+export function readPush(args: readonly string[], branch: string | null): PushRequest {
+  const { options, refspecs, deletes } = interpretPush(args);
   const push: PushRequest = {
     sources: [],
     destinations: new Set(),
-    force: pushed.longOptions.includes("--force") || pushed.shortFlags.includes("f") || pushed.refspecs.some((spec) => spec.startsWith("+")),
-    forceWithLease: pushed.longOptions.some((option) => option.startsWith("--force-with-lease")),
-    wholeRepo: pushed.wholeRepo,
+    force: options.longOptions.includes("--force") || options.shortFlags.includes("f") || refspecs.some((spec) => spec.forced),
+    forceWithLease: options.longOptions.some((option) => option.startsWith("--force-with-lease")),
+    wholeRepo: options.wholeRepo,
   };
-  if (pushed.refspecs.length === 0 && !deletes) {
+  if (refspecs.length === 0 && !deletes) {
     push.sources = ["HEAD"];
     if (branch) push.destinations.add(branch);
   }
-  for (const spec of pushed.refspecs) {
-    const [source, , destinationName] = partition(spec.replace(/^\++/, ""), ":");
-    if (deletes || !source) continue;
-    push.sources.push(source);
-    let destination = destinationName || source;
+  for (const spec of refspecs) {
+    if (deletes || !spec.source) continue;
+    push.sources.push(spec.source);
+    let destination = spec.destination ?? spec.source;
     if (destination === "HEAD") destination = branch || destination;
     push.destinations.add(destination.replace(/^refs\/heads\//, ""));
   }

@@ -16,7 +16,7 @@ import { SPACE_CHARS, SPACE_CLASS, testCaseFolded, trimCharacters, trimSpace, WO
 import { TimeoutExpired } from "../../measure/lib/measurekit/timeout.ts";
 import { OSError, run } from "../lib/hookkit/subprocess.ts";
 import type { CompletedProcess } from "../lib/hookkit/subprocess.ts";
-import { commandWritesFiles } from "../lib/hookkit/shell.ts";
+import { commandWritesFiles } from "../lib/hookkit/writes.ts";
 import { contentOf, iterEntries, roleOf, textOf, toolUses } from "../lib/hookkit/transcript.ts";
 
 const HOOK = "report-gate";

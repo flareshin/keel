@@ -7,10 +7,13 @@ import * as knownvalues from "../../hooks/lib/hookkit/knownvalues.ts";
 import { OverlayDataError, readTsv } from "../../hooks/lib/hookkit/overlay.ts";
 import * as protocol from "../../hooks/lib/hookkit/protocol.ts";
 import { normalizeRepoKey } from "../../hooks/lib/hookkit/repo.ts";
+import { unwrap } from "../../hooks/lib/hookkit/commands.ts";
 import {
-  commandWritesFiles, configKey, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, isConfigRead, parseCommands,
-  readPushArguments, steps, unwrap, writeTargets,
-} from "../../hooks/lib/hookkit/shell.ts";
+  configKey, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, interpretPush, isConfigRead, readPushArguments,
+} from "../../hooks/lib/hookkit/gitargs.ts";
+import { parseCommands } from "../../hooks/lib/hookkit/parser.ts";
+import { steps } from "../../hooks/lib/hookkit/steps.ts";
+import { commandWritesFiles, writeTargets } from "../../hooks/lib/hookkit/writes.ts";
 import { Sandbox, withEnv } from "./helpers.ts";
 
 function argvs(text: string): string[][] {
@@ -191,6 +194,34 @@ describe("ReadPushArgumentsTest", () => {
     for (const option of ["--all", "--branches", "--mirror"]) {
       assert.equal(readPushArguments([option, "origin"]).wholeRepo, true, option);
     }
+  });
+});
+
+describe("InterpretPushTest", () => {
+  it("interpretPush_splitsEachRefspecIntoSourceAndDestination_andReadsTheLeadingPlus", () => {
+    const cases: Array<[word: string, expected: object]> = [
+      ["topic", { source: "topic", destination: null, forced: false, deletesDestination: false }],
+      ["topic:", { source: "topic", destination: null, forced: false, deletesDestination: false }],
+      ["a:refs/heads/b", { source: "a", destination: "refs/heads/b", forced: false, deletesDestination: false }],
+      ["+a:b", { source: "a", destination: "b", forced: true, deletesDestination: false }],
+      ["++a", { source: "a", destination: null, forced: true, deletesDestination: false }],
+      [":old", { source: "", destination: "old", forced: false, deletesDestination: true }],
+      ["+:old", { source: "", destination: "old", forced: true, deletesDestination: true }],
+      [":", { source: "", destination: null, forced: false, deletesDestination: true }],
+      ["", { source: "", destination: null, forced: false, deletesDestination: false }],
+    ];
+    for (const [word, expected] of cases) {
+      assert.deepEqual(interpretPush(["origin", word]).refspecs, [expected], JSON.stringify(word));
+    }
+  });
+
+  it("interpretPush_keepsTheRawArguments_andReadsTheDeleteOption", () => {
+    for (const args of [["--delete", "origin", "old"], ["-d", "origin", "old"], ["-fd", "origin", "old"]]) {
+      const push = interpretPush(args);
+      assert.equal(push.deletes, true, args.join(" "));
+      assert.deepEqual(push.options, readPushArguments(args), args.join(" "));
+    }
+    assert.equal(interpretPush(["-u", "origin", "old"]).deletes, false);
   });
 });
 

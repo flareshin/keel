@@ -1,7 +1,18 @@
 import { readFileSync } from "node:fs";
 import { isDeepStrictEqual } from "node:util";
 import { join } from "node:path";
-import * as shell from "../../hooks/lib/hookkit/shell.ts";
+import { unwrap } from "../../hooks/lib/hookkit/commands.ts";
+import type { Invocation, SimpleCommand } from "../../hooks/lib/hookkit/commands.ts";
+import {
+  attachedGhRepo, configKey, dashedGitSubcommand, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, isConfigRead,
+  readPushArguments,
+} from "../../hooks/lib/hookkit/gitargs.ts";
+import type { PushArguments } from "../../hooks/lib/hookkit/gitargs.ts";
+import { parseCommands } from "../../hooks/lib/hookkit/parser.ts";
+import { steps } from "../../hooks/lib/hookkit/steps.ts";
+import { resolveDirectory } from "../../hooks/lib/hookkit/variables.ts";
+import { commandWritesFiles, writeTargets } from "../../hooks/lib/hookkit/writes.ts";
+import type { WriteTargets } from "../../hooks/lib/hookkit/writes.ts";
 import { compareCodePoints } from "../../measure/lib/measurekit/json.ts";
 import { recordedAnswers } from "../recorded.ts";
 import { ADVERSARIAL_SPELLINGS } from "./shell-parity-corpus.ts";
@@ -86,7 +97,7 @@ function mapPairs(map: Map<string, string>): Json {
   return Array.from(map.entries()).map(([key, value]) => [key, value]);
 }
 
-function commandView(command: shell.SimpleCommand, indexOf: Map<shell.SimpleCommand, number>): Json {
+function commandView(command: SimpleCommand, indexOf: Map<SimpleCommand, number>): Json {
   return {
     argv: command.argv, assignments: command.assignments.map((item) => [...item]),
     redirects: command.redirects.map((redirect) => [redirect.op, redirect.target]), heredocs: command.heredocs,
@@ -95,11 +106,11 @@ function commandView(command: shell.SimpleCommand, indexOf: Map<shell.SimpleComm
   };
 }
 
-function indexes(commands: shell.SimpleCommand[]): Map<shell.SimpleCommand, number> {
+function indexes(commands: SimpleCommand[]): Map<SimpleCommand, number> {
   return new Map(commands.map((command, index) => [command, index]));
 }
 
-function invocationView(invocation: shell.Invocation): Json {
+function invocationView(invocation: Invocation): Json {
   return {
     argv: invocation.argv, assignments: invocation.assignments.map((item) => [...item]), clears_env: invocation.clearsEnv,
     removed_names: [...invocation.removedNames].sort(compareCodePoints), unattributable_options: invocation.unattributableOptions,
@@ -109,11 +120,11 @@ function invocationView(invocation: shell.Invocation): Json {
   };
 }
 
-function targetsView(targets: shell.WriteTargets): Json {
+function targetsView(targets: WriteTargets): Json {
   return { written: targets.written, removed: targets.removed, sources: targets.sources, unknown: targets.unknown, any: targets.any() };
 }
 
-function pushView(pushed: shell.PushArguments): Json {
+function pushView(pushed: PushArguments): Json {
   return {
     remote: pushed.remote, refspecs: pushed.refspecs, long_options: pushed.longOptions, short_flags: pushed.shortFlags,
     whole_repo: pushed.wholeRepo,
@@ -126,12 +137,12 @@ function variables(pairs: Array<[string, string]>): Map<string, string> {
 
 const TYPESCRIPT_TABLE: Record<string, (...args: never[]) => Json> = {
   parse_commands: (text: string) => {
-    const commands = shell.parseCommands(text);
+    const commands = parseCommands(text);
     const indexOf = indexes(commands);
     return commands.map((command) => commandView(command, indexOf));
   },
   steps: (text: string, cwd: string) => {
-    const found = shell.steps(text, cwd);
+    const found = steps(text, cwd);
     const indexOf = indexes(found.map((step) => step.command));
     return found.map((step) => ({
       argv: step.argv, environment: mapPairs(step.environment), directory: step.directory,
@@ -139,20 +150,20 @@ const TYPESCRIPT_TABLE: Record<string, (...args: never[]) => Json> = {
       unattributable_options: step.unattributableOptions, heredocs: step.heredocs,
     }));
   },
-  unwrap_each: (text: string) => shell.parseCommands(text).map((command) => invocationView(shell.unwrap(command))),
-  write_targets_each: (text: string) => shell.parseCommands(text).map((command) => targetsView(shell.writeTargets(command))),
-  command_writes_files: (text: string, exceptUnder: string[]) => shell.commandWritesFiles(text, exceptUnder),
-  git_subcommand_index: (argv: string[]) => shell.gitSubcommandIndex(argv),
+  unwrap_each: (text: string) => parseCommands(text).map((command) => invocationView(unwrap(command))),
+  write_targets_each: (text: string) => parseCommands(text).map((command) => targetsView(writeTargets(command))),
+  command_writes_files: (text: string, exceptUnder: string[]) => commandWritesFiles(text, exceptUnder),
+  git_subcommand_index: (argv: string[]) => gitSubcommandIndex(argv),
   git_directory: (argv: string[], directory: string, pairs: Array<[string, string]>) =>
-    shell.gitDirectory(argv, directory, variables(pairs)),
-  gh_subcommand_argv: (argv: string[]) => shell.ghSubcommandArgv(argv),
-  attached_gh_repo: (word: string) => shell.attachedGhRepo(word),
-  read_push_arguments: (args: string[]) => pushView(shell.readPushArguments(args)),
-  is_config_read: (args: string[]) => shell.isConfigRead(args),
-  config_key: (args: string[]) => shell.configKey(args),
-  dashed_git_subcommand: (word: string) => shell.dashedGitSubcommand(word),
+    gitDirectory(argv, directory, variables(pairs)),
+  gh_subcommand_argv: (argv: string[]) => ghSubcommandArgv(argv),
+  attached_gh_repo: (word: string) => attachedGhRepo(word),
+  read_push_arguments: (args: string[]) => pushView(readPushArguments(args)),
+  is_config_read: (args: string[]) => isConfigRead(args),
+  config_key: (args: string[]) => configKey(args),
+  dashed_git_subcommand: (word: string) => dashedGitSubcommand(word),
   resolve_directory: (directory: string, target: string, pairs: Array<[string, string]>) =>
-    shell.resolveDirectory(directory, target, variables(pairs)),
+    resolveDirectory(directory, target, variables(pairs)),
 };
 
 function inFixedEnvironment<T>(body: () => T): T {
@@ -213,8 +224,8 @@ function textCalls(corpus: string[]): Call[] {
 function argvCalls(corpus: string[]): Call[] {
   const argvs = new Map<string, string[]>();
   for (const text of corpus) {
-    for (const command of shell.parseCommands(text)) {
-      for (const argv of [command.argv, shell.unwrap(command).argv]) argvs.set(JSON.stringify(argv), argv);
+    for (const command of parseCommands(text)) {
+      for (const argv of [command.argv, unwrap(command).argv]) argvs.set(JSON.stringify(argv), argv);
     }
   }
   const words = new Set<string>();

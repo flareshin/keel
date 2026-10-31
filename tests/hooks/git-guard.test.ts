@@ -1076,8 +1076,27 @@ describe("SameCallStagingTest", () => {
     assertSecretDenied(guard("git add -A && git commit -m wip", repo), "leak.txt");
   });
 
-  it("commit_deniedWithTheSecret_whenAddChainedAfterCdIntoRepo", () => {
-    assertSecretDenied(guard(`cd ${repo}; git add leak.txt; git commit -m wip`), "leak.txt");
+  it("commit_denied_whenAddChainedAfterCdIntoRepo", () => {
+    assertProceduralDenied(guard(`cd ${repo}; git add leak.txt; git commit -m wip`));
+  });
+
+  it("commit_denied_whenADirectoryChangePrecedesTheStaging", () => {
+    const other = sandbox.makeRepo("example", "other");
+    commitTracked("t.txt", SECRET_LINE);
+    assertProceduralDenied(guard(`cd ${other}; cd ${repo}; cd -; git commit -am wip`, other));
+    assertProceduralDenied(guard(`cd ${other} ${repo}; git commit -am wip`, repo));
+    assertProceduralDenied(guard(`cd ${other} & git commit -am wip`, repo));
+  });
+
+  it("commit_denied_whenAFailingCdLeavesTheCommitInTheCallRepo", () => {
+    commitTracked("t.txt", SECRET_LINE);
+    assertProceduralDenied(guard("cd no-such-dir; git commit -am wip", repo));
+  });
+
+  it("commit_denied_whenTheRepositoryIsCreatedInTheSameCall", () => {
+    const fresh = join(sandbox.root, "work", "fresh");
+    sandbox.write(join(fresh, "a.txt"), "nothing secret\n");
+    assertProceduralDenied(guard("git init -q && git add . && git commit -m init", fresh));
   });
 
   it("commit_denied_whenAPlainShellVariableNamesTheRepoForAddAndCommit", () => {
@@ -1294,7 +1313,7 @@ describe("SameCallStagingTest", () => {
   });
 
   it("commit_passes_whenTheCallTextUsesOnlyPlainCharacters", () => {
-    assertPassed(guard("cd . && git add ./clean.txt && git commit -m \"wip: clean-up, v1.2 +docs @team 50%\"", repo));
+    assertPassed(guard("git add ./clean.txt && git commit -m \"wip: clean-up, v1.2 +docs @team 50%\"", repo));
   });
 
   it("commit_denied_whenAnEarlierShellStateStepRedirectsEvenToDevNull", () => {

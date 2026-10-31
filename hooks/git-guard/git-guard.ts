@@ -75,8 +75,7 @@ const COMMIT_SHORT_VALUE_FLAGS: ReadonlySet<string> = new Set(["m", "F", "C", "c
 const COMMIT_SHORT_ATTACHED_VALUE_FLAGS: ReadonlySet<string> = new Set(["S", "u"]);
 const COMMIT_NO_VERIFY_SHORT_FLAG = "n";
 const STAGING_SUBCOMMANDS: ReadonlySet<string> = new Set(["add", "stage"]);
-const SHELL_STATE_COMMANDS: ReadonlySet<string> = new Set(["", "cd", "pushd", "popd", "export"]);
-const PLAIN_CALL_TEXT_RE = /^[A-Za-z0-9 \t\n'"_.,:;=@%+\-\/&]*$/;
+const PLAIN_CALL_TEXT_RE = /^(?:[A-Za-z0-9 \t\n'"_.,:;=@%+\-\/]|&&)*$/;
 const PR_FILE_OPTIONS: ReadonlySet<string> = new Set(["-F", "--body-file"]);
 const PR_TEXT_SUBCOMMANDS: ReadonlySet<string> = new Set(["create", "edit", "merge"]);
 const UNPUSHED = ["--not", "--remotes"];
@@ -570,7 +569,7 @@ function checkCommit(
   }
   const toplevel = findToplevel(repoDirectory);
   if (toplevel === null) {
-    const repoUnknown = !plainCallText || isUnresolved(repoDirectory);
+    const repoUnknown = !plainCallText || isUnresolved(repoDirectory) || earlierSteps.length > 0;
     return repoUnknown ? [...violations, unreplayableStagingViolation(null)] : violations;
   }
   const repoKey = findRepoKey(toplevel);
@@ -613,24 +612,17 @@ function sameCallStaging(
   args: readonly string[], repoDirectory: string, earlierSteps: readonly Step[], toplevel: string, plainCallText: boolean,
 ): StagingCommand[] | null {
   const commands: StagingCommand[] = [];
-  let worktreeMayHaveChanged = !plainCallText;
+  let replayable = plainCallText;
   for (const step of earlierSteps) {
     const staging = earlierStaging(step, toplevel);
     if (staging === UNREPLAYABLE) return null;
-    if (staging === NOT_STAGING) {
-      worktreeMayHaveChanged ||= mayChangeWorktree(step);
-      continue;
-    }
-    if (worktreeMayHaveChanged) return null;
-    commands.push(staging);
+    if (staging === NOT_STAGING) replayable = false;
+    else commands.push(staging);
   }
   const own = commitStaging(args, repoDirectory, toplevel);
-  if (own === null || (own.length > 0 && worktreeMayHaveChanged)) return null;
-  return [...commands, ...own];
-}
-
-function mayChangeWorktree(step: Step): boolean {
-  return !SHELL_STATE_COMMANDS.has(step.name);
+  if (own === null) return null;
+  const staging = [...commands, ...own];
+  return staging.length > 0 && !replayable ? null : staging;
 }
 
 function earlierStaging(step: Step, toplevel: string): EarlierStaging {

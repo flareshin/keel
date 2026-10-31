@@ -45,6 +45,7 @@ describe("seed ledger", () => {
     assert.deepEqual(citing, ["C-dispatch", "C-isolation", "S-jdk", "C-precheck", "C-comments"])
     for (const rowId of SEED_IDS) {
       const incidents = seedRow(rowId)["incidents"]
+      assert.ok(incidents !== undefined, `${rowId} has no incidents cell`)
       if (incidents === "-") continue
       const refs = incidents.split(",")
       assert.ok(new Set(refs).size >= 2, rowId)

@@ -14,7 +14,7 @@ export interface BaselineFile {
 }
 
 export type Baseline =
-  | { outcome: 'green'; files: BaselineFile[]; withoutPasses: string[] }
+  | { outcome: 'green'; files: BaselineFile[]; withoutPasses: string[]; timeoutSeconds: number }
   | { outcome: 'red'; test: string; output: string }
   | { outcome: 'timeout'; test: string; output: string; timeoutSeconds: number }
   | { outcome: 'empty' };
@@ -60,7 +60,7 @@ export async function runBaseline(directory: string, tests: string[], timeoutSec
   }
   const withPasses = files.filter((file) => file.passed > 0);
   if (withPasses.length === 0) return { outcome: 'empty' };
-  return { outcome: 'green', files: withPasses, withoutPasses: files.filter((file) => file.passed === 0).map((file) => file.test) };
+  return { outcome: 'green', files: withPasses, withoutPasses: files.filter((file) => file.passed === 0).map((file) => file.test), timeoutSeconds };
 }
 
 async function runBaselineFile(directory: string, test: string, timeoutSeconds: number): Promise<FileRun> {

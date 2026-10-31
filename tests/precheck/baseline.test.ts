@@ -191,6 +191,7 @@ describe("precheck baseline", () => {
     assert.equal(mixed.outcome, "green")
     assert.deepEqual(mixed.files.map((file) => file.test), ["tests/a.test.ts"])
     assert.deepEqual(mixed.withoutPasses, ["tests/skip.test.ts"])
+    assert.equal(mixed.timeoutSeconds, TIMEOUT_SECONDS)
     assert.deepEqual(onlySkipping, { outcome: "empty" })
   })
 

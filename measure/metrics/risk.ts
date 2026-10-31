@@ -273,10 +273,12 @@ function defaultBranchSeenPast(checkout: string, horizonDate: string): boolean {
   const tipDate = runGit(checkout, ["log", "-1", "--format=%cI", DEFAULT_BRANCH_REF]).trim()
   if (Date.parse(tipDate) >= horizon) return true
   if (!gitSucceeds(checkout, ["symbolic-ref", "-q", DEFAULT_BRANCH_REF])) return false
+  if (!gitSucceeds(checkout, ["remote", "get-url", "origin"])) return false
   const branch = runGit(checkout, ["symbolic-ref", DEFAULT_BRANCH_REF]).trim().slice(ORIGIN_BRANCH_PREFIX.length)
+  const originFetch = `\tbranch '${branch}' of ${asFetchHeadUrl(runGit(checkout, ["remote", "get-url", "origin"]).trim())}`
   return fetchHeadsOfRepo(checkout)
     .filter((fetchHead) => fs.statSync(fetchHead).mtimeMs >= horizon)
-    .some((fetchHead) => fs.readFileSync(fetchHead, "utf8").split("\n").some((line) => line.includes(`\tbranch '${branch}' of `)))
+    .some((fetchHead) => fs.readFileSync(fetchHead, "utf8").split("\n").some((line) => line.endsWith(originFetch)))
 }
 
 function fetchHeadsOfRepo(checkout: string): string[] {
@@ -284,6 +286,11 @@ function fetchHeadsOfRepo(checkout: string): string[] {
   const worktreesDir = path.join(commonDir, "worktrees")
   const worktreeDirs = fs.existsSync(worktreesDir) ? fs.readdirSync(worktreesDir).map((name) => path.join(worktreesDir, name)) : []
   return [commonDir, ...worktreeDirs].map((gitDir) => path.join(gitDir, "FETCH_HEAD")).filter((fetchHead) => fs.existsSync(fetchHead))
+}
+
+function asFetchHeadUrl(url: string): string {
+  const withoutUser = url.includes("://") ? url.replace(/^([^:/]+:\/\/)[^/@]*@/, "$1") : url.replace(/^[^/:@]*@(?=[^/:]*:)/, "")
+  return withoutUser.replace(/\/+$/, "").replace(/\.git$/, "")
 }
 
 function isAncestor(checkout: string, ancestor: string, descendant: string): boolean {

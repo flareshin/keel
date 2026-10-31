@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
 import { afterEach, beforeEach, describe, it } from "node:test"
+import fs from "node:fs"
 import path from "node:path"
 
 import { addDays } from "../../measure/lib/measurekit/dates.ts"
@@ -47,41 +48,61 @@ describe("risk runner", () => {
     box.appendLog("keel-fires.jsonl", record)
   }
 
-  const givenReview = (evidenceId: string, runId: string, fields: { createdAt?: string; base?: string | null; repoRoot?: string; rootRunId?: string } = {}): void => {
+  const givenReview = (evidenceId: string, fields: { createdAt?: string; repoRoot?: string } = {}): void => {
+    const createdAt = fields.createdAt ?? daysAgo(1, "08:00:00Z")
     box.write(`data/state/keel/evidence/review/${REPO.replace("/", "__")}/${evidenceId}.json`, JSON.stringify({
-      evidence_id: evidenceId, run_id: runId, root_run_id: fields.rootRunId ?? runId, repo: REPO, since: null,
-      created_at: fields.createdAt ?? daysAgo(3, "08:00:00Z"), expires_at: daysAgo(-11), verdict: "PASS",
-      review_base: fields.base === undefined ? "0".repeat(40) : fields.base, repo_root: fields.repoRoot ?? path.join(box.root, "missing"),
+      evidence_id: evidenceId, run_id: "rv-recent", root_run_id: "rv-recent", repo: REPO, since: null,
+      created_at: createdAt, expires_at: addDays(createdAt.slice(0, 10), 14) + createdAt.slice(10), verdict: "PASS",
+      review_base: "0".repeat(40), repo_root: fields.repoRoot ?? path.join(box.root, "missing"),
     }))
   }
 
   const givenApproval = (evidenceId: string, rootRunId: string, createdAt: string, headReview: string): void => {
     box.write(`data/state/keel/evidence/approval/${evidenceId}.json`, JSON.stringify({
-      evidence_id: evidenceId, kind: "approval", root_run_id: rootRunId, created_at: createdAt, expires_at: daysAgo(-11), heads: { [REPO]: headReview },
+      evidence_id: evidenceId, kind: "approval", root_run_id: rootRunId, created_at: createdAt,
+      expires_at: addDays(createdAt.slice(0, 10), 14) + createdAt.slice(10), heads: { [REPO]: headReview },
     }))
   }
 
-  const commitAt = (repo: string, when: string, message: string, file: string, lines: string[]): string => {
+  const gitAt = (repo: string, when: string, ...args: string[]): void => {
+    const completed = spawnSync("git", ["-C", repo, ...args], { encoding: "utf8", env: { ...box.env, GIT_AUTHOR_DATE: when, GIT_COMMITTER_DATE: when } })
+    assert.equal(completed.status, 0, completed.stderr)
+  }
+
+  const commitAt = (repo: string, when: string, message: string, lines: string[], file: string = "app.ts"): string => {
     box.write(path.relative(box.root, path.join(repo, file)), lines.join("\n") + "\n")
-    const dated = { ...box.env, GIT_AUTHOR_DATE: when, GIT_COMMITTER_DATE: when }
-    for (const args of [["add", "-A"], ["commit", "-q", "--no-verify", "-m", message]]) {
-      const completed = spawnSync("git", ["-C", repo, ...args], { encoding: "utf8", env: dated })
-      assert.equal(completed.status, 0, completed.stderr)
-    }
+    gitAt(repo, when, "add", "-A")
+    gitAt(repo, when, "commit", "-q", "--no-verify", "-m", message)
     return box.git(repo, "rev-parse", "HEAD").trim()
   }
 
-  const shipRepo = (): { repo: string; base: string; head: string } => {
+  const SHIPPED = ["start", "one", "two", "three", "four"]
+
+  const newRepo = (): { repo: string; start: string } => {
     const repo = path.dirname(box.write("app/.keep", ""))
     box.initRepo(repo)
-    const base = commitAt(repo, daysAgo(31), "Start", "app.ts", ["start"])
-    const head = commitAt(repo, daysAgo(30, "08:00:00Z"), "Add the four lines", "app.ts", ["start", "one", "two", "three", "four"])
-    commitAt(repo, daysAgo(25), "Fix the second line", "app.ts", ["start", "one", "TWO", "three", "four"])
-    commitAt(repo, daysAgo(24), "refactor: wrap the third line", "app.ts", ["start", "one", "TWO", "(three)", "four"])
-    commitAt(repo, daysAgo(10), "Change the fourth line after the horizon", "app.ts", ["start", "one", "TWO", "(three)", "FOUR"])
-    box.git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    gitAt(repo, daysAgo(35), "checkout", "-q", "-b", "main")
+    return { repo, start: commitAt(repo, daysAgo(35), "Start", ["start"]) }
+  }
+
+  const mergedShip = (repo: string, mergedDaysAgo: number = 30): string => {
+    gitAt(repo, daysAgo(31), "checkout", "-q", "-b", "feature")
+    const head = commitAt(repo, daysAgo(31), "Add the four lines", SHIPPED)
+    gitAt(repo, daysAgo(mergedDaysAgo, "08:00:00Z"), "checkout", "-q", "main")
+    gitAt(repo, daysAgo(mergedDaysAgo, "08:00:00Z"), "merge", "-q", "--no-ff", "-m", "Merge the feature", "feature")
+    return head
+  }
+
+  const laterEdits = (repo: string): void => {
+    commitAt(repo, daysAgo(25), "Fix the second line", ["start", "one", "TWO", "three", "four"])
+    commitAt(repo, daysAgo(24), "refactor: wrap the third line", ["start", "one", "TWO", "(three)", "four"])
+    commitAt(repo, daysAgo(10), "Change the fourth line after the horizon", ["start", "one", "TWO", "(three)", "FOUR"])
+  }
+
+  const publish = (repo: string): void => {
+    box.git(repo, "update-ref", "refs/remotes/origin/main", "main")
     box.git(repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
-    return { repo, base, head }
+    givenReview("review-recent", { repoRoot: repo })
   }
 
   const runMetric = () => {
@@ -120,60 +141,122 @@ describe("risk runner", () => {
     givenPass({ rootRunId: "rv-a", head: "a".repeat(40) })
     givenPass({ rootRunId: "rv-b", head: "b".repeat(40) })
     givenPass({ rootRunId: "rv-c", head: "c".repeat(40) })
-    givenReview("review-a", "rv-a", { createdAt: daysAgo(3, "08:00:00Z") })
-    givenReview("review-b", "rv-b", { createdAt: daysAgo(3, "08:00:00Z") })
+    givenReview("review-a", { createdAt: daysAgo(3, "08:00:00Z") })
+    givenReview("review-b", { createdAt: daysAgo(3, "08:00:00Z") })
     givenApproval("approval-a2", "rv-a", daysAgo(3, "09:00:00Z"), "review-a")
     givenApproval("approval-a1", "rv-a", daysAgo(3, "08:10:00Z"), "review-a")
     givenApproval("approval-b", "rv-b", daysAgo(3, "08:30:00Z"), "review-b")
     const result = runMetric()
-    assert.deepEqual(itemFor(result, "light")["review_to_approval"], { approved_ships: 2, without_approval: 1, median_minutes: 20 })
+    assert.deepEqual(itemFor(result, "light")["review_to_approval"], { approved_ships: 2, no_approval_evidence: 1, median_minutes: 20 })
   })
 
-  it("rework_countsShippedLinesChangedWithinFourteenDays_skippingRefactorOnlyCommitsAndLaterChanges", () => {
-    const { repo, base, head } = shipRepo()
+  it("rework_ofAMergedShip_countsLinesChangedWithinFourteenDays_skippingRefactorOnlyCommitsAndLaterChanges_withItsReviewEvidenceGone", () => {
+    const { repo } = newRepo()
+    const head = mergedShip(repo)
+    laterEdits(repo)
+    publish(repo)
     givenPass({ head, ts: OLD_SHIP_TS })
-    givenReview("review-a", "rv-a", { base, repoRoot: repo })
-    const result = runMetric()
-    assert.deepEqual(itemFor(result, "light")["rework"], {
+    assert.deepEqual(itemFor(runMetric(), "light")["rework"], {
       decided_ships: 1, pending_ships: 0, not_computable: {}, shipped_lines: 4, reworked_lines: 1, rate_percent: 25,
     })
   })
 
+  it("rework_ofAFastForwardedShip_startsAtTheEarlierShipOfTheRepo", () => {
+    const { repo, start } = newRepo()
+    const head = commitAt(repo, daysAgo(31), "Add the four lines", SHIPPED)
+    laterEdits(repo)
+    publish(repo)
+    givenPass({ head: start, ts: daysAgo(35, "10:00:00Z"), risk: "standard" })
+    givenPass({ head, ts: OLD_SHIP_TS })
+    const result = runMetric()
+    assert.deepEqual([itemFor(result, "light")["rework"]["shipped_lines"], itemFor(result, "light")["rework"]["reworked_lines"]], [4, 1])
+    assert.deepEqual(itemFor(result, "standard")["rework"]["not_computable"], { "no earlier ship bounds a fast-forwarded head": 1 })
+  })
+
+  it("rework_followsARenameWithinFourteenDays_soMovedLinesAreNotReworked", () => {
+    const { repo } = newRepo()
+    const head = mergedShip(repo)
+    gitAt(repo, daysAgo(25), "mv", "app.ts", "relocated.ts")
+    gitAt(repo, daysAgo(25), "commit", "-q", "--no-verify", "-m", "Relocate the app file")
+    publish(repo)
+    givenPass({ head, ts: OLD_SHIP_TS })
+    const rework = itemFor(runMetric(), "light")["rework"]
+    assert.deepEqual([rework.decided_ships, rework.shipped_lines, rework.reworked_lines], [1, 4, 0])
+  })
+
+  it("rework_ofAShipMergedAfterItsHorizon_isNotComputable_notFullyReworked", () => {
+    const { repo } = newRepo()
+    const head = mergedShip(repo, 10)
+    publish(repo)
+    givenPass({ head, ts: OLD_SHIP_TS })
+    assert.deepEqual(itemFor(runMetric(), "light")["rework"]["not_computable"], { "head reached the default branch after the horizon": 1 })
+  })
+
   it("rework_ofAShipYoungerThanFourteenDays_isPending_notZero", () => {
-    const { repo, base, head } = shipRepo()
+    const { repo } = newRepo()
+    const head = mergedShip(repo)
+    publish(repo)
     givenPass({ head, ts: RECENT_SHIP_TS })
-    givenReview("review-a", "rv-a", { base, repoRoot: repo })
     const rework = itemFor(runMetric(), "light")["rework"]
     assert.deepEqual([rework.decided_ships, rework.pending_ships, rework.rate_percent], [0, 1, null])
   })
 
   it("rework_namesWhyEachOldShipCannotBeComputed", () => {
-    const { repo, base } = shipRepo()
+    const { repo, start } = newRepo()
+    publish(repo)
+    gitAt(repo, daysAgo(31), "checkout", "-q", "-b", "side", start)
+    const sideHead = commitAt(repo, daysAgo(31), "Side work", ["side"], "side.ts")
     givenPass({ ts: OLD_SHIP_TS, head: null })
-    givenPass({ ts: OLD_SHIP_TS, head: "b".repeat(40), rootRunId: null })
-    givenPass({ ts: OLD_SHIP_TS, head: "c".repeat(40), rootRunId: "rv-unreviewed" })
-    givenPass({ ts: OLD_SHIP_TS, head: "d".repeat(40), rootRunId: "rv-nobase" })
-    givenPass({ ts: OLD_SHIP_TS, head: "e".repeat(40), rootRunId: "rv-gone" })
-    givenReview("review-nobase", "rv-nobase", { base: null, repoRoot: repo })
-    givenReview("review-gone", "rv-gone", { base })
-    box.git(repo, "checkout", "-q", "-b", "side", base)
-    const sideHead = commitAt(repo, daysAgo(30), "Side work", "side.ts", ["side"])
-    givenPass({ ts: OLD_SHIP_TS, head: sideHead, rootRunId: "rv-side" })
-    givenReview("review-side", "rv-side", { base, repoRoot: repo })
-    const rework = itemFor(runMetric(), "light")["rework"]
-    assert.deepEqual(rework.not_computable, {
+    givenPass({ ts: OLD_SHIP_TS, head: "e".repeat(40) })
+    givenPass({ ts: OLD_SHIP_TS, head: sideHead })
+    assert.deepEqual(itemFor(runMetric(), "light")["rework"]["not_computable"], {
       "head not on the default branch": 1, "no head": 1, "no local checkout holds the head": 1,
-      "no review base": 1, "no root review evidence": 1, "no root run id": 1,
     })
-    assert.equal(rework.decided_ships, 0)
   })
 
   it("rework_withoutAnOriginHead_isNotComputable", () => {
-    const { repo, base, head } = shipRepo()
+    const { repo } = newRepo()
+    const head = mergedShip(repo)
+    publish(repo)
     box.git(repo, "symbolic-ref", "--delete", "refs/remotes/origin/HEAD")
     givenPass({ head, ts: OLD_SHIP_TS })
-    givenReview("review-a", "rv-a", { base, repoRoot: repo })
     assert.deepEqual(itemFor(runMetric(), "light")["rework"]["not_computable"], { "no origin/HEAD": 1 })
+  })
+
+  const cacheFile = () => path.join(box.root, "data", "state", "keel", "metrics", "risk-rework.json")
+
+  it("rework_ofADecidedShip_isKeptAfterItsCheckoutIsGone", () => {
+    const { repo } = newRepo()
+    const head = mergedShip(repo)
+    laterEdits(repo)
+    publish(repo)
+    givenPass({ head, ts: OLD_SHIP_TS })
+    runMetric()
+    fs.rmSync(repo, { recursive: true, force: true })
+    const rework = itemFor(runMetric(), "light")["rework"]
+    assert.deepEqual([rework.decided_ships, rework.not_computable, rework.shipped_lines, rework.reworked_lines], [1, {}, 4, 1])
+  })
+
+  it("rework_ofPendingOrNotComputableShips_isNotCached", () => {
+    const { repo } = newRepo()
+    const head = mergedShip(repo)
+    publish(repo)
+    givenPass({ head, ts: RECENT_SHIP_TS })
+    givenPass({ ts: OLD_SHIP_TS, head: "e".repeat(40) })
+    runMetric()
+    assert.equal(fs.existsSync(cacheFile()), false)
+  })
+
+  it("rework_withAnUnreadableCache_isComputedAgain", () => {
+    const { repo } = newRepo()
+    const head = mergedShip(repo)
+    laterEdits(repo)
+    publish(repo)
+    givenPass({ head, ts: OLD_SHIP_TS })
+    box.write(path.relative(box.root, cacheFile()), "{not json")
+    const rework = itemFor(runMetric(), "light")["rework"]
+    assert.deepEqual([rework.shipped_lines, rework.reworked_lines], [4, 1])
+    assert.equal(Object.keys(JSON.parse(fs.readFileSync(cacheFile(), "utf8"))).length, 1)
   })
 
   it("noFiresOrEvidence_countsZero_insteadOfFailing", () => {

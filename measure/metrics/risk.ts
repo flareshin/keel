@@ -1,17 +1,19 @@
+import { randomBytes } from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
 
+import { stateDir } from "../../lib/evidence/env.ts"
 import * as store from "../../lib/evidence/store.ts"
 import * as env from "../lib/measurekit/env.ts"
 import { addDays } from "../lib/measurekit/dates.ts"
 import { dateOption, parseCommandLine, printJson, runMain, stringOption, EXIT_OK } from "../lib/measurekit/cli.ts"
 import type { CommandSpec } from "../lib/measurekit/cli.ts"
 import { readJsonl } from "../lib/measurekit/datafiles.ts"
-import { FIRES_LOG, PROCEDURAL_KIND, isSyntheticSession } from "../lib/measurekit/fireslog.ts"
+import { FIRES_LOG } from "../lib/measurekit/fireslog.ts"
 import { GitError, gitSucceeds, runGit } from "../lib/measurekit/gitutil.ts"
-import { compareCodePoints, isJsonObject } from "../lib/measurekit/json.ts"
+import { compareCodePoints, isJsonObject, parseJson, stringifySorted } from "../lib/measurekit/json.ts"
 import type { JsonObject } from "../lib/measurekit/json.ts"
-import { isWithinWindow } from "../lib/measurekit/metrics.ts"
+import { isCountedFire, isWithinWindow } from "../lib/measurekit/metrics.ts"
 
 const COMMAND: CommandSpec = {
   prog: "measure/metrics/risk",
@@ -31,6 +33,10 @@ const MS_PER_MINUTE = 60_000
 const PERCENT = 100
 const ESCAPED_DEFECTS_NO_SOURCE = "no source"
 const BASELINE_DEFERRED = "deferred"
+const REWORK_CACHE_FILE = path.join("metrics", "risk-rework.json")
+const PRIVATE_DIR_MODE = 0o700
+const PRIVATE_FILE_MODE = 0o600
+const TEMP_FILE_RANDOM_BYTES = 6
 
 interface Ship {
   repo: string
@@ -45,33 +51,36 @@ type Rework =
   | { state: "pending" }
   | { state: "not computable"; reason: string }
 
+type DecidedRework = Extract<Rework, { state: "decided" }>
+
 interface ReviewRecord {
   evidenceId: string
-  runId: string
-  rootRunId: string
   repo: string
   createdAt: string
-  reviewBase: string | null
   repoRoot: string | null
 }
 
 function main(argv: string[]): number {
   const since = dateOption(COMMAND, "--since", stringOption(parseCommandLine(COMMAND, argv), "since")) ?? "0000-00-00"
-  const ships = shipsSince(since)
+  const allShips = shipsSince("0000-00-00")
+  const ships = allShips.filter((ship) => isWithinWindow({ ts: ship.shippedAt }, since))
   const reviews = reviewRecords()
   const firstApprovals = firstApprovalByRootRun()
   const now = new Date()
+  const cache = readReworkCache()
+  const cachedShips = cache.size
   const items = classesPresent(ships).map((riskClass) => {
     const classShips = ships.filter((ship) => ship.riskClass === riskClass)
     return {
       class: riskClass,
       ships: classShips.length,
       escaped_defects: ESCAPED_DEFECTS_NO_SOURCE,
-      rework: summarizeRework(classShips.map((ship) => reworkOf(ship, reviews, now))),
+      rework: summarizeRework(classShips.map((ship) => cachedRework(ship, cache, () => reworkOf(ship, allShips, reviews, now)))),
       review_to_approval: summarizeApprovalWait(classShips, reviews, firstApprovals),
       baseline: BASELINE_DEFERRED,
     }
   })
+  if (cache.size > cachedShips) writeReworkCache(cache)
   printJson({ count: ships.filter((ship) => ship.riskClass !== UNCLASSIFIED).length, items })
   return EXIT_OK
 }
@@ -80,11 +89,11 @@ function shipsSince(since: string): Ship[] {
   const { records } = readJsonl(path.join(env.logsDir(), FIRES_LOG))
   const ships = new Map<string, Ship>()
   for (const record of records) {
-    if (!isCountedPass(record, since)) continue
+    if (record["rule_id"] !== RULE_ID || record["outcome"] !== PASS_OUTCOME || !isCountedFire(record, since)) continue
     const repo = record["repo"]
     const head = record["head"]
     if (typeof repo !== "string") continue
-    const key = typeof head === "string" ? `${repo.toLowerCase()} ${head}` : `${repo.toLowerCase()} ${record["ts"]}`
+    const key = shipKey(repo, typeof head === "string" ? head : record["ts"] as string)
     if (ships.has(key)) continue
     ships.set(key, {
       repo,
@@ -97,9 +106,8 @@ function shipsSince(since: string): Ship[] {
   return [...ships.values()]
 }
 
-function isCountedPass(record: JsonObject, since: string): boolean {
-  return record["rule_id"] === RULE_ID && record["outcome"] === PASS_OUTCOME && record["kind"] !== PROCEDURAL_KIND
-    && !isSyntheticSession(record["session"]) && isWithinWindow(record, since)
+function shipKey(repo: string, headOrTimestamp: string): string {
+  return `${repo.toLowerCase()} ${headOrTimestamp}`
 }
 
 function classesPresent(ships: Ship[]): string[] {
@@ -111,14 +119,11 @@ function classesPresent(ships: Ship[]): string[] {
 
 function reviewRecords(): ReviewRecord[] {
   return store.repoKeys("review").flatMap((repoKey) => store.listFiles("review", repoKey).map((file) => store.readFile(file) as JsonObject))
-    .filter((review) => typeof review["evidence_id"] === "string" && typeof review["run_id"] === "string" && typeof review["repo"] === "string")
+    .filter((review) => typeof review["evidence_id"] === "string" && typeof review["repo"] === "string")
     .map((review) => ({
       evidenceId: review["evidence_id"] as string,
-      runId: review["run_id"] as string,
-      rootRunId: typeof review["root_run_id"] === "string" ? review["root_run_id"] : review["run_id"] as string,
       repo: review["repo"] as string,
       createdAt: review["created_at"] as string,
-      reviewBase: typeof review["review_base"] === "string" ? review["review_base"] : null,
       repoRoot: typeof review["repo_root"] === "string" ? review["repo_root"] : null,
     }))
 }
@@ -137,14 +142,14 @@ function firstApprovalByRootRun(): Map<string, JsonObject> {
 
 function summarizeApprovalWait(ships: Ship[], reviews: ReviewRecord[], firstApprovals: Map<string, JsonObject>) {
   const waits = ships.map((ship) => approvalWaitMinutes(ship, reviews, firstApprovals)).filter((wait): wait is number => wait !== null)
-  return { approved_ships: waits.length, without_approval: ships.length - waits.length, median_minutes: median(waits) }
+  return { approved_ships: waits.length, no_approval_evidence: ships.length - waits.length, median_minutes: median(waits) }
 }
 
 function approvalWaitMinutes(ship: Ship, reviews: ReviewRecord[], firstApprovals: Map<string, JsonObject>): number | null {
   const approval = ship.rootRunId === null ? undefined : firstApprovals.get(ship.rootRunId)
   const heads = approval?.["heads"]
   if (approval === undefined || !isJsonObject(heads)) return null
-  const headEvidenceId = heads[ship.repo]
+  const headEvidenceId = Object.entries(heads).find(([repo]) => sameRepo(repo, ship.repo))?.[1]
   const headReview = reviews.find((review) => review.evidenceId === headEvidenceId)
   if (headReview === undefined) return null
   return Math.round((Date.parse(approval["created_at"] as string) - Date.parse(headReview.createdAt)) / MS_PER_MINUTE)
@@ -178,18 +183,61 @@ function countReasons(reasons: string[]): Record<string, number> {
   return counts
 }
 
-function reworkOf(ship: Ship, reviews: ReviewRecord[], now: Date): Rework {
+function cachedRework(ship: Ship, cache: Map<string, DecidedRework>, compute: () => Rework): Rework {
+  const key = ship.head === null ? null : shipKey(ship.repo, ship.head)
+  const cached = key === null ? undefined : cache.get(key)
+  if (cached !== undefined) return cached
+  const rework = compute()
+  if (key !== null && rework.state === "decided") cache.set(key, rework)
+  return rework
+}
+
+function readReworkCache(): Map<string, DecidedRework> {
+  const file = path.join(stateDir(), REWORK_CACHE_FILE)
+  if (!fs.existsSync(file)) return new Map()
+  let parsed: unknown
+  try {
+    parsed = parseJson(fs.readFileSync(file, "utf8"))
+  } catch (error) {
+    if (error instanceof SyntaxError) return new Map()
+    throw error
+  }
+  if (!isJsonObject(parsed)) return new Map()
+  const cache = new Map<string, DecidedRework>()
+  for (const [key, entry] of Object.entries(parsed)) {
+    if (isJsonObject(entry) && Number.isInteger(entry["shipped"]) && Number.isInteger(entry["reworked"])) {
+      cache.set(key, { state: "decided", shipped: entry["shipped"] as number, reworked: entry["reworked"] as number })
+    }
+  }
+  return cache
+}
+
+function writeReworkCache(cache: Map<string, DecidedRework>): void {
+  const file = path.join(stateDir(), REWORK_CACHE_FILE)
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: PRIVATE_DIR_MODE })
+  const entries = Object.fromEntries([...cache].map(([key, rework]) => [key, { shipped: rework.shipped, reworked: rework.reworked }]))
+  const tempPath = path.join(path.dirname(file), ".tmp-" + randomBytes(TEMP_FILE_RANDOM_BYTES).toString("hex"))
+  try {
+    fs.writeFileSync(tempPath, stringifySorted(entries) + "\n", { flag: "wx", mode: PRIVATE_FILE_MODE })
+    fs.renameSync(tempPath, file)
+  } catch (error) {
+    if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath)
+    throw error
+  }
+}
+
+function reworkOf(ship: Ship, allShips: Ship[], reviews: ReviewRecord[], now: Date): Rework {
   const horizonDate = addDays(ship.shippedAt.slice(0, 10), REWORK_DAYS) + ship.shippedAt.slice(10)
   if (Date.parse(horizonDate) > now.getTime()) return { state: "pending" }
   if (ship.head === null) return { state: "not computable", reason: "no head" }
-  if (ship.rootRunId === null) return { state: "not computable", reason: "no root run id" }
-  const rootReview = reviews.find((review) => review.runId === ship.rootRunId && review.rootRunId === ship.rootRunId && sameRepo(review.repo, ship.repo))
-  if (rootReview === undefined) return { state: "not computable", reason: "no root review evidence" }
-  if (rootReview.reviewBase === null) return { state: "not computable", reason: "no review base" }
   const checkout = checkoutHolding(ship.repo, ship.head, reviews)
   if (checkout === null) return { state: "not computable", reason: "no local checkout holds the head" }
+  const earlierHeads = allShips
+    .filter((other) => sameRepo(other.repo, ship.repo) && other.head !== null && other.head !== ship.head && other.shippedAt < ship.shippedAt)
+    .sort((left, right) => compareCodePoints(right.shippedAt, left.shippedAt))
+    .map((other) => other.head as string)
   try {
-    return reworkInCheckout(checkout, rootReview.reviewBase, ship.head, horizonDate)
+    return reworkInCheckout(checkout, ship.head, earlierHeads, horizonDate)
   } catch (error) {
     if (error instanceof GitError) return { state: "not computable", reason: "git could not read the ship" }
     throw error
@@ -208,10 +256,13 @@ function checkoutHolding(repo: string, head: string, reviews: ReviewRecord[]): s
   return null
 }
 
-function reworkInCheckout(checkout: string, base: string, head: string, horizonDate: string): Rework {
+function reworkInCheckout(checkout: string, head: string, earlierHeads: string[], horizonDate: string): Rework {
   if (!gitSucceeds(checkout, ["rev-parse", "--verify", "--quiet", DEFAULT_BRANCH_REF])) return { state: "not computable", reason: "no origin/HEAD" }
-  if (!gitSucceeds(checkout, ["merge-base", "--is-ancestor", head, DEFAULT_BRANCH_REF])) return { state: "not computable", reason: "head not on the default branch" }
+  if (!isAncestor(checkout, head, DEFAULT_BRANCH_REF)) return { state: "not computable", reason: "head not on the default branch" }
   const horizon = runGit(checkout, ["rev-list", "-1", "--first-parent", `--before=${horizonDate}`, DEFAULT_BRANCH_REF]).trim()
+  if (horizon === "" || !isAncestor(checkout, head, horizon)) return { state: "not computable", reason: "head reached the default branch after the horizon" }
+  const base = shipBase(checkout, head, earlierHeads)
+  if (base === null) return { state: "not computable", reason: "no earlier ship bounds a fast-forwarded head" }
   const shipCommits = new Set(lines(runGit(checkout, ["rev-list", "--first-parent", `${base}..${head}`])))
   const refactorCommits = refactorOnlyCommits(checkout, head, horizon)
   const renames = renamesBetween(checkout, head, horizon)
@@ -223,6 +274,17 @@ function reworkInCheckout(checkout: string, base: string, head: string, horizonD
     survived += gitSucceeds(checkout, ["cat-file", "-e", `${horizon}:${later}`]) ? blamedToShip(checkout, horizon, later, shipCommits, refactorCommits) : 0
   }
   return { state: "decided", shipped, reworked: Math.max(shipped - survived, 0) }
+}
+
+function isAncestor(checkout: string, ancestor: string, descendant: string): boolean {
+  return gitSucceeds(checkout, ["merge-base", "--is-ancestor", ancestor, descendant])
+}
+
+function shipBase(checkout: string, head: string, earlierHeads: string[]): string | null {
+  const landing = lines(runGit(checkout, ["rev-list", "--first-parent", "--ancestry-path", `${head}..${DEFAULT_BRANCH_REF}`])).at(-1)
+  const landedByMerge = landing !== undefined && runGit(checkout, ["rev-parse", `${landing}^1`]).trim() !== head
+  if (landedByMerge) return runGit(checkout, ["merge-base", head, `${landing}^1`]).trim()
+  return earlierHeads.find((earlier) => gitSucceeds(checkout, ["cat-file", "-e", `${earlier}^{commit}`]) && isAncestor(checkout, earlier, head)) ?? null
 }
 
 function refactorOnlyCommits(checkout: string, head: string, horizon: string): string[] {

@@ -1012,8 +1012,57 @@ test('lensReview_asksThePrepareStepForTheBinding_onlyWhenAPrecheckTreeIsReadable
   assert.ok(snapshotCommand.endsWith(`--argjson p "$binding" '{repo_root:$r, review_base:$b, head:null, snapshot_tree:$t, diff_stat:$s, precheck_binding:$p}'`), snapshotCommand)
   const headCommand = preparePromptCommands(rt.record.agents[0].prompt).diffs[0]
   assert.ok(headCommand.includes(`${bindStep}"$head" --tree ${PRECHECK_TREE})`), headCommand)
-  for (const run of [malformed, none]) assert.doesNotMatch(preparePromptCommands(run.rt.record.agents[0].prompt).diffs[0], /precheck|binding/)
+  for (const run of [malformed, none]) assert.doesNotMatch(preparePromptCommands(run.rt.record.agents[0].prompt).diffs[0], /precheck bind|binding/)
   assert.equal(malformed.result.precheck.status, 'stale')
+})
+
+function requirementPrepared(requirement, { since = null } = {}) {
+  const target = { ...JSON.parse(preparedLine()), precheck_required: requirement }
+  return { diff_outputs: [JSON.stringify(target)], run_id_output: DERIVED_RUN_ID, lenses_output: '' }
+}
+
+test('lensReview_refusesARootReviewBeforeAnyAudit_whenThePrepareStepSaysThePrecheckIsRequiredAndNoneIsGiven', async () => {
+  const { rt, result } = await runWithPrecheck(undefined, requirementPrepared({ required: true, sources: 4 }))
+  assert.equal(result.verdict, 'ERROR')
+  assert.equal(result.error, "this diff changes 4 non-test script sources in a repo with precheck tests, so the author's precheck comes first: run keel precheck run --repo '/work/app' --base 'origin/main' after the tests are green and pass its output verbatim as args.precheck")
+  assert.deepEqual(labels(rt), ['prepare'])
+})
+
+test('lensReview_refusesACliPreparedRootReview_whenItsTargetSaysThePrecheckIsRequiredAndNoneIsGiven', async () => {
+  const rt = createRuntime({ respond: responder() })
+  const result = await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES, prepared: requirementPrepared({ required: true, sources: 3 }) })
+  assert.equal(result.verdict, 'ERROR')
+  assert.match(result.error, /^this diff changes 3 non-test script sources/)
+  assert.deepEqual(labels(rt), [])
+})
+
+test('lensReview_runsTheReview_whenThePrecheckIsNotRequiredOrTheRequirementCouldNotBeRead', async () => {
+  for (const requirement of [{ required: false, sources: 2 }, null]) {
+    const { result } = await runWithPrecheck(undefined, requirementPrepared(requirement))
+    assert.equal(result.verdict, 'PASS', JSON.stringify(requirement))
+  }
+})
+
+test('lensReview_asksThePrepareStepForTheRequirement_onlyForASingleRootDiffWithoutAPrecheck', async () => {
+  const root = await runWithPrecheck(undefined)
+  const withPrecheck = await runWithPrecheck(precheckText())
+  const twoRepos = createRuntime({ respond: responder({ prepare: { diff_outputs: [preparedLine(), preparedLine({ repoRoot: '/work/lib' })], run_id_output: DERIVED_RUN_ID, lenses_output: '' } }) })
+  await twoRepos.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF, { repo: '/work/lib', base: 'main' }], lenses: CALLER_LENSES })
+  const delta = createRuntime({ respond: responder() })
+  await delta.run('lens-review', { auditMode: 'split', diffs: [{ ...ROOT_DIFF, since: SHA_C }], rootRunId: DERIVED_RUN_ID, lenses: CALLER_LENSES })
+  const requiredStep = `required=$( (cd "\${KEEL_DATA_DIR:-$HOME/.claude}" && bin/keel precheck required --repo "$root" --base "$base" --end "$tree") 2>/dev/null || echo null) && jq -cn `
+  const rootCommand = preparePromptCommands(root.rt.record.agents[0].prompt).diffs[0]
+  assert.ok(rootCommand.includes(requiredStep), rootCommand)
+  assert.ok(rootCommand.endsWith(`--argjson q "$required" '{repo_root:$r, review_base:$b, head:null, snapshot_tree:$t, diff_stat:$s, precheck_required:$q}'`), rootCommand)
+  for (const run of [withPrecheck.rt, twoRepos, delta]) {
+    for (const command of preparePromptCommands(run.record.agents[0].prompt).diffs) assert.doesNotMatch(command, /precheck required|precheck_required/)
+  }
+})
+
+test('lensReview_doesNotRefuseADeltaReview_evenWhenItsPreparedTargetSaysRequired', async () => {
+  const rt = createRuntime({ respond: responder({ prepare: requirementPrepared({ required: true, sources: 5 }) }) })
+  const result = await rt.run('lens-review', { auditMode: 'split', diffs: [{ ...ROOT_DIFF, since: SHA_C }], rootRunId: DERIVED_RUN_ID, lenses: CALLER_LENSES })
+  assert.notEqual(result.verdict, 'ERROR', result.error)
 })
 
 test('lensReview_acceptsThePrecheckOutputFormat_withoutTrippingTheAuthorClaimCheck', async () => {

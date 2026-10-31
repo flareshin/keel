@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { execFileSync, spawnSync } from "node:child_process"
-import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from "node:fs"
+import { chmodSync, cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
 import { after, afterEach, beforeEach, describe, it } from "node:test"
@@ -15,6 +15,7 @@ const { runCensus } = typescriptInstalled ? await import("../../lib/precheck/cen
 const KEEL = join(import.meta.dirname, "..", "..", "bin", "keel")
 const PICK = "export function pick(flag: boolean): number {\n  return 0\n}\n"
 const PICK_TEST = "import assert from 'node:assert/strict'\nimport { it } from 'node:test'\nimport { pick } from '../lib/a.ts'\nit('picks', () => assert.equal(pick(true), 1))\n"
+const TSCONFIG = JSON.stringify({ compilerOptions: { strict: true, noEmit: true }, include: ["lib"] })
 const CHANGED_PICK = "export function pick(flag: boolean): number {\n  if (flag) return 1\n  return 2\n}\n"
 
 describe("runCensus", { skip: typescriptInstalled ? false : "typescript is not installed; run npm ci" }, () => {
@@ -190,7 +191,7 @@ describe("runCensus", { skip: typescriptInstalled ? false : "typescript is not i
 describe("keel precheck run", { skip: typescriptInstalled ? false : "typescript is not installed; run npm ci" }, () => {
   const roots: string[] = []
   after(() => roots.forEach((root) => rmSync(root, { recursive: true, force: true })))
-  const keel = (args: string[], dataDir: string) => spawnSync(KEEL, ["precheck", "run", ...args], { encoding: "utf8", env: { ...process.env, KEEL_DATA_DIR: dataDir } })
+  const keel = (args: string[], dataDir: string) => spawnSync(KEEL, ["precheck", "run", ...args], { encoding: "utf8", maxBuffer: Infinity, env: { ...process.env, KEEL_DATA_DIR: dataDir } })
   const scratchDir = (prefix: string): string => {
     const directory = mkdtempSync(join(tmpdir(), prefix))
     roots.push(directory)
@@ -223,6 +224,108 @@ describe("keel precheck run", { skip: typescriptInstalled ? false : "typescript 
     assert.equal(logged[0].repo, root)
     assert.equal(logged[0].outcome, "census")
     assert.equal(logged[0].review_base, execFileSync("git", ["-C", root, "merge-base", "trunk", "HEAD"], { encoding: "utf8" }).trim())
+  })
+
+  it("keelPrecheckRun_refusesBeforeTheCensus_whenTscReportsATypeError", () => {
+    const root = committedRepo({ "tsconfig.json": TSCONFIG, "lib/a.ts": PICK, "tests/a.test.ts": PICK_TEST })
+    roots.push(root)
+    writeFiles(root, { "lib/a.ts": "export const pick: number = \"one\"\n" })
+    const dataDir = scratchDir("keel-data-")
+
+    const completed = keel(["--repo", root, "--base", "HEAD"], dataDir)
+
+    assert.equal(completed.status, 3, completed.stderr)
+    assert.match(completed.stderr, /keel: refused: tsc --noEmit failed in .*\n.*lib\/a\.ts.*TS2322/)
+    assert.equal(completed.stdout, "")
+    assert.equal(existsSync(join(dataDir, "logs", "keel-precheck.jsonl")), false)
+  })
+
+  it("keelPrecheckRun_showsOnlyTheFirst20TscLines_whenTscReportsMoreErrors", () => {
+    const root = committedRepo({ "tsconfig.json": TSCONFIG, "lib/a.ts": PICK })
+    roots.push(root)
+    const wrongLines = Array.from({ length: 25 }, (_, index) => `export const wrong${index}: number = "x"`)
+    writeFiles(root, { "lib/a.ts": `${wrongLines.join("\n")}\n` })
+
+    const completed = keel(["--repo", root, "--base", "HEAD"], scratchDir("keel-data-"))
+
+    assert.equal(completed.status, 3, completed.stderr)
+    const shown = completed.stderr.split("tsc --noEmit failed in ")[1]!.trimEnd().split("\n").slice(1)
+    assert.equal(shown.length, 20, shown.join("\n"))
+    assert.match(shown[0]!, /lib\/a\.ts\(1,14\).*TS2322/)
+    assert.match(shown[19]!, /lib\/a\.ts\(20,14\).*TS2322/)
+  })
+
+  it("keelPrecheckRun_runsTheReposOwnTsc_whenItHasOne", () => {
+    const root = committedRepo({ "tsconfig.json": TSCONFIG, "lib/a.ts": PICK })
+    roots.push(root)
+    writeFiles(root, { "node_modules/.bin/tsc": "#!/bin/sh\necho repo-tsc-ran\nexit 1\n" })
+    chmodSync(join(root, "node_modules", ".bin", "tsc"), 0o755)
+
+    const completed = keel(["--repo", root, "--base", "HEAD"], scratchDir("keel-data-"))
+
+    assert.equal(completed.status, 3, completed.stderr)
+    assert.match(completed.stderr, /tsc --noEmit failed in .*\nrepo-tsc-ran$/m)
+  })
+
+  it("keelPrecheckRun_refusesWithTheFirst20Lines_whenTscWritesMoreThanOneMebibyte", () => {
+    const root = committedRepo({ "tsconfig.json": TSCONFIG, "lib/a.ts": PICK })
+    roots.push(root)
+    const shim = "#!/bin/sh\ni=0\nwhile [ $i -lt 30000 ]; do echo \"lib/a.ts($i,1): error TS2322: Type 'string' is not assignable to type 'number'.\"; i=$((i+1)); done\nexit 1\n"
+    writeFiles(root, { "node_modules/.bin/tsc": shim })
+    chmodSync(join(root, "node_modules", ".bin", "tsc"), 0o755)
+
+    const completed = keel(["--repo", root, "--base", "HEAD"], scratchDir("keel-data-"))
+
+    assert.equal(completed.status, 3, completed.stderr.slice(0, 2000))
+    const shown = completed.stderr.split("tsc --noEmit failed in ")[1]!.trimEnd().split("\n").slice(1)
+    assert.equal(shown.length, 20, shown.join("\n"))
+    assert.match(shown[19]!, /^lib\/a\.ts\(19,1\)/)
+  })
+
+  it("keelPrecheckRun_showsTheFirst20NonBlankTscLines_whenTscWritesBlankLinesBetweenErrors", () => {
+    const root = committedRepo({ "tsconfig.json": TSCONFIG, "lib/a.ts": PICK })
+    roots.push(root)
+    const shim = "#!/bin/sh\ni=0\nwhile [ $i -lt 25 ]; do echo \"lib/a.ts($i,1): error TS2322\"; echo; echo '   '; i=$((i+1)); done\nexit 1\n"
+    writeFiles(root, { "node_modules/.bin/tsc": shim })
+    chmodSync(join(root, "node_modules", ".bin", "tsc"), 0o755)
+
+    const completed = keel(["--repo", root, "--base", "HEAD"], scratchDir("keel-data-"))
+
+    assert.equal(completed.status, 3, completed.stderr)
+    const shown = completed.stderr.split("tsc --noEmit failed in ")[1]!.trimEnd().split("\n").slice(1)
+    assert.deepEqual(shown, Array.from({ length: 20 }, (_, line) => `lib/a.ts(${line},1): error TS2322`))
+  })
+
+  it("keelPrecheckRun_appendsTheRuleCheckSignalsAfterTheCensus_whenTscPasses", () => {
+    const root = committedRepo({ "tsconfig.json": TSCONFIG, "lib/a.ts": PICK, "tests/a.test.ts": PICK_TEST })
+    roots.push(root)
+    writeFiles(root, { "lib/a.ts": `${CHANGED_PICK}const data = 1\nexport const shown = data\n` })
+
+    const completed = keel(["--repo", root, "--base", "HEAD"], scratchDir("keel-data-"))
+
+    assert.equal(completed.status, 0, completed.stderr)
+    const lines = completed.stdout.trimEnd().split("\n")
+    assert.match(lines[0]!, /^precheck tree [0-9a-f]{40} · base HEAD · /)
+    assert.deepEqual(lines.filter((line) => line.startsWith("rule-checks ")), [
+      "rule-checks signal K5.5 lib/a.ts:5 const data = 1",
+      "rule-checks totals repos=1 scanned_lines=4 signals=1 unscanned=none blocked=none",
+    ])
+    assert.equal(lines.at(-1), "rule-checks totals repos=1 scanned_lines=4 signals=1 unscanned=none blocked=none")
+  })
+
+  it("keelPrecheckRun_appendsEveryRuleCheckSignal_whenRuleChecksWritesMoreThanOneMebibyte", () => {
+    const root = committedRepo({ "lib/a.ts": PICK, "tests/a.test.ts": PICK_TEST })
+    roots.push(root)
+    const flagged = `const data = "${"x".repeat(150)}"`
+    writeFiles(root, { "lib/b.ts": `${Array.from({ length: 8000 }, () => flagged).join("\n")}\n` })
+
+    const completed = keel(["--repo", root, "--base", "HEAD"], scratchDir("keel-data-"))
+
+    assert.equal(completed.status, 0, completed.stderr.slice(0, 2000))
+    const lines = completed.stdout.trimEnd().split("\n")
+    assert.equal(lines.filter((line) => line.startsWith("rule-checks signal K5.5 lib/b.ts:")).length, 8000)
+    assert.ok(lines.some((line) => line.startsWith("rule-checks signal K5.7 (diff) 8000 changed lines")), lines.slice(-3).join("\n"))
+    assert.equal(lines.at(-1), "rule-checks totals repos=1 scanned_lines=8000 signals=8001 unscanned=none blocked=none")
   })
 
   it("keelPrecheckRun_rejectsMissingOrDashedOptions_andABaseWithoutAMergeBase", () => {

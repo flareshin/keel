@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process"
 import { chmodSync, rmSync } from "node:fs"
 import { join } from "node:path"
 import { after, describe, it } from "node:test"
-import { bindPrecheck, DELETED_BLOB, precheckTreeOf } from "../../lib/precheck/binding.ts"
+import { bindPrecheck, DELETED_BLOB, precheckRequirement, precheckTreeOf } from "../../lib/precheck/binding.ts"
 import { committedRepo, writeFiles } from "./fixture.ts"
 
 const KEEL = join(import.meta.dirname, "..", "..", "bin", "keel")
@@ -108,6 +108,54 @@ describe("bindPrecheck", () => {
 
     assert.deepEqual(printed, { blobs: { "lib/a.ts": git(root, "rev-parse", `${end}:lib/a.ts`) }, test_change: { lines_removed: false, lines_added: false } })
     assert.throws(() => execFileSync(KEEL, ["precheck", "bind", "--repo", root, "--base", base, "--end", end], { stdio: "pipe" }), (error: { status: number }) => error.status === 2)
+  })
+})
+
+describe("precheckRequirement", () => {
+  const roots: string[] = []
+  after(() => roots.forEach((root) => rmSync(root, { recursive: true, force: true })))
+  const git = (root: string, ...args: string[]): string => execFileSync("git", ["-C", root, ...args], { encoding: "utf8" }).trim()
+  const changedRepo = (before: Record<string, string>, after: Record<string, string>): { root: string, base: string, end: string } => {
+    const root = committedRepo(before)
+    roots.push(root)
+    const base = git(root, "rev-parse", "HEAD^{tree}")
+    writeFiles(root, after)
+    git(root, "add", "-A")
+    return { root, base, end: git(root, "write-tree") }
+  }
+
+  it("precheckRequirement_isRequired_whenThreeScriptSourcesChangeInARepoWithPrecheckTests", () => {
+    const { root, base, end } = changedRepo({ "tests/a.test.ts": "t\n" }, { "lib/a.ts": "a\n", "lib/b.mjs": "b\n", "hooks/c.tsx": "c\n" })
+
+    assert.deepEqual(precheckRequirement(root, base, end), { required: true, sources: 3 })
+  })
+
+  it("precheckRequirement_isNotRequired_whenOnlyTwoScriptSourcesChange", () => {
+    const { root, base, end } = changedRepo({ "tests/a.test.ts": "t\n" }, { "lib/a.ts": "a\n", "lib/b.ts": "b\n", "docs/c.md": "c\n", "tests/d.test.ts": "d\n" })
+
+    assert.deepEqual(precheckRequirement(root, base, end), { required: false, sources: 2 })
+  })
+
+  it("precheckRequirement_doesNotCountADeletedSource", () => {
+    const { root, base, end } = changedRepo({ "tests/a.test.ts": "t\n", "lib/gone.ts": "g\n" }, { "lib/a.ts": "a\n", "lib/b.ts": "b\n" })
+    git(root, "rm", "-q", "lib/gone.ts")
+
+    assert.deepEqual(precheckRequirement(root, base, git(root, "write-tree")), { required: false, sources: 2 })
+  })
+
+  it("precheckRequirement_isNotRequired_whenTheRepoHasNoTestTheRunnerCanRun", () => {
+    const { root, base, end } = changedRepo({ "src/a.test.tsx": "t\n" }, { "src/a.ts": "a\n", "src/b.ts": "b\n", "src/c.tsx": "c\n" })
+
+    assert.deepEqual(precheckRequirement(root, base, end), { required: false, sources: 3 })
+  })
+
+  it("keelPrecheckRequired_printsTheRequirementAsJson_andRejectsAMissingOption", () => {
+    const { root, base, end } = changedRepo({ "tests/a.test.ts": "t\n" }, { "lib/a.ts": "a\n", "lib/b.ts": "b\n", "lib/c.ts": "c\n" })
+
+    const printed = JSON.parse(execFileSync(KEEL, ["precheck", "required", "--repo", root, "--base", base, "--end", end], { encoding: "utf8" }))
+
+    assert.deepEqual(printed, { required: true, sources: 3 })
+    assert.throws(() => execFileSync(KEEL, ["precheck", "required", "--repo", root, "--base", base], { stdio: "pipe" }), (error: { status: number }) => error.status === 2)
   })
 })
 

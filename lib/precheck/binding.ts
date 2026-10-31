@@ -1,13 +1,21 @@
-import { diffEntries, diffStats, objectType } from '../evidence/gitcmd.ts';
+import { diffEntries, diffStats, objectType, text } from '../evidence/gitcmd.ts';
 import type { PathEntry, PathStat } from '../evidence/gitcmd.ts';
 import { isTestPath } from '../evidence/risk.ts';
+import { SCRIPT_FILE } from './consumers.ts';
+import { isRunnableTest } from './select.ts';
 
 export const DELETED_BLOB = '0'.repeat(40);
 const PRECHECK_HEADER = /^precheck tree ([0-9a-f]{40})(?: ·|$)/u;
+const REQUIRED_SCRIPT_SOURCES = 3;
 
 export interface PrecheckBinding {
   blobs: Record<string, string>;
   test_change: { lines_removed: boolean, lines_added: boolean } | null;
+}
+
+export interface PrecheckRequirement {
+  required: boolean;
+  sources: number;
 }
 
 export function precheckTreeOf(precheck: string): string | null {
@@ -19,6 +27,15 @@ export function bindPrecheck(repo: string, base: string, end: string, precheckTr
     blobs: nonTestBlobs(repo, base, end),
     test_change: objectType(repo, precheckTree) === 'tree' ? describeTestChange(repo, precheckTree, end) : null,
   };
+}
+
+export function precheckRequirement(repo: string, base: string, end: string): PrecheckRequirement {
+  const sources = Object.entries(nonTestBlobs(repo, base, end)).filter(([path, blob]) => blob !== DELETED_BLOB && SCRIPT_FILE.test(path)).length;
+  return { required: sources >= REQUIRED_SCRIPT_SOURCES && hasRunnableTest(repo, end), sources };
+}
+
+function hasRunnableTest(repo: string, end: string): boolean {
+  return text(repo, ['ls-tree', '-r', '--name-only', end]).split('\n').some(isRunnableTest);
 }
 
 function nonTestBlobs(repo: string, base: string, end: string): Record<string, string> {

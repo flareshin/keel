@@ -44,7 +44,15 @@ the reading guide. Skip it for smoke-only, docs-only and test-only diffs. After 
 NEEDS_FIXES with tests findings, run it again before the delta review. Kill each
 survived and no-test-reaches mutant with a test or write one line on why no test
 can observe it, and fix or note each consumer outside the diff. Pass the output
-verbatim as the lens-review `precheck` argument. It is an author claim for the
+verbatim as the lens-review `precheck` argument. lens-review refuses a single-repo
+root review without it when the diff changes three or more non-test TS/JS sources
+in a repo with tests `keel precheck run` can run (`keel precheck required` decides).
+`keel precheck run` first runs `tsc --noEmit` when the repo has a `tsconfig.json`
+and refuses with tsc's first lines on a type error; after the census it appends
+the readable-code rule-checks lines (`rule-checks signal …`, and the summary as
+`rule-checks totals …` so a review never counts it as its own rule-checks summary),
+which are signals to fix or explain before review, not findings.
+It is an author claim for the
 tests and contract lenses to check, not evidence: it adds no evidence kind, and
 "all killed" is not a pass claim. The review reports the precheck as stale when a
 non-test path changed after it or an existing test line changed; rerun it then,

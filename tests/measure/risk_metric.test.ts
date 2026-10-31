@@ -57,10 +57,10 @@ describe("risk runner", () => {
     }))
   }
 
-  const givenApproval = (evidenceId: string, rootRunId: string, createdAt: string, headReview: string): void => {
+  const givenApproval = (evidenceId: string, rootRunId: string, createdAt: string, headReview: string, headsRepo: string = REPO): void => {
     box.write(`data/state/keel/evidence/approval/${evidenceId}.json`, JSON.stringify({
       evidence_id: evidenceId, kind: "approval", root_run_id: rootRunId, created_at: createdAt,
-      expires_at: addDays(createdAt.slice(0, 10), 14) + createdAt.slice(10), heads: { [REPO]: headReview },
+      expires_at: addDays(createdAt.slice(0, 10), 14) + createdAt.slice(10), heads: { [headsRepo]: headReview },
     }))
   }
 
@@ -100,6 +100,7 @@ describe("risk runner", () => {
   }
 
   const publish = (repo: string): void => {
+    gitAt(repo, daysAgo(5), "commit", "-q", "--no-verify", "--allow-empty", "-m", "Later work")
     box.git(repo, "update-ref", "refs/remotes/origin/main", "main")
     box.git(repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
     givenReview("review-recent", { repoRoot: repo })
@@ -257,6 +258,70 @@ describe("risk runner", () => {
     const rework = itemFor(runMetric(), "light")["rework"]
     assert.deepEqual([rework.shipped_lines, rework.reworked_lines], [4, 1])
     assert.equal(Object.keys(JSON.parse(fs.readFileSync(cacheFile(), "utf8"))).length, 1)
+  })
+
+  it("reviewToApproval_matchesTheApprovalHeadsRepo_ignoringCase", () => {
+    givenPass({ rootRunId: "rv-a" })
+    givenReview("review-a", { createdAt: daysAgo(3, "08:00:00Z") })
+    givenApproval("approval-a", "rv-a", daysAgo(3, "08:15:00Z"), "review-a", "Example/App")
+    assert.deepEqual(itemFor(runMetric(), "light")["review_to_approval"], { approved_ships: 1, no_approval_evidence: 0, median_minutes: 15 })
+  })
+
+  it("rework_ofAFastForwardedShip_isBoundedByAnEarlierShipOutsideTheWindow", () => {
+    const { repo, start } = newRepo()
+    const head = commitAt(repo, daysAgo(31), "Add the four lines", SHIPPED)
+    laterEdits(repo)
+    publish(repo)
+    givenPass({ head: start, ts: daysAgo(65, "10:00:00Z"), risk: "standard" })
+    givenPass({ head, ts: OLD_SHIP_TS })
+    const result = runMetric()
+    assert.deepEqual(result.items.map((item: { class: string }) => item.class), ["light"])
+    assert.deepEqual([itemFor(result, "light")["rework"]["shipped_lines"], itemFor(result, "light")["rework"]["reworked_lines"]], [4, 1])
+  })
+
+  it("rework_ofAFastForwardedShip_isBoundedOnlyByAnEarlierShipOnItsFirstParentChain", () => {
+    const { repo, start } = newRepo()
+    gitAt(repo, daysAgo(34), "checkout", "-q", "-b", "side")
+    const mergedHead = commitAt(repo, daysAgo(34), "Side work", ["side"], "side.ts")
+    gitAt(repo, daysAgo(33), "checkout", "-q", "main")
+    const directHead = commitAt(repo, daysAgo(33), "Direct work", ["direct", "work"], "direct.ts")
+    gitAt(repo, daysAgo(32), "merge", "-q", "--no-ff", "-m", "Merge the side work", "side")
+    const head = commitAt(repo, daysAgo(31), "Add the four lines", ["one", "two", "three", "four"], "four.ts")
+    publish(repo)
+    givenPass({ head: start, ts: daysAgo(35, "10:00:00Z"), risk: "heavy" })
+    givenPass({ head: directHead, ts: daysAgo(33, "10:00:00Z"), risk: "standard" })
+    givenPass({ head: mergedHead, ts: daysAgo(32, "10:00:00Z"), risk: "smoke-only" })
+    givenPass({ head, ts: OLD_SHIP_TS })
+    const rework = itemFor(runMetric(), "light")["rework"]
+    assert.deepEqual([rework.decided_ships, rework.shipped_lines, rework.reworked_lines], [1, 4, 0])
+  })
+
+  it("rework_withADefaultBranchNotFetchedPastTheHorizon_isNotComputable_andIsDecidedAfterTheFetch", () => {
+    const { repo } = newRepo()
+    const head = mergedShip(repo)
+    const mergeCommit = box.git(repo, "rev-parse", "HEAD").trim()
+    laterEdits(repo)
+    publish(repo)
+    box.git(repo, "update-ref", "refs/remotes/origin/main", mergeCommit)
+    givenPass({ head, ts: OLD_SHIP_TS })
+    assert.deepEqual(itemFor(runMetric(), "light")["rework"]["not_computable"], { "default branch not fetched past the horizon": 1 })
+    assert.equal(fs.existsSync(cacheFile()), false)
+    box.git(repo, "update-ref", "refs/remotes/origin/main", "main")
+    const rework = itemFor(runMetric(), "light")["rework"]
+    assert.deepEqual([rework.decided_ships, rework.shipped_lines, rework.reworked_lines], [1, 4, 1])
+  })
+
+  it("rework_withACacheFileItCannotRead_isComputedAgain", () => {
+    const { repo } = newRepo()
+    const head = mergedShip(repo)
+    laterEdits(repo)
+    publish(repo)
+    givenPass({ head, ts: OLD_SHIP_TS })
+    box.write(path.relative(box.root, cacheFile()), "{}")
+    fs.chmodSync(cacheFile(), 0o000)
+    const result = runMetric()
+    assert.equal(result.error, undefined)
+    assert.deepEqual([itemFor(result, "light")["rework"]["shipped_lines"], itemFor(result, "light")["rework"]["reworked_lines"]], [4, 1])
   })
 
   it("noFiresOrEvidence_countsZero_insteadOfFailing", () => {

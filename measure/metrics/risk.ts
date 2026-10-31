@@ -1,8 +1,8 @@
-import { randomBytes } from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
 
 import { stateDir } from "../../lib/evidence/env.ts"
+import { writeTextAtomic } from "../../lib/link/atomic.ts"
 import * as store from "../../lib/evidence/store.ts"
 import * as env from "../lib/measurekit/env.ts"
 import { addDays } from "../lib/measurekit/dates.ts"
@@ -34,9 +34,8 @@ const PERCENT = 100
 const ESCAPED_DEFECTS_NO_SOURCE = "no source"
 const BASELINE_DEFERRED = "deferred"
 const REWORK_CACHE_FILE = path.join("metrics", "risk-rework.json")
-const PRIVATE_DIR_MODE = 0o700
 const PRIVATE_FILE_MODE = 0o600
-const TEMP_FILE_RANDOM_BYTES = 6
+const UNREADABLE_CACHE_CODES = new Set(["EACCES", "EISDIR"])
 
 interface Ship {
   repo: string
@@ -199,7 +198,7 @@ function readReworkCache(): Map<string, DecidedRework> {
   try {
     parsed = parseJson(fs.readFileSync(file, "utf8"))
   } catch (error) {
-    if (error instanceof SyntaxError) return new Map()
+    if (error instanceof SyntaxError || UNREADABLE_CACHE_CODES.has((error as NodeJS.ErrnoException).code ?? "")) return new Map()
     throw error
   }
   if (!isJsonObject(parsed)) return new Map()
@@ -213,17 +212,8 @@ function readReworkCache(): Map<string, DecidedRework> {
 }
 
 function writeReworkCache(cache: Map<string, DecidedRework>): void {
-  const file = path.join(stateDir(), REWORK_CACHE_FILE)
-  fs.mkdirSync(path.dirname(file), { recursive: true, mode: PRIVATE_DIR_MODE })
   const entries = Object.fromEntries([...cache].map(([key, rework]) => [key, { shipped: rework.shipped, reworked: rework.reworked }]))
-  const tempPath = path.join(path.dirname(file), ".tmp-" + randomBytes(TEMP_FILE_RANDOM_BYTES).toString("hex"))
-  try {
-    fs.writeFileSync(tempPath, stringifySorted(entries) + "\n", { flag: "wx", mode: PRIVATE_FILE_MODE })
-    fs.renameSync(tempPath, file)
-  } catch (error) {
-    if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath)
-    throw error
-  }
+  writeTextAtomic(path.join(stateDir(), REWORK_CACHE_FILE), stringifySorted(entries) + "\n", PRIVATE_FILE_MODE)
 }
 
 function reworkOf(ship: Ship, allShips: Ship[], reviews: ReviewRecord[], now: Date): Rework {
@@ -259,6 +249,8 @@ function checkoutHolding(repo: string, head: string, reviews: ReviewRecord[]): s
 function reworkInCheckout(checkout: string, head: string, earlierHeads: string[], horizonDate: string): Rework {
   if (!gitSucceeds(checkout, ["rev-parse", "--verify", "--quiet", DEFAULT_BRANCH_REF])) return { state: "not computable", reason: "no origin/HEAD" }
   if (!isAncestor(checkout, head, DEFAULT_BRANCH_REF)) return { state: "not computable", reason: "head not on the default branch" }
+  const tipDate = runGit(checkout, ["log", "-1", "--format=%cI", DEFAULT_BRANCH_REF]).trim()
+  if (Date.parse(tipDate) < Date.parse(horizonDate)) return { state: "not computable", reason: "default branch not fetched past the horizon" }
   const horizon = runGit(checkout, ["rev-list", "-1", "--first-parent", `--before=${horizonDate}`, DEFAULT_BRANCH_REF]).trim()
   if (horizon === "" || !isAncestor(checkout, head, horizon)) return { state: "not computable", reason: "head reached the default branch after the horizon" }
   const base = shipBase(checkout, head, earlierHeads)
@@ -284,7 +276,8 @@ function shipBase(checkout: string, head: string, earlierHeads: string[]): strin
   const landing = lines(runGit(checkout, ["rev-list", "--first-parent", "--ancestry-path", `${head}..${DEFAULT_BRANCH_REF}`])).at(-1)
   const landedByMerge = landing !== undefined && runGit(checkout, ["rev-parse", `${landing}^1`]).trim() !== head
   if (landedByMerge) return runGit(checkout, ["merge-base", head, `${landing}^1`]).trim()
-  return earlierHeads.find((earlier) => gitSucceeds(checkout, ["cat-file", "-e", `${earlier}^{commit}`]) && isAncestor(checkout, earlier, head)) ?? null
+  const firstParentChain = new Set(lines(runGit(checkout, ["rev-list", "--first-parent", head])))
+  return earlierHeads.find((earlier) => firstParentChain.has(earlier)) ?? null
 }
 
 function refactorOnlyCommits(checkout: string, head: string, horizon: string): string[] {

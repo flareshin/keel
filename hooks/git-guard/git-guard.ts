@@ -76,7 +76,7 @@ const COMMIT_SHORT_ATTACHED_VALUE_FLAGS: ReadonlySet<string> = new Set(["S", "u"
 const COMMIT_NO_VERIFY_SHORT_FLAG = "n";
 const STAGING_SUBCOMMANDS: ReadonlySet<string> = new Set(["add", "stage"]);
 const SHELL_STATE_COMMANDS: ReadonlySet<string> = new Set(["", "cd", "pushd", "popd", "export"]);
-const RUNS_COMMANDS_AT_RUN_TIME_RE = /\$\(|`|[<>]\(/;
+const EXPANDS_AT_RUN_TIME_RE = /[$`]|[<>]\(/;
 const PR_FILE_OPTIONS: ReadonlySet<string> = new Set(["-F", "--body-file"]);
 const PR_TEXT_SUBCOMMANDS: ReadonlySet<string> = new Set(["create", "edit", "merge"]);
 const UNPUSHED = ["--not", "--remotes"];
@@ -312,8 +312,8 @@ function checkBash(command: string, cwd: string): Violation[] {
     ...checkKeelCommands(call), ...checkProtectedWrites(call), ...checkLiveCheckouts(call), ...checkHookSkips(call),
     ...checkHookDisablingWrites(call), ...checkCommentWrites(call),
   ];
-  const runsCommandsAtRunTime = RUNS_COMMANDS_AT_RUN_TIME_RE.test(command);
-  call.forEach((step, index) => violations.push(...checkGitOrPr(step, call, index, callHeredocs, runsCommandsAtRunTime)));
+  const expandsAtRunTime = EXPANDS_AT_RUN_TIME_RE.test(command);
+  call.forEach((step, index) => violations.push(...checkGitOrPr(step, call, index, callHeredocs, expandsAtRunTime)));
   return unique(violations);
 }
 
@@ -535,7 +535,7 @@ function gitHookSkip(step: Step, index: number): string | null {
 }
 
 function checkGitOrPr(
-  step: Step, call: readonly Step[], index: number, callHeredocs: readonly string[], runsCommandsAtRunTime: boolean,
+  step: Step, call: readonly Step[], index: number, callHeredocs: readonly string[], expandsAtRunTime: boolean,
 ): Violation[] {
   if (step.name === "gh") return checkPrText(ghSubcommandArgv(step.argv), step, callHeredocs);
   const argv = step.argv;
@@ -543,7 +543,7 @@ function checkGitOrPr(
   if (position === null) return [];
   const repoDirectory = gitDirectory(argv, step.directory, step.expansion);
   if (argv[position] === "commit") {
-    return checkCommit(argv.slice(position + 1), step, repoDirectory, call.slice(0, index), callHeredocs, runsCommandsAtRunTime);
+    return checkCommit(argv.slice(position + 1), step, repoDirectory, call.slice(0, index), callHeredocs, expandsAtRunTime);
   }
   if (argv[position] === "push") return checkPush(argv.slice(position + 1), repoDirectory);
   return [];
@@ -562,7 +562,7 @@ function checkPrText(ghArgv: readonly string[], step: Step, callHeredocs: readon
 
 function checkCommit(
   args: readonly string[], step: Step, repoDirectory: string, earlierSteps: readonly Step[], callHeredocs: readonly string[],
-  runsCommandsAtRunTime: boolean,
+  expandsAtRunTime: boolean,
 ): Violation[] {
   const violations: Violation[] = [];
   if (testCaseFolded(ATTRIBUTION_RE, commitMessageTexts(args, step, callHeredocs).join("\n"))) {
@@ -571,7 +571,7 @@ function checkCommit(
   const toplevel = findToplevel(repoDirectory);
   if (toplevel === null) return violations;
   const repoKey = findRepoKey(toplevel);
-  const staging = sameCallStaging(args, repoDirectory, earlierSteps, toplevel, runsCommandsAtRunTime);
+  const staging = sameCallStaging(args, repoDirectory, earlierSteps, toplevel, expandsAtRunTime);
   return [...violations, ...stagedContentViolations(staging, toplevel, repoKey)];
 }
 
@@ -607,10 +607,10 @@ interface StagingCommand {
 type EarlierStaging = StagingCommand | typeof NOT_STAGING | typeof UNREPLAYABLE;
 
 function sameCallStaging(
-  args: readonly string[], repoDirectory: string, earlierSteps: readonly Step[], toplevel: string, runsCommandsAtRunTime: boolean,
+  args: readonly string[], repoDirectory: string, earlierSteps: readonly Step[], toplevel: string, expandsAtRunTime: boolean,
 ): StagingCommand[] | null {
   const commands: StagingCommand[] = [];
-  let worktreeMayHaveChanged = runsCommandsAtRunTime;
+  let worktreeMayHaveChanged = expandsAtRunTime;
   for (const step of earlierSteps) {
     const staging = earlierStaging(step, toplevel);
     if (staging === UNREPLAYABLE) return null;

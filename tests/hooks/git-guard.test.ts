@@ -1080,8 +1080,8 @@ describe("SameCallStagingTest", () => {
     assertSecretDenied(guard(`cd ${repo}; git add leak.txt; git commit -m wip`), "leak.txt");
   });
 
-  it("commit_deniedWithTheSecret_whenAPlainShellVariableNamesTheRepoForAddAndCommit", () => {
-    assertSecretDenied(guard(`R=${repo}; git -C "$R" add leak.txt && git -C "$R" commit -m wip`), "leak.txt");
+  it("commit_denied_whenAPlainShellVariableNamesTheRepoForAddAndCommit", () => {
+    assertProceduralDenied(guard(`R=${repo}; git -C "$R" add leak.txt && git -C "$R" commit -m wip`));
   });
 
   it("commit_deniedWithTheSecret_whenAddRunsFromASubdirectory", () => {
@@ -1278,6 +1278,12 @@ describe("SameCallStagingTest", () => {
   it("commit_denied_whenAProcessSubstitutionRunsBeforeTheStaging", () => {
     commitTracked("t.txt", "start\n");
     assertProceduralDenied(guard("cd . < <(cat leak.txt > t.txt); git commit -am wip", repo));
+  });
+
+  it("commit_denied_whenAnExpansionWithoutACommandSubstitutionRunsACommandBeforeTheStaging", () => {
+    commitTracked("t.txt", "start\n");
+    assertProceduralDenied(guard("X=$'b[\\x24(cat leak.txt > t.txt)]'; export Y=${a[X]}; git commit -am wip", repo));
+    assertProceduralDenied(guard("export Y=$HOME && git add clean.txt && git commit -m wip", repo));
   });
 
   it("commit_passes_whenAnEarlierShellStateStepOnlyRedirectsToDevNull", () => {

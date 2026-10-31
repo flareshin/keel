@@ -57,7 +57,7 @@ describe("affectedTests", () => {
   })
 
   it("corpusTests_nameReplayFilesThatExistInThisRepo", () => {
-    assert.equal(CORPUS_TESTS.length, 4)
+    assert.equal(CORPUS_TESTS.length, 11)
     for (const test of CORPUS_TESTS) assert.ok(existsSync(join(KEEL_ROOT, test)), `${test} is missing`)
   })
 })

@@ -1,17 +1,20 @@
 import assert from "node:assert/strict";
+import { readdirSync } from "node:fs";
 import { describe, it } from "node:test";
 import { differencesFromRecorded } from "../recorded-cases.ts";
 import type { ObservedDelta, Observation, Run } from "../recorded-cases.ts";
-import { DECISION_PATH_CHANGED, EXPECTED_DIVERGENCES, isDenyToPass, judgeCase, runShipGateParity, summary, withoutCheckoutRepoKey } from "./ship-gate-parity.ts";
+import {
+  DECISION_PATH_CHANGED, divergenceRecordingProblems, EXPECTED_DIVERGENCES, isDenyToPass, judgeCase, recordedCorpus, SHARD_COUNT, shardCases, withoutCheckoutRepoKey,
+} from "./ship-gate-parity.ts";
 
 const MIN_CASES = 600;
+const SHARD_FILE = /^ship-gate-parity-shard-\d+\.test\.ts$/;
 const rowIds = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_unused, index) => `extra-${String(from + index).padStart(4, "0")}`);
 const GH_ANSWER_OR_PAYLOAD_NOW_DENIED_OR_REWORDED = [
   "extra-0051", "extra-0052", "extra-0063", "extra-0066", "extra-0070", "extra-0077", "extra-0078", "extra-0086", "extra-0087",
   "extra-0097", "extra-0100", "extra-0103", "extra-0115", "extra-0118",
   ...rowIds(449, 456), ...rowIds(465, 472), ...rowIds(479, 482), ...rowIds(489, 494), "extra-0497", "extra-0498", ...rowIds(503, 506),
 ];
-const PARITY_TIMEOUT_MS = 120 * 60_000;
 const DENY = 2;
 const ROOT = "/root";
 
@@ -137,17 +140,33 @@ describe("ship-gate parity listed divergences", () => {
   });
 });
 
-describe("ship-gate parity with the recorded Python hook", () => {
-  it("replays every payload the former Python ship-gate tests sent, and the extra ones, through node and compares the result with the recorded Python outcome", { timeout: PARITY_TIMEOUT_MS }, () => {
-    const report = runShipGateParity();
-    for (const line of summary(report)) console.log(line);
-    for (const detail of report.details.slice(0, 10)) console.log(detail);
-    assert.ok(report.cases >= MIN_CASES, `only ${report.cases} cases recorded`);
+describe("ship-gate parity recorded corpus", () => {
+  const corpus = recordedCorpus();
+
+  it("holds enough cases, some from every suite", () => {
+    assert.ok(corpus.length >= MIN_CASES, `only ${corpus.length} cases recorded`);
     for (const suite of ["python-keel", "ts-keel", "message-contract", "extra"]) {
-      assert.ok((report.perSuite.get(suite) ?? 0) > 0, `no case recorded for ${suite}`);
+      assert.ok(corpus.some((testCase) => testCase.suite === suite), `no case recorded for ${suite}`);
     }
-    assert.equal(report.listedDivergences, EXPECTED_DIVERGENCES.size, "a listed divergence row was not checked");
-    assert.equal(report.denyToPass, 0, "a push or merge the recorded Python run denied passed in node");
-    assert.equal(report.mismatches, 0, report.details.slice(0, 10).join("\n"));
+  });
+
+  it("records each listed divergence row exactly once", () => {
+    assert.deepEqual(divergenceRecordingProblems(corpus), []);
+    const [listed] = EXPECTED_DIVERGENCES.keys();
+    const withoutListed = corpus.filter((testCase) => (testCase.label || testCase.id) !== listed);
+    assert.deepEqual(divergenceRecordingProblems(withoutListed), [`expected divergence ${listed} was recorded 0 times, not once`]);
+  });
+
+  it("gives every case to exactly one shard", () => {
+    const shares = Array.from({ length: SHARD_COUNT }, (_unused, index) => shardCases(corpus, { index, count: SHARD_COUNT }));
+    assert.equal(shares.reduce((total, share) => total + share.length, 0), corpus.length);
+    assert.equal(new Set(shares.flat().map((testCase) => testCase.id)).size, corpus.length);
+    assert.ok(shares.every((share) => share.length > 0), "a shard replays no case");
+  });
+
+  it("has one shard test file for each shard", () => {
+    const files = readdirSync(import.meta.dirname).filter((name) => SHARD_FILE.test(name)).sort();
+    const expected = Array.from({ length: SHARD_COUNT }, (_unused, index) => `ship-gate-parity-shard-${index + 1}.test.ts`).sort();
+    assert.deepEqual(files, expected);
   });
 });

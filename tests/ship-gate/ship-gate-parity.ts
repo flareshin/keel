@@ -86,6 +86,14 @@ export const DECISION_PATH_CHANGED: ReadonlySet<string> = new Set([
 
 export type Suite = (typeof SUITES)[number];
 
+export interface Shard {
+  index: number;
+  count: number;
+}
+
+export const SHARD_COUNT = 8;
+const WHOLE_CORPUS: Shard = { index: 0, count: 1 };
+
 export interface RecordedCase {
   id: string;
   suite: Suite;
@@ -114,19 +122,18 @@ export interface ShipGateParityReport {
   details: string[];
 }
 
-export function runShipGateParity(suites: readonly Suite[] = selectedSuites()): ShipGateParityReport {
+export function runShipGateParity(shard: Shard = WHOLE_CORPUS, suites: readonly Suite[] = selectedSuites()): ShipGateParityReport {
   const store = JSON.parse(readFixtureFile(FIXTURE_DIRECTORY, "snapshots.json")) as RecordedStore;
   const root = paddedRoot(realpathSync(tmpdir()), store.rootLength);
   const report: ShipGateParityReport = { cases: 0, mismatches: 0, listedDivergences: 0, denyToPass: 0, perSuite: new Map(), details: [] };
-  const seenLabels = new Set<string>();
+  const cases = shardCases(loadCases(suites, process.env["SHIP_GATE_PARITY_CASES"]), shard);
   try {
-    for (const testCase of loadCases(suites)) {
+    for (const testCase of cases) {
       const run = replay(testCase, store, root);
-      const label = testCase.label || testCase.id;
+      const label = labelOf(testCase);
       const verdict = judgeCase(label, testCase.expected, run, root);
       report.cases += 1;
       report.perSuite.set(testCase.suite, (report.perSuite.get(testCase.suite) ?? 0) + 1);
-      seenLabels.add(label);
       if (!verdict.listed && isDenyToPass(testCase.expected, run.observation)) report.denyToPass += 1;
       if (verdict.listed) report.listedDivergences += 1;
       if (verdict.problems.length > 0) {
@@ -137,14 +144,33 @@ export function runShipGateParity(suites: readonly Suite[] = selectedSuites()): 
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-  if (suites.includes("extra") && !process.env["SHIP_GATE_PARITY_CASES"]) {
-    for (const label of EXPECTED_DIVERGENCES.keys()) {
-      if (seenLabels.has(label)) continue;
+  if (shard === WHOLE_CORPUS && suites.includes("extra") && !process.env["SHIP_GATE_PARITY_CASES"]) {
+    for (const problem of divergenceRecordingProblems(cases)) {
       report.mismatches += 1;
-      report.details.push(`expected divergence ${label} was not recorded`);
+      report.details.push(problem);
     }
   }
   return report;
+}
+
+export function recordedCorpus(): RecordedCase[] {
+  return loadCases(SUITES);
+}
+
+export function shardCases(cases: readonly RecordedCase[], shard: Shard): RecordedCase[] {
+  return cases.filter((_testCase, position) => position % shard.count === shard.index);
+}
+
+export function divergenceRecordingProblems(cases: readonly RecordedCase[]): string[] {
+  const recordings = new Map<string, number>();
+  for (const testCase of cases) recordings.set(labelOf(testCase), (recordings.get(labelOf(testCase)) ?? 0) + 1);
+  return [...EXPECTED_DIVERGENCES.keys()]
+    .filter((label) => recordings.get(label) !== 1)
+    .map((label) => `expected divergence ${label} was recorded ${recordings.get(label) ?? 0} times, not once`);
+}
+
+function labelOf(testCase: RecordedCase): string {
+  return testCase.label || testCase.id;
 }
 
 function selectedSuites(): readonly Suite[] {
@@ -156,8 +182,7 @@ function selectedSuites(): readonly Suite[] {
   });
 }
 
-function loadCases(suites: readonly Suite[]): RecordedCase[] {
-  const only = process.env["SHIP_GATE_PARITY_CASES"];
+function loadCases(suites: readonly Suite[], only?: string): RecordedCase[] {
   const lines = readFixtureFile(FIXTURE_DIRECTORY, "cases.jsonl").split("\n").filter((line) => line !== "");
   return lines.map((line) => JSON.parse(line) as RecordedCase).filter((testCase) => suites.includes(testCase.suite) && (!only || new RegExp(only).test(testCase.id)));
 }

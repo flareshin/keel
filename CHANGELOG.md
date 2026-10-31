@@ -175,8 +175,9 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
   - The ship-gate parity tests replay the 1,757 recorded hook runs, split over eight shard files
     (`tests/ship-gate/ship-gate-parity-shard-<n>.test.ts`) that `node --test` runs in parallel, and compare each with a golden
     snapshot of the node hook's own output (`cases.jsonl.gz`) instead of the retired Python hook's recorded answers. The golden
-    holds exit code, stdout, stderr and every written or removed file, with only the `keel-fires.jsonl` timestamp, `cc_version`,
-    the checkout's repo key and the JSON syntax error wording masked. An intended behavior change re-records it with
+    holds exit code, stdout, stderr and every file written or removed outside `.git` and `remotes` (inside `.git` only `HEAD`,
+    `config`, `packed-refs`, `FETCH_HEAD` and `refs`), with the sandbox root and checkout paths tokenized and only the
+    `keel-fires.jsonl` timestamp, `cc_version`, the checkout's repo key and the JSON syntax error wording masked. An intended behavior change re-records it with
     `node tests/ship-gate/ship-gate-parity-record.ts`, and the diff of `cases.jsonl.gz` is reviewed like any other change.
     `ship-gate-parity.test.ts` checks that every case falls in exactly one shard. `EXPECTED_DIVERGENCES` and the deny-to-pass
     count are gone. `codex/tests/hook-parity.ts` compares the fires lines it replays by content.

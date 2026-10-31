@@ -16,6 +16,8 @@ export const GH_RESOLVED_BASE = 'base';
 const GH_DEFAULT_REMOTE_KEYS = '^remote\\..*\\.gh-resolved$';
 const GH_RESOLVED_SUFFIX = '.gh-resolved';
 const REMOTE_PREFIX = 'remote.';
+const REMOTE_KEYS = '^remote\\.';
+const VALUELESS_KEY_MEANS = 'true';
 const TEMP_INDEX_RANDOM_BYTES = 6;
 const OTHER_LINE_BREAK = /[\r\v\f\x1c-\x1e\x85\u2028\u2029]/;
 const OBJECT_ID = /^[0-9a-f]{40}$/;
@@ -315,6 +317,7 @@ export function snapshotTree(repo: string): string {
 
 export function checkoutSnapshot(repo: string, tree: string, directory: string): void {
   run(directory, ['init', '-q', '--template=']);
+  copyRemotes(repo, directory);
   const objects = text(repo, ['rev-parse', '--path-format=absolute', '--git-path', 'objects']);
   mkdirSync(join(directory, '.git', 'objects', 'info'), { recursive: true });
   writeFileSync(join(directory, '.git', 'objects', 'info', 'alternates'), objects + '\n');
@@ -322,6 +325,16 @@ export function checkoutSnapshot(repo: string, tree: string, directory: string):
   const commit = text(directory, ['commit-tree', '--no-gpg-sign', tree, '-p', parent, '-m', SNAPSHOT_COMMIT_MESSAGE],
     { env: { ...process.env, ...SNAPSHOT_IDENTITY } });
   run(directory, ['reset', '-q', '--hard', commit], { timeoutSeconds: SNAPSHOT_TIMEOUT_SECONDS });
+}
+
+function copyRemotes(repo: string, directory: string): void {
+  const listed = run(repo, ['config', '-z', '--get-regexp', REMOTE_KEYS], { check: false }).stdout;
+  for (const record of splitOnNul(listed).filter((entry) => entry.length > 0)) {
+    const entry = record.toString();
+    const separator = entry.indexOf('\n');
+    if (separator < 0) run(directory, ['config', '--add', entry, VALUELESS_KEY_MEANS]);
+    else run(directory, ['config', '--add', entry.slice(0, separator), entry.slice(separator + 1)]);
+  }
 }
 
 function splitOnNul(bytes: Buffer): Buffer[] {

@@ -11,6 +11,7 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
 `node:path`, `node:fs`, `RegExp`, a fatal `TextDecoder` and `node:util` `parseArgs`. The hooks' shared kit (`hooks/lib/hookkit`) loses its Python runtime modules too (see Removed). Some Python semantics stay on purpose: the `splitlines` and `strip` character sets (`hooks/lib/hookkit/text.ts`, `apply_patch` text and guard output), CPython's recursion limit in the Codex TOML reader (`codex/lib/toml.ts`), the hooks' JSON spacing and error class names, and the exception names `rule-checks.ts` prints.
 
 ### Changed
+- `keel precheck run` copies every `remote.*` setting of the author repo into its temporary checkout, so a test that runs a hook there resolves `origin` as it would in the author worktree; a valueless remote key is copied as `true`.
 - The `run:C-precheck` metric counts a review's non-test TS/JS sources with the same rule as the lens-review precheck gate (`isPrecheckSource` in `lib/precheck/binding.ts`), so a deleted source no longer counts toward the three.
 - `keel review prepare` gives `precheck_required: null` when a diff path is not valid UTF-8, as it already does on a git error, instead of exiting 70 with an internal error.
 - `keel precheck run`'s green baseline reports the per-file timeout it applied, and the census `timeout <n>s per file` copies that value instead of a separately computed one.

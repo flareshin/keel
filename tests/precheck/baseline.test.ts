@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
-import { chmodSync, existsSync, lstatSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { appendFileSync, chmodSync, existsSync, lstatSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { after, describe, it } from "node:test"
@@ -72,6 +72,39 @@ describe("precheck baseline", () => {
     assert.equal(git(directory, "rev-parse", "HEAD^"), git(root, "rev-parse", "HEAD"))
     assert.equal(git(directory, "show", "HEAD:lib/a.ts"), "export const a = 2")
     assert.equal(git(directory, "status", "--porcelain", "--", ".", ":!tests/top.test.ts"), "")
+  })
+
+  it("materializeTree_keepsEveryRemoteOfTheRepo_soAHookRunInTheCheckoutResolvesThePushTarget", () => {
+    const root = repo({ "lib/a.ts": "export const a = 1\n" })
+    git(root, "remote", "add", "origin", "https://example.test/owner/repo.git")
+    git(root, "remote", "set-url", "--add", "--push", "origin", "https://push.example.test/owner/repo.git")
+    git(root, "remote", "add", "upstream", "/srv/mirror.git")
+
+    const directory = materializeTree(root, snapshotTree(root))
+    directories.push(directory)
+
+    assert.equal(git(directory, "remote", "get-url", "origin"), "https://example.test/owner/repo.git")
+    assert.equal(git(directory, "remote", "get-url", "--push", "origin"), "https://push.example.test/owner/repo.git")
+    assert.equal(git(directory, "remote", "get-url", "upstream"), "/srv/mirror.git")
+    assert.equal(git(directory, "status", "--porcelain"), "")
+  })
+
+  it("materializeTree_copiesAValuelessRemoteKey_asTheTrueItMeansToGit", () => {
+    const root = repo({ "lib/a.ts": "export const a = 1\n" })
+    git(root, "remote", "add", "origin", "https://example.test/owner/repo.git")
+    appendFileSync(join(root, ".git", "config"), '[remote "origin"]\n\tmirror\n')
+
+    const directory = materializeTree(root, snapshotTree(root))
+    directories.push(directory)
+
+    assert.equal(git(directory, "config", "--type=bool", "remote.origin.mirror"), "true")
+    assert.equal(git(directory, "remote", "get-url", "origin"), "https://example.test/owner/repo.git")
+  })
+
+  it("materializeTree_leavesTheCheckoutWithoutRemotes_whenTheRepoHasNone", () => {
+    const directory = materialized({ "lib/a.ts": "export const a = 1\n" })
+
+    assert.equal(git(directory, "remote"), "")
   })
 
   it("materializeTree_ignoresTheUsersInitTemplate_andStillLeavesACleanCheckout", () => {

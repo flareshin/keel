@@ -1,5 +1,5 @@
 import { globSync, readFileSync, statSync } from 'node:fs';
-import { basename, dirname, extname, join, normalize } from 'node:path';
+import { basename, dirname, extname, join, matchesGlob, normalize } from 'node:path';
 import { SCRIPT_FILE } from './consumers.ts';
 
 const TEST_GLOBS = ['tests/**/*.test.ts', 'codex/tests/*.test.ts', 'tests/workflows/*.test.mjs'];
@@ -26,6 +26,10 @@ export function candidateTests(root: string, changedPaths: string[]): string[] {
     }
   }
   return repo.tests.filter((test) => reaching.has(test)).sort();
+}
+
+export function isRunnableTest(path: string): boolean {
+  return TEST_GLOBS.some((pattern) => matchesGlob(path, pattern));
 }
 
 export function isTestSupport(path: string): boolean {

@@ -2,7 +2,7 @@ import { InvalidUtf8Error } from '../../measure/lib/measurekit/files.ts';
 import { compareCodePoints, isJsonObject, parseJsonKeepingIntegers, stringifySorted } from '../../measure/lib/measurekit/json.ts';
 import type { JsonValue } from '../../measure/lib/measurekit/json.ts';
 import * as affected from '../precheck/affected.ts';
-import { bindPrecheck } from '../precheck/binding.ts';
+import { bindPrecheck, precheckRequirement } from '../precheck/binding.ts';
 import { renderCensus, summarizeCensus } from '../precheck/render.ts';
 import { buildChains } from './chain.ts';
 import * as codexLenses from './codex_lenses.ts';
@@ -31,13 +31,15 @@ const USAGE = `usage:
   keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]
   keel evidence gc
   keel precheck run --repo <path> --base <ref>
-  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>`;
+  keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>
+  keel precheck required --repo <path> --base <sha> --end <sha>`;
 const EXIT_OK = 0;
 const EXIT_USAGE = 2;
 const EXIT_REFUSED = 3;
 const EXIT_INTERNAL = 70;
 const EVIDENCE_OPTIONS = new Set(['--repo', '--run', '--root', '--audits', '--verifiers']);
 const PRECHECK_BIND_OPTIONS = new Set(['--repo', '--base', '--end', '--tree']);
+const PRECHECK_REQUIRED_OPTIONS = new Set(['--repo', '--base', '--end']);
 const PRECHECK_RUN_OPTIONS = new Set(['--repo', '--base']);
 const TEST_AFFECTED_OPTIONS = new Set(['--base']);
 const DEFAULT_AFFECTED_BASE = 'origin/HEAD';
@@ -113,11 +115,21 @@ function review(rest: string[]): number {
 
 function precheck(rest: string[]): number | Promise<number> {
   if (rest[0] === 'run') return precheckRun(rest.slice(1));
+  if (rest[0] === 'required') return precheckRequired(rest.slice(1));
   const options = rest[0] === 'bind' ? parseOptions(rest.slice(1), PRECHECK_BIND_OPTIONS) : {};
   if (Object.keys(options).length !== PRECHECK_BIND_OPTIONS.size) throw new writers.Usage('keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>');
   const repoRoot = gitcmd.toplevel(options['--repo']!);
   if (repoRoot === null) throw new writers.Usage(`${options['--repo']} is not inside a git repository`);
   seams.print(bindPrecheck(repoRoot, options['--base']!, options['--end']!, options['--tree']!));
+  return EXIT_OK;
+}
+
+function precheckRequired(rest: string[]): number {
+  const options = parseOptions(rest, PRECHECK_REQUIRED_OPTIONS);
+  if (Object.keys(options).length !== PRECHECK_REQUIRED_OPTIONS.size) throw new writers.Usage('keel precheck required --repo <path> --base <sha> --end <sha>');
+  const repoRoot = gitcmd.toplevel(options['--repo']!);
+  if (repoRoot === null) throw new writers.Usage(`${options['--repo']} is not inside a git repository`);
+  seams.print(precheckRequirement(repoRoot, options['--base']!, options['--end']!));
   return EXIT_OK;
 }
 

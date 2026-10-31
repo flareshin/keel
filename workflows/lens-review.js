@@ -93,6 +93,8 @@ phase('Prepare')
 const prepared = await prepareReview()
 if (prepared.error) return failed(prepared.error)
 const { runId, rootRunId, reviewed, lensSet, priorNeedsFixesRounds, effort } = prepared
+const missingPrecheck = findMissingPrecheck(reviewed[0])
+if (missingPrecheck) return failed(missingPrecheck)
 log(`audit effort: ${effort}`)
 const precheck = PRECHECK && bindPrecheck(PRECHECK, reviewed[0])
 if (precheck) log(`precheck: ${describePrecheck(precheck)}`)
@@ -231,24 +233,38 @@ ${lensesStep}`
 function buildPrepareCommand(d) {
   const root = `root=$(git -C '${d.repo}' rev-parse --show-toplevel)`
   if (d.head) {
-    return `${root} && head=$(git -C "$root" rev-parse --verify '${d.head}^{commit}') && base=$(git -C "$root" merge-base '${d.base}' "$head") && stat=$(git -C "$root" diff --stat "$base" "$head" | tail -n 1) && ${buildBindingStep('"$head"')}jq -cn --arg r "$root" --arg b "$base" --arg h "$head" --arg s "$stat"${bindingJq().arg} '{repo_root:$r, review_base:$b, head:$h, snapshot_tree:null, diff_stat:$s${bindingJq().field}}'`
+    return `${root} && head=$(git -C "$root" rev-parse --verify '${d.head}^{commit}') && base=$(git -C "$root" merge-base '${d.base}' "$head") && stat=$(git -C "$root" diff --stat "$base" "$head" | tail -n 1) && ${precheckProbe('"$head"').step}jq -cn --arg r "$root" --arg b "$base" --arg h "$head" --arg s "$stat"${precheckProbe().arg} '{repo_root:$r, review_base:$b, head:$h, snapshot_tree:null, diff_stat:$s${precheckProbe().field}}'`
   }
   const from = d.since ? `'${d.since}'` : '"$base"'
   const sinceCheck = d.since ? `{ [ "$(git -C "$root" cat-file -t '${d.since}' 2>/dev/null)" = tree ] || { echo "since ${d.since} is not a tree id: pass the snapshot_tree the earlier review named (for a commit, <commit>^{tree})" >&2; false; }; } && ` : ''
-  return `${root} && ${sinceCheck}base=$(git -C "$root" merge-base '${d.base}' HEAD) && tree=$(cd ${DATA_DIR} && bin/keel snapshot "$root" | jq -r .tree) && stat=$(git -C "$root" diff --stat ${from} "$tree" | tail -n 1) && ${buildBindingStep('"$tree"')}jq -cn --arg r "$root" --arg b "$base" --arg t "$tree" --arg s "$stat"${bindingJq().arg} '{repo_root:$r, review_base:$b, head:null, snapshot_tree:$t, diff_stat:$s${bindingJq().field}}'`
+  return `${root} && ${sinceCheck}base=$(git -C "$root" merge-base '${d.base}' HEAD) && tree=$(cd ${DATA_DIR} && bin/keel snapshot "$root" | jq -r .tree) && stat=$(git -C "$root" diff --stat ${from} "$tree" | tail -n 1) && ${precheckProbe('"$tree"').step}jq -cn --arg r "$root" --arg b "$base" --arg t "$tree" --arg s "$stat"${precheckProbe().arg} '{repo_root:$r, review_base:$b, head:null, snapshot_tree:$t, diff_stat:$s${precheckProbe().field}}'`
 }
 
-function buildBindingStep(end) {
-  if (!isPrecheckBindable()) return ''
-  return `binding=$( (cd ${DATA_DIR} && bin/keel precheck bind --repo "$root" --base "$base" --end ${end} --tree ${PRECHECK.tree}) 2>/dev/null || echo null) && `
-}
-
-function bindingJq() {
-  return isPrecheckBindable() ? { arg: ' --argjson p "$binding"', field: ', precheck_binding:$p' } : { arg: '', field: '' }
+function precheckProbe(end) {
+  if (isPrecheckBindable()) {
+    const step = `binding=$( (cd ${DATA_DIR} && bin/keel precheck bind --repo "$root" --base "$base" --end ${end} --tree ${PRECHECK.tree}) 2>/dev/null || echo null) && `
+    return { step, arg: ' --argjson p "$binding"', field: ', precheck_binding:$p' }
+  }
+  if (isPrecheckRequirable()) {
+    const step = `required=$( (cd ${DATA_DIR} && bin/keel precheck required --repo "$root" --base "$base" --end ${end}) 2>/dev/null || echo null) && `
+    return { step, arg: ' --argjson q "$required"', field: ', precheck_required:$q' }
+  }
+  return { step: '', arg: '', field: '' }
 }
 
 function isPrecheckBindable() {
   return Boolean(PRECHECK && PRECHECK.tree)
+}
+
+function isPrecheckRequirable() {
+  return A.precheck === undefined && DIFFS.length === 1 && !DIFFS[0].since
+}
+
+function findMissingPrecheck(target) {
+  const requirement = target.precheck_required
+  if (!isPrecheckRequirable() || !requirement || requirement.required !== true) return null
+  const diff = DIFFS[0]
+  return `this diff changes ${requirement.sources} non-test script sources in a repo with precheck tests, so the author's precheck comes first: run keel precheck run --repo '${diff.repo}' --base '${diff.base}' after the tests are green and pass its output verbatim as args.precheck`
 }
 
 function parseReviewedTargets(diffOutputs) {

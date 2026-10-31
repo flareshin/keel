@@ -1286,8 +1286,19 @@ describe("SameCallStagingTest", () => {
     assertProceduralDenied(guard("export Y=$HOME && git add clean.txt && git commit -m wip", repo));
   });
 
-  it("commit_passes_whenAnEarlierShellStateStepOnlyRedirectsToDevNull", () => {
-    assertPassed(guard("pushd . > /dev/null && git add clean.txt && git commit -m wip", repo));
+  it("commit_denied_whenTheCallTextHasACharacterOutsideThePlainSet", () => {
+    commitTracked("t.txt", "start\n");
+    assertProceduralDenied(guard("cd *(e:'cat leak.txt > t.txt':); git commit -am wip", repo));
+    assertProceduralDenied(guard("git add *.txt && git commit -m wip", repo));
+    assertProceduralDenied(guard("git add clean.txt && git commit -m 'wip (part)'", repo));
+  });
+
+  it("commit_passes_whenTheCallTextUsesOnlyPlainCharacters", () => {
+    assertPassed(guard("cd . && git add ./clean.txt && git commit -m \"wip: clean-up, v1.2 +docs @team 50%\"", repo));
+  });
+
+  it("commit_denied_whenAnEarlierShellStateStepRedirectsEvenToDevNull", () => {
+    assertProceduralDenied(guard("pushd . > /dev/null && git add clean.txt && git commit -m wip", repo));
   });
 
   it("commit_denied_whenAnEarlierReadOnlyGitStepPrecedesTheStaging", () => {
@@ -1298,8 +1309,8 @@ describe("SameCallStagingTest", () => {
     assertPassed(guard("python3 gen.py > out.txt && git commit -m wip", repo));
   });
 
-  it("commit_passes_whenAFileIsWrittenOnlyAfterTheLastStagingStep", () => {
-    assertPassed(guard("git add clean.txt && echo done > notes.out && git commit -m wip", repo));
+  it("commit_denied_whenAFileIsWrittenOnlyAfterTheLastStagingStep", () => {
+    assertProceduralDenied(guard("git add clean.txt && echo done > notes.out && git commit -m wip", repo));
   });
 
   it("commit_denied_whenTheStagingCannotBeReplayed", () => {

@@ -467,7 +467,7 @@ function gitSubcommand(argv: readonly string[]): string | null {
   return index === null ? null : (argv[index] ?? null);
 }
 
-export function redirectTargets(command: SimpleCommand): string[] {
+function redirectTargets(command: SimpleCommand): string[] {
   return command.redirects
     .filter((redirect) => redirect.target !== "/dev/null" && fileWriteOf(redirect) !== null)
     .map((redirect) => redirect.target);

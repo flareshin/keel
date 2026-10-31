@@ -8,6 +8,7 @@ import {
 import type { HookResult } from "./helpers.ts";
 import { BOUNDARY_TIMEOUT_SECONDS, DROP_COMMENTS, GuardError, scanStagedSecrets } from "../../hooks/git-guard/git-guard.ts";
 import { GIT_TIMEOUT_SECONDS } from "../../hooks/lib/hookkit/repo.ts";
+import { MAX_JSON_DEPTH } from "../../measure/lib/measurekit/json.ts";
 
 const ATTRIBUTION_TRAILER = "Co-Authored-By: Claude <noreply@example.invalid>";
 const ROBOT = "\u{1F916}";
@@ -1564,6 +1565,18 @@ describe("CommentWriteTest", () => {
     assert.deepEqual(sandbox.fires().filter((fire) => fire.outcome === "error"), []);
   });
 
+  it("notebookEdit_deniedFailClosed_whenTheNotebookNestsPastTheJsonDepthLimit", () => {
+    const deep = "[".repeat(MAX_JSON_DEPTH + 1) + "]".repeat(MAX_JSON_DEPTH + 1);
+    const notebook = `{"cells": [${JSON.stringify(loadCell)}], "metadata": {"language_info": {"name": "python"}, "deep": ${deep}}}`;
+    const toolArgs = { notebook_path: codeFile("deep.ipynb", notebook), cell_id: "a1", new_source: "# reads the rows\nrows = load(limit=10)\n" };
+
+    const result = edit("NotebookEdit", toolArgs);
+
+    assert.equal(result.code, 2);
+    assert.ok(result.stderr.includes("internal error"), result.stderr);
+    assert.equal(sandbox.fires().at(-1)?.detail, `RecursionError: JSON nesting is deeper than ${MAX_JSON_DEPTH} levels`);
+  });
+
   it("codexPatch_denied_whenItCopiesACommentTheFileAlreadyHas", () => {
     const toolArgs = { file_path: codeFile("keep.py", "x = 1\n# keeps x\n"), content: "# keeps x", keel_partial: true, keel_removed: "" };
 
@@ -1706,6 +1719,14 @@ describe("CommentWriteTest", () => {
     assertCommentDenied(guard(`tee --append ${path} <<< '# reads the rows' >/dev/null`), "# reads the rows");
   });
 
+  it("bash_judgesEveryShellFileWriteOfStdout_asTheWriteTargetsDoes", () => {
+    const path = codeFile("load.py", "rows = load()\n");
+
+    assertCommentDenied(guard(`cat <<'EOF' >& ${path}\n# reads the rows\nEOF`), "# reads the rows");
+    assertCommentDenied(guard(`cat <<'EOF' 1<> ${path}\n# reads the rows\nEOF`), "# reads the rows");
+    assertPassed(guard(`cat <> ${path} <<'EOF'\n# reads the rows\nEOF`));
+  });
+
   it("bash_judgesOnlyTheStdoutRedirect_whenStderrGoesToACodeFile", () => {
     assertPassed(guard(`cat <<'EOF' 2> ${codeFile("err.py")}\n# reads the rows\nEOF`));
     assertCommentDenied(guard(`cat <<'EOF' 1> ${codeFile("out.py")}\n# reads the rows\nEOF`), "# reads the rows");
@@ -1789,6 +1810,7 @@ describe("CommentWriteTest", () => {
       ["a.cpp", "// NOLINTEND(bugprone-x)"], ["a.py", "# ruff: noqa"],
       ["a.cpp", "// clang-format off"], ["a.cpp", "// clang-format on"], ["a.py", "# yapf: disable"], ["a.js", "// @flow"],
       ["a.js", "// @flow strict"], ["a.js", "/* @flow weak */"], ["a.ts", "// deno-lint-ignore no-explicit-any"],
+      ["a.js", "/* globals describe, it: readonly */"], ["a.js", "/* global $:writable, jQuery */"], ["a.js", "/* global foo -- used by the legacy page */"], ["a.js", "/* global  foo */"],
     ];
     const prose: Array<[file: string, comment: string]> = [
       ["b.c", "// pragmatic shortcut for now"], ["b.js", "// eslintrc settings apply here"], ["b.cpp", "// NOLINTED by accident"],
@@ -1797,6 +1819,7 @@ describe("CommentWriteTest", () => {
       ["Repo.java", "// rollback the transaction when the save fails"], ["b.java", "// comment: the cache is warm here"],
       ["b.ts", "// preconditions are checked by the caller"], ["b.cpp", "// clang-format is set in the repo root"],
       ["b.js", "// @flow control returns early here"], ["b.sql", "--precondition-sql-check expectedResult:0 SELECT 1"],
+      ["b.js", "// global state is reset here"], ["b.js", "/* global state is reset here */"], ["b.js", "// global window"], ["b.js", "/** global cache */"],
     ];
 
     for (const [file, comment] of directives) assertPassed(edit("Write", { file_path: codeFile(file), content: `${comment}\nx = 1\n` }));

@@ -1,4 +1,5 @@
 import { getField, isRecord } from "../lib/hookkit/fields.ts";
+import { JsonSyntaxError, parseJson } from "../lib/hookkit/json.ts";
 
 const CELL_INDEX = /^cell-(\d+)$/u;
 const DEFAULT_LANGUAGE = "python";
@@ -38,9 +39,9 @@ export function notebookCellChange(notebookPath: string, notebookText: string | 
 function parsedNotebook(text: string): { cells: unknown[]; metadata: unknown } | null {
   let notebook: unknown;
   try {
-    notebook = JSON.parse(text);
+    notebook = parseJson(text);
   } catch (error) {
-    if (error instanceof SyntaxError) return null;
+    if (error instanceof JsonSyntaxError) return null;
     throw error;
   }
   if (!isRecord(notebook)) return null;

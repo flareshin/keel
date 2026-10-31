@@ -1810,7 +1810,7 @@ describe("CommentWriteTest", () => {
       ["a.cpp", "// NOLINTEND(bugprone-x)"], ["a.py", "# ruff: noqa"],
       ["a.cpp", "// clang-format off"], ["a.cpp", "// clang-format on"], ["a.py", "# yapf: disable"], ["a.js", "// @flow"],
       ["a.js", "// @flow strict"], ["a.js", "/* @flow weak */"], ["a.ts", "// deno-lint-ignore no-explicit-any"],
-      ["a.js", "/* globals describe, it: readonly */"], ["a.js", "/* global $:writable, jQuery */"], ["a.js", "/* global foo -- used by the legacy page */"],
+      ["a.js", "/* globals describe, it: readonly */"], ["a.js", "/* global $:writable, jQuery */"], ["a.js", "/* global foo -- used by the legacy page */"], ["a.js", "/* global  foo */"],
     ];
     const prose: Array<[file: string, comment: string]> = [
       ["b.c", "// pragmatic shortcut for now"], ["b.js", "// eslintrc settings apply here"], ["b.cpp", "// NOLINTED by accident"],

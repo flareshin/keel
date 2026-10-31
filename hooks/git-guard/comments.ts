@@ -36,7 +36,7 @@ const ALLOWED_BODY = new RegExp("^(" + [
 ].map(wholeWord).join("|") + ")", "u");
 
 const GLOBAL_NAME = "[A-Za-z_$][\\w$]*(\\s*:\\s*[A-Za-z]+)?";
-const GLOBALS_DIRECTIVE = new RegExp(`^globals? ${GLOBAL_NAME}(\\s*,\\s*${GLOBAL_NAME})*(\\s+--+\\s.*)?$`, "u");
+const GLOBALS_DIRECTIVE = new RegExp(`^globals?\\s+${GLOBAL_NAME}(\\s*,\\s*${GLOBAL_NAME})*(\\s+--+\\s.*)?$`, "u");
 const DOC_BLOCK_OPEN = "/**";
 
 function wholeWord(directive: string): string {

@@ -69,7 +69,7 @@ describe("runCensus", { skip: typescriptInstalled ? false : "typescript is not i
 
     assert.equal(result.mutation.outcome, "ran")
     if (result.mutation.outcome !== "ran") return
-    assert.equal(result.mutation.timeoutSeconds, 600)
+    assert.equal(result.mutation.timeoutSeconds, 1800)
   })
 
   it("runCensus_recordsADeletedSourceFileAsZeros_withoutMutatingIt", async () => {

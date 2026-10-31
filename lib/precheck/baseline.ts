@@ -21,7 +21,7 @@ export type Baseline =
 
 type FileRun = { outcome: 'ran'; file: BaselineFile } | Extract<Baseline, { outcome: 'red' | 'timeout' }>;
 
-const IDLE_TIMEOUT_SECONDS = 300;
+const IDLE_TIMEOUT_SECONDS = 900;
 const MAX_LOAD_FACTOR = 8;
 const DEPENDENCY_DIRECTORY = 'node_modules';
 const LOCAL_EXCLUDE = join('.git', 'info', 'exclude');

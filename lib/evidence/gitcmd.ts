@@ -21,6 +21,7 @@ const VALUELESS_KEY_MEANS = 'true';
 const REMOTE_URL_KEY = /\.(url|pushurl)$/;
 const URL_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
 const SCP_LIKE = /^[^/]*:/;
+const HOME_PREFIX = '~';
 const TEMP_INDEX_RANDOM_BYTES = 6;
 const OTHER_LINE_BREAK = /[\r\v\f\x1c-\x1e\x85\u2028\u2029]/;
 const OBJECT_ID = /^[0-9a-f]{40}$/;
@@ -331,7 +332,7 @@ export function checkoutSnapshot(repo: string, tree: string, directory: string):
 }
 
 function copyRemotes(repo: string, directory: string): void {
-  const listed = run(repo, ['config', '--local', '-z', '--get-regexp', REMOTE_KEYS], { check: false }).stdout;
+  const listed = run(repo, ['config', '--local', '--includes', '-z', '--get-regexp', REMOTE_KEYS], { check: false }).stdout;
   for (const record of splitOnNul(listed).filter((entry) => entry.length > 0)) {
     const entry = record.toString();
     const separator = entry.indexOf('\n');
@@ -346,7 +347,7 @@ function anchoredAtRepo(repo: string, key: string, value: string): string {
 }
 
 function isRelativePath(url: string): boolean {
-  return !isAbsolute(url) && !URL_SCHEME.test(url) && !SCP_LIKE.test(url);
+  return !isAbsolute(url) && !url.startsWith(HOME_PREFIX) && !URL_SCHEME.test(url) && !SCP_LIKE.test(url);
 }
 
 function splitOnNul(bytes: Buffer): Buffer[] {

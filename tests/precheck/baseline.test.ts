@@ -121,15 +121,32 @@ describe("precheck baseline", () => {
   it("materializeTree_anchorsARelativePathRemote_atTheRepo_soItNamesTheSameDirectory", () => {
     const root = repo({ "lib/a.ts": "export const a = 1\n" })
     git(root, "remote", "add", "origin", "../mirror.git")
+    git(root, "remote", "set-url", "--add", "--push", "origin", "../push.git")
     git(root, "remote", "add", "web", "https://example.test/owner/repo.git")
     git(root, "remote", "add", "ssh", "git@example.test:owner/repo.git")
+    git(root, "remote", "add", "home", "~/mirror.git")
 
     const directory = materializeTree(root, snapshotTree(root))
     directories.push(directory)
 
     assert.equal(git(directory, "remote", "get-url", "origin"), join(dirname(root), "mirror.git"))
+    assert.equal(git(directory, "remote", "get-url", "--push", "origin"), join(dirname(root), "push.git"))
+    assert.equal(git(directory, "config", "remote.home.url"), "~/mirror.git")
     assert.equal(git(directory, "remote", "get-url", "web"), "https://example.test/owner/repo.git")
     assert.equal(git(directory, "remote", "get-url", "ssh"), "git@example.test:owner/repo.git")
+  })
+
+  it("materializeTree_copiesARemoteThatTheRepoConfigIncludes", () => {
+    const root = repo({ "lib/a.ts": "export const a = 1\n" })
+    const included = mkdtempSync(join(tmpdir(), "precheck-include-"))
+    directories.push(included)
+    writeFileSync(join(included, "remotes"), '[remote "origin"]\n\turl = https://example.test/included.git\n')
+    git(root, "config", "--local", "include.path", join(included, "remotes"))
+
+    const directory = materializeTree(root, snapshotTree(root))
+    directories.push(directory)
+
+    assert.equal(git(directory, "remote", "get-url", "origin"), "https://example.test/included.git")
   })
 
   it("materializeTree_leavesTheCheckoutWithoutRemotes_whenTheRepoHasNone", () => {

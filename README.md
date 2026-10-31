@@ -301,7 +301,7 @@ Requirements: `node` 24 or newer (the `engines` field; tested on 26.12), `bash`,
 bash tests/run-all.sh
 ```
 
-Tests run in temporary directories (`KEEL_DATA_DIR`, `KEEL_OVERLAY_DIR`, `HOME`). They never touch the network or a real `~/.claude`. To run a single component:
+Tests run in temporary directories (`KEEL_DATA_DIR`, `KEEL_OVERLAY_DIR`, `HOME`). They never touch the network or a real `~/.claude`, except that `run-all.sh` holds the full-suite lock `$KEEL_DATA_DIR/state/keel/full-suite.lock` (default `~/.claude`) while it runs, so a second full run on the machine waits. To run a single component:
 
 ```bash
 node --test 'tests/ship-gate/*.test.ts'

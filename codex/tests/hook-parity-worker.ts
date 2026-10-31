@@ -1,7 +1,9 @@
 import { hookCases } from "./hook-parity-corpus.ts";
-import { runHookParity, sandboxPaths } from "./hook-parity.ts";
+import { goldenEntries, runHookParity, sandboxPaths } from "./hook-parity.ts";
+import type { WorkerMode } from "./hook-parity.ts";
 
-const [index = 0, count = 1] = process.argv.slice(2).map(Number);
+const mode = process.argv[2] as WorkerMode;
+const [index, count] = process.argv.slice(3).map(Number) as [number, number];
 const paths = sandboxPaths();
 const cases = hookCases(paths).filter((_testCase, position) => position % count === index);
-process.stdout.write(JSON.stringify(runHookParity(cases, paths)));
+process.stdout.write(JSON.stringify(mode === "record" ? goldenEntries(cases, paths) : runHookParity(cases, paths)));

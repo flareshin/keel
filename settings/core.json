@@ -54,17 +54,6 @@
           }
         ]
       }
-    ],
-    "PreCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node {{KEEL}}/hooks/handoff/handoff.ts --auto",
-            "timeout": 30
-          }
-        ]
-      }
     ]
   }
 }

@@ -68,11 +68,13 @@ export function collectMetricItems(metric: string, since: string, finished: Fini
 
 function firesItems(ruleId: string, since: string): MetricItems {
   const { records } = readJsonl(path.join(env.logsDir(), FIRES_LOG))
-  const items = records.filter(
-    (record) => record["rule_id"] === ruleId && !NON_DECISION_OUTCOMES.has(record["outcome"] as string)
-      && record["kind"] !== PROCEDURAL_KIND && !isSyntheticSession(record["session"]) && isWithinWindow(record, since),
-  )
+  const items = records.filter((record) => record["rule_id"] === ruleId && isCountedFire(record, since))
   return [items.length, items]
+}
+
+export function isCountedFire(record: JsonObject, since: string): boolean {
+  return !NON_DECISION_OUTCOMES.has(record["outcome"] as string) && record["kind"] !== PROCEDURAL_KIND
+    && !isSyntheticSession(record["session"]) && isWithinWindow(record, since)
 }
 
 function evalItems(evalId: string, since: string): MetricItems {

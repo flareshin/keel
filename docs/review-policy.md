@@ -56,12 +56,14 @@ The gate's test check (K3) asks for one passing `keel test` run whose recorded
 content matches every outgoing changed file. It does not ask for the full suite.
 Choose each run by what changed since the last passing run:
 
-- While iterating and after each review fix, run the test files of the changed
-  modules and every test that imports, spawns or reads a changed path, found by
-  grepping the tests for its file name, plus the tests that import a test helper
-  the grep finds. When a script or module reads the changed path, such as
-  `rule-checks.ts` reading `references/rules.md`, grep the tests for that
-  reader's name too: `keel test -- node --test <files>`.
+- While iterating and after each review fix, run `keel test --affected`
+  (`--base <ref>` when the branch's base is not `origin/HEAD`). It runs every
+  test file that imports, spawns or reads a path changed since the merge base,
+  directly or through a helper, and leaves out the recorded parity replays
+  unless a changed test file reaches them. When it finds no test, grep the tests
+  for the changed file's name, and for the name of a script or module that reads
+  it, such as `rule-checks.ts` reading `references/rules.md`:
+  `keel test -- node --test <files>`.
 - A smoke-only change (paths the overlay's risk rules class smoke-only, or a repo
   whose gate is smoke) needs no test run; the gate asks for smoke evidence
   instead. A light change (in keel: `docs/*`, `settings/*` and every `*.md`,
@@ -138,7 +140,7 @@ what keeps failing. `keel review prepare` counts the earlier NEEDS_FIXES links
 of the `rootRunId` chain. The line is a prompt for the author and owner; it does
 not change the verdict or any gate.
 
-[C-verbatim-fix] A fix that applies a reviewer's exact replacement text
+A fix that applies a reviewer's exact replacement text
 verbatim, and changes nothing else, closes that finding without a delta review.
 The reviewer chose the text, so the author does not judge it. The text must come
 from a finding that stands, not one a verifier adjusted or refuted. In the report,

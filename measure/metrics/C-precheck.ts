@@ -1,6 +1,6 @@
 import path from "node:path"
 
-import { isPrecheckSource, REQUIRED_SCRIPT_SOURCES } from "../../lib/precheck/binding.ts"
+import { DELETED_BLOB, isPrecheckSource, REQUIRED_SCRIPT_SOURCES } from "../../lib/precheck/binding.ts"
 import * as store from "../../lib/evidence/store.ts"
 import * as env from "../lib/measurekit/env.ts"
 import { dateOption, parseCommandLine, printJson, runMain, stringOption, EXIT_OK } from "../lib/measurekit/cli.ts"
@@ -79,7 +79,7 @@ function isCoveredFirstReview(review: JsonObject, since: string): boolean {
 function sourceFileCount(review: JsonObject): number {
   const paths = Array.isArray(review["paths"]) ? review["paths"] : []
   return paths
-    .filter((entry) => isJsonObject(entry) && typeof entry["path"] === "string" && typeof entry["blob"] === "string" && isPrecheckSource(entry["path"], entry["blob"]))
+    .filter((entry) => isJsonObject(entry) && typeof entry["path"] === "string" && isPrecheckSource(entry["path"], typeof entry["blob"] === "string" ? entry["blob"] : DELETED_BLOB))
     .length
 }
 

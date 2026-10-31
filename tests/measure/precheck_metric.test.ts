@@ -70,7 +70,7 @@ describe("C-precheck runner", () => {
       reviewed_tree: fields.tree ?? TREE,
       paths: [
         ...(fields.paths ?? THREE_SOURCES).map((changed) => ({ path: changed, blob: "b".repeat(40), mode: "100644" })),
-        ...(fields.deleted ?? []).map((removed) => ({ path: removed, blob: "0".repeat(40), mode: "100644" })),
+        ...(fields.deleted ?? []).map((removed) => ({ path: removed, blob: null, mode: "000000" })),
       ],
       source: { agent_transcript_path: fields.transcript ?? null },
     }))

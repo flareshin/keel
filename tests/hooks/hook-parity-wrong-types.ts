@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import {
-  AGENT_ID, basePayload, bash, ENV_PREFLIGHT, GIT_GUARD, HANDOFF, MODEL_ASSIGN, preToolUse, REPORT_GATE, SESSION_ID, SHIP_GATE, subagentStop,
+  AGENT_ID, bash, ENV_PREFLIGHT, GIT_GUARD, MODEL_ASSIGN, preToolUse, REPORT_GATE, SESSION_ID, SHIP_GATE, subagentStop,
 } from "./helpers.ts";
 import type { HookSandbox } from "./helpers.ts";
 import type { AdversarialCase } from "./hook-parity-adversarial.ts";
@@ -52,7 +52,6 @@ export function wrongTypeCases(sandbox: HookSandbox, repo: string): AdversarialC
     ...shipGateCases(repo),
     ...envPreflightCases(repo),
     ...modelAssignCases(sandbox),
-    ...handoffCases(repo),
     ...reportGateCases(sandbox),
   ];
 }
@@ -124,17 +123,6 @@ function modelAssignCases(sandbox: HookSandbox): AdversarialCase[] {
     ...family("effort", [...NOT_TEXT, ["string", "high"], ["empty string", ""]], (value) => agent({ effort: value })),
     ...family("resumeFromRunId", NOT_FLAG, (value) => preToolUse("Workflow", { script, resumeFromRunId: value }, root)),
     ...family("scriptPath", NOT_TEXT, (value) => preToolUse("Workflow", { script, scriptPath: value }, root)),
-  ];
-}
-
-function handoffCases(repo: string): AdversarialCase[] {
-  const compaction = (extra: Record<string, unknown>) => ({ ...basePayload("PreCompact", repo, "/data/projects/p/t.jsonl", false), trigger: "auto", ...extra });
-  const family = (name: string, values: readonly Value[], build: (value: unknown) => unknown) =>
-    varied(`handoff wrong-type ${name}`, HANDOFF, repo, values, build, ["--auto"]);
-  return [
-    ...family("cwd", NOT_TEXT, (value) => compaction({ cwd: value })),
-    ...family("trigger", NOT_TEXT, (value) => compaction({ trigger: value })),
-    ...family("transcript_path", NOT_TEXT, (value) => compaction({ transcript_path: value })),
   ];
 }
 

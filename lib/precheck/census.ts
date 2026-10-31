@@ -107,7 +107,7 @@ async function runMutation(repo: string, target: CensusTarget, sourcePaths: stri
     const describe = (each: MutantTarget): CensusMutant => describeMutant(sources.get(each.path) ?? '', each);
     return {
       outcome: 'ran',
-      timeoutSeconds,
+      timeoutSeconds: baseline.timeoutSeconds,
       baselineFiles: baseline.files.length,
       baselinePasses: baseline.files.reduce((sum, file) => sum + file.passed, 0),
       withoutPasses: baseline.withoutPasses.length,

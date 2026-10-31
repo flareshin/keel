@@ -9,13 +9,13 @@ An author defends its own comments, so a context that did not write them decides
 
 ## How it works
 
-1. **Spawn the reviewer.** Dispatch a `keel-comment-reviewer` agent (in Codex, a new reviewer context given `~/.claude/agents/keel-comment-reviewer.md` as its brief) with the repository's absolute path and the review base. Do not restate its rules or pre-judge any comment in the brief.
+1. **Spawn the reviewer.** Dispatch a `keel-comment-reviewer` agent (in Codex, a new reviewer context given `${KEEL_DATA_DIR:-$HOME/.claude}/agents/keel-comment-reviewer.md` as its brief) with the repository's absolute path and the review base. Do not restate its rules or pre-judge any comment in the brief.
 
 2. **Check the list, not the verdicts.** Reject a line only when it cites a file outside the scope, a file:line that holds no comment, a `KEEP` whose tool or notice does not exist, or a `MUST KILL` / `ENCODE` that names a symbol or check that is not there. Rerun the reviewer once with the rejected lines named; a second bad list is reported open in the reading guide. Disagreeing with a `DELETE` is not a ground: the comment goes.
 
-3. **Delete the comments.** Remove every accepted `DELETE` line and nothing else, as its own commit on the branch (`comments: remove <n> comments per the no-comments pass`). That commit is comment-only, so the K5.7 diff signal exempts it; behavior changes stay out of it.
+3. **Delete the comments.** Remove every accepted `DELETE` line and nothing else, as its own commit on the branch (`comments: remove <n> comments per the no-comments pass`). That commit is comment-only, so the K5.7 diff signal exempts it; behavior changes stay out of it. A tool-consumed directive tagged `MUST KILL` (a lint or type-check suppression) changes tool behavior, so it stays out of this commit and goes in step 4.
 
-4. **Fix each `MUST KILL`.** Rename, extract or retype the named symbol so the code says what the comment said, in the scope of the diff. That is a logic change: it ships with a test that fails without it (K3) and goes through the formal review with the rest. A reshape outside the diff's files is reported open, not done.
+4. **Fix each `MUST KILL`.** Rename, extract or retype the named symbol so the code says what the comment said, in the scope of the diff; remove a `MUST KILL` directive in the same change, with the tool run that is red without the fix and green with it. That is a logic change: it ships with a test that fails without it (K3) and goes through the formal review with the rest. A reshape outside the diff's files is reported open, not done.
 
 5. **Offer each `ENCODE`.** Ask the owner through `AskUserQuestion` whether to add the named type, test or lint rule. On yes, add it with its red-then-green test. On no, the comment stays deleted and the constraint goes open in the reading guide's Decisions with the source that backs it.
 

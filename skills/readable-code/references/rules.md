@@ -18,7 +18,7 @@ Every rule exists to cut at least one of these costs:
 ## Rules
 
 ### Scope
-- [K5] Rules apply to **new and changed lines**. Do not rewrite untouched legacy code; legacy cleanup is its own tidy diff. Existing-comment cleanup is a separate requested task; do not enlarge a behavior change to clean untouched lines.
+- [K5] Rules apply to **new and changed lines**. Do not rewrite untouched legacy code; legacy cleanup is its own tidy diff. Existing comments in the files a diff changes go in the `no-comments` pass before review; elsewhere existing-comment cleanup is a separate requested task; do not enlarge a behavior change to clean untouched lines.
 - [K5] Every rule has a **check** a reviewer can answer yes or no. Anything not checkable is taste and is not a rule.
 - [K5] Breaking a rule is allowed with the reason in the reading guide's `Decisions`. This does not waive K5.14: its two comment exceptions are exhaustive.
 - [K5] A domain name comes from the team's glossary when one exists; a missing concept is added there first.

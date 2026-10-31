@@ -113,6 +113,16 @@ describe("agent files", () => {
       assert.ok((fields?.["tools"] ?? "").length > 0, `${path} must list its tools; without tools: it inherits every tool`);
     }
   });
+
+  it("test_links_installEveryAgent_underDataAgents", () => {
+    const links = new Set(splitlines(read(join(KEEL_HOME, "settings", "links.tsv"))));
+    const paths = agentPaths();
+    assert.ok(paths.length > 0, "no agent files found (a vacuous pass)");
+    for (const path of paths) {
+      const name = basename(path);
+      assert.ok(links.has(`{{KEEL}}/agents/${name}\tagents/${name}`), `settings/links.tsv must install agents/${name}`);
+    }
+  });
 });
 
 describe("code fences", () => {

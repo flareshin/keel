@@ -17,13 +17,14 @@ import { Usage } from './writers.ts';
 const NOT_WORD_AFTER = '(?![\\p{L}\\p{N}_])';
 const NOT_WORD_BEFORE = '(?<![\\p{L}\\p{N}_])';
 const LINE_START = '(?<![^\\n])';
+const NOT_IN_TAP_DIAGNOSTIC = '(?<!(?<![^\\r\\n])[ \\t]*#(?:[ \\t][^\\r\\n]*)?)';
 export const COUNT_PATTERNS: Array<[name: string, pattern: RegExp]> = [
   ['surefire', /Tests run: ([0-9]+)/gu],
   ['unittest', new RegExp(`${LINE_START}Ran ([0-9]+) tests?${NOT_WORD_AFTER}`, 'gu')],
   ['tap', new RegExp(`${LINE_START}# pass ([0-9]+)`, 'gu')],
   ['spec', new RegExp(`${LINE_START}\u2139 pass ([0-9]+)${NOT_WORD_AFTER}`, 'gu')],
   ['passed', new RegExp(
-    `${LINE_START}(?!${SPACE_EITHER_WAY}*Test (?:Files|Suites)${NOT_WORD_AFTER})[^\\n]*?${NOT_WORD_BEFORE}([0-9]+) passed${NOT_WORD_AFTER}`, 'gu')],
+    `${LINE_START}(?!${SPACE_EITHER_WAY}*Test (?:Files|Suites)${NOT_WORD_AFTER})[^\\n]*?${NOT_WORD_BEFORE}${NOT_IN_TAP_DIAGNOSTIC}([0-9]+) passed${NOT_WORD_AFTER}`, 'gu')],
 ];
 export const NO_TESTS_RECOGNIZED = 4;
 const COMMAND_NOT_FOUND = 2;

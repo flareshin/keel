@@ -218,7 +218,7 @@ describe("installation", () => {
     assert.equal(claude.status, 0, claude.stdout + claude.stderr);
     assert.equal(runLink("--write").status, 0);
 
-    for (const name of ["readable-code", "improve", "descend", "prompt-refine"]) {
+    for (const name of ["readable-code", "improve", "descend", "prompt-refine", "no-comments"]) {
       const claudeSkill = join(home, "data/skills", name);
       const codexSkill = join(home, ".agents/skills", name);
       assert.equal(realpathSync(claudeSkill), realpathSync(codexSkill), name);
@@ -547,6 +547,13 @@ describe("installation", () => {
     }
 
     const HOOKS_ONLY = { actions: [] as string[], problems: [] as string[] };
+    const SKILLS_ADDED_AFTER_RECORDING = ["no-comments"];
+
+    function registryWithoutSkillsAddedAfterRecording(registryText: string): string {
+      const registry = JSON.parse(registryText);
+      for (const name of SKILLS_ADDED_AFTER_RECORDING) delete registry.skills[name];
+      return JSON.stringify(registry, null, 2) + "\n";
+    }
 
     it("lets TypeScript verify and refresh a Python install, rewriting only the hook command", () => {
       restoredPythonInstall();
@@ -554,7 +561,8 @@ describe("installation", () => {
       const pythonHooks = read(hooks);
       const check = runLink("--check");
       assert.equal(check.status, 1, check.stderr);
-      assert.deepEqual(JSON.parse(check.stdout), { ...HOOKS_ONLY, actions: [hooks] });
+      const addedSkills = SKILLS_ADDED_AFTER_RECORDING.map((name) => join(home, ".agents/skills", name));
+      assert.deepEqual(JSON.parse(check.stdout), { ...HOOKS_ONLY, actions: [hooks, ...addedSkills, "update shared skill references"] });
       assert.equal(runLink("--write").status, 0);
       assert.notEqual(read(hooks), pythonHooks);
       assert.match(read(hooks), /pre-tool-use\.ts"/);
@@ -579,7 +587,9 @@ describe("installation", () => {
       assert.equal(install.ownedAgentsDigest, referenceDigest("file", Buffer.from(install.agentsBytes, "base64")));
       assert.equal(state["owned"][agents], digest("file", install.agents));
       assert.equal(read(agents), install.agents);
-      assert.equal(read(join(home, ".agents/keel-codex-skills.json")), install.registry);
+      const registry = read(join(home, ".agents/keel-codex-skills.json"));
+      assert.equal(registryWithoutSkillsAddedAfterRecording(registry), install.registry);
+      for (const name of SKILLS_ADDED_AFTER_RECORDING) assert.equal(JSON.parse(registry).skills[name].target, join(dirname(ADAPTER), "skills", name));
     });
 
     function recordedAgentsFor(source: string): string {

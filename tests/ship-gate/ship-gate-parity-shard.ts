@@ -14,7 +14,7 @@ export function describeShard(testFile: string): void {
       const report = runShipGateParity({ index: number - 1, count: SHARD_COUNT });
       for (const line of summary(report)) console.log(line);
       for (const detail of report.details.slice(0, 10)) console.log(detail);
-      assert.ok(report.cases > 0, "the shard replayed no case");
+      assert.ok(report.cases > 0, "the shard replayed no case (SHIP_GATE_PARITY_FULL=1 replays the cases the sample drops)");
       assert.equal(report.mismatches, 0, report.details.slice(0, 10).join("\n"));
     });
   });

@@ -227,8 +227,8 @@ A track writes only its own paths and `examples/<track>/` (overlay-shaped, inven
 | link | `bin/link`, `lib/link/`; `tests/link/` |
 | ship-gate | `bin/keel`, `lib/evidence/`, `hooks/ship-gate/ship-gate.ts`; `tests/ship-gate/` |
 | hooks | `hooks/<name>/<name>.ts` (report-gate, git-guard, model-assign, handoff); `hooks/lib/hookkit/`; `stacks/spring-maven/` (`hooks/env-preflight.ts`, `settings.json`); `tests/hooks/` |
-| skills | `PRINCIPLES.md`; `skills/` (`prompt-refine/` K4, `readable-code/` K5 with `scripts/rule-checks.ts`, `descend/`, `improve/`); `tests/skills/` |
-| review-engine | `workflows/` (`lens-review.js`, `adversarial-audit.js`, `review-lenses.json`); `agents/` (`keel-auditor.md` for audit and verify agents, `keel-reporter.md` for the reporter: tool-limited subagent types passed as `agentType`); `tests/workflows/` |
+| skills | `PRINCIPLES.md`; `skills/` (`prompt-refine/` K4, `readable-code/` K5 with `scripts/rule-checks.ts`, `descend/`, `improve/`, `no-comments/`); `tests/skills/` |
+| review-engine | `workflows/` (`lens-review.js`, `adversarial-audit.js`, `review-lenses.json`); `agents/` (`keel-auditor.md` for audit and verify agents, `keel-reporter.md` for the reporter, `keel-comment-reviewer.md` for the no-comments pass: tool-limited subagent types passed as `agentType`); `tests/workflows/` |
 | integration | `settings/` (`core.json`, `links.tsv`), `README.md`, `docs/incidents/`, `tests/run-all.sh`, `tests/suite-lock.sh`; `tests/suite/` |
 | spec | `docs/DESIGN.md` |
 

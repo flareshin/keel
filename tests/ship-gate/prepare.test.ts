@@ -21,6 +21,30 @@ function preparedByCli(box: Sandbox, diffs: unknown[]): any {
 }
 
 describe('PrepareTest', () => {
+  test('prepareCli_saysThePrecheckIsRequired_forASingleRootDiffOfThreeSourcesInARepoWithPrecheckTests', (t) => {
+    const { box, repo, base } = setUp(t);
+    repo.write('tests/a.test.ts', 'export {}\n');
+    for (const name of ['a', 'b', 'c']) repo.write(`lib/${name}.ts`, `export const ${name} = 1\n`);
+
+    const root = JSON.parse(preparedByCli(box, [{ repo: repo.path, base }]).diff_outputs[0]);
+    const delta = JSON.parse(preparedByCli(box, [{ repo: repo.path, base, since: root.snapshot_tree }]).diff_outputs[0]);
+    const twoRepos = preparedByCli(box, [{ repo: repo.path, base }, { repo: box.clone('acme', 'lib').path, base: 'HEAD' }]);
+
+    assert.deepEqual(root.precheck_required, { required: true, sources: 3 });
+    assert.equal('precheck_required' in delta, false);
+    for (const line of twoRepos.diff_outputs) assert.equal('precheck_required' in JSON.parse(line), false);
+  });
+
+  test('prepareCli_saysThePrecheckIsNotRequired_forTwoSources', (t) => {
+    const { box, repo, base } = setUp(t);
+    repo.write('tests/a.test.ts', 'export {}\n');
+    for (const name of ['a', 'b']) repo.write(`lib/${name}.ts`, `export const ${name} = 1\n`);
+
+    const root = JSON.parse(preparedByCli(box, [{ repo: repo.path, base }]).diff_outputs[0]);
+
+    assert.deepEqual(root.precheck_required, { required: false, sources: 2 });
+  });
+
   test('prepare_pinsUntrackedCandidate_withoutChangingIndex', (t) => {
     const { repo, base } = setUp(t);
     repo.write('new.py', 'print(1)\n');

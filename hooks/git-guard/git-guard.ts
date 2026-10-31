@@ -75,10 +75,8 @@ const COMMIT_SHORT_VALUE_FLAGS: ReadonlySet<string> = new Set(["m", "F", "C", "c
 const COMMIT_SHORT_ATTACHED_VALUE_FLAGS: ReadonlySet<string> = new Set(["S", "u"]);
 const COMMIT_NO_VERIFY_SHORT_FLAG = "n";
 const STAGING_SUBCOMMANDS: ReadonlySet<string> = new Set(["add", "stage"]);
-const WORKTREE_KEEPING_COMMANDS: ReadonlySet<string> = new Set(["", "cd", "pushd", "popd", "export", "echo", "printf", "true"]);
-const WORKTREE_KEEPING_GIT_SUBCOMMANDS: ReadonlySet<string> = new Set([
-  "add", "stage", "rm", "mv", "status", "diff", "log", "show", "rev-parse",
-]);
+const SHELL_STATE_COMMANDS: ReadonlySet<string> = new Set(["", "cd", "pushd", "popd", "export"]);
+const DISCARDED_OUTPUT = "/dev/null";
 const PR_FILE_OPTIONS: ReadonlySet<string> = new Set(["-F", "--body-file"]);
 const PR_TEXT_SUBCOMMANDS: ReadonlySet<string> = new Set(["create", "edit", "merge"]);
 const UNPUSHED = ["--not", "--remotes"];
@@ -621,10 +619,9 @@ function sameCallStaging(
 }
 
 function mayChangeWorktree(step: Step): boolean {
-  if (step.command.redirects.some((redirect) => fileWriteOf(redirect) !== null)) return true;
-  const index = gitSubcommandIndex(step.argv);
-  if (index === null) return !WORKTREE_KEEPING_COMMANDS.has(step.name);
-  return !WORKTREE_KEEPING_GIT_SUBCOMMANDS.has(step.argv[index] ?? "");
+  const writesAFile = step.command.redirects.some((redirect) => redirect.target !== DISCARDED_OUTPUT && fileWriteOf(redirect) !== null);
+  const words = [...step.command.argv, ...step.command.assignments.map(([, value]) => value)];
+  return writesAFile || words.some((word) => RUN_TIME_WORD_RE.test(word)) || !SHELL_STATE_COMMANDS.has(step.name);
 }
 
 function earlierStaging(step: Step, toplevel: string): EarlierStaging {

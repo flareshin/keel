@@ -1251,6 +1251,26 @@ describe("SameCallStagingTest", () => {
     assertSecretDenied(guard("git commit -am wip", repo), "t.txt");
   });
 
+  it("commit_denied_whenAnEarlierGitStepWritesAFileThroughItsOutputOption", () => {
+    commitTracked("t.txt", "start\n");
+    assertProceduralDenied(guard("git diff --no-index --output=t.txt clean.txt leak.txt; git commit -am wip", repo));
+    assertProceduralDenied(guard("git log -1 --output=t.txt && git add t.txt && git commit -m wip", repo));
+  });
+
+  it("commit_denied_whenAnAssignmentRunsACommandSubstitutionBeforeTheStaging", () => {
+    commitTracked("t.txt", "start\n");
+    assertProceduralDenied(guard("X=$(cat leak.txt > t.txt); git commit -am wip", repo));
+    assertProceduralDenied(guard("X=`cat leak.txt > t.txt`; git commit -am wip", repo));
+  });
+
+  it("commit_passes_whenAnEarlierShellStateStepOnlyRedirectsToDevNull", () => {
+    assertPassed(guard("pushd . > /dev/null && git add clean.txt && git commit -m wip", repo));
+  });
+
+  it("commit_denied_whenAnEarlierReadOnlyGitStepPrecedesTheStaging", () => {
+    assertProceduralDenied(guard("git status > /dev/null && git add clean.txt && git commit -m wip", repo));
+  });
+
   it("commit_passes_whenAnEarlierStepWritesFilesButTheCallStagesNothing", () => {
     assertPassed(guard("python3 gen.py > out.txt && git commit -m wip", repo));
   });
@@ -1428,6 +1448,13 @@ describe("RepoRulesTest", () => {
     const result = guard("git commit -am wip", repo);
     assertDenied(result, "O-files");
     assert.ok(result.stderr.includes("a.sql"), result.stderr);
+  });
+
+  it("commit_denied_whenAnEarlierGitMvRenamesToAMatchingPath", () => {
+    const repo = sandbox.makeRepo("acmecorp", "storefront");
+    sandbox.commitFile(repo, "notes.txt", "select 1;\n", "Add notes");
+    assertDenied(guard("git mv notes.txt a.sql && git commit -am wip", repo), "F-secrets");
+    assertDenied(guard("git mv notes.txt a.sql && git add -A && git commit -m wip", repo), "F-secrets");
   });
 
   it("commit_passes_whenStagedPathDoesNotMatch", () => {

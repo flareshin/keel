@@ -5,7 +5,7 @@ import { basename, dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { gatedRepos } from "../../lib/evidence/registry.ts";
 import { splitlines } from "../../hooks/lib/hookkit/text.ts";
-import { bulletTags, GENERATED_HEADER, K5_SUB_IDS, KEEL_HOME, PRINCIPLES, read, rulesSection, SKILLS_DIR, skillPaths, VALID_IDS } from "./helpers.ts";
+import { AGENTS_DIR, agentPaths, bulletTags, GENERATED_HEADER, K5_SUB_IDS, KEEL_HOME, markdownPaths, PRINCIPLES, read, rulesSection, SKILLS_DIR, skillPaths, VALID_IDS } from "./helpers.ts";
 
 const EXPECTED_SKILLS = new Set(["prompt-refine", "readable-code", "descend", "improve"]);
 const CLAUDE_MD_CAP = 4608;
@@ -15,6 +15,7 @@ const DESCRIPTION_CAP = 1024;
 const STEP_WORDS = /\bthen\b|→|->|\b(?:next|finally)\b|(?:^|\s)\d+[.)]\s/gi;
 const EMPHATIC = /\b(?:MUST|NEVER|CRITICAL|IMPORTANT|ALWAYS|REQUIRED)\b/g;
 const CODE = /```[\s\S]*?```|`[^`\n]*`/g;
+const FENCE = /^( {0,3})(`{3,}|~{3,})(.*)$/;
 const DESIGN = join(KEEL_HOME, "docs", "DESIGN.md");
 const LEDGER_HEADER = "id\tscope\ttype\tstatement\tlayer\tenforced_at\twhy_not_stronger\tjustification\tincidents\tmetric\treview_by\tgrace_until\tstatus";
 const MANDATORY_IDS = ["K1", "K2", "K3", "K4", "K5", "risk", "F-irreversible", "F-secrets", "F-attribution", "F-force-push", "F-hookskip"];
@@ -44,6 +45,25 @@ function stepWords(description: string): string[] {
 function emphaticWords(skillText: string): string[] {
   const body = skillText.startsWith("---\n") ? (skillText.split("\n---\n").slice(1).join("\n---\n")) : skillText;
   return body.replace(CODE, "").match(EMPHATIC) ?? [];
+}
+
+function fenceErrors(text: string): string[] {
+  const errors: string[] = [];
+  let open: { marker: string; length: number; line: number } | null = null;
+  for (const [index, line] of splitlines(text).entries()) {
+    const fence = FENCE.exec(line);
+    if (fence === null) continue;
+    const run = fence[2] as string;
+    const info = (fence[3] as string).trim();
+    if (open === null) {
+      open = { marker: run.charAt(0), length: run.length, line: index + 1 };
+    } else if (run.charAt(0) === open.marker && run.length >= open.length) {
+      if (info === "") open = null;
+      else errors.push(`line ${index + 1}: a fence with an info string inside the block opened at line ${open.line} does not nest; lengthen the outer fence`);
+    }
+  }
+  if (open !== null) errors.push(`line ${open.line}: code block is never closed`);
+  return errors;
 }
 
 function skillNames(): string[] {
@@ -96,6 +116,40 @@ describe("frontmatter", () => {
     assert.equal(parseFrontmatter("# Title\nbody\n"), null);
     assert.equal(parseFrontmatter("---\nname: x\n"), null);
     assert.equal(parseFrontmatter("---\nname x\n---\n"), null);
+  });
+});
+
+describe("agent files", () => {
+  it("test_agentFrontmatter_namesFileAndListsTools_forEveryAgent", () => {
+    const paths = agentPaths();
+    assert.ok(paths.length > 0, "no agent files found (a vacuous pass)");
+    for (const path of paths) {
+      const fields = parseFrontmatter(read(path));
+      assert.notEqual(fields, null, `${path} must open with a --- frontmatter block`);
+      assert.equal(fields?.["name"], basename(path, ".md"), path);
+      const description = fields?.["description"] ?? "";
+      assert.ok(description.length > 0 && description.length <= DESCRIPTION_CAP, path);
+      assert.ok((fields?.["tools"] ?? "").length > 0, `${path} must list its tools; without tools: it inherits every tool`);
+    }
+  });
+});
+
+describe("code fences", () => {
+  it("test_markdownFences_closeAndNest_forEverySkillAndAgentFile", () => {
+    const paths = markdownPaths();
+    assert.ok(paths.some((path) => path.endsWith("SKILL.md")) && paths.some((path) => dirname(path) === AGENTS_DIR), "skill or agent markdown missing (a vacuous pass)");
+    for (const path of paths) assert.deepEqual(fenceErrors(read(path)), [], path);
+  });
+
+  it("test_fenceErrors_reportsUnclosedBlock", () => {
+    assert.deepEqual(fenceErrors("text\n```ts\ncode\n"), ["line 2: code block is never closed"]);
+  });
+
+  it("test_fenceErrors_reportsEqualLengthNesting_butAcceptsLongerOuterFence", () => {
+    const equalLength = "```markdown\n```bash\nx\n```\n";
+    const longerOuter = "````markdown\n```bash\nx\n```\n````\n~~~\n```\n~~~\n";
+    assert.deepEqual(fenceErrors(equalLength), ["line 2: a fence with an info string inside the block opened at line 1 does not nest; lengthen the outer fence"]);
+    assert.deepEqual(fenceErrors(longerOuter), []);
   });
 });
 

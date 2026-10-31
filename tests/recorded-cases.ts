@@ -161,20 +161,20 @@ export function excerpt(value: unknown): string {
   return text.length > EXCERPT_CHARACTERS ? text.slice(0, EXCERPT_CHARACTERS) + "…" : text
 }
 
-export function differencesFromRecorded(expected: ObservedDelta, run: Run, root: string): string[] {
+export function differencesFromRecorded(expected: ObservedDelta, run: Run, root: string, recordedLabel = "python"): string[] {
   const actual = deltaOf(root, run)
   const differences: string[] = []
   for (const field of ["code", "stdout", "stderr"] as const) {
-    if (expected[field] !== actual[field]) differences.push(`${field}: python ${excerpt(expected[field])} / node ${excerpt(actual[field])}`)
+    if (expected[field] !== actual[field]) differences.push(`${field}: ${recordedLabel} ${excerpt(expected[field])} / node ${excerpt(actual[field])}`)
   }
   for (const key of new Set([...Object.keys(expected.set), ...Object.keys(actual.set)])) {
-    if (expected.set[key] !== actual.set[key]) differences.push(`file ${key}: python ${excerpt(expected.set[key])} / node ${excerpt(actual.set[key])}`)
+    if (expected.set[key] !== actual.set[key]) differences.push(`file ${key}: ${recordedLabel} ${excerpt(expected.set[key])} / node ${excerpt(actual.set[key])}`)
   }
   const removedExpected = new Set(expected.removed)
   const removedActual = new Set(actual.removed)
   for (const key of new Set([...removedExpected, ...removedActual])) {
     if (removedExpected.has(key) !== removedActual.has(key)) {
-      differences.push(`file ${key}: python ${removedExpected.has(key) ? "removed" : "kept"} / node ${removedActual.has(key) ? "removed" : "kept"}`)
+      differences.push(`file ${key}: ${recordedLabel} ${removedExpected.has(key) ? "removed" : "kept"} / node ${removedActual.has(key) ? "removed" : "kept"}`)
     }
   }
   return differences

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { after, describe, it } from "node:test"
 import { affectedTests, changedSince, CORPUS_TESTS, FULL_SUITE_PATTERNS, fullSuitePaths } from "../../lib/precheck/affected.ts"
+import { SHARD_COUNT } from "../ship-gate/ship-gate-parity.ts"
 import { committedRepo, writeFiles } from "./fixture.ts"
 
 const KEEL_ROOT = join(import.meta.dirname, "..", "..")
@@ -57,7 +58,8 @@ describe("affectedTests", () => {
   })
 
   it("corpusTests_nameReplayFilesThatExistInThisRepo", () => {
-    assert.equal(CORPUS_TESTS.length, 4)
+    assert.equal(CORPUS_TESTS.filter((test) => test.startsWith("tests/ship-gate/ship-gate-parity-shard-")).length, SHARD_COUNT)
+    assert.equal(CORPUS_TESTS.length, SHARD_COUNT + 3)
     for (const test of CORPUS_TESTS) assert.ok(existsSync(join(KEEL_ROOT, test)), `${test} is missing`)
   })
 })

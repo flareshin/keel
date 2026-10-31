@@ -272,6 +272,7 @@ function defaultBranchSeenPast(checkout: string, horizonDate: string): boolean {
   const horizon = Date.parse(horizonDate)
   const tipDate = runGit(checkout, ["log", "-1", "--format=%cI", DEFAULT_BRANCH_REF]).trim()
   if (Date.parse(tipDate) >= horizon) return true
+  if (!gitSucceeds(checkout, ["symbolic-ref", "-q", DEFAULT_BRANCH_REF])) return false
   const branch = runGit(checkout, ["symbolic-ref", DEFAULT_BRANCH_REF]).trim().slice(ORIGIN_BRANCH_PREFIX.length)
   return fetchHeadsOfRepo(checkout)
     .filter((fetchHead) => fs.statSync(fetchHead).mtimeMs >= horizon)

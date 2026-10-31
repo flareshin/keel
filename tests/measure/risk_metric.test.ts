@@ -352,6 +352,16 @@ describe("risk runner", () => {
     assert.equal(itemFor(runMetric(), "light")["rework"]["decided_ships"], 1)
   })
 
+  it("rework_ofAQuietRepo_isNotFetchedPastTheHorizon_whenOriginHeadIsAPlainRef", () => {
+    const { repo } = newRepo()
+    const head = mergedShip(repo)
+    track(repo)
+    box.git(repo, "update-ref", "--no-deref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+    givenFetchHead(repo, "main", 1)
+    givenPass({ head, ts: OLD_SHIP_TS })
+    assert.deepEqual(itemFor(runMetric(), "light")["rework"]["not_computable"], { "default branch not fetched past the horizon": 1 })
+  })
+
   it("rework_ofAQuietRepo_isNotComputable_whenTheLastFetchWasAnotherBranchOrBeforeTheHorizon", () => {
     const { repo } = newRepo()
     const head = mergedShip(repo)

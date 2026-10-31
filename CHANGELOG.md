@@ -190,13 +190,20 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
     `ship-gate-parity.test.ts` checks that every case it replays falls in exactly one shard and that the sample keeps every outcome
     class. `EXPECTED_DIVERGENCES` and the deny-to-pass
     count are gone. `codex/tests/hook-parity.ts` compared the fires lines it replays by content (until its corpus became a golden of the adapter).
-  - The hook parity test (`tests/hooks/hook-parity.test.ts`) replays the 334 recorded runs of the former Python hook tests and
+  - The hook parity test (`tests/hooks/hook-parity.test.ts`) replays a sample of the 334 recorded runs of the former Python hook tests and
     the 736 adversarial payloads and compares each with a golden snapshot of the node hooks' own output (`cases.jsonl` and
     `adversarial.json` under `tests/hooks/fixtures/hook-parity`) instead of the retired Python hooks' recorded answers. The golden
     holds exit code, stdout, stderr and every file written or removed outside `.git` and `remotes`, with the sandbox root and
     checkout paths tokenized and only the `keel-fires.jsonl` and handoff timestamps and the JSON syntax error wording of a
     fire detail masked. An intended behavior change re-records it with `node tests/hooks/hook-parity-record.ts`, and the diff
-    of the two fixtures is reviewed like any other change. The replay reports `golden: N cases, 0 mismatches`.
+    of the two fixtures is reviewed like any other change. The recorder still records all 1,070. The replay drops, at load time,
+    the recorded runs and the 467 wrong-type payloads (named `... wrong-type ...`; native tests cover both) unless a case is the
+    first of its outcome class for its hook within its group (exit code, stdout, stderr without the retry hint, the hook, outcome,
+    rule and detail of the last two fires lines, and the written files' paths and the removed files, with hashes and compact
+    timestamps masked); the 269 JSON limit and spelling payloads stay. `HOOK_PARITY_FULL=1` replays all 1,070. A run reports
+    `golden: N of M cases (sample), K mismatches`, or `golden: N cases, K mismatches` with the switch. The wrong-type test still
+    checks the input digest of all 467 against the golden, and `hook-parity.test.ts` checks that the sample keeps every outcome class.
+    The sample logic shared with the ship-gate replay (the masks, the retry hint, the fires tail) lives in `tests/recorded-sample.ts`.
     `EXPECTED_DIVERGENCES`, the per-payload expected outcomes of the adversarial set
     (`tests/hooks/hook-parity-wrong-type-divergences.ts` and the `divergence` of each JSON limit payload) and the deny-to-pass count are gone.
   - The Codex adapter's parity tests compare it with golden snapshots of its own output instead of the retired Python

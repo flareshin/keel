@@ -8,6 +8,7 @@ import type { ObservedDelta, Run, SnapshotStore } from "../recorded-cases.ts";
 import { KEEL_HOME } from "./helpers.ts";
 import { buildAdversarialSet } from "./hook-parity-adversarial.ts";
 import type { AdversarialCase, AdversarialSet } from "./hook-parity-adversarial.ts";
+import { sampleCases } from "./hook-parity-sample.ts";
 
 export const FIXTURE_DIRECTORY = join(import.meta.dirname, "fixtures", "hook-parity");
 export const RUN_TIMEOUT_MS = 60_000;
@@ -23,7 +24,7 @@ const DECODE_DETAIL = /\b(JsonSyntaxError: |payload is not JSON: )(?!hook payloa
 const DECODE_MESSAGE = "<JSON syntax error message>";
 const GOLDEN_LABEL = "golden";
 
-interface Case {
+export interface ParityCase {
   id: string;
   test: string;
   script: string;
@@ -61,6 +62,8 @@ export interface RecordedStore extends SnapshotStore {
 
 export interface ParityReport {
   cases: number;
+  corpus: number;
+  sampled: boolean;
   adversarial: number;
   mismatches: number;
   perHook: Map<string, number>;
@@ -72,18 +75,22 @@ export interface GoldenOutcomes {
   adversarial: Record<string, RecordedAdversarial>;
 }
 
-export function runParity(): ParityReport {
-  const report: ParityReport = { cases: 0, adversarial: 0, mismatches: 0, perHook: new Map(), details: [] };
-  replayEach((testCase, run) => {
-    const differences = testCase.expected === undefined
-      ? ["no golden outcome for this case; the corpus changed or the case was never recorded"]
-      : judgeCase(testCase.expected, run, testCase.root);
-    report.cases += 1;
-    if (testCase.input !== undefined) report.adversarial += 1;
-    report.perHook.set(testCase.script, (report.perHook.get(testCase.script) ?? 0) + 1);
-    if (differences.length > 0) {
-      report.mismatches += 1;
-      report.details.push(`case ${testCase.id} (${testCase.test}) ${testCase.script}:\n  ${differences.join("\n  ")}`);
+export function runParity(full: boolean = fullCorpusRequested()): ParityReport {
+  const report: ParityReport = { cases: 0, corpus: 0, sampled: !full, adversarial: 0, mismatches: 0, perHook: new Map(), details: [] };
+  withCorpus((corpus) => {
+    report.corpus = corpus.length;
+    for (const testCase of full ? corpus : sampleCases(corpus)) {
+      const run = observe(testCase);
+      const differences = testCase.expected === undefined
+        ? ["no golden outcome for this case; the corpus changed or the case was never recorded"]
+        : judgeCase(testCase.expected, run, testCase.root);
+      report.cases += 1;
+      if (testCase.input !== undefined) report.adversarial += 1;
+      report.perHook.set(testCase.script, (report.perHook.get(testCase.script) ?? 0) + 1);
+      if (differences.length > 0) {
+        report.mismatches += 1;
+        report.details.push(`case ${testCase.id} (${testCase.test}) ${testCase.script}:\n  ${differences.join("\n  ")}`);
+      }
     }
   });
   return report;
@@ -91,28 +98,34 @@ export function runParity(): ParityReport {
 
 export function goldenOutcomes(): GoldenOutcomes {
   const golden: GoldenOutcomes = { recorded: new Map(), adversarial: {} };
-  replayEach((testCase, run) => {
-    const expected = goldenOf(run, testCase.root);
-    if (testCase.input === undefined) golden.recorded.set(testCase.id, expected);
-    else golden.adversarial[testCase.test] = { input: testCase.input, expected };
+  withCorpus((corpus) => {
+    for (const testCase of corpus) {
+      const expected = goldenOf(observe(testCase), testCase.root);
+      if (testCase.input === undefined) golden.recorded.set(testCase.id, expected);
+      else golden.adversarial[testCase.test] = { input: testCase.input, expected };
+    }
   });
   return golden;
 }
 
-function replayEach(visit: (testCase: Case, run: Run) => void): void {
+export function fullCorpusRequested(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env["HOOK_PARITY_FULL"] === "1";
+}
+
+export function withCorpus<T>(use: (corpus: ParityCase[]) => T): T {
   const base = realpathSync(mkdtempSync(join(tmpdir(), "keel-parity-")));
   const adversarial = buildAdversarialSet();
   try {
     const store = JSON.parse(readFileSync(join(FIXTURE_DIRECTORY, "snapshots.json"), "utf8")) as RecordedStore;
     const sandboxRoot = paddedRoot(realpathSync(tmpdir()), store.rootLength);
-    for (const testCase of [...recordedCases(store, sandboxRoot), ...adversarialCases(adversarial, join(base, "adversarial"))]) visit(testCase, observe(testCase));
+    return use([...recordedCases(store, sandboxRoot), ...adversarialCases(adversarial, join(base, "adversarial"))]);
   } finally {
     adversarial.sandbox.close();
     rmSync(base, { recursive: true, force: true });
   }
 }
 
-function recordedCases(store: RecordedStore, sandboxRoot: string): Case[] {
+function recordedCases(store: RecordedStore, sandboxRoot: string): ParityCase[] {
   const lines = readFileSync(join(FIXTURE_DIRECTORY, "cases.jsonl"), "utf8").split("\n").filter((line) => line !== "");
   return lines.map((line) => {
     const recorded = JSON.parse(line) as RecordedCase;
@@ -128,7 +141,7 @@ export function adversarialInputDigest(adversarialCase: Pick<AdversarialCase, "s
   return digestOf(tokenized(JSON.stringify([adversarialCase.script, adversarialCase.stdin, adversarialCase.args, adversarialCase.cwd]), root));
 }
 
-function adversarialCases(adversarial: AdversarialSet, snapshot: string): Case[] {
+function adversarialCases(adversarial: AdversarialSet, snapshot: string): ParityCase[] {
   const sandbox = adversarial.sandbox;
   const recorded = JSON.parse(readFileSync(join(FIXTURE_DIRECTORY, "adversarial.json"), "utf8")) as Record<string, RecordedAdversarial>;
   copyTree(sandbox.root, snapshot);
@@ -143,7 +156,7 @@ function adversarialCases(adversarial: AdversarialSet, snapshot: string): Case[]
   });
 }
 
-function observe(testCase: Case): Run {
+function observe(testCase: ParityCase): Run {
   const command = [process.execPath, join(KEEL_HOME, testCase.script), ...testCase.args];
   return runInSandbox(testCase.root, testCase.prepare, { command, stdin: testCase.stdin, env: testCase.env, cwd: testCase.cwd, timeoutMs: RUN_TIMEOUT_MS }, readTree);
 }
@@ -234,7 +247,8 @@ export function judgeCase(expected: ObservedDelta, run: Run, root: string): stri
 }
 
 export function summary(report: ParityReport): string {
-  return `golden: ${report.cases} cases, ${report.mismatches} mismatches`;
+  if (!report.sampled) return `golden: ${report.cases} cases, ${report.mismatches} mismatches`;
+  return `golden: ${report.cases} of ${report.corpus} cases (sample), ${report.mismatches} mismatches`;
 }
 
 if (import.meta.main) {

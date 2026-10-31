@@ -7,7 +7,8 @@ import type { ObservedDelta, Run, SnapshotStore } from "../recorded-cases.ts";
 import { normalizeRepoKey } from "../../lib/evidence/registry.ts";
 import { isJsonObject, stringifySorted } from "../../measure/lib/measurekit/json.ts";
 import { KEEL_HOME } from "./helpers.ts";
-import { FIRES_LOG_NAME, sampleCorpus } from "./ship-gate-parity-sample.ts";
+import { FIRES_LOG_NAME } from "../recorded-sample.ts";
+import { sampleCorpus } from "./ship-gate-parity-sample.ts";
 
 export const FIXTURE_DIRECTORY = join(import.meta.dirname, "fixtures", "ship-gate-parity");
 export const SUITES = ["python-keel", "ts-keel", "message-contract", "extra"] as const;

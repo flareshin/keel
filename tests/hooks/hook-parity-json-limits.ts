@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { MAX_JSON_DEPTH } from "../../measure/lib/measurekit/json.ts";
-import { AGENT_ID, basePayload, bash, GIT_GUARD, HANDOFF, KEEL_EVIDENCE_LINE, MODEL_ASSIGN, preToolUse, REPORT_GATE, subagentStop } from "./helpers.ts";
+import { AGENT_ID, bash, GIT_GUARD, KEEL_EVIDENCE_LINE, MODEL_ASSIGN, preToolUse, REPORT_GATE, subagentStop } from "./helpers.ts";
 import type { HookSandbox } from "./helpers.ts";
 import type { AdversarialCase } from "./hook-parity-adversarial.ts";
 
@@ -71,7 +71,6 @@ export function jsonLimitCases(sandbox: HookSandbox, repo: string): AdversarialC
     ...payloadFamilyCases({ name: "git-guard quoted git word", script: GIT_GUARD, cwd: repo, payload: bash("\"g\"it commit -m 'Co-Authored-By: Claude'", repo) }),
     ...payloadFamilyCases({ name: "git-guard unguarded command", script: GIT_GUARD, cwd: repo, payload: bash("ls", repo) }),
     ...payloadFamilyCases({ name: "model-assign", script: MODEL_ASSIGN, cwd: sandbox.root, payload: modelAssignPayload(sandbox.root) }),
-    ...payloadFamilyCases({ name: "handoff", script: HANDOFF, cwd: repo, payload: { ...basePayload("PreCompact", repo, "/data/projects/p/t.jsonl", false), trigger: "auto" }, args: ["--auto"] }),
     ...payloadFamilyCases({ name: "report-gate handback", script: REPORT_GATE, cwd: sandbox.root, payload: handbackPayload(sandbox, UNPROVEN_REPORT) }),
     ...modelAssignToolInputCases(sandbox.root),
     ...gitGuardSettingsCases(repo),

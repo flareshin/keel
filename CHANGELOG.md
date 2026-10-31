@@ -173,17 +173,25 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
   - `stringifySorted` and `parseJsonKeepingIntegers` (`measure/lib/measurekit/json.ts`) handle the full 10,000 level nesting
     without running out of stack, except text nested past about two thousand levels that also holds an integer beyond
     2^53: parsing it runs out of stack, so an evidence file like that is an `EvidenceError` and stdin like that exits 70.
-  - The ship-gate parity tests replay the 1,757 recorded hook runs, split over eight shard files
+  - The ship-gate parity tests replay a sample of the 1,757 recorded hook runs, split over eight shard files
     (`tests/ship-gate/ship-gate-parity-shard-<n>.test.ts`) that `node --test` runs in parallel, and compare each with a golden
     snapshot of the node hook's own output (`cases.jsonl.gz`) instead of the retired Python hook's recorded answers. The golden
     holds exit code, stdout, stderr and every file written or removed outside `.git` and `remotes` (inside `.git` only `HEAD`,
     `config`, `packed-refs`, `FETCH_HEAD` and `refs`), with the sandbox root and checkout paths tokenized and only the
     `keel-fires.jsonl` timestamp, `cc_version`, the checkout's repo key and the JSON syntax error wording masked. An intended behavior change re-records it with
     `node tests/ship-gate/ship-gate-parity-record.ts`, and the diff of `cases.jsonl.gz` is reviewed like any other change.
-    `ship-gate-parity.test.ts` checks that every case falls in exactly one shard. `EXPECTED_DIVERGENCES` and the deny-to-pass
+    The recorder still records all 1,757. The replay drops, from the golden at load time and before sharding, the cases that
+    tests of their own already cover: a `python-keel` case unless its masked outcome differs from its `ts-keel` twin (then both
+    stay), and a case of the `ts-keel` scenario tests, of its `everySpelling` test, of its bundle test or of the `merge_spellings`
+    payloads with a complete `gh` answer unless it is the first of its outcome class within that group (exit code, stderr without
+    the retry hint, the hook, outcome, rule and detail of the last two fires lines, and the written and removed files, with hashes
+    and timestamps masked); every other case stays. `SHIP_GATE_PARITY_FULL=1` replays all 1,757, and is needed to replay a case
+    the sample dropped with `SHIP_GATE_PARITY_CASES`: a filter that matches recorded cases but none the sample kept fails and names the switch. A run reports `golden: N of M cases (sample), K mismatches`, or `golden: N cases, K mismatches` with the switch.
+    `ship-gate-parity.test.ts` checks that every case it replays falls in exactly one shard and that the sample keeps every outcome
+    class. `EXPECTED_DIVERGENCES` and the deny-to-pass
     count are gone. `codex/tests/hook-parity.ts` compared the fires lines it replays by content (until its corpus became a golden of the adapter).
-  - The hook parity test (`tests/hooks/hook-parity.test.ts`) replays the 344 recorded runs of the former Python hook tests and
-    the 784 adversarial payloads and compares each with a golden snapshot of the node hooks' own output (`cases.jsonl` and
+  - The hook parity test (`tests/hooks/hook-parity.test.ts`) replays the 334 recorded runs of the former Python hook tests and
+    the 736 adversarial payloads and compares each with a golden snapshot of the node hooks' own output (`cases.jsonl` and
     `adversarial.json` under `tests/hooks/fixtures/hook-parity`) instead of the retired Python hooks' recorded answers. The golden
     holds exit code, stdout, stderr and every file written or removed outside `.git` and `remotes`, with the sandbox root and
     checkout paths tokenized and only the `keel-fires.jsonl` and handoff timestamps and the JSON syntax error wording of a
@@ -217,14 +225,14 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
   CRLF into a newline. An agent definition's frontmatter still opens and closes with `---` on a CRLF line. `git-guard`
   still turns a lone CR and a CRLF into a newline in commit message files (`git commit -F`, `gh pr --body-file`), so an
   attribution phrase wrapped at one is denied as before.
-- The hooks (`git-guard`, `report-gate`, `handoff`, `model-assign`, `env-preflight`) read JSON with `JSON.parse` behind a
+- The hooks (`git-guard`, `report-gate`, `model-assign`, `env-preflight`) read JSON with `JSON.parse` behind a
   10,000 level nesting bound (`hooks/lib/hookkit/json.ts`). What stays the same: text nested past 10,000 levels raises
   `RecursionError`, now also when it is malformed as well, so the hooks that fail closed on it still do; malformed JSON
   takes the same path in every hook as before; the JSON the hooks send on (the report-gate review request) is written
   by the same `dumpsAscii`.
 - What may differ and does, in the hooks:
   - A stdin payload holding `NaN`, `Infinity` or `-Infinity` is malformed JSON (Python accepted it): `git-guard`
-    refuses it as an internal error when the text looks like a guarded command and passes it otherwise, `report-gate` logs a K2 `error` fire and passes, `handoff`, `model-assign`
+    refuses it as an internal error when the text looks like a guarded command and passes it otherwise, `report-gate` logs a K2 `error` fire and passes, `model-assign`
     and `env-preflight` pass without acting. A report-gate state file holding one counts as unreadable, as other
     malformed state does.
   - An integer of more than 4,300 digits is no longer refused; it reads as the nearest double (`Infinity` past the
@@ -309,8 +317,6 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
     - `env-preflight`: a `command` that is not text logs an `error` fire and passes; a `cwd` that is not text is the process
       directory, so a `mvn` without the JDK pin is denied there [a number, `true`, a list or an object named a directory that
       does not exist, and the build passed].
-    - `handoff`: a `trigger` or `transcript_path` that is not text is written as `?`, and a `cwd` that is not text is the process
-      directory [the repr of the value was written, or the snapshot was skipped].
     - Codex adapter (`keel_partial`, `replace_all`, `cwd`): see the Codex section above.
     - `expandUser` expands `~`, `~/...` and `~<name>` only for the current account (`~root/x` stays `~root/x` and is joined to
       the working directory); it no longer asks directory services or `/etc/passwd` for other accounts. `shell-parity` lists the
@@ -328,7 +334,7 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
     in N lists` payloads below the depth bound were listed too: a command that is a list used to be judged on its Python `str()`
     text, in which a quote inside an element let the rest of the element run as shell words (`F-hookskip` denied it), and it is
     now refused as an internal error. The run reported 344 recorded + 784 adversarial cases, 465 listed divergences (137 before),
-    0 mismatches, deny-to-pass 0 (the golden run now reports `golden: 1128 cases, 0 mismatches`); fire logs written with compact JSON (`ship-gate`) now have their `ts` masked as well.
+    0 mismatches, deny-to-pass 0 (the golden run now reports `golden: 1070 cases, 0 mismatches`); fire logs written with compact JSON (`ship-gate`) now have their `ts` masked as well.
     `tests/ship-gate/ship-gate-parity.test.ts` listed 61 more rows (146 in all): a `command`, `cwd` or `session_id` that is not
     text, and `gh` answers whose `statusCheckRollup`, a check or `baseRefName` has the wrong type; 1,757 cases, 0 mismatches,
     deny-to-pass 0 (those listings are replaced by the golden snapshot). `codex/tests/hook-parity-corpus.ts` adds 42 wrong-type payloads (recorded from the adapter as it was) and listed
@@ -434,6 +440,16 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
   and `tests/ship-gate/parity.test.ts`. The outcomes they recorded live on in `tests/fixtures/evidence/{cross-impl,helper-outcomes}.json`
   and in `tests/ship-gate/{cross_impl,cross_impl_codex,helper_outcomes,native_input}.test.ts`; the cases whose outcome changed are
   tested with explicit expectations.
+- The `--auto` mode of the `handoff` hook (the PreCompact snapshot, `hooks/handoff/handoff.ts`), dead since its registration went
+  with the retired ledger row C-handoff. `handoff --auto` is now an unknown mode like any other: the CLI records its words as the
+  note, so a stale PreCompact entry for it in a settings file would overwrite the handoff note with `--auto` (the CLI modes
+  `--path`, `--status`, `--read` and `--clear` and the note mode are unchanged). `--status` still reads a note written by an older
+  version whose resume point is only an `(auto-snapshot` line as no resume point. Removed with it: the `AutoSnapshotTest` tests in
+  `tests/hooks/handoff.test.ts` (a test of the legacy note replaces the CLI one), the `handoff` payload families of
+  `tests/hooks/hook-parity-{adversarial,json-limits,wrong-types}.ts` and `tests/hooks/wrong-types.test.ts`, the golden runs 0202 to
+  0210 and 0217 with their unreferenced snapshots, the 48 `handoff` entries of the golden adversarial outcomes, and the fixtures
+  `tests/hooks/fixtures/{C-handoff.bad,handoff.good}.json` (the smoke check reads a bad fixture per row in force and a good one per
+  hook with such a row, and C-handoff is retired).
 
 ### Upgrading
 - Codex: run `codex/bin/link --check`. When it lists `hooks.json` or the state file, the old files hold a non-ASCII

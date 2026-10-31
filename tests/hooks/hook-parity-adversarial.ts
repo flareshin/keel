@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import {
-  AGENT_ID, basePayload, bash, ENV_PREFLIGHT, GIT_GUARD, HANDOFF, HookSandbox, KEEL_EVIDENCE_LINE, MODEL_ASSIGN, preToolUse, REPORT_GATE, SESSION_ID,
+  AGENT_ID, bash, ENV_PREFLIGHT, GIT_GUARD, HookSandbox, KEEL_EVIDENCE_LINE, MODEL_ASSIGN, preToolUse, REPORT_GATE, SESSION_ID,
 } from "./helpers.ts";
 import { jsonLimitCases } from "./hook-parity-json-limits.ts";
 import { wrongTypeCases } from "./hook-parity-wrong-types.ts";
@@ -41,7 +41,6 @@ export function buildAdversarialSet(): AdversarialSet {
     ...reportGateCases(sandbox),
     ...envPreflightCases(repo),
     ...modelAssignCases(sandbox.root),
-    ...handoffCases(repo),
     ...jsonLimitCases(sandbox, repo),
     ...wrongTypeCases(sandbox, repo),
   ];
@@ -141,15 +140,6 @@ function modelAssignCases(cwd: string): AdversarialCase[] {
   return [
     ...prompts.flatMap((prompt, index) => casesFor(`model-assign prompt ${index}`, MODEL_ASSIGN, cwd, preToolUse("Agent", { description: "Find", prompt }, cwd))),
     rawCase("model-assign non-finite prompt", MODEL_ASSIGN, cwd, nonFinite),
-  ];
-}
-
-function handoffCases(repo: string): AdversarialCase[] {
-  const payload = { ...basePayload("PreCompact", repo, "/data/projects/p/café.jsonl", false), trigger: "auto", custom_instructions: "日本" };
-  const nonFinite = withNonFiniteLiterals({ ...payload, trigger: NAN_TOKEN, transcript_path: INFINITY_TOKEN });
-  return [
-    ...casesFor("handoff auto snapshot", HANDOFF, repo, payload, ["--auto"]),
-    { ...rawCase("handoff non-finite trigger", HANDOFF, repo, nonFinite), args: ["--auto"] },
   ];
 }
 

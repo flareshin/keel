@@ -3,22 +3,18 @@ import { dirname } from "node:path";
 import { dataDir } from "../lib/hookkit/env.ts";
 import { FireLog, utcNow } from "../lib/hookkit/fires.ts";
 import * as protocol from "../lib/hookkit/protocol.ts";
-import type { Payload } from "../lib/hookkit/protocol.ts";
 import { basename, joinPath } from "../lib/hookkit/paths.ts";
 import { dumpsAscii } from "../lib/hookkit/jsonout.ts";
-import { getField, isNonEmptyString } from "../lib/hookkit/fields.ts";
-import { parsePayload } from "../lib/hookkit/json.ts";
-import { isDirectory, isFile } from "../lib/hookkit/files.ts";
-import { describeError, RecursionError, ValueError } from "../lib/hookkit/errors.ts";
-import { printLine, readStdin, writeStderr } from "../lib/hookkit/stdio.ts";
-import { rstripChar, splitlines, trimCharacters, trimSpace } from "../lib/hookkit/text.ts";
+import { isFile } from "../lib/hookkit/files.ts";
+import { printLine, writeStderr } from "../lib/hookkit/stdio.ts";
+import { splitlines, trimCharacters, trimSpace } from "../lib/hookkit/text.ts";
 import { findToplevel, findUpstream, gitOutput } from "../lib/hookkit/repo.ts";
 
 const HOOK = "handoff";
 const RULE = "C-handoff";
 const RESUME_HEADING = "## Resume point";
 const LOCATION_HEADING = "## Location";
-const AUTO_PREFIX = "(auto-snapshot";
+const LEGACY_AUTO_SNAPSHOT_PREFIX = "(auto-snapshot";
 const NOT_GIVEN_PREFIX = "(not given";
 const EMPTY_NOTE = "(not given — pass the resume point as an argument)";
 const SUBMODULE_GIT_DIR_RE = /\/\.git\/(worktrees\/[^/]+\/)?modules\//;
@@ -46,7 +42,6 @@ class RepoPlace {
 
 function main(argv: string[]): number {
   const mode = argv[0] ?? "";
-  if (mode === "--auto") return snapshotBeforeCompaction(readStdin());
   const toplevel = findToplevel(process.cwd());
   if (toplevel === null) {
     writeStderr(`handoff: run this inside a git repo (currently: ${process.cwd()})\n`);
@@ -63,51 +58,15 @@ function main(argv: string[]): number {
     if (isFile(place.file)) rmSync(place.file);
     printLine(`handoff deleted: ${place.file}`);
   } else {
-    writeHandoff(place, argv.join(" ") || EMPTY_NOTE, null);
+    writeHandoff(place, argv.join(" ") || EMPTY_NOTE);
   }
   return protocol.EXIT_PASS;
 }
 
-function snapshotBeforeCompaction(raw: string): number {
-  let payload: Payload = {};
-  try {
-    payload = parsePayload(raw);
-  } catch (error) {
-    if (error instanceof RecursionError) {
-      new FireLog(HOOK, null).append(RULE, "error", { detail: describeError(error) });
-      return protocol.EXIT_PASS;
-    }
-    if (!(error instanceof ValueError)) throw error;
-  }
-  const session = getField(payload, "session_id") as string | null;
-  const fires = new FireLog(HOOK, session);
-  try {
-    const cwd = protocol.cwdOrProcessDirectory(payload);
-    const toplevel = isDirectory(cwd) ? findToplevel(cwd) : null;
-    if (toplevel === null) return protocol.EXIT_PASS;
-    const place = new RepoPlace(toplevel);
-    const trigger = textOrQuestionMark(getField(payload, "trigger"));
-    const transcript = textOrQuestionMark(getField(payload, "transcript_path"));
-    let note = `${AUTO_PREFIX} before ${trigger} compaction · transcript: ${transcript})`;
-    if (hasResumePoint(place.file)) {
-      if (!writtenHere(place)) return protocol.EXIT_PASS;
-      note = rstripChar(resumeNote(place.file), "\n") + "\n" + note;
-    }
-    writeHandoff(place, note, session);
-  } catch (error) {
-    fires.append(RULE, "error", { detail: describeError(error) });
-  }
-  return protocol.EXIT_PASS;
-}
-
-function textOrQuestionMark(value: unknown): string {
-  return isNonEmptyString(value) ? value : "?";
-}
-
-function writeHandoff(place: RepoPlace, note: string, session: string | null): void {
+function writeHandoff(place: RepoPlace, note: string): void {
   mkdirSync(dirname(place.file), { recursive: true });
   writeFileSync(place.file, renderHandoff(place, note), "utf8");
-  new FireLog(HOOK, session).append(RULE, "record", { detail: `snapshot ${basename(place.file)}` });
+  new FireLog(HOOK, null).append(RULE, "record", { detail: `snapshot ${basename(place.file)}` });
   printLine(`handoff recorded: ${place.file}`);
 }
 
@@ -143,7 +102,7 @@ function resumeNote(path: string): string {
   for (const line of splitlines(readFileSync(path, "utf8"))) {
     if (line === RESUME_HEADING) inside = true;
     else if (line === LOCATION_HEADING) inside = false;
-    else if (inside && !line.startsWith(AUTO_PREFIX)) noteLines.push(line);
+    else if (inside && !line.startsWith(LEGACY_AUTO_SNAPSHOT_PREFIX)) noteLines.push(line);
   }
   return trimCharacters(noteLines.join("\n"), "\n") + "\n";
 }
@@ -151,19 +110,7 @@ function resumeNote(path: string): string {
 function hasResumePoint(path: string): boolean {
   if (!isFile(path)) return false;
   const first = splitlines(resumeNote(path)).find((line) => trimSpace(line) !== "") ?? "";
-  return first !== "" && !first.startsWith(AUTO_PREFIX) && !first.startsWith(NOT_GIVEN_PREFIX);
-}
-
-function writtenHere(place: RepoPlace): boolean {
-  const recorded: string[] = [];
-  let inside = false;
-  for (const line of splitlines(readFileSync(place.file, "utf8"))) {
-    if (line === LOCATION_HEADING) inside = true;
-    else if (line.startsWith("## ")) inside = false;
-    else if (inside && (line.startsWith("- Branch: ") || line.startsWith("- Working worktree: "))) recorded.push(line);
-  }
-  const expected = place.locationLines();
-  return recorded.length === expected.length && recorded.every((line, index) => line === expected[index]);
+  return first !== "" && !first.startsWith(LEGACY_AUTO_SNAPSHOT_PREFIX) && !first.startsWith(NOT_GIVEN_PREFIX);
 }
 
 function mainRepo(toplevel: string): string {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
@@ -1028,63 +1028,116 @@ describe("SubprocessTimeoutTest", () => {
   it("boundaryScan_raisesGuardError_whenTheScannerOutlastsItsTimeout", () => {
     const scanner = slowScript("boundary", "sleep 30; echo '{}'\n");
     withEnv({ KEEL_BOUNDARY: scanner }, () => {
-      assert.throws(() => scanStagedSecrets(repo, null, 0.5), GuardError);
+      assert.throws(() => scanStagedSecrets(repo, null, {}, 0.5), GuardError);
     });
   });
 });
 
 describe("SameCallStagingTest", () => {
+  const SECRET_LINE = `aws_key = ${"AKIA"}${"ABCDEFGHIJKLMNOP"}\n`;
+  const PROCEDURAL = "stage in a separate call, then commit";
   let repo: string;
 
   beforeEach(() => {
+    sandbox.env["KEEL_BOUNDARY"] = join(KEEL_HOME, "measure", "boundary");
     repo = sandbox.makeRepo("example", "app");
-    sandbox.write(join(repo, "s.txt"), "SECRET\n");
+    sandbox.write(join(repo, "clean.txt"), "nothing secret\n");
+    sandbox.write(join(repo, "leak.txt"), SECRET_LINE);
   });
 
-  function assertDeniedForSameCallStaging(result: HookResult): void {
+  function assertSecretDenied(result: HookResult, file: string): void {
     assertDenied(result, "F-secrets");
-    assert.ok(result.stderr.includes("stage in a separate call, then commit"), result.stderr);
+    assert.ok(result.stderr.includes(`${file}:1 (generic:aws-access-key)`), result.stderr);
+    assert.ok(!result.stderr.includes(PROCEDURAL), result.stderr);
   }
 
-  it("commit_deniedWithFSecrets_whenAddChainedBeforeIt", () => {
-    assertDeniedForSameCallStaging(guard("git add s.txt && git commit -m wip", repo));
+  function assertProceduralDenied(result: HookResult): void {
+    assertDenied(result, "F-secrets");
+    assert.ok(result.stderr.includes(PROCEDURAL), result.stderr);
+  }
+
+  function stagedNames(): string {
+    return sandbox.git(repo, "diff", "--cached", "--name-only");
+  }
+
+  function commitTracked(name: string, text: string): void {
+    sandbox.commitFile(repo, name, "start\n", `Add ${name}`);
+    sandbox.write(join(repo, name), text);
+  }
+
+  it("commit_passes_whenCleanFileIsAddedInTheSameCall", () => {
+    assertPassed(guard("git add clean.txt && git commit -m wip", repo));
   });
 
-  it("commit_logsTheSameCallStagingDenyAsProcedural_notAsADetection", () => {
-    guard("git add s.txt && git commit -m wip", repo);
-    assert.deepEqual(assertFired(sandbox, "F-secrets", "deny", "git-guard").map((fire) => fire["kind"]), ["procedural"]);
+  it("commit_deniedWithTheSecret_whenSecretFileIsAddedInTheSameCall", () => {
+    assertSecretDenied(guard("git add leak.txt && git commit -m wip", repo), "leak.txt");
   });
 
-  it("commit_denied_whenAddAllChainedBeforeIt", () => {
-    assertDeniedForSameCallStaging(guard("git add -A && git commit -m wip", repo));
+  it("commit_deniedWithTheSecret_whenAddAllChainedBeforeIt", () => {
+    assertSecretDenied(guard("git add -A && git commit -m wip", repo), "leak.txt");
   });
 
-  it("commit_denied_whenAddChainedAfterCdIntoRepo", () => {
-    assertDeniedForSameCallStaging(guard(`cd ${repo}; git add s.txt; git commit -m wip`));
+  it("commit_deniedWithTheSecret_whenAddChainedAfterCdIntoRepo", () => {
+    assertSecretDenied(guard(`cd ${repo}; git add leak.txt; git commit -m wip`), "leak.txt");
   });
 
-  it("commit_denied_whenAPlainShellVariableNamesTheRepoForAddAndCommit", () => {
-    assertDeniedForSameCallStaging(guard(`R=${repo}; git -C "$R" add s.txt && git -C "$R" commit -m wip`));
+  it("commit_deniedWithTheSecret_whenAPlainShellVariableNamesTheRepoForAddAndCommit", () => {
+    assertSecretDenied(guard(`R=${repo}; git -C "$R" add leak.txt && git -C "$R" commit -m wip`), "leak.txt");
+  });
+
+  it("commit_deniedWithTheSecret_whenAddRunsFromASubdirectory", () => {
+    sandbox.write(join(repo, "sub", "inner.txt"), SECRET_LINE);
+    assertSecretDenied(guard("git add inner.txt && git commit -m wip", join(repo, "sub")), "sub/inner.txt");
+  });
+
+  it("commit_deniedWithTheSecret_whenAnEarlierStagedFileHoldsItAndACleanFileIsAdded", () => {
+    sandbox.git(repo, "add", "leak.txt");
+    assertSecretDenied(guard("git add clean.txt && git commit -m wip", repo), "leak.txt");
+  });
+
+  it("commit_logsTheSecretDenyAsADetection_notAsProcedural", () => {
+    guard("git add leak.txt && git commit -m wip", repo);
+    assert.deepEqual(assertFired(sandbox, "F-secrets", "deny", "git-guard").map((fire) => fire["kind"]), [undefined]);
+  });
+
+  it("commit_passes_whenAllFlagCommitsACleanTrackedEdit", () => {
+    commitTracked("t.txt", "changed\n");
+    assertPassed(guard("git commit -am wip", repo));
+  });
+
+  it("commit_deniedWithTheSecret_whenAllFlagCommitsATrackedEditHoldingIt", () => {
+    commitTracked("t.txt", SECRET_LINE);
+    assertSecretDenied(guard("git commit -am wip", repo), "t.txt");
+  });
+
+  it("commit_deniedWithTheSecret_whenLongAllFlag", () => {
+    commitTracked("t.txt", SECRET_LINE);
+    assertSecretDenied(guard("git commit --all -m wip", repo), "t.txt");
+  });
+
+  it("commit_deniedWithTheSecret_whenPathspecOperand", () => {
+    commitTracked("t.txt", SECRET_LINE);
+    assertSecretDenied(guard("git commit -m wip -- t.txt", repo), "t.txt");
+  });
+
+  it("commit_deniedWithTheSecret_whenIncludeWithPathspec", () => {
+    commitTracked("t.txt", SECRET_LINE);
+    assertSecretDenied(guard("git commit -i t.txt -m wip", repo), "t.txt");
+  });
+
+  it("commit_deniedWithTheSecret_whenPathspecComesFromAFile", () => {
+    commitTracked("t.txt", SECRET_LINE);
+    sandbox.write(join(repo, "paths.lst"), "t.txt\n");
+    assertSecretDenied(guard("git commit --pathspec-from-file=paths.lst -m wip", repo), "t.txt");
+  });
+
+  it("commit_passes_whenPathspecOperandIsClean", () => {
+    commitTracked("t.txt", "changed\n");
+    assertPassed(guard("git commit -m wip -- t.txt", repo));
   });
 
   it("commit_passes_whenRmChainedBeforeIt", () => {
     assertPassed(guard(`cd ${repo}; git rm -q README.txt; git commit -m wip`));
-  });
-
-  it("commit_denied_whenAllFlagClusteredWithMessage", () => {
-    assertDeniedForSameCallStaging(guard("git commit -am wip", repo));
-  });
-
-  it("commit_denied_whenLongAllFlag", () => {
-    assertDeniedForSameCallStaging(guard("git commit --all -m wip", repo));
-  });
-
-  it("commit_denied_whenPathspecOperand", () => {
-    assertDeniedForSameCallStaging(guard("git commit -m wip -- s.txt", repo));
-  });
-
-  it("commit_denied_whenIncludeWithPathspec", () => {
-    assertDeniedForSameCallStaging(guard("git commit -i s.txt -m wip", repo));
   });
 
   it("commit_passes_whenMessageValueIsAttachedToFlag", () => {
@@ -1092,18 +1145,153 @@ describe("SameCallStagingTest", () => {
   });
 
   it("commit_passes_whenFilesWereStagedInEarlierCall", () => {
-    sandbox.git(repo, "add", "s.txt");
+    sandbox.git(repo, "add", "clean.txt");
     assertPassed(guard('git commit -m "Add s" --author "A <a@example.invalid>"', repo));
   });
 
   it("commit_passes_whenAddRunsAfterCommit", () => {
-    assertPassed(guard("git commit --amend --no-edit && git add s.txt", repo));
+    assertPassed(guard("git commit --amend --no-edit && git add leak.txt", repo));
   });
 
   it("commit_passes_whenEarlierAddIsInAnotherRepo", () => {
     const other = sandbox.makeRepo("example", "other");
-    sandbox.write(join(other, "o.txt"), "o\n");
+    sandbox.write(join(other, "o.txt"), SECRET_LINE);
     assertPassed(guard(`git -C ${other} add o.txt && git commit -m wip`, repo));
+  });
+
+  it("commit_deniedWithTheSecret_inALinkedWorktree", () => {
+    const linked = join(sandbox.root, "linked");
+    sandbox.git(repo, "worktree", "add", "-q", "-b", "side", linked);
+    sandbox.write(join(linked, "leak.txt"), SECRET_LINE);
+    assertSecretDenied(guard("git add leak.txt && git commit -m wip", linked), "leak.txt");
+    assert.equal(sandbox.git(linked, "diff", "--cached", "--name-only"), "");
+  });
+
+  it("commit_denied_whenInteractiveAddIsChainedBeforeIt", () => {
+    assertProceduralDenied(guard("git add -p && git commit -m wip", repo));
+    assertProceduralDenied(guard("git add --patch leak.txt && git commit -m wip", repo));
+    assertProceduralDenied(guard("git add -Ap && git commit -m wip", repo));
+    assertProceduralDenied(guard("git add -i && git commit -m wip", repo));
+    assertProceduralDenied(guard("git add --interactive && git commit -m wip", repo));
+    assertProceduralDenied(guard("git add -e && git commit -m wip", repo));
+  });
+
+  it("commit_logsTheInteractiveAddDenyAsProcedural_notAsADetection", () => {
+    guard("git add -p && git commit -m wip", repo);
+    assert.deepEqual(assertFired(sandbox, "F-secrets", "deny", "git-guard").map((fire) => fire["kind"]), ["procedural"]);
+  });
+
+  it("commit_denied_whenTheCommitItselfStagesInteractively", () => {
+    commitTracked("t.txt", "changed\n");
+    assertProceduralDenied(guard("git commit -p -m wip", repo));
+    assertProceduralDenied(guard("git commit --patch -m wip", repo));
+    assertProceduralDenied(guard("git commit --interactive -m wip", repo));
+  });
+
+  it("commit_denied_whenTheAddNamesAFileThroughARunTimeExpansion", () => {
+    assertProceduralDenied(guard('git add "$F" && git commit -m wip', repo));
+    assertProceduralDenied(guard("git add $(ls) && git commit -m wip", repo));
+    assertProceduralDenied(guard('F=clean.txt; git add "$F" && git commit -m wip', repo));
+  });
+
+  it("commit_denied_whenThePathspecOperandIsARunTimeExpansion", () => {
+    commitTracked("t.txt", "changed\n");
+    assertProceduralDenied(guard('git commit -m wip -- "$F"', repo));
+  });
+
+  it("commit_denied_whenAnEarlierAddRunsInAnUnresolvedDirectory", () => {
+    assertProceduralDenied(guard('git -C "$SOMEWHERE" add clean.txt && git commit -m wip', repo));
+  });
+
+  it("commit_denied_whenTheAddCarriesAnEnvironmentAssignment", () => {
+    assertProceduralDenied(guard("GIT_DIR=elsewhere git add clean.txt && git commit -m wip", repo));
+  });
+
+  it("commit_denied_whenTheAddCarriesAGitGlobalOptionOtherThanC", () => {
+    assertProceduralDenied(guard("git --git-dir=elsewhere add clean.txt && git commit -m wip", repo));
+  });
+
+  it("commit_denied_whenThePathspecListComesFromStandardInput", () => {
+    commitTracked("t.txt", "changed\n");
+    assertProceduralDenied(guard("git commit --pathspec-from-file=- -m wip", repo));
+  });
+
+  it("commit_denied_whenTheAddReadsItsPathspecListFromStandardInput", () => {
+    sandbox.write(join(repo, "paths.lst"), "leak.txt\n");
+    assertProceduralDenied(guard("git add --pathspec-from-file=- < paths.lst && git commit -m wip", repo));
+  });
+
+  it("commit_denied_whenAnEarlierStepRedirectsTheSecretIntoATrackedFile", () => {
+    commitTracked("t.txt", "start\n");
+    assertProceduralDenied(guard("cat leak.txt > t.txt && git commit -am wip", repo));
+  });
+
+  it("commit_denied_whenAnEarlierStepCopiesTheSecretBeforeTheAdd", () => {
+    assertProceduralDenied(guard("cp leak.txt clean.txt && git add clean.txt && git commit -m wip", repo));
+  });
+
+  it("commit_denied_whenAnEarlierStepRunsAProgramThatMayWriteFiles", () => {
+    assertProceduralDenied(guard("python3 gen.py && git add -A && git commit -m wip", repo));
+  });
+
+  it("commit_denied_whenAnEarlierGitStepRewritesTheWorkingTree", () => {
+    commitTracked("t.txt", "changed\n");
+    assertProceduralDenied(guard("git checkout HEAD -- t.txt && git commit -am wip", repo));
+  });
+
+  it("commit_deniedWithTheSecret_whenARacilyCleanTrackedFileHoldsIt", () => {
+    const tracked = join(repo, "t.txt");
+    const stampSeconds = Math.floor(Date.now() / 1000) - 100;
+    sandbox.commitFile(repo, "t.txt", "x".repeat(SECRET_LINE.length - 1) + "\n", "Add t.txt");
+    sandbox.git(repo, "config", "core.trustctime", "false");
+    utimesSync(tracked, stampSeconds, stampSeconds);
+    sandbox.git(repo, "update-index", "--refresh");
+    sandbox.write(tracked, SECRET_LINE);
+    utimesSync(tracked, stampSeconds, stampSeconds);
+    utimesSync(join(repo, ".git", "index"), stampSeconds, stampSeconds);
+    assertSecretDenied(guard("git commit -am wip", repo), "t.txt");
+  });
+
+  it("commit_passes_whenAnEarlierStepWritesFilesButTheCallStagesNothing", () => {
+    assertPassed(guard("python3 gen.py > out.txt && git commit -m wip", repo));
+  });
+
+  it("commit_passes_whenAFileIsWrittenOnlyAfterTheLastStagingStep", () => {
+    assertPassed(guard("git add clean.txt && echo done > notes.out && git commit -m wip", repo));
+  });
+
+  it("commit_denied_whenTheStagingCannotBeReplayed", () => {
+    assertProceduralDenied(guard("git add no-such-file.txt && git commit -m wip", repo));
+  });
+
+  it("commit_stillChecksTheRealIndex_whenTheStagingCannotBeReplayed", () => {
+    sandbox.git(repo, "add", "leak.txt");
+    const result = guard("git add -p && git commit -m wip", repo);
+    assertProceduralDenied(result);
+    assert.ok(result.stderr.includes("leak.txt:1 (generic:aws-access-key)"), result.stderr);
+    const kinds = assertFired(sandbox, "F-secrets", "deny", "git-guard").map((fire) => fire["kind"]);
+    assert.deepEqual(kinds, ["procedural", undefined]);
+  });
+
+  it("hook_deniesFailClosed_whenTheTemporaryDirectoryCannotBeCreated", () => {
+    const scratch = join(sandbox.root, "scratch");
+    mkdirSync(scratch, { mode: 0o500 });
+    sandbox.env["TMPDIR"] = scratch;
+    assert.equal(guard("git add clean.txt && git commit -m wip", repo).code, 2);
+    chmodSync(scratch, 0o700);
+  });
+
+  it("hook_leavesTheRealIndexAndTheTemporaryDirectoryUntouched", () => {
+    const scratch = join(sandbox.root, "scratch");
+    mkdirSync(scratch);
+    sandbox.env["TMPDIR"] = scratch;
+    sandbox.git(repo, "add", "clean.txt");
+    const before = stagedNames();
+    guard("git add leak.txt && git commit -m wip", repo);
+    guard("git add clean.txt && git commit -m wip", repo);
+    guard("git add no-such-file.txt && git commit -m wip", repo);
+    assert.equal(stagedNames(), before);
+    assert.deepEqual(readdirSync(scratch), []);
   });
 });
 
@@ -1229,15 +1417,18 @@ describe("RepoRulesTest", () => {
     const repo = sandbox.makeRepo("acmecorp", "storefront");
     sandbox.write(join(repo, "a.sql"), "select 1;\n");
     const result = guard("git add a.sql && git commit -m wip", repo);
-    assertDenied(result, "F-secrets");
-    assert.ok(result.stderr.includes("stage in a separate call, then commit"), result.stderr);
+    assertDenied(result, "O-files");
+    assert.ok(result.stderr.includes("a.sql"), result.stderr);
+    assert.ok(!result.stderr.includes("stage in a separate call"), result.stderr);
   });
 
   it("commit_denied_whenTrackedMatchingPathIsCommittedWithAllFlag", () => {
     const repo = sandbox.makeRepo("acmecorp", "storefront");
     sandbox.commitFile(repo, "a.sql", "select 1;\n", "Add a");
     sandbox.write(join(repo, "a.sql"), "select 2;\n");
-    assertDenied(guard("git commit -am wip", repo), "F-secrets");
+    const result = guard("git commit -am wip", repo);
+    assertDenied(result, "O-files");
+    assert.ok(result.stderr.includes("a.sql"), result.stderr);
   });
 
   it("commit_passes_whenStagedPathDoesNotMatch", () => {
@@ -1329,6 +1520,30 @@ describe("FailClosedTest", () => {
 
   it("guard_passes_whenPayloadUnparseableAndOnlyNamesAKeelPath", () => {
     assert.equal(sandbox.runHook(GIT_GUARD, { raw: '{"tool_input": {"command": "ls ~/git/keel-wt/core"' }).code, 0);
+  });
+
+  it("guard_passesAndLogsError_whenPayloadIsEmptyOrNotAnObject", () => {
+    for (const raw of ["", "[]", "null"]) {
+      const result = sandbox.runHook(GIT_GUARD, { raw });
+      assert.deepEqual([result.code, result.stderr], [0, ""], raw);
+    }
+    assert.equal(assertFired(sandbox, "F-attribution", "error", "git-guard").length, 3);
+  });
+
+  it("guard_denies_whenPayloadNestsPastTheJsonDepthLimitEvenIfHarmless", () => {
+    const deep = "[".repeat(MAX_JSON_DEPTH + 1) + "]".repeat(MAX_JSON_DEPTH + 1);
+    const result = sandbox.runHook(GIT_GUARD, { raw: `{"tool_input": {"command": "ls"}, "deep": ${deep}}` });
+    assert.equal(result.code, 2);
+    assert.ok(result.stderr.includes("(RecursionError)"), result.stderr);
+    assert.equal(lastLine(result.stderr), ASK_USER);
+  });
+
+  it("guard_deniesAndLogsError_whenGitCannotBeStartedForACommit", () => {
+    sandbox.env["PATH"] = join(sandbox.root, "no-programs-here");
+    const result = guard("git commit -m wip");
+    assertDenied(result, "F-attribution");
+    assert.ok(result.stderr.includes("(OSError)"), result.stderr);
+    assertFired(sandbox, "F-attribution", "error", "git-guard");
   });
 
   it("guard_passesWithoutFire_whenCommandIsNotADecisionPoint", () => {

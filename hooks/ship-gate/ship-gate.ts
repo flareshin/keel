@@ -225,7 +225,7 @@ function main(): number {
   try {
     return dispatch(parseJson(raw));
   } catch (error) {
-    return failClosed(raw, error);
+    return failClosedIfGuarded(raw, error);
   }
 }
 
@@ -244,7 +244,7 @@ export function isRecursionError(error: unknown): boolean {
   return error instanceof RecursionError || error instanceof EvidenceTooDeepError;
 }
 
-function failClosed(raw: string, error: unknown): number {
+function failClosedIfGuarded(raw: string, error: unknown): number {
   if (isRecursionError(error)) return denyTooDeep(raw, error);
   const detail = describeError(error);
   let command: string;

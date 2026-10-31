@@ -717,6 +717,24 @@ describe('HookBehaviorTest', () => {
     assert.ok(!run.stderr.includes('Traceback'), run.stderr);
   });
 
+  test('hook_passesWithStderrNoteAndNoFire_whenPayloadIsEmpty', (t) => {
+    const sandbox = new Sandbox(t);
+    const run = sandbox.hookRaw('');
+    assert.equal(run.rc, 0, run.stderr + run.stdout);
+    assert.ok(run.stderr.includes('internal error on a command that is not a push or merge: JsonSyntaxError'), run.stderr);
+    assert.deepEqual(sandbox.fires(), []);
+  });
+
+  test('hook_passesWithStderrNoteAndNoFire_whenPayloadIsNotAnObject', (t) => {
+    const sandbox = new Sandbox(t);
+    for (const raw of ['[]', 'null', '"git push origin main"']) {
+      const run = sandbox.hookRaw(raw);
+      assert.equal(run.rc, 0, raw + run.stderr + run.stdout);
+      assert.ok(run.stderr.includes('internal error on a command that is not a push or merge: AttributeError'), run.stderr);
+    }
+    assert.deepEqual(sandbox.fires(), []);
+  });
+
   test('hook_logsContractMiss_whenBashPayloadLacksCommand', (t) => {
     const sandbox = new Sandbox(t);
     sandbox.stubClaude();

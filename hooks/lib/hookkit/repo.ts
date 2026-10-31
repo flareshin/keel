@@ -9,8 +9,8 @@ export const GIT_TIMEOUT_SECONDS = 8;
 const NOT_A_REPOSITORY_STATUS = 128;
 const NOT_A_REPOSITORY_MESSAGE = "not a git repository";
 
-export function git(args: readonly string[], cwd: string): CompletedProcess {
-  return run(["git", "-C", cwd, ...args], GIT_TIMEOUT_SECONDS);
+export function git(args: readonly string[], cwd: string, env?: NodeJS.ProcessEnv): CompletedProcess {
+  return run(["git", "-C", cwd, ...args], GIT_TIMEOUT_SECONDS, { env });
 }
 
 function isDirectory(path: string): boolean {
@@ -22,9 +22,9 @@ function isDirectory(path: string): boolean {
   }
 }
 
-export function gitOutput(args: readonly string[], cwd: string): string | null {
+export function gitOutput(args: readonly string[], cwd: string, env?: NodeJS.ProcessEnv): string | null {
   if (!isDirectory(cwd)) return null;
-  const result = git(args, cwd);
+  const result = git(args, cwd, env);
   if (result.returncode !== 0) return null;
   return rstripChar(result.stdout, "\n");
 }

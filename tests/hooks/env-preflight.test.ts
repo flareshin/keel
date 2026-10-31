@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { join } from "node:path";
+import { MAX_JSON_DEPTH } from "../../measure/lib/measurekit/json.ts";
 import { assertBulletIdsSeeded, assertFired, bash, ENV_PREFLIGHT, HookSandbox } from "./helpers.ts";
 import type { HookResult } from "./helpers.ts";
 
@@ -204,6 +205,19 @@ describe("FailureTest", () => {
 
   it("envPreflight_passes_whenPayloadIsNotJson", () => {
     assert.equal(sandbox.runHook(ENV_PREFLIGHT, { raw: "mvn" }).code, 0);
+  });
+
+  it("envPreflight_passesWithoutFire_whenPayloadIsEmpty", () => {
+    assert.equal(sandbox.runHook(ENV_PREFLIGHT, { raw: "" }).code, 0);
+    assert.deepEqual(sandbox.fires(), []);
+  });
+
+  it("envPreflight_crashesWithoutFire_whenPayloadIsTooDeep", () => {
+    const deep = "[".repeat(MAX_JSON_DEPTH + 1) + "]".repeat(MAX_JSON_DEPTH + 1);
+    const result = sandbox.runHook(ENV_PREFLIGHT, { raw: `{"tool_name":"Bash","tool_input":{"command":"mvn test"},"deep":${deep}}` });
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /RecursionError/);
+    assert.deepEqual(sandbox.fires(), []);
   });
 });
 

@@ -7,10 +7,13 @@
     "hook_event_name": "PreToolUse",
     "tool_name": "Write",
     "tool_input": {
-      "file_path": "{{TMP}}/total.ts",
+      "file_path": "{{TMP}}/repo/total.ts",
       "content": "/** Sums the cart. */\nexport const total = 1;\n"
     },
     "tool_use_id": "toolu_wired"
   },
-  "expect": "deny"
+  "expect": "deny",
+  "setup": [
+    "git init -q -b main repo"
+  ]
 }

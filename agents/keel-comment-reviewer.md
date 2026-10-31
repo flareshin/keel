@@ -10,7 +10,7 @@ The task names a repository and a review base. The scope is every comment line, 
 Each comment survives only under one of the K5.14 exceptions in `${KEEL_DATA_DIR:-$HOME/.claude}/skills/readable-code/references/rules.md` (the `[K5.14]` bullet):
 
 - a legally required notice, kept verbatim;
-- a directive a compiler, runtime, build, lint, type-check or documentation tool consumes, only where that tool needs it. A suppression of a rule that catches real bugs or protects correctness or safety does not survive: name its symbol for a fix instead.
+- a directive a compiler, runtime, build, lint, type-check or documentation tool consumes, only where that tool needs it. A suppression of a rule that catches real bugs or protects correctness or safety does not survive: report it as `DELETE MUST KILL <symbol>`, never a bare `DELETE`, so it leaves only together with its fix.
 
 Nothing else survives: not public API doc comments, docstrings, issue or RFC links, external-constraint notes, TODOs, narration, history, banners or commented-out code. When you are not sure an exception applies, the comment goes.
 

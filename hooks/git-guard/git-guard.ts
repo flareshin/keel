@@ -393,22 +393,29 @@ function collect(hits: Map<string, string[]>, rule: string | null, path: string)
 export function checkLiveCheckouts(call: readonly Step[]): Violation[] {
   const live = new LiveCheckouts();
   if (live.roots.length === 0) return [];
-  const found: Array<[what: string, root: string | null]> = [];
+  const hits = new Map<string, string[]>();
   for (const step of call) {
     const targets = writeTargets(step.command);
     for (const path of [...targets.written, ...targets.removed]) {
       const [root, unresolvedCd] = liveRootOfWrite(live, step, path, call[0]?.directory ?? "");
-      found.push([unresolvedCd ? `${path} (after a \`cd\` the hook cannot resolve, judged where the call starts)` : path, root]);
+      collectLive(hits, unresolvedCd ? `${path} (after a \`cd\` the hook cannot resolve, judged where the call starts)` : path, root);
     }
     const index = gitSubcommandIndex(step.argv);
     const subcommand = index === null ? undefined : step.argv[index];
     if (index !== null && subcommand !== undefined && LIVE_MOVING_SUBCOMMANDS.has(subcommand)) {
       const toplevel = findToplevel(gitDirectory(step.argv, step.directory, step.expansion));
       if (toplevel && live.rootOf(toplevel) === toplevel && isApprovedFastForward(step.argv.slice(index), toplevel)) continue;
-      found.push([`git ${subcommand}`, toplevel ? live.rootOf(toplevel) : null]);
+      collectLive(hits, `git ${subcommand}`, toplevel ? live.rootOf(toplevel) : null);
     }
   }
-  return found.flatMap(([what, root]) => (root ? [liveViolation(what, root)] : []));
+  return Array.from(hits, ([root, whats]) => liveViolation(protocol.listed(whats), root));
+}
+
+function collectLive(hits: Map<string, string[]>, what: string, root: string | null): void {
+  if (!root) return;
+  const whats = hits.get(root) ?? [];
+  if (!whats.includes(what)) whats.push(what);
+  hits.set(root, whats);
 }
 
 function isApprovedFastForward(args: readonly string[], repo: string): boolean {

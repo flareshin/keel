@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { readUtf8 } from '../../measure/lib/measurekit/files.ts';
+import { InvalidUtf8Error, readUtf8 } from '../../measure/lib/measurekit/files.ts';
 import { parseJsonKeepingIntegers } from '../../measure/lib/measurekit/json.ts';
 import { bindPrecheck, precheckRequirement, precheckTreeOf } from '../precheck/binding.ts';
 import * as env from './env.ts';
@@ -40,7 +40,7 @@ function withPrecheckRequirement(target: JsonObject): JsonObject {
   try {
     return { ...target, precheck_required: { ...precheckRequirement(target['repo_root'], target['review_base'], end) } };
   } catch (error) {
-    if (error instanceof gitcmd.GitError) return { ...target, precheck_required: null };
+    if (error instanceof gitcmd.GitError || error instanceof InvalidUtf8Error) return { ...target, precheck_required: null };
     throw error;
   }
 }

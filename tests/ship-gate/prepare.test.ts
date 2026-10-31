@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
+import { delimiter, join } from 'node:path';
 import { describe, test } from 'node:test';
 import type { TestContext } from 'node:test';
 import * as gitcmd from '../../lib/evidence/gitcmd.ts';
@@ -14,8 +17,8 @@ function setUp(t: TestContext): { box: Sandbox; repo: Repo; base: string } {
   return { box, repo, base: repo.head() };
 }
 
-function preparedByCli(box: Sandbox, diffs: unknown[]): any {
-  const prepared = box.keel(['review', 'prepare'], { stdin: JSON.stringify({ diffs, lenses: [] }) });
+function preparedByCli(box: Sandbox, diffs: unknown[], request: Record<string, unknown> = {}): any {
+  const prepared = box.keel(['review', 'prepare'], { stdin: JSON.stringify({ diffs, lenses: [], ...request }) });
   assert.equal(prepared.rc, 0, prepared.stderr);
   return prepared.json;
 }
@@ -43,6 +46,50 @@ describe('PrepareTest', () => {
     const root = JSON.parse(preparedByCli(box, [{ repo: repo.path, base }]).diff_outputs[0]);
 
     assert.deepEqual(root.precheck_required, { required: false, sources: 2 });
+  });
+
+  test('prepareCli_leavesThePrecheckRequirementOut_whenTheRequestCarriesAPrecheck', (t) => {
+    const { box, repo, base } = setUp(t);
+    repo.write('tests/a.test.ts', 'export {}\n');
+    for (const name of ['a', 'b', 'c']) repo.write(`lib/${name}.ts`, `export const ${name} = 1\n`);
+    const root = JSON.parse(preparedByCli(box, [{ repo: repo.path, base }]).diff_outputs[0]);
+
+    const prechecked = JSON.parse(preparedByCli(box, [{ repo: repo.path, base }], { precheck: `precheck tree ${root.snapshot_tree}` }).diff_outputs[0]);
+
+    assert.equal('precheck_required' in prechecked, false);
+    assert.ok('precheck_binding' in prechecked);
+  });
+
+  test('prepareCli_givesANullPrecheckRequirement_whenGitFailsWhileReadingIt', (t) => {
+    const { box, repo, base } = setUp(t);
+    repo.write('tests/a.test.ts', 'export {}\n');
+    for (const name of ['a', 'b', 'c']) repo.write(`lib/${name}.ts`, `export const ${name} = 1\n`);
+    const realGit = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+    const stubs = join(box.root, 'git-stub');
+    mkdirSync(stubs, { recursive: true });
+    writeFileSync(join(stubs, 'git'), `#!/bin/sh\ncase " $* " in *" ls-tree -r --name-only "*) echo 'fatal: stub' >&2; exit 128;; esac\nexec '${realGit}' "$@"\n`);
+    chmodSync(join(stubs, 'git'), 0o755);
+    box.env['PATH'] = stubs + delimiter + box.env['PATH'];
+
+    const root = JSON.parse(preparedByCli(box, [{ repo: repo.path, base }]).diff_outputs[0]);
+
+    assert.equal(root.precheck_required, null);
+  });
+
+  test('prepareCli_givesANullPrecheckRequirement_whenADiffPathIsNotUtf8', (t) => {
+    const { box } = setUp(t);
+    const repo = box.clone('acme', 'lib');
+    const base = repo.head();
+    repo.write('tests/a.test.ts', 'export {}\n');
+    const blob = spawnSync('git', ['-C', repo.path, 'hash-object', '-w', '--stdin'], { input: 'export {}\n', encoding: 'utf8' }).stdout.trim();
+    const indexed = spawnSync('git', ['-C', repo.path, 'update-index', '--add', '--index-info'], { input: Buffer.concat([Buffer.from(`100644 ${blob}\tlib/caf`), Buffer.from([0xe9]), Buffer.from('.ts\n')]) });
+    assert.equal(indexed.status, 0, String(indexed.stderr));
+    const committed = spawnSync('git', ['-C', repo.path, 'commit', '-q', '-m', 'non-UTF-8 path'], { env: box.env, encoding: 'utf8' });
+    assert.equal(committed.status, 0, committed.stderr);
+
+    const root = JSON.parse(preparedByCli(box, [{ repo: repo.path, base, head: 'HEAD' }]).diff_outputs[0]);
+
+    assert.equal(root.precheck_required, null);
   });
 
   test('prepare_pinsUntrackedCandidate_withoutChangingIndex', (t) => {

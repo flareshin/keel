@@ -3,7 +3,8 @@ import { basename, dirname, extname, join, normalize } from 'node:path';
 import { SCRIPT_FILE } from './consumers.ts';
 
 const TEST_GLOBS = ['tests/**/*.test.ts', 'codex/tests/*.test.ts', 'tests/workflows/*.test.mjs'];
-const SUPPORT_GLOBS = ['tests/**/*', 'codex/tests/**/*'];
+const SUPPORT_DIRECTORIES = ['tests/', 'codex/tests/'];
+const SUPPORT_GLOBS = SUPPORT_DIRECTORIES.map((directory) => `${directory}**/*`);
 const SCRIPT_GLOB = '**/*.{ts,mts,cts,js,mjs,cjs,tsx,jsx}';
 const ANY_FILE = '**/*';
 const SHEBANG = '#!';
@@ -25,6 +26,10 @@ export function candidateTests(root: string, changedPaths: string[]): string[] {
     }
   }
   return repo.tests.filter((test) => reaching.has(test)).sort();
+}
+
+export function isTestSupport(path: string): boolean {
+  return SUPPORT_DIRECTORIES.some((directory) => path.startsWith(directory));
 }
 
 function referencesAny(repo: RepoFiles, file: string, reaching: Set<string>, changed: Set<string>): boolean {

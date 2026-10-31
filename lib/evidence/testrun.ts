@@ -25,7 +25,7 @@ export const COUNT_PATTERNS: Array<[name: string, pattern: RegExp]> = [
   ['passed', new RegExp(
     `${LINE_START}(?!${SPACE_EITHER_WAY}*Test (?:Files|Suites)${NOT_WORD_AFTER})[^\\n]*?${NOT_WORD_BEFORE}([0-9]+) passed${NOT_WORD_AFTER}`, 'gu')],
 ];
-const NO_TESTS_RECOGNIZED = 4;
+export const NO_TESTS_RECOGNIZED = 4;
 const COMMAND_NOT_FOUND = 2;
 const DEFAULT_EXEC_PATH = '/bin:/usr/bin';
 const MKFIFO = '/usr/bin/mkfifo';

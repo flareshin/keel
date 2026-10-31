@@ -1,6 +1,7 @@
 import { InvalidUtf8Error } from '../../measure/lib/measurekit/files.ts';
 import { compareCodePoints, isJsonObject, parseJsonKeepingIntegers, stringifySorted } from '../../measure/lib/measurekit/json.ts';
 import type { JsonValue } from '../../measure/lib/measurekit/json.ts';
+import * as affected from '../precheck/affected.ts';
 import { bindPrecheck } from '../precheck/binding.ts';
 import { renderCensus, summarizeCensus } from '../precheck/render.ts';
 import { buildChains } from './chain.ts';
@@ -38,6 +39,8 @@ const EXIT_INTERNAL = 70;
 const EVIDENCE_OPTIONS = new Set(['--repo', '--run', '--root', '--audits', '--verifiers']);
 const PRECHECK_BIND_OPTIONS = new Set(['--repo', '--base', '--end', '--tree']);
 const PRECHECK_RUN_OPTIONS = new Set(['--repo', '--base']);
+const TEST_AFFECTED_OPTIONS = new Set(['--base']);
+const DEFAULT_AFFECTED_BASE = 'origin/HEAD';
 const PRECHECK_LOG = 'keel-precheck.jsonl';
 const MODULE_NOT_FOUND = 'ERR_MODULE_NOT_FOUND';
 
@@ -71,8 +74,35 @@ async function dispatch(argv: string[]): Promise<number> {
 }
 
 function runTest(rest: string[]): Promise<number> {
+  if (rest[0] === '--affected') return runAffectedTests(rest.slice(1));
   if (rest[0] !== '--') throw new writers.Usage('keel test -- <command…>');
   return testrun.run(rest.slice(1), process.cwd());
+}
+
+async function runAffectedTests(rest: string[]): Promise<number> {
+  const base = parseOptions(rest, TEST_AFFECTED_OPTIONS)['--base'] ?? DEFAULT_AFFECTED_BASE;
+  if (base.startsWith('-')) throw new writers.Usage('keel test --affected [--base <ref>]');
+  const repoRoot = gitcmd.toplevel(process.cwd());
+  if (repoRoot === null) throw new writers.Usage('keel test must run inside a git repository');
+  const mergeBase = gitcmd.mergeBase(repoRoot, base, 'HEAD');
+  if (mergeBase === null) throw new writers.Refused(`${base} has no merge base with HEAD`);
+  const changed = affected.changedSince(repoRoot, mergeBase);
+  const tests = affected.affectedTests(repoRoot, changed);
+  if (tests.length === 0) {
+    printErrorLine(`keel test --affected: no test file reaches the ${counted(changed.length, 'changed path')}; run \`keel test -- <command>\` with a test that covers it`);
+    return testrun.NO_TESTS_RECOGNIZED;
+  }
+  const verb = tests.length === 1 ? 'reaches' : 'reach';
+  printErrorLine(`keel test --affected: ${counted(tests.length, 'test file')} ${verb} ${counted(changed.length, 'changed path')}\n${tests.join('\n')}`);
+  const hookCode = affected.fullSuitePaths(changed);
+  if (hookCode.length > 0) {
+    printErrorLine(`keel test --affected: code a hook runs changed (${hookCode.join(', ')}); also run \`keel test -- npm test\` once before root review`);
+  }
+  return testrun.run([process.execPath, '--test', '--test-reporter=tap', ...tests], repoRoot);
+}
+
+function counted(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
 }
 
 function review(rest: string[]): number {

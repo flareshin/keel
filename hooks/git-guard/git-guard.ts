@@ -1,5 +1,6 @@
-import { readFileSync, realpathSync } from "node:fs";
-import { dirname } from "node:path";
+import { copyFileSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { shlexQuote } from "../../measure/lib/measurekit/shlex.ts";
 import { approvedFastForward } from "../../lib/evidence/activation.ts";
 import { boundaryScanner, dataDir, keelHome, overlayDir, overlayPath } from "../lib/hookkit/env.ts";
@@ -15,7 +16,7 @@ import { compareCodePoints } from "../../measure/lib/measurekit/json.ts";
 import { PROCEDURAL_KIND } from "../../measure/lib/measurekit/fireslog.ts";
 import { globMatches } from "../../lib/evidence/glob.ts";
 import { parseJson, parseJsonReadingNonFiniteNumbersAsZero, parsePayload } from "../lib/hookkit/json.ts";
-import { isDirectory, isFile, isSymlink, resolveSymlinksKeepingMissingTail, tryReadText } from "../lib/hookkit/files.ts";
+import { isDirectory, isFile, isSymlink, isSystemError, resolveSymlinksKeepingMissingTail, tryReadText } from "../lib/hookkit/files.ts";
 import { AttributeError, describeError, errorName, pythonTypeName, RecursionError, ValueError } from "../lib/hookkit/errors.ts";
 import { readStdin } from "../lib/hookkit/stdio.ts";
 import { addedComments, withStraightQuotes } from "./comments.ts";
@@ -23,7 +24,8 @@ import { notebookCellChange } from "./notebook.ts";
 import type { CodeChange } from "./notebook.ts";
 import { currentBranch, findRepoKey, findToplevel, git, gitOutput, isCommit } from "../lib/hookkit/repo.ts";
 import {
-  fileWriteOf, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, isConfigRead, operands, readPushArguments, resolveDirectory, steps, writeTargets,
+  fileWriteOf, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, isConfigRead, operands, readPushArguments, resolveDirectory, RUN_TIME_WORD_RE, steps,
+  writeTargets,
 } from "../lib/hookkit/shell.ts";
 import type { Step } from "../lib/hookkit/shell.ts";
 import { OSError, run, TimeoutExpired } from "../lib/hookkit/subprocess.ts";
@@ -59,6 +61,16 @@ const COMMIT_LONG_VALUE_OPTIONS: ReadonlySet<string> = new Set([
   "--reedit-message", "--template", "--trailer", "--pathspec-from-file",
 ]);
 const COMMIT_STAGING_SHORT_FLAGS: ReadonlySet<string> = new Set(["a"]);
+const COMMIT_INTERACTIVE_LONG_OPTIONS: ReadonlySet<string> = new Set(["--patch", "--interactive"]);
+const COMMIT_INTERACTIVE_SHORT_FLAGS: ReadonlySet<string> = new Set(["p"]);
+const COMMIT_PATHSPEC_FILE_OPTION = "--pathspec-from-file";
+const COMMIT_PATHSPEC_NUL_OPTION = "--pathspec-file-nul";
+const ADD_INTERACTIVE_LONG_OPTIONS: ReadonlySet<string> = new Set(["--patch", "--interactive", "--edit"]);
+const ADD_INTERACTIVE_SHORT_FLAGS: ReadonlySet<string> = new Set(["p", "i", "e"]);
+const INDEX_FILE_VARIABLE = "GIT_INDEX_FILE";
+const INDEX_COPY_PREFIX = "keel-index-";
+const NOT_STAGING = "not-staging";
+const UNREPLAYABLE = "unreplayable";
 const COMMIT_SHORT_VALUE_FLAGS: ReadonlySet<string> = new Set(["m", "F", "C", "c", "t"]);
 const COMMIT_SHORT_ATTACHED_VALUE_FLAGS: ReadonlySet<string> = new Set(["S", "u"]);
 const COMMIT_NO_VERIFY_SHORT_FLAG = "n";
@@ -115,13 +127,14 @@ interface Violation {
 
 interface CommitOption {
   stages: boolean;
+  interactive: boolean;
   skipsHooks: boolean;
   valueName: string | null;
   attachedValue: string | null;
 }
 
 function noCommitOption(): CommitOption {
-  return { stages: false, skipsHooks: false, valueName: null, attachedValue: null };
+  return { stages: false, interactive: false, skipsHooks: false, valueName: null, attachedValue: null };
 }
 
 function valueFollows(option: CommitOption): boolean {
@@ -548,17 +561,162 @@ function checkCommit(args: readonly string[], step: Step, repoDirectory: string,
   const toplevel = findToplevel(repoDirectory);
   if (toplevel === null) return violations;
   const repoKey = findRepoKey(toplevel);
-  if (commitStagesFiles(args) || isStagedEarlierInCall(earlierSteps, toplevel)) {
-    violations.push({
-      ruleId: F_SECRETS, repo: repoKey, kind: PROCEDURAL_KIND,
-      text: "This commit stages files in its own call, so the secret and path checks cannot see them; stage in a separate call, then commit.",
-    });
+  const staging = sameCallStaging(args, repoDirectory, earlierSteps, toplevel);
+  return [...violations, ...stagedContentViolations(staging, toplevel, repoKey)];
+}
+
+function stagedContentViolations(staging: readonly StagingCommand[] | null, toplevel: string, repoKey: string | null): Violation[] {
+  if (staging === null) return [unreplayableStagingViolation(repoKey)];
+  if (staging.length === 0) return indexViolations(toplevel, repoKey, {});
+  const found = checkAgainstIndexCopy(toplevel, staging, (env) => indexViolations(toplevel, repoKey, env));
+  return found ?? [unreplayableStagingViolation(repoKey)];
+}
+
+function unreplayableStagingViolation(repoKey: string | null): Violation {
+  return {
+    ruleId: F_SECRETS, repo: repoKey, kind: PROCEDURAL_KIND,
+    text: "This call stages files in a way the hook cannot replay (interactive or patch staging, a run-time expansion or unresolved directory " +
+      "in the staging command, or a staging command that fails), so the secret and path checks cannot see them; stage in a separate call, then commit.",
+  };
+}
+
+function indexViolations(toplevel: string, repoKey: string | null, env: NodeJS.ProcessEnv): Violation[] {
+  const staged = splitlines(gitOutput(["diff", "--cached", "--name-only"], toplevel, env) || "");
+  return [
+    ...repoRuleViolations(repoKey, staged, [ACTION_DENY_COMMIT, ACTION_DENY_PATH]),
+    ...scanStagedSecrets(toplevel, repoKey, env),
+    ...knownValueViolations(
+      () => knownvalues.addedLines(gitTextOrRaise(["diff", "--cached", "-U0", "--no-color"], toplevel, env)), repoKey),
+  ];
+}
+
+interface StagingCommand {
+  directory: string;
+  args: string[];
+}
+
+type EarlierStaging = StagingCommand | typeof NOT_STAGING | typeof UNREPLAYABLE;
+
+function sameCallStaging(
+  args: readonly string[], repoDirectory: string, earlierSteps: readonly Step[], toplevel: string,
+): StagingCommand[] | null {
+  const commands: StagingCommand[] = [];
+  for (const step of earlierSteps) {
+    const staging = earlierStaging(step, toplevel);
+    if (staging === UNREPLAYABLE) return null;
+    if (staging !== NOT_STAGING) commands.push(staging);
   }
-  const staged = splitlines(gitOutput(["diff", "--cached", "--name-only"], toplevel) || "");
-  violations.push(...repoRuleViolations(repoKey, staged, [ACTION_DENY_COMMIT, ACTION_DENY_PATH]));
-  violations.push(...scanStagedSecrets(toplevel, repoKey));
-  return [...violations, ...knownValueViolations(
-    () => knownvalues.addedLines(gitTextOrRaise(["diff", "--cached", "-U0", "--no-color"], toplevel)), repoKey)];
+  const own = commitStaging(args, repoDirectory, toplevel);
+  return own === null ? null : [...commands, ...own];
+}
+
+function earlierStaging(step: Step, toplevel: string): EarlierStaging {
+  const index = gitSubcommandIndex(step.argv);
+  if (index === null || !STAGING_SUBCOMMANDS.has(step.argv[index] ?? "")) return NOT_STAGING;
+  const directory = gitDirectory(step.argv, step.directory, step.expansion);
+  if (isUnresolved(directory)) return UNREPLAYABLE;
+  if (findToplevel(directory) !== toplevel) return NOT_STAGING;
+  const args = step.argv.slice(index);
+  const replayable = step.command.assignments.length === 0 && onlyChangesDirectory(step.argv.slice(1, index)) && isReplayableAdd(args);
+  return replayable ? { directory, args } : UNREPLAYABLE;
+}
+
+function onlyChangesDirectory(globalOptions: readonly string[]): boolean {
+  return globalOptions.length % 2 === 0 && globalOptions.every((word, position) => position % 2 === 1 || word === "-C");
+}
+
+function isReplayableAdd(args: readonly string[]): boolean {
+  return !args.some(isRunTimeOrStdinWord) && !addsInteractively(args);
+}
+
+function isRunTimeOrStdinWord(word: string): boolean {
+  return RUN_TIME_WORD_RE.test(word) || word === STDIN_PATH || word.endsWith("=" + STDIN_PATH);
+}
+
+function addsInteractively(args: readonly string[]): boolean {
+  const endOfOptions = args.indexOf("--");
+  const options = (endOfOptions === -1 ? args : args.slice(0, endOfOptions)).slice(1);
+  return options.some((arg) => ADD_INTERACTIVE_LONG_OPTIONS.has(arg) ||
+    (arg.startsWith("-") && !arg.startsWith("--") && Array.from(arg.slice(1)).some((flag) => ADD_INTERACTIVE_SHORT_FLAGS.has(flag))));
+}
+
+interface CommitStagingRequest {
+  all: boolean;
+  interactive: boolean;
+  pathspecs: string[];
+  pathspecFile: string | null;
+  pathspecFileIsNulSeparated: boolean;
+}
+
+function commitStaging(args: readonly string[], repoDirectory: string, toplevel: string): StagingCommand[] | null {
+  const request = readCommitStaging(args);
+  const words = [...request.pathspecs, ...(request.pathspecFile === null ? [] : [request.pathspecFile])];
+  if (request.interactive || words.some(isRunTimeOrStdinWord)) return null;
+  const commands: StagingCommand[] = [];
+  if (request.all) commands.push({ directory: toplevel, args: ["add", "-u"] });
+  if (request.pathspecs.length > 0) commands.push({ directory: repoDirectory, args: ["add", "--", ...request.pathspecs] });
+  if (request.pathspecFile !== null) {
+    const nul = request.pathspecFileIsNulSeparated ? [COMMIT_PATHSPEC_NUL_OPTION] : [];
+    commands.push({ directory: repoDirectory, args: ["add", ...nul, `${COMMIT_PATHSPEC_FILE_OPTION}=${request.pathspecFile}`] });
+  }
+  return commands;
+}
+
+function readCommitStaging(args: readonly string[]): CommitStagingRequest {
+  const request: CommitStagingRequest = { all: false, interactive: false, pathspecs: [], pathspecFile: null, pathspecFileIsNulSeparated: false };
+  let index = 0;
+  while (index < args.length) {
+    const arg = args[index] ?? "";
+    if (arg === "--") {
+      request.pathspecs.push(...args.slice(index + 1));
+      break;
+    }
+    if (!arg.startsWith("-") || arg === STDIN_PATH) {
+      request.pathspecs.push(arg);
+      index += 1;
+      continue;
+    }
+    const option = readCommitOption(arg);
+    request.all ||= option.stages;
+    request.interactive ||= option.interactive;
+    request.pathspecFileIsNulSeparated ||= arg === COMMIT_PATHSPEC_NUL_OPTION;
+    if (option.valueName === COMMIT_PATHSPEC_FILE_OPTION) request.pathspecFile = option.attachedValue ?? args[index + 1] ?? "";
+    index += valueFollows(option) ? 2 : 1;
+  }
+  return request;
+}
+
+function checkAgainstIndexCopy(
+  toplevel: string, commands: readonly StagingCommand[], check: (env: NodeJS.ProcessEnv) => Violation[],
+): Violation[] | null {
+  const directory = mkdtempSync(join(tmpdir(), INDEX_COPY_PREFIX));
+  try {
+    const env = { [INDEX_FILE_VARIABLE]: join(directory, "index") };
+    return replayStaging(toplevel, commands, env) ? check(env) : null;
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+function replayStaging(toplevel: string, commands: readonly StagingCommand[], env: Record<string, string>): boolean {
+  try {
+    if (!copyIndex(toplevel, env[INDEX_FILE_VARIABLE] ?? "")) return false;
+    return commands.every((command) => git(command.args, command.directory, env).returncode === 0);
+  } catch (error) {
+    if (error instanceof OSError || error instanceof TimeoutExpired || isSystemError(error)) return false;
+    throw error;
+  }
+}
+
+function copyIndex(toplevel: string, destination: string): boolean {
+  const source = gitOutput(["rev-parse", "--git-path", "index"], toplevel);
+  if (source === null) return false;
+  try {
+    copyFileSync(resolve(toplevel, source), destination);
+  } catch (error) {
+    if (!isSystemError(error) || error.code !== "ENOENT") throw error;
+  }
+  return true;
 }
 
 function checkPush(args: readonly string[], repoDirectory: string): Violation[] {
@@ -601,31 +759,12 @@ function checkPushRange(toplevel: string, repoKey: string | null, revisions: rea
   return [...violations, ...repoRuleViolations(repoKey, paths, [ACTION_DENY_PATH])];
 }
 
-function commitStagesFiles(args: readonly string[]): boolean {
-  let index = 0;
-  while (index < args.length) {
-    const arg = args[index] ?? "";
-    if (arg === "--") return index + 1 < args.length;
-    if (!arg.startsWith("-") || arg === STDIN_PATH) return true;
-    const option = readCommitOption(arg);
-    if (option.stages) return true;
-    index += valueFollows(option) ? 2 : 1;
-  }
-  return false;
-}
-
-function isStagedEarlierInCall(earlierSteps: readonly Step[], toplevel: string): boolean {
-  return earlierSteps.some((step) => {
-    const index = gitSubcommandIndex(step.argv);
-    if (index === null || !STAGING_SUBCOMMANDS.has(step.argv[index] ?? "")) return false;
-    return findToplevel(gitDirectory(step.argv, step.directory, step.expansion)) === toplevel;
-  });
-}
-
-export function scanStagedSecrets(toplevel: string, repoKey: string | null, timeoutSeconds: number = BOUNDARY_TIMEOUT_SECONDS): Violation[] {
+export function scanStagedSecrets(
+  toplevel: string, repoKey: string | null, env: NodeJS.ProcessEnv = {}, timeoutSeconds: number = BOUNDARY_TIMEOUT_SECONDS,
+): Violation[] {
   let result: CompletedProcess;
   try {
-    result = run([boundaryScanner(), "--staged", "--generic-only"], timeoutSeconds, { cwd: toplevel });
+    result = run([boundaryScanner(), "--staged", "--generic-only"], timeoutSeconds, { cwd: toplevel, env });
   } catch (error) {
     if (!(error instanceof OSError || error instanceof TimeoutExpired)) throw error;
     throw new GuardError(`boundary scanner did not run: ${errorName(error)}`);
@@ -872,7 +1011,7 @@ function readCommitOption(arg: string): CommitOption {
     const [name, hasInlineValue, inlineValue] = partition(arg, "=");
     const valueName = COMMIT_LONG_VALUE_OPTIONS.has(name) ? name : null;
     return {
-      stages: COMMIT_STAGING_LONG_OPTIONS.has(name), skipsHooks: false, valueName,
+      stages: COMMIT_STAGING_LONG_OPTIONS.has(name), interactive: COMMIT_INTERACTIVE_LONG_OPTIONS.has(name), skipsHooks: false, valueName,
       attachedValue: valueName && hasInlineValue ? inlineValue : null,
     };
   }
@@ -881,6 +1020,8 @@ function readCommitOption(arg: string): CommitOption {
   for (const [position, flag] of flags.entries()) {
     if (COMMIT_STAGING_SHORT_FLAGS.has(flag)) {
       option.stages = true;
+    } else if (COMMIT_INTERACTIVE_SHORT_FLAGS.has(flag)) {
+      option.interactive = true;
     } else if (flag === COMMIT_NO_VERIFY_SHORT_FLAG) {
       option.skipsHooks = true;
     } else if (COMMIT_SHORT_VALUE_FLAGS.has(flag)) {
@@ -894,8 +1035,8 @@ function readCommitOption(arg: string): CommitOption {
   return option;
 }
 
-function gitTextOrRaise(args: readonly string[], toplevel: string): string {
-  const result = git(args, toplevel);
+function gitTextOrRaise(args: readonly string[], toplevel: string, env?: NodeJS.ProcessEnv): string {
+  const result = git(args, toplevel, env);
   if (result.returncode !== 0) throw new GuardError(`git ${args[0]} failed: ${truncate(trimSpace(result.stderr), 120)}`);
   return result.stdout;
 }

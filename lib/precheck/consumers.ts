@@ -1,4 +1,4 @@
-import { GitError, run, text } from '../evidence/gitcmd.ts';
+import { GitError, runUnchecked, textOrThrow } from '../evidence/gitcmd.ts';
 
 export type NameKind = 'export' | 'flag' | 'key';
 
@@ -78,7 +78,7 @@ export function findConsumers(repo: string, base: string, tree: string): Changed
 }
 
 function changesBetween(repo: string, base: string, tree: string): FileChange[] {
-  return parseDiff(text(repo, ['-c', 'core.quotePath=false', 'diff', '--no-renames', '-U0', base, tree]));
+  return parseDiff(textOrThrow(repo, ['-c', 'core.quotePath=false', 'diff', '--no-renames', '-U0', base, tree]));
 }
 
 function parseDiff(diff: string): FileChange[] {
@@ -122,7 +122,7 @@ function diffPath(line: string, prefix: string): string {
 
 function enclosingExports(repo: string, tree: string, change: FileChange): Declaration[] {
   if (!SCRIPT_FILE.test(change.path) || change.anchors.length === 0) return [];
-  const lines = text(repo, ['show', `${tree}:${change.path}`]).split('\n');
+  const lines = textOrThrow(repo, ['show', `${tree}:${change.path}`]).split('\n');
   const found = new Map<number, Declaration>();
   for (const anchor of change.anchors) {
     let line = anchor;
@@ -135,8 +135,8 @@ function enclosingExports(repo: string, tree: string, change: FileChange): Decla
 
 function removedExports(repo: string, base: string, tree: string, change: FileChange): string[] {
   if (!SCRIPT_FILE.test(change.path)) return [];
-  const before = change.inBase ? exportedNames(text(repo, ['show', `${base}:${change.path}`])) : new Set<string>();
-  const after = change.inTree ? exportedNames(text(repo, ['show', `${tree}:${change.path}`])) : new Set<string>();
+  const before = change.inBase ? exportedNames(textOrThrow(repo, ['show', `${base}:${change.path}`])) : new Set<string>();
+  const after = change.inTree ? exportedNames(textOrThrow(repo, ['show', `${tree}:${change.path}`])) : new Set<string>();
   return [...before].filter((name) => !after.has(name));
 }
 
@@ -166,7 +166,7 @@ function jsonKeysOf(line: string): string[] {
 
 function grepWord(repo: string, tree: string, kind: NameKind, name: string): Consumer[] {
   const args = ['grep', '-z', '-n', '-I', '-F', '-w', '-e', name, tree, '--'];
-  const completed = run(repo, args, { check: false });
+  const completed = runUnchecked(repo, args);
   if (completed.returncode === NO_MATCH) return [];
   if (completed.returncode !== 0) throw new GitError(`git grep for ${name} exited ${completed.returncode}: ${completed.stderr.toString()}`);
   const boundary = kind === 'flag' ? flagBoundary(name) : null;

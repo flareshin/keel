@@ -219,6 +219,27 @@ describe("shipped settings", () => {
     assert.deepEqual(blocking, [["Bash", "ship-gate.ts"], ["Bash|Edit|Write|NotebookEdit", "git-guard.ts"]])
   })
 
+  it("shippedFragments_startEveryNodeHookWithTheCompileCache", () => {
+    const commands = ["settings/core.json", "stacks/spring-maven/settings.json"].flatMap((relative) =>
+      Object.values<{ hooks: { command: string }[] }[]>(JSON.parse(readFile(path.join(KEEL_ROOT, relative))).hooks).flatMap((entries) =>
+        entries.flatMap((entry) => entry.hooks.map((hook) => hook.command)),
+      ),
+    )
+    assert.equal(commands.length, 6)
+    const uncached = commands.filter((command) => !command.startsWith('NODE_COMPILE_CACHE="${KEEL_DATA_DIR:-$HOME/.claude}/state/keel/node-compile-cache" node '))
+    assert.deepEqual(uncached, [])
+  })
+
+  it("shippedStack_runsEnvPreflightOnlyForCommandsThatNameMaven", () => {
+    const [hook] = JSON.parse(readFile(path.join(KEEL_ROOT, "stacks", "spring-maven", "settings.json"))).hooks.PreToolUse[0].hooks
+    const rule = /^Bash\((.*)\)$/.exec(hook.if)
+    assert.ok(rule, hook.if)
+    const pattern = new RegExp("^" + (rule[1] as string).split("*").map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*") + "$")
+    const runs = ["mvn verify", "./mvnw -q test", "JAVA_HOME=/jdk17 mvn package", "/opt/app/mvnw clean"]
+    assert.deepEqual(runs.filter((command) => !pattern.test(command)), [])
+    assert.deepEqual(["git status", "npm test", "ls"].filter((command) => pattern.test(command)), [])
+  })
+
   it("shippedCore_registersShipGateOnlyOnPreToolUseBash", () => {
     const hooks: Record<string, { matcher?: string; hooks: { command?: string }[] }[]> = JSON.parse(readFile(path.join(KEEL_ROOT, "settings", "core.json"))).hooks
     const shipGate = Object.entries(hooks).flatMap(([event, entries]) =>

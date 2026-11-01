@@ -1,6 +1,6 @@
 import path from "node:path"
 
-import { runGit } from "../../../lib/measurekit/gitutil.ts"
+import { runGitOrThrow } from "../../../lib/measurekit/gitutil.ts"
 import { displayText, isJsonObject } from "../../../lib/measurekit/json.ts"
 import type { JsonValue } from "../../../lib/measurekit/json.ts"
 import { AMBIGUOUS, CLEAR_CHANGE } from "./cases.ts"
@@ -58,7 +58,7 @@ function hasModelUsage(modelUsage: JsonValue | undefined): boolean {
 }
 
 export function graderCommit(checkout: string): string {
-  const commit = runGit(checkout, ["rev-parse", "HEAD"]).trim()
-  const dirty = runGit(checkout, ["status", "--porcelain", "--", path.join("measure", "evals")]).trim()
+  const commit = runGitOrThrow(checkout, ["rev-parse", "HEAD"]).trim()
+  const dirty = runGitOrThrow(checkout, ["status", "--porcelain", "--", path.join("measure", "evals")]).trim()
   return dirty ? commit + "-dirty" : commit
 }

@@ -1,6 +1,7 @@
 import { isSystemError } from "../../hooks/lib/hookkit/files.ts";
-import { OSError, TimeoutExpired } from "../../hooks/lib/hookkit/subprocess.ts";
+import { OSError } from "../../hooks/lib/hookkit/subprocess.ts";
 import { InvalidUtf8Error } from "../../measure/lib/measurekit/files.ts";
+import { TimeoutExpired } from "../../measure/lib/measurekit/timeout.ts";
 
 export class Refusal extends Error {
   constructor(message: string) {

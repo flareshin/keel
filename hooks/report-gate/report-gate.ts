@@ -13,9 +13,10 @@ import { NonFiniteJsonNumber, parseFiniteJson, parseJson, parsePayload } from ".
 import { AttributeError, describeError, errorName, pythonTypeName, RecursionError, ValueError } from "../lib/hookkit/errors.ts";
 import { readStdin } from "../lib/hookkit/stdio.ts";
 import { SPACE_CHARS, SPACE_CLASS, testCaseFolded, trimCharacters, trimSpace, WORD_BOUNDARY, WORD_CHARS } from "../lib/hookkit/text.ts";
-import { OSError, run, TimeoutExpired } from "../lib/hookkit/subprocess.ts";
+import { TimeoutExpired } from "../../measure/lib/measurekit/timeout.ts";
+import { OSError, run } from "../lib/hookkit/subprocess.ts";
 import type { CompletedProcess } from "../lib/hookkit/subprocess.ts";
-import { commandWritesFiles } from "../lib/hookkit/shell.ts";
+import { commandWritesFiles } from "../lib/hookkit/writes.ts";
 import { contentOf, iterEntries, roleOf, textOf, toolUses } from "../lib/hookkit/transcript.ts";
 
 const HOOK = "report-gate";
@@ -196,7 +197,7 @@ function main(): number {
   try {
     payload = parsePayload(raw);
   } catch (error) {
-    if (error instanceof RecursionError) return refuseUnparsedPayload(raw, error);
+    if (error instanceof RecursionError) return refuseUnparsedPayloadIfHandbackOrStop(raw, error);
     if (!(error instanceof ValueError)) throw error;
     new FireLog(HOOK, null).append("K2", "error", { detail: `payload is not JSON: ${error.message}` });
     return protocol.EXIT_PASS;
@@ -208,8 +209,8 @@ function main(): number {
     if (event === "SubagentStop") return judgeStop(payload, fires);
     return protocol.EXIT_PASS;
   } catch (error) {
-    if (error instanceof UncheckableReport) return refuseUncheckable(payload, error, fires);
-    if (error instanceof FieldTypeError) return refuseUnreadable(payload, error, fires);
+    if (error instanceof UncheckableReport) return refuseUncheckableUnlessStopRetry(payload, error, fires);
+    if (error instanceof FieldTypeError) return refuseUnreadableUnlessStopRetry(payload, error, fires);
     fires.append("K2", "error", { detail: describeError(error) });
     return protocol.EXIT_PASS;
   }
@@ -298,21 +299,21 @@ function whileDeciding<T>(read: () => T): T {
   }
 }
 
-function refuseUnparsedPayload(raw: string, error: RecursionError): number {
+function refuseUnparsedPayloadIfHandbackOrStop(raw: string, error: RecursionError): number {
   new FireLog(HOOK, null).append("K2", "error", { detail: describeError(error) });
   const event = UNPARSED_EVENT.exec(raw)?.[1];
   if (event === "PreToolUse" && UNPARSED_HANDBACK_TOOL.test(raw)) return refuseHandback();
-  if (event === "SubagentStop") return refuseStop(UNPARSED_STOP_RETRY.test(raw));
+  if (event === "SubagentStop") return blockStopUnlessRetry(UNPARSED_STOP_RETRY.test(raw));
   return protocol.EXIT_PASS;
 }
 
-function refuseUncheckable(payload: Payload, error: UncheckableReport, fires: FireLog): number {
+function refuseUncheckableUnlessStopRetry(payload: Payload, error: UncheckableReport, fires: FireLog): number {
   fires.append("K2", "error", { detail: describeError(error.reason) });
   if (getField(payload, "hook_event_name") === "PreToolUse") return refuseHandback();
-  return refuseStop(isRetry(payload));
+  return blockStopUnlessRetry(isRetry(payload));
 }
 
-function refuseUnreadable(payload: Payload, error: FieldTypeError, fires: FireLog): number {
+function refuseUnreadableUnlessStopRetry(payload: Payload, error: FieldTypeError, fires: FireLog): number {
   fires.append("K2", "error", { detail: describeError(error) });
   const message = protocol.formatMessage(HOOK, "could not read this report; refusing it", [["K2", UNREADABLE_TEXT]]);
   if (getField(payload, "hook_event_name") === "PreToolUse") return protocol.deny(message);
@@ -327,7 +328,7 @@ function refuseHandback(): number {
   return protocol.deny(refusalMessage());
 }
 
-function refuseStop(stopHookActive: boolean): number {
+function blockStopUnlessRetry(stopHookActive: boolean): number {
   return stopHookActive ? protocol.EXIT_PASS : protocol.blockStop(refusalMessage());
 }
 

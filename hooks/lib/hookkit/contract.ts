@@ -7,7 +7,8 @@ import { joinPath } from "./paths.ts";
 import { trimSpace } from "./text.ts";
 import { compareCodePoints } from "../../../measure/lib/measurekit/json.ts";
 import type { Payload } from "./protocol.ts";
-import { OSError, run, TimeoutExpired } from "./subprocess.ts";
+import { TimeoutExpired } from "../../../measure/lib/measurekit/timeout.ts";
+import { OSError, run } from "./subprocess.ts";
 
 export const OUTCOME = "contract-miss";
 const VERSION_TIMEOUT_SECONDS = 5;

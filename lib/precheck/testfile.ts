@@ -1,5 +1,6 @@
 import { performance } from 'node:perf_hooks';
-import { runProcessGroup, TimeoutExpired } from '../evidence/subprocess.ts';
+import { TimeoutExpired } from '../../measure/lib/measurekit/timeout.ts';
+import { runProcessGroup } from '../evidence/subprocess.ts';
 
 export type TestFileRun =
   | { outcome: 'completed'; returncode: number; passed: number; durationMs: number; output: string }

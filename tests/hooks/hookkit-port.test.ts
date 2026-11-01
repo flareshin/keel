@@ -429,7 +429,7 @@ describe("repo", () => {
   });
 
   it("gitOutput_isNone_whenTheDirectoryIsMissingOrNotARepository", () => {
-    assert.equal(repo.gitOutput(["status"], join(sandbox.root, "absent")), null);
-    assert.equal(repo.gitOutput(["rev-parse", "--show-toplevel"], sandbox.home), null);
+    assert.equal(repo.gitOutputOrNull(["status"], join(sandbox.root, "absent")), null);
+    assert.equal(repo.gitOutputOrNull(["rev-parse", "--show-toplevel"], sandbox.home), null);
   });
 });

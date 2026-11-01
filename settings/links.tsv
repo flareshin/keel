@@ -1,4 +1,3 @@
-# keel link manifest (Interfaces (h)): source -> target relative to KEEL_DATA_DIR.
 source	target
 {{KEEL}}/bin/keel	bin/keel
 {{KEEL}}/skills/prompt-refine	skills/prompt-refine
@@ -6,6 +5,8 @@ source	target
 {{KEEL}}/skills/descend	skills/descend
 {{KEEL}}/skills/improve	skills/improve
 {{KEEL}}/skills/no-comments	skills/no-comments
+{{KEEL}}/skills/agent-authoring	skills/agent-authoring
+{{KEEL}}/skills/agent-improve	skills/agent-improve
 {{KEEL}}/workflows/lens-review.js	workflows/lens-review.js
 {{KEEL}}/workflows/adversarial-audit.js	workflows/adversarial-audit.js
 {{KEEL}}/workflows/review-lenses.json	workflows/review-lenses.json

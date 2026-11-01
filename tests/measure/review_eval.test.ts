@@ -11,7 +11,7 @@ import { loadReviewCases } from "../../measure/evals/lib/evalkit/reviewcases.ts"
 import type { ReviewCase } from "../../measure/evals/lib/evalkit/reviewcases.ts"
 import { gradeResult, roundToFourDecimals, suiteNumbers } from "../../measure/evals/lib/evalkit/reviewgrade.ts"
 import { BuildError, buildCaseRepo } from "../../measure/evals/lib/evalkit/reviewrun.ts"
-import { runGit } from "../../measure/lib/measurekit/gitutil.ts"
+import { runGitOrThrow } from "../../measure/lib/measurekit/gitutil.ts"
 import type { JsonObject } from "../../measure/lib/measurekit/json.ts"
 import { CHECKOUT, MeasureSandbox, readText } from "./helpers.ts"
 import type { Completed } from "./helpers.ts"
@@ -121,16 +121,16 @@ describe("build", () => {
     writeCase(keel, "mean-1")
     const reviewCase = loadReviewCases([keel])[0] as ReviewCase
     const { repo, base, head } = buildCaseRepo(reviewCase, path.join(root, "work"))
-    assert.equal(runGit(repo, ["show", base + ":calc.ts"]), BASE_TEXT)
-    assert.ok(runGit(repo, ["diff", base, head]).includes("+export function mean(items: number[]): number {"))
-    assert.equal(runGit(repo, ["status", "--porcelain"]), "")
+    assert.equal(runGitOrThrow(repo, ["show", base + ":calc.ts"]), BASE_TEXT)
+    assert.ok(runGitOrThrow(repo, ["diff", base, head]).includes("+export function mean(items: number[]): number {"))
+    assert.equal(runGitOrThrow(repo, ["status", "--porcelain"]), "")
   })
 
   it("build_appliesTheChange_whenTheCheckoutPathIsRelative", () => {
     writeCase(keel, "mean-1")
     const reviewCase = loadReviewCases([path.relative(process.cwd(), keel)])[0] as ReviewCase
     const { repo, base, head } = buildCaseRepo(reviewCase, path.join(root, "work"))
-    assert.ok(runGit(repo, ["diff", base, head]).includes("+export function mean(items: number[]): number {"))
+    assert.ok(runGitOrThrow(repo, ["diff", base, head]).includes("+export function mean(items: number[]): number {"))
   })
 
   it("build_refusesALocationPastTheEndOfTheFile", () => {

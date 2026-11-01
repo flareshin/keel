@@ -7,7 +7,8 @@ import { decodeStrict, isSystemError, resolveLinks, splitLines } from '../../mea
 import { compareCodePoints, parseJsonKeepingIntegers } from '../../measure/lib/measurekit/json.ts';
 import * as codexLenses from './codex_lenses.ts';
 import * as env from './env.ts';
-import { TimeoutExpired, runCaptured } from './subprocess.ts';
+import { TimeoutExpired } from '../../measure/lib/measurekit/timeout.ts';
+import { runCaptured } from './subprocess.ts';
 import * as writers from './writers.ts';
 import { isJsonRecord } from './writers.ts';
 import type { JsonObject } from './writers.ts';

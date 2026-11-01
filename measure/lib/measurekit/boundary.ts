@@ -4,7 +4,7 @@ import path from "node:path"
 import { dataLines, readTsvRecords, TsvError } from "./datafiles.ts"
 import { CHECKOUT_ROOT } from "./env.ts"
 import { InvalidUtf8Error, isDir, isFile, isSymlink, isSystemError, splitLines, walkEntries, words } from "./files.ts"
-import { GitError, runGit } from "./gitutil.ts"
+import { GitError, runGitOrThrow } from "./gitutil.ts"
 
 const GENERIC_RULES_PATH = path.join(CHECKOUT_ROOT, "measure", "boundary-generic.tsv")
 const ZERO_SHA_PATTERN = /^0+$/
@@ -99,7 +99,7 @@ export function* fileLines(root: string, relativePaths: Iterable<string>): Gener
 function directoryFiles(root: string, directory: string): string[] {
   let tracked: string[]
   try {
-    tracked = runGit(directory, ["ls-files", "-z"]).split("\0")
+    tracked = runGitOrThrow(directory, ["ls-files", "-z"]).split("\0")
   } catch (error) {
     if (error instanceof GitError) return walkWithoutGit(root, directory)
     throw error
@@ -132,7 +132,7 @@ export function* stagedLines(repo: string): Generator<ScanLine> {
 export function* rangeLines(repo: string, commitRange: string): Generator<ScanLine> {
   for (const commit of commitsInRange(repo, commitRange)) {
     const short = commit.slice(0, 12)
-    const message = runGit(repo, ["log", "-1", "--format=%B", commit])
+    const message = runGitOrThrow(repo, ["log", "-1", "--format=%B", commit])
     let number = 1
     for (const line of splitLines(message)) yield [`${short}:message`, number++, line]
     yield* diffLines(repo, [firstParent(repo, commit), commit], short + ":")
@@ -140,10 +140,10 @@ export function* rangeLines(repo: string, commitRange: string): Generator<ScanLi
 }
 
 function* diffLines(repo: string, diffTarget: string[], labelPrefix: string): Generator<ScanLine> {
-  for (const name of runGit(repo, [...CHANGED_NAMES_ARGS, ...diffTarget]).split("\0")) {
+  for (const name of runGitOrThrow(repo, [...CHANGED_NAMES_ARGS, ...diffTarget]).split("\0")) {
     if (name !== "") yield [labelPrefix + name, PATH_NAME_LINE, name]
   }
-  yield* addedLines(runGit(repo, [...DIFF_ARGS, ...diffTarget]), labelPrefix)
+  yield* addedLines(runGitOrThrow(repo, [...DIFF_ARGS, ...diffTarget]), labelPrefix)
 }
 
 function commitsInRange(repo: string, commitRange: string): string[] {
@@ -153,13 +153,13 @@ function commitsInRange(repo: string, commitRange: string): string[] {
   if (separatorAt < 0 || old === "" || next === "" || next.startsWith(".")) {
     throw new BoundaryUsageError(`--range takes <old>..<new>, got ${JSON.stringify(commitRange)}`)
   }
-  if (ZERO_SHA_PATTERN.test(old)) return words(runGit(repo, ["rev-list", "--reverse", next, "--not", "--remotes"]))
-  return words(runGit(repo, ["rev-list", "--reverse", `${old}..${next}`]))
+  if (ZERO_SHA_PATTERN.test(old)) return words(runGitOrThrow(repo, ["rev-list", "--reverse", next, "--not", "--remotes"]))
+  return words(runGitOrThrow(repo, ["rev-list", "--reverse", `${old}..${next}`]))
 }
 
 function firstParent(repo: string, commit: string): string {
-  const parents = words(runGit(repo, ["rev-list", "--parents", "-n", "1", commit])).slice(1)
-  return parents[0] ?? runGit(repo, ["hash-object", "-t", "tree", "--stdin"], {}, "").trim()
+  const parents = words(runGitOrThrow(repo, ["rev-list", "--parents", "-n", "1", commit])).slice(1)
+  return parents[0] ?? runGitOrThrow(repo, ["hash-object", "-t", "tree", "--stdin"], {}, "").trim()
 }
 
 export function* addedLines(diffText: string, labelPrefix: string): Generator<ScanLine> {

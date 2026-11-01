@@ -1,13 +1,13 @@
 import path from "node:path"
 
 import { isSystemError, resolveLinks, splitLines } from "./files.ts"
-import { GitError, runGit } from "./gitutil.ts"
+import { GitError, runGitOrThrow } from "./gitutil.ts"
 
 export function mainWorktreeOverlay(overlayDir: string): string | null {
   const overlay = resolveLinks(overlayDir)
   let lines: string[]
   try {
-    lines = splitLines(runGit(overlay, ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-dir", "--git-common-dir"]))
+    lines = splitLines(runGitOrThrow(overlay, ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-dir", "--git-common-dir"]))
   } catch (error) {
     if (error instanceof GitError || isSystemError(error)) return null
     throw error

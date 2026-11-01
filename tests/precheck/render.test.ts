@@ -68,7 +68,17 @@ describe("renderCensus", () => {
     const text = renderCensus(census(ran({ results: [result(10, { outcome: "killed", test: "tests/a.test.ts" })] }), { blobs: {} }))
 
     assert.match(text, /\nblobs     none\n/)
-    assert.doesNotMatch(text, /\n(?:survived|no test reaches|not run)\n/)
+    assert.doesNotMatch(text, /\n(?:survived|timeout|no test reaches|not run)\n/)
+  })
+
+  it("renderCensus_listsTimedOutMutantsAfterSurvivors_withTheTestThatTimedOut", () => {
+    const text = renderCensus(census(ran({ results: [
+      result(71, { outcome: "survived", ran: ["tests/a.test.ts"] }),
+      result(13, { outcome: "timeout", test: "tests/b.test.ts" }),
+      result(141, { outcome: "no test reaches" }),
+    ] })))
+
+    assert.match(text, /\nsurvived\n  lib\/a\.ts:71  logic-term  a \|\| b → a  ran: tests\/a\.test\.ts\ntimeout\n  lib\/a\.ts:13  logic-term  a \|\| b → a  test: tests\/b\.test\.ts\nno test reaches\n  lib\/a\.ts:141  logic-term  a \|\| b → a\n/)
   })
 
   it("renderCensus_namesAPartialCheck_andListsTheMutantsThatDidNotRun", () => {

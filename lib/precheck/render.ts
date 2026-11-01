@@ -57,6 +57,7 @@ function ranLines(blobs: Record<string, string>, mutation: Ran): string[] {
     labelled('baseline', [`${mutation.baselineFiles} test files`, `${mutation.baselinePasses} pass`, 'coverage collected', ...withoutPasses, `timeout ${mutation.timeoutSeconds}s per file`].join(SEPARATOR)),
     labelled('mutants', [`candidates ${candidateCount(mutation)}`, ...VERDICT_ORDER.map((verdict) => `${verdict} ${counts[verdict]}`), ...notRun, duration(mutation.elapsedMs)].join(SEPARATOR)),
     ...section('survived', mutation.results.filter((result) => result.verdict.outcome === 'survived').map(survivedLine)),
+    ...section('timeout', mutation.results.filter((result) => result.verdict.outcome === 'timeout').map(timedOutLine)),
     ...section('no test reaches', mutation.results.filter((result) => result.verdict.outcome === 'no test reaches').map(mutantLine)),
     ...section('not run', mutation.notRun.map(mutantLine)),
   ];
@@ -76,6 +77,11 @@ function survivedLine(result: CensusResult): string {
   const ran = result.verdict.outcome === 'survived' ? result.verdict.ran : [];
   const coverage = result.coverage === 'unknown' ? [COLUMN_GAP + 'coverage unknown'] : [];
   return [mutantLine(result), `${COLUMN_GAP}ran: ${ran.join(', ')}`, ...coverage].join('');
+}
+
+function timedOutLine(result: CensusResult): string {
+  const test = result.verdict.outcome === 'timeout' ? result.verdict.test : '';
+  return `${mutantLine(result)}${COLUMN_GAP}test: ${test}`;
 }
 
 function mutantLine(mutant: CensusMutant): string {

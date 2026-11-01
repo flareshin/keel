@@ -10,7 +10,7 @@ import { committedRepo } from "./fixture.ts"
 
 const typescriptInstalled = await import("typescript").then(() => true, () => false)
 type RunModule = typeof import("../../lib/precheck/run.ts")
-const { runMutants } = typescriptInstalled ? await import("../../lib/precheck/run.ts") : ({} as RunModule)
+const { mutantTimeoutSeconds, runMutants } = typescriptInstalled ? await import("../../lib/precheck/run.ts") : ({} as RunModule)
 
 const TIMEOUT_SECONDS = 60
 const PICK = "export function pick(flag: boolean): number {\n  if (flag) return 1\n  return 2\n}\n"
@@ -172,6 +172,16 @@ describe("runMutants", { skip: typescriptInstalled ? false : "typescript is not 
     assert.equal(readFileSync(join(directory, "lib", "a.ts"), "utf8"), PICK)
   })
 
+  it("runMutants_letsASlowMutantFinish_whenTheHostIsBusierThanDuringItsBaselineFile", async () => {
+    const { directory, files } = await checkout({ "lib/a.ts": PICK, "tests/a.test.ts": PICK_TEST }, ["tests/a.test.ts"])
+    const quietBaseline = files.map((file) => ({ ...file, durationMs: 1000, loadFactor: 1 }))
+    const slow = "if (flag) { const end = Date.now() + 7000; while (Date.now() < end) {} return 1 }"
+
+    const run = await runMutants(directory, quietBaseline, [{ path: "lib/a.ts", mutant: mutantAt(PICK, "if (flag) return 1", slow, 2) }], undefined, () => 8)
+
+    assert.deepEqual(run.results[0]?.verdict, { outcome: "survived", ran: ["tests/a.test.ts"] })
+  })
+
   it("runMutants_leavesTheMutantsPastTheBudgetUnrun", async () => {
     const { directory, files } = await checkout({ "lib/a.ts": PICK, "tests/a.test.ts": PICK_TEST }, ["tests/a.test.ts"])
     const first = { path: "lib/a.ts", mutant: mutantAt(PICK, "flag)", "!flag)", 2) }
@@ -183,5 +193,17 @@ describe("runMutants", { skip: typescriptInstalled ? false : "typescript is not 
     assert.deepEqual(none, { results: [], notRun: [first, second] })
     assert.deepEqual(one.results.map((result) => result.verdict.outcome), ["killed"])
     assert.deepEqual(one.notRun, [second])
+  })
+})
+
+describe("mutantTimeoutSeconds", { skip: typescriptInstalled ? false : "typescript is not installed; run npm ci" }, () => {
+  it("mutantTimeoutSeconds_isOneAndAHalfBaselineDurationsPlus5s_stretchedByHowMuchBusierTheHostIsNow", () => {
+    assert.equal(mutantTimeoutSeconds(2000, 1, 1), 8)
+    assert.equal(mutantTimeoutSeconds(2000, 1, 4), 17)
+    assert.equal(mutantTimeoutSeconds(2000, 2, 4), 11)
+  })
+
+  it("mutantTimeoutSeconds_neverShrinks_whenTheHostIsQuieterThanDuringTheBaselineFile", () => {
+    assert.equal(mutantTimeoutSeconds(2000, 4, 1), 8)
   })
 })

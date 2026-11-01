@@ -1,11 +1,11 @@
 ---
 name: agent-authoring
-description: Choosing the form for delegated work and writing a subagent definition or an agent brief. Trigger; "make an agent for X", "write a brief for the worker", a task about to be handed to a subagent that needs more than a one-line prompt, a new `agents/*.md` file. Do NOT use for a quick lookup you can do in a few tool calls, fixing an agent that keeps failing (agent-improve), or a review dispatch (lens-review and no-comments own their briefs).
+description: Choosing the form for delegated work and writing a subagent definition or an agent brief. Trigger; "make an agent for X", "write a brief for the worker", a task about to be handed to a subagent that needs more than a one-line prompt, a new `agents/*.md` file, "should this agent fold back into the main loop", a new skill or agent added beside overlapping ones. Do NOT use for a quick lookup you can do in a few tool calls, fixing an agent that keeps failing (agent-improve), or a review dispatch (lens-review and no-comments own their briefs).
 ---
 
 # Agent authoring
 
-Delegated work fails in two places: the wrong form (a new agent where a brief would do, always-on text where a skill would do) and a brief that leaves the agent guessing. This skill picks the cheapest form that works and writes the definition and the brief so the agent can finish without the conversation it never saw. The form order and the "large input, small answer" test are adapted from Harness² (github.com/google-research/harness2 at 1cfe254, Apache-2.0, `harness2/core/prompts.py`).
+Delegated work fails in two places: the wrong form (a new agent where a brief would do, always-on text where a skill would do) and a brief that leaves the agent guessing. This skill picks the cheapest form that works and writes the definition and the brief so the agent can finish without the conversation it never saw. The form order and the "large input, small answer" test are adapted from Harness² (github.com/google-research/harness2 at 1cfe254, Apache-2.0, `harness2/core/prompts.py`). The split, fold and prune rules are adapted from Anthropic's "Building agents: When to fold subagents into your main agent loop" (claude.com/resources/articles, 2026-10-22).
 
 ## Pick the form
 
@@ -21,6 +21,10 @@ Take the first form that can hold the work. Each later one costs more to keep.
 | Always-on text (CLAUDE.md, ledger prose) | a short rule that applies to every run | paid on every turn; cut something to add it |
 
 A new agent is a bad trade when its output is as large as its input: the parent reads it all again. Pick `worker-low` for fully specified mechanical work and `worker-high` for hard, well-scoped implementation before writing a new definition.
+
+Split delegated work by context, not by problem type or by team. Give an agent a piece that needs little from the rest of the run and returns a compact result; one agent per kind of problem passes the same facts through several handoffs and loses detail at each.
+
+Fold an agent back into the main loop, as a skill for its procedure and a tool or script for its calls, when it chains on another agent's output, reads the same data as one, or is often called together with one. Keep it without a comparison when it needs a fresh or parallel context, or its tools or instructions would conflict with the main loop's. Otherwise fold one agent at a time: treat the fold as the candidate in `agent-improve` steps 4–6 (it needs no failing runs) and adopt it unless the label is `hurt`, after checking that the folded run still makes every check the agent made.
 
 ## Write the definition
 
@@ -48,6 +52,13 @@ Leave out your hypothesis as a fact, your verdict on the work and any "this look
 
 - A new definition: link it (`bin/link`), confirm `~/.claude/agents/<name>.md` resolves, and dispatch it once on a small real task; the first reply shows whether the return shape holds.
 - A brief: read it as the agent would, with no other context. Every path it names exists, and "done" is something the agent can run.
+
+## Prune what is kept
+
+Every kept skill and agent costs on each run, so when adding one, look at its neighbours:
+
+- **Unused or overlapping.** A skill with zero Skill-tool loads in `~/.claude` transcripts since it shipped, an agent with zero Agent-tool dispatches in those transcripts, or one whose trigger or rule another already covers, is merged or removed through the normal review path.
+- **Written for an older model.** Text that only made sense for a weaker model, such as repeated warnings or step-by-step instructions for work the model now plans itself, is removed as an `agent-improve` candidate; the removal is adopted unless the label is `hurt`. A tagged `[ID]` rule leaves through its ledger row (`measure/propose --model-upgrade`), not by deleting the text.
 
 ## Rules
 - [K5] Pick the first form in the table that holds the work; a new agent definition or always-on text needs a reason the earlier forms cannot carry it.

@@ -1,4 +1,3 @@
-# keel link manifest (Interfaces (h)): source -> target relative to KEEL_DATA_DIR.
 source	target
 {{KEEL}}/bin/keel	bin/keel
 {{KEEL}}/skills/prompt-refine	skills/prompt-refine

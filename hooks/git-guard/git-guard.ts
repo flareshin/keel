@@ -77,10 +77,7 @@ const COMMIT_SHORT_VALUE_FLAGS: ReadonlySet<string> = new Set(["m", "F", "C", "c
 const COMMIT_SHORT_ATTACHED_VALUE_FLAGS: ReadonlySet<string> = new Set(["S", "u"]);
 const COMMIT_NO_VERIFY_SHORT_FLAG = "n";
 const STAGING_SUBCOMMANDS: ReadonlySet<string> = new Set(["add", "stage"]);
-const WORKTREE_KEEPING_COMMANDS: ReadonlySet<string> = new Set(["", "cd", "pushd", "popd", "export", "echo", "printf", "true"]);
-const WORKTREE_KEEPING_GIT_SUBCOMMANDS: ReadonlySet<string> = new Set([
-  "add", "stage", "rm", "mv", "status", "diff", "log", "show", "rev-parse",
-]);
+const PLAIN_CALL_TEXT_RE = /^(?:[A-Za-z0-9 \t\n'"_.,:;=@%+\-\/]|&&)*$/;
 const PR_FILE_OPTIONS: ReadonlySet<string> = new Set(["-F", "--body-file"]);
 const PR_TEXT_SUBCOMMANDS: ReadonlySet<string> = new Set(["create", "edit", "merge"]);
 const UNPUSHED = ["--not", "--remotes"];
@@ -324,7 +321,8 @@ function checkBash(command: string, cwd: string): Violation[] {
     ...checkKeelCommands(call), ...checkProtectedWrites(call), ...checkLiveCheckouts(call), ...checkHookSkips(call),
     ...checkHookDisablingWrites(call), ...checkCommentWrites(call),
   ];
-  call.forEach((step, index) => violations.push(...checkGitOrPr(step, call, index, callHeredocs)));
+  const plainCallText = PLAIN_CALL_TEXT_RE.test(command);
+  call.forEach((step, index) => violations.push(...checkGitOrPr(step, call, index, callHeredocs, plainCallText)));
   return unique(violations);
 }
 
@@ -546,13 +544,17 @@ function gitHookSkip(step: Step, index: number): string | null {
   return null;
 }
 
-function checkGitOrPr(step: Step, call: readonly Step[], index: number, callHeredocs: readonly string[]): Violation[] {
+function checkGitOrPr(
+  step: Step, call: readonly Step[], index: number, callHeredocs: readonly string[], plainCallText: boolean,
+): Violation[] {
   if (step.name === "gh") return checkPrText(ghSubcommandArgv(step.argv), step, callHeredocs);
   const argv = step.argv;
   const position = gitSubcommandIndex(argv);
   if (position === null) return [];
   const repoDirectory = gitDirectory(argv, step.directory, step.expansion);
-  if (argv[position] === "commit") return checkCommit(argv.slice(position + 1), step, repoDirectory, call.slice(0, index), callHeredocs);
+  if (argv[position] === "commit") {
+    return checkCommit(argv.slice(position + 1), step, repoDirectory, call.slice(0, index), callHeredocs, plainCallText);
+  }
   if (argv[position] === "push") return checkPush(argv.slice(position + 1), repoDirectory);
   return [];
 }
@@ -568,15 +570,21 @@ function checkPrText(ghArgv: readonly string[], step: Step, callHeredocs: readon
   }];
 }
 
-function checkCommit(args: readonly string[], step: Step, repoDirectory: string, earlierSteps: readonly Step[], callHeredocs: readonly string[]): Violation[] {
+function checkCommit(
+  args: readonly string[], step: Step, repoDirectory: string, earlierSteps: readonly Step[], callHeredocs: readonly string[],
+  plainCallText: boolean,
+): Violation[] {
   const violations: Violation[] = [];
   if (testCaseFolded(ATTRIBUTION_RE, commitMessageTexts(args, step, callHeredocs).join("\n"))) {
     violations.push({ ruleId: F_ATTRIBUTION, text: "AI-tool attribution in the commit message; remove it." });
   }
   const toplevel = findToplevel(repoDirectory);
-  if (toplevel === null) return violations;
+  if (toplevel === null) {
+    const repoUnknown = !plainCallText || isUnresolved(repoDirectory) || earlierSteps.length > 0;
+    return repoUnknown ? [...violations, unreplayableStagingViolation(null)] : violations;
+  }
   const repoKey = findRepoKey(toplevel);
-  const staging = sameCallStaging(args, repoDirectory, earlierSteps, toplevel);
+  const staging = sameCallStaging(args, repoDirectory, earlierSteps, toplevel, plainCallText);
   return [...violations, ...stagedContentViolations(staging, toplevel, repoKey)];
 }
 
@@ -589,8 +597,9 @@ function stagedContentViolations(staging: readonly StagingCommand[] | null, topl
 function unreplayableStagingViolation(repoKey: string | null): Violation {
   return {
     ruleId: F_SECRETS, repo: repoKey, kind: PROCEDURAL_KIND,
-    text: "This call stages files in a way the hook cannot replay (interactive or patch staging, a run-time expansion or unresolved directory " +
-      "in the staging command, or a staging command that fails), so the secret and path checks cannot see them; stage in a separate call, then commit.",
+    text: "This call stages files in a way the hook cannot replay (a step other than a git add before the commit, interactive or patch staging, " +
+      "a run-time expansion or unresolved directory in the staging command, or a staging command that fails), so the secret and path checks " +
+      "cannot see them; use git -C <dir> instead of cd, or stage in a separate call, then commit.",
   };
 }
 
@@ -612,30 +621,20 @@ interface StagingCommand {
 type EarlierStaging = StagingCommand | typeof NOT_STAGING | typeof UNREPLAYABLE;
 
 function sameCallStaging(
-  args: readonly string[], repoDirectory: string, earlierSteps: readonly Step[], toplevel: string,
+  args: readonly string[], repoDirectory: string, earlierSteps: readonly Step[], toplevel: string, plainCallText: boolean,
 ): StagingCommand[] | null {
   const commands: StagingCommand[] = [];
-  let worktreeMayHaveChanged = false;
+  let replayable = plainCallText;
   for (const step of earlierSteps) {
     const staging = earlierStaging(step, toplevel);
     if (staging === UNREPLAYABLE) return null;
-    if (staging === NOT_STAGING) {
-      worktreeMayHaveChanged ||= mayChangeWorktree(step);
-      continue;
-    }
-    if (worktreeMayHaveChanged) return null;
-    commands.push(staging);
+    if (staging === NOT_STAGING) replayable = false;
+    else commands.push(staging);
   }
   const own = commitStaging(args, repoDirectory, toplevel);
-  if (own === null || (own.length > 0 && worktreeMayHaveChanged)) return null;
-  return [...commands, ...own];
-}
-
-function mayChangeWorktree(step: Step): boolean {
-  if (step.command.redirects.some((redirect) => fileWriteOf(redirect) !== null)) return true;
-  const index = gitSubcommandIndex(step.argv);
-  if (index === null) return !WORKTREE_KEEPING_COMMANDS.has(step.name);
-  return !WORKTREE_KEEPING_GIT_SUBCOMMANDS.has(step.argv[index] ?? "");
+  if (own === null) return null;
+  const staging = [...commands, ...own];
+  return staging.length > 0 && !replayable ? null : staging;
 }
 
 function earlierStaging(step: Step, toplevel: string): EarlierStaging {

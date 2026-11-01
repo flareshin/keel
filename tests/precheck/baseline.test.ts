@@ -290,12 +290,17 @@ describe("precheck baseline", () => {
     assert.equal(existsSync(join(directory, "marker")), false)
   })
 
-  it("baselineTimeoutSeconds_keeps300sOnAnIdleHost_scalesWithLoadPerCpu_andCapsAt2400s", () => {
-    assert.equal(baselineTimeoutSeconds(0.5, 12), 300)
-    assert.equal(baselineTimeoutSeconds(12, 12), 300)
-    assert.equal(baselineTimeoutSeconds(13, 12), 325)
-    assert.equal(baselineTimeoutSeconds(24, 12), 600)
-    assert.equal(baselineTimeoutSeconds(96, 12), 2400)
-    assert.equal(baselineTimeoutSeconds(147, 12), 2400)
+  it("baselineTimeoutSeconds_keeps900sOnAnIdleHost_scalesWithLoadPerCpu_andCapsAt7200s", () => {
+    assert.equal(baselineTimeoutSeconds(0.5, 12), 900)
+    assert.equal(baselineTimeoutSeconds(12, 12), 900)
+    assert.equal(baselineTimeoutSeconds(13, 12), 975)
+    assert.equal(baselineTimeoutSeconds(24, 12), 1800)
+    assert.equal(baselineTimeoutSeconds(96, 12), 7200)
+    assert.equal(baselineTimeoutSeconds(147, 12), 7200)
+  })
+
+  it("baselineTimeoutSeconds_onAnIdleHost_outlastsHookParityUnderCoverage", () => {
+    const hookParityUnderCoverageSeconds = 338
+    assert.ok(baselineTimeoutSeconds(0, 12) >= 2 * hookParityUnderCoverageSeconds)
   })
 })

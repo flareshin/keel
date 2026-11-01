@@ -586,8 +586,9 @@ function stagedContentViolations(staging: readonly StagingCommand[] | null, topl
 function unreplayableStagingViolation(repoKey: string | null): Violation {
   return {
     ruleId: F_SECRETS, repo: repoKey, kind: PROCEDURAL_KIND,
-    text: "This call stages files in a way the hook cannot replay (interactive or patch staging, a run-time expansion or unresolved directory " +
-      "in the staging command, or a staging command that fails), so the secret and path checks cannot see them; stage in a separate call, then commit.",
+    text: "This call stages files in a way the hook cannot replay (a step other than a git add before the commit, interactive or patch staging, " +
+      "a run-time expansion or unresolved directory in the staging command, or a staging command that fails), so the secret and path checks " +
+      "cannot see them; use git -C <dir> instead of cd, or stage in a separate call, then commit.",
   };
 }
 

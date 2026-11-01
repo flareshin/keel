@@ -1059,9 +1059,9 @@ describe("SameCallStagingTest", () => {
     return sandbox.git(repo, "diff", "--cached", "--name-only");
   }
 
-  function commitTracked(name: string, text: string): void {
-    sandbox.commitFile(repo, name, "start\n", `Add ${name}`);
-    sandbox.write(join(repo, name), text);
+  function commitTracked(name: string, text: string, into = repo): void {
+    sandbox.commitFile(into, name, "start\n", `Add ${name}`);
+    sandbox.write(join(into, name), text);
   }
 
   it("commit_passes_whenCleanFileIsAddedInTheSameCall", () => {
@@ -1080,10 +1080,15 @@ describe("SameCallStagingTest", () => {
     assertProceduralDenied(guard(`cd ${repo}; git add leak.txt; git commit -m wip`));
   });
 
+  it("commit_denied_whenCdDashReturnsTheCommitToTheCallRepo", () => {
+    const other = sandbox.makeRepo("example", "other");
+    commitTracked("t.txt", SECRET_LINE, other);
+    assertProceduralDenied(guard(`cd ${other}; cd ${repo}; cd -; git commit -am wip`, other));
+  });
+
   it("commit_denied_whenADirectoryChangePrecedesTheStaging", () => {
     const other = sandbox.makeRepo("example", "other");
     commitTracked("t.txt", SECRET_LINE);
-    assertProceduralDenied(guard(`cd ${other}; cd ${repo}; cd -; git commit -am wip`, other));
     assertProceduralDenied(guard(`cd ${other} ${repo}; git commit -am wip`, repo));
     assertProceduralDenied(guard(`cd ${other} & git commit -am wip`, repo));
   });

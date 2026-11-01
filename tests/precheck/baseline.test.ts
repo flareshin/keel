@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { after, describe, it } from "node:test"
 import { GitError, snapshotTree } from "../../lib/evidence/gitcmd.ts"
-import { baselineTimeoutSeconds, materializeTree, runBaseline } from "../../lib/precheck/baseline.ts"
+import { baselineTimeoutSeconds, loadFactor, materializeTree, runBaseline } from "../../lib/precheck/baseline.ts"
 import { committedRepo, executedLineNumbers, writeFiles as write } from "./fixture.ts"
 
 const EXECUTABLE_BITS = 0o111
@@ -222,6 +222,29 @@ describe("precheck baseline", () => {
       ["tests/a.test.ts", true, false],
       ["tests/b.test.ts", false, true],
     ])
+  })
+
+  it("runBaseline_recordsTheLoadFactorSampledJustBeforeEachTestFile", async () => {
+    const directory = materialized({
+      "lib/a.ts": "export const a = () => 1\n",
+      "tests/a.test.ts": passing("a", "import { a } from '../lib/a.ts'\na()"),
+      "tests/b.test.ts": passing("b", "import { a } from '../lib/a.ts'\na()"),
+    })
+    const sampled = [2, 5]
+
+    const baseline = await runBaseline(directory, ["tests/a.test.ts", "tests/b.test.ts"], TIMEOUT_SECONDS, () => sampled.shift()!)
+
+    assert.equal(baseline.outcome, "green")
+    assert.deepEqual(baseline.files.map((file) => [file.test, file.loadFactor]), [["tests/a.test.ts", 2], ["tests/b.test.ts", 5]])
+  })
+
+  it("loadFactor_isLoadPerCpu_neverBelow1_andCappedAt8", () => {
+    assert.equal(loadFactor(0.5, 12), 1)
+    assert.equal(loadFactor(12, 12), 1)
+    assert.equal(loadFactor(27, 12), 2.25)
+    assert.equal(loadFactor(57, 12), 4.75)
+    assert.equal(loadFactor(96, 12), 8)
+    assert.equal(loadFactor(187, 12), 8)
   })
 
   it("runBaseline_seesLinesRunInsideAChildProcessTheTestSpawns", async () => {

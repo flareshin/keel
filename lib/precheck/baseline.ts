@@ -1,5 +1,5 @@
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { availableParallelism, loadavg, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { checkoutSnapshot } from '../evidence/gitcmd.ts';
 import { readCoverage } from './coverage.ts';
@@ -10,6 +10,7 @@ export interface BaselineFile {
   test: string;
   passed: number;
   durationMs: number;
+  loadFactor: number;
   coverage: Coverage;
 }
 
@@ -27,8 +28,15 @@ const DEPENDENCY_DIRECTORY = 'node_modules';
 const LOCAL_EXCLUDE = join('.git', 'info', 'exclude');
 
 export function baselineTimeoutSeconds(load: number, cpus: number): number {
-  const loadFactor = Math.min(Math.max(load / cpus, 1), MAX_LOAD_FACTOR);
-  return Math.round(IDLE_TIMEOUT_SECONDS * loadFactor);
+  return Math.round(IDLE_TIMEOUT_SECONDS * loadFactor(load, cpus));
+}
+
+export function loadFactor(load: number, cpus: number): number {
+  return Math.min(Math.max(load / cpus, 1), MAX_LOAD_FACTOR);
+}
+
+export function currentLoadFactor(): number {
+  return loadFactor(loadavg()[0]!, availableParallelism());
 }
 
 export function materializeTree(repo: string, tree: string): string {
@@ -51,10 +59,10 @@ function linkDependencies(repo: string, directory: string): void {
   appendFileSync(join(directory, LOCAL_EXCLUDE), `/${DEPENDENCY_DIRECTORY}\n`);
 }
 
-export async function runBaseline(directory: string, tests: string[], timeoutSeconds: number): Promise<Baseline> {
+export async function runBaseline(directory: string, tests: string[], timeoutSeconds: number, sampleLoadFactor: () => number = currentLoadFactor): Promise<Baseline> {
   const files: BaselineFile[] = [];
   for (const test of tests) {
-    const run = await runBaselineFile(directory, test, timeoutSeconds);
+    const run = await runBaselineFile(directory, test, timeoutSeconds, sampleLoadFactor());
     if (run.outcome !== 'ran') return run;
     files.push(run.file);
   }
@@ -63,13 +71,13 @@ export async function runBaseline(directory: string, tests: string[], timeoutSec
   return { outcome: 'green', files: withPasses, withoutPasses: files.filter((file) => file.passed === 0).map((file) => file.test), timeoutSeconds };
 }
 
-async function runBaselineFile(directory: string, test: string, timeoutSeconds: number): Promise<FileRun> {
+async function runBaselineFile(directory: string, test: string, timeoutSeconds: number, loadFactor: number): Promise<FileRun> {
   const coverageDirectory = mkdtempSync(join(tmpdir(), 'keel-precheck-coverage-'));
   try {
     const run = await runTestFile(directory, test, timeoutSeconds, { NODE_V8_COVERAGE: coverageDirectory });
     if (run.outcome === 'timeout') return { outcome: 'timeout', test, output: run.output, timeoutSeconds };
     if (run.returncode !== 0) return { outcome: 'red', test, output: run.output };
-    return { outcome: 'ran', file: { test, passed: run.passed, durationMs: run.durationMs, coverage: readCoverage(coverageDirectory, directory) } };
+    return { outcome: 'ran', file: { test, passed: run.passed, durationMs: run.durationMs, loadFactor, coverage: readCoverage(coverageDirectory, directory) } };
   } finally {
     rmSync(coverageDirectory, { recursive: true, force: true });
   }

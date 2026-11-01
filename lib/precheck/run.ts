@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
+import { currentLoadFactor } from './baseline.ts';
 import type { BaselineFile } from './baseline.ts';
 import { applyMutant, parsesCleanly } from './mutants.ts';
 import type { Mutant } from './mutants.ts';
@@ -33,28 +34,28 @@ export const DEFAULT_START_BUDGET_MS = 15 * 60 * 1000;
 const TIMEOUT_FACTOR = 1.5;
 const TIMEOUT_SLACK_MS = 5000;
 
-export async function runMutants(directory: string, baseline: BaselineFile[], targets: MutantTarget[], startBudgetMs = DEFAULT_START_BUDGET_MS): Promise<MutationRun> {
+export async function runMutants(directory: string, baseline: BaselineFile[], targets: MutantTarget[], startBudgetMs = DEFAULT_START_BUDGET_MS, sampleLoadFactor: () => number = currentLoadFactor): Promise<MutationRun> {
   const started = performance.now();
   const fastestFirst = [...baseline].sort((a, b) => a.durationMs - b.durationMs);
   const results: MutantResult[] = [];
   for (const [index, target] of targets.entries()) {
     if (performance.now() - started >= startBudgetMs) return { results, notRun: targets.slice(index) };
-    results.push(await runMutant(directory, fastestFirst, target));
+    results.push(await runMutant(directory, fastestFirst, target, sampleLoadFactor));
   }
   return { results, notRun: [] };
 }
 
-async function runMutant(directory: string, files: BaselineFile[], target: MutantTarget): Promise<MutantResult> {
+async function runMutant(directory: string, files: BaselineFile[], target: MutantTarget, sampleLoadFactor: () => number): Promise<MutantResult> {
   const known = files.some((file) => file.coverage.seen.has(target.path));
   const selected = known ? files.filter((file) => reaches(file, target)) : files;
-  return { ...target, coverage: known ? 'known' : 'unknown', verdict: await verdictFor(directory, selected, target) };
+  return { ...target, coverage: known ? 'known' : 'unknown', verdict: await verdictFor(directory, selected, target, sampleLoadFactor) };
 }
 
 function reaches(file: BaselineFile, { path, mutant }: MutantTarget): boolean {
   return (file.coverage.executedSpans.get(path) ?? []).some((span) => span.start < mutant.end && mutant.start < span.end);
 }
 
-async function verdictFor(directory: string, selected: BaselineFile[], target: MutantTarget): Promise<MutantVerdict> {
+async function verdictFor(directory: string, selected: BaselineFile[], target: MutantTarget, sampleLoadFactor: () => number): Promise<MutantVerdict> {
   if (selected.length === 0) return { outcome: 'no test reaches' };
   const path = join(directory, target.path);
   const original = readFileSync(path, 'utf8');
@@ -62,17 +63,17 @@ async function verdictFor(directory: string, selected: BaselineFile[], target: M
   if (!parsesCleanly(target.path, mutated)) return { outcome: 'invalid', reason: 'syntax' };
   writeFileSync(path, mutated);
   try {
-    return await firstFailure(directory, selected);
+    return await firstFailure(directory, selected, sampleLoadFactor);
   } finally {
     writeFileSync(path, original);
   }
 }
 
-async function firstFailure(directory: string, selected: BaselineFile[]): Promise<MutantVerdict> {
+async function firstFailure(directory: string, selected: BaselineFile[], sampleLoadFactor: () => number): Promise<MutantVerdict> {
   const ran: string[] = [];
   const withoutPasses: string[] = [];
   for (const file of selected) {
-    const run = await runTestFile(directory, file.test, timeoutSecondsFor(file));
+    const run = await runTestFile(directory, file.test, mutantTimeoutSeconds(file.durationMs, file.loadFactor, sampleLoadFactor()));
     if (run.outcome === 'timeout') return { outcome: 'timeout', test: file.test };
     if (run.returncode !== 0) return { outcome: 'killed', test: file.test };
     (run.passed === 0 ? withoutPasses : ran).push(file.test);
@@ -81,6 +82,7 @@ async function firstFailure(directory: string, selected: BaselineFile[]): Promis
   return { outcome: 'survived', ran };
 }
 
-function timeoutSecondsFor(file: BaselineFile): number {
-  return (file.durationMs * TIMEOUT_FACTOR + TIMEOUT_SLACK_MS) / 1000;
+export function mutantTimeoutSeconds(baselineDurationMs: number, baselineLoadFactor: number, currentLoadFactor: number): number {
+  const busier = Math.max(currentLoadFactor / baselineLoadFactor, 1);
+  return (baselineDurationMs * TIMEOUT_FACTOR * busier + TIMEOUT_SLACK_MS) / 1000;
 }

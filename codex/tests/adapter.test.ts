@@ -218,7 +218,7 @@ describe("installation", () => {
     assert.equal(claude.status, 0, claude.stdout + claude.stderr);
     assert.equal(runLink("--write").status, 0);
 
-    for (const name of ["readable-code", "improve", "descend", "prompt-refine", "no-comments"]) {
+    for (const name of ["readable-code", "improve", "descend", "prompt-refine", "no-comments", "agent-authoring", "agent-improve"]) {
       const claudeSkill = join(home, "data/skills", name);
       const codexSkill = join(home, ".agents/skills", name);
       assert.equal(realpathSync(claudeSkill), realpathSync(codexSkill), name);
@@ -547,7 +547,7 @@ describe("installation", () => {
     }
 
     const HOOKS_ONLY = { actions: [] as string[], problems: [] as string[] };
-    const SKILLS_ADDED_AFTER_RECORDING = ["no-comments"];
+    const SKILLS_ADDED_AFTER_RECORDING = ["no-comments", "agent-authoring", "agent-improve"];
 
     function registryWithoutSkillsAddedAfterRecording(registryText: string): string {
       const registry = JSON.parse(registryText);
@@ -561,7 +561,7 @@ describe("installation", () => {
       const pythonHooks = read(hooks);
       const check = runLink("--check");
       assert.equal(check.status, 1, check.stderr);
-      const addedSkills = SKILLS_ADDED_AFTER_RECORDING.map((name) => join(home, ".agents/skills", name));
+      const addedSkills = SKILLS_ADDED_AFTER_RECORDING.toSorted().map((name) => join(home, ".agents/skills", name));
       assert.deepEqual(JSON.parse(check.stdout), { ...HOOKS_ONLY, actions: [hooks, ...addedSkills, "update shared skill references"] });
       assert.equal(runLink("--write").status, 0);
       assert.notEqual(read(hooks), pythonHooks);

@@ -284,7 +284,7 @@ measure/       run, smoke, propose, boundary, weekly, evals/
 githooks/      pre-commit, pre-push (boundary scan)
 settings/      core.json (hook registration), links.tsv (link manifest)
 stacks/        spring-maven/ (env-preflight hook, settings fragment)
-skills/        prompt-refine/, readable-code/, descend/, improve/, no-comments/
+skills/        prompt-refine/, readable-code/, descend/, improve/, no-comments/, agent-authoring/, agent-improve/
 workflows/     lens-review.js, adversarial-audit.js, review-lenses.json
 agents/        keel-auditor.md, keel-reporter.md, keel-comment-reviewer.md (tool-limited review agent types)
 codex/         Codex adapter

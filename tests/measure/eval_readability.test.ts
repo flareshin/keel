@@ -150,6 +150,15 @@ describe("evalGraderDiff with the C-authoring-agents grader", () => {
     assert.deepEqual(grade("agents/sql-reviewer.md", reviewer), { signals: ["signal C-authoring-agents agents/sql-reviewer.md: a reviewer or verifier pins model"] })
   })
 
+  it("evalGraderDiff_findsNoSignal_forAReviewerWithoutModel", () => {
+    const reviewer = ["---", "name: sql-reviewer", "description: Reviews SQL migrations and returns a verdict.", "tools: Read", "---", "You review."]
+    assert.deepEqual(grade("agents/sql-reviewer.md", reviewer), { signals: [] })
+  })
+
+  it("evalGraderDiff_findsNoSignal_forAWorkerThatPinsModel", () => {
+    assert.deepEqual(grade("agents/log-reader.md", [...GOOD.slice(0, 4), "model: haiku", ...GOOD.slice(4)]), { signals: [] })
+  })
+
   it("evalGraderDiff_reportsARunThatChangesNoAgentFile", () => {
     assert.deepEqual(grade("notes/log-reader.md", GOOD), { signals: ["signal C-authoring-agents -: no agents/<name>.md file changed"] })
   })

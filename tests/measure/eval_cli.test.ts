@@ -171,6 +171,18 @@ describe("eval cli", () => {
     })
   })
 
+  describe("graded-change cases", () => {
+    it("fault_namesTheEvalGrader_whenTheEvalHasNoGradeScript_andCountsGradedRuns", () => {
+      const write = box.scenario("write", { events: [initEvent(), toolUse("Write", { file_path: "src/load.ts" }), resultEvent("Added it.")], writes: { "src/load.ts": "export const total = 1\n" } })
+      box.writeCases("keel/measure/evals/K4/train.tsv", [caseRow("g1", "graded-change", write)])
+      box.writeCases("keel/measure/evals/K4/holdout.tsv", [caseRow("g2", "graded-change", write)])
+      const [completed, report] = box.runEvalJson("K4", "--model", MODEL, ...RUN_ONCE)
+      assert.deepEqual([completed.status, report.written], [1, false], completed.stderr)
+      assert.ok(report.faults[0].reason.startsWith("K4 grader exit"), report.faults[0].reason)
+      assert.deepEqual([report.skill.graded_runs, report.skill.clear_runs], [2, 0])
+    })
+  })
+
   it("run_ignoresWritesUnderDotClaude", () => {
     box.linkKeel()
     const askAndSettings = box.scenario("ask-settings", { events: [initEvent(), ASK_EVENT, resultEvent(ASK_TEXT)], writes: { ".claude/settings.local.json": "{}" } })
@@ -307,7 +319,7 @@ describe("eval cli", () => {
     assert.equal(config.claude_md_sha256.length, 64)
     assert.equal(config.skill_md_sha256.length, 64)
     assert.equal(readText(path.join(raw, "a1-1.final.txt")), ASK_TEXT)
-    assert.deepEqual(readJson(path.join(raw, "skill-diagnostic.json")), { skill: "refining-requests", ambiguous_runs: 2, ambiguous_fired: 2, clear_runs: 2, clear_false_fires: 0, readable_runs: 0, readable_fired: 0 })
+    assert.deepEqual(readJson(path.join(raw, "skill-diagnostic.json")), { skill: "refining-requests", ambiguous_runs: 2, ambiguous_fired: 2, clear_runs: 2, clear_false_fires: 0, readable_runs: 0, readable_fired: 0, graded_runs: 0, graded_fired: 0 })
     assert.equal(report.skill.ambiguous_fired, 2)
     assert.deepEqual(fs.readdirSync(raw).filter((name) => name.startsWith("c1-1")).sort(), ["c1-1.diff", "c1-1.final.txt", "c1-1.stream.jsonl"])
   })
@@ -317,7 +329,7 @@ describe("eval cli", () => {
     box.seedSuite(box.askScenario(), box.editScenario())
     const [, report] = box.runEvalJson("K4", "--model", "pinned", ...RUN_ONCE)
     const text = readText(path.join(report.raw_dir, "skill-diagnostic.json"))
-    assert.equal(text, '{\n  "ambiguous_fired": 0,\n  "ambiguous_runs": 2,\n  "clear_false_fires": 0,\n  "clear_runs": 2,\n  "readable_fired": 0,\n  "readable_runs": 0,\n  "skill": "refining-requests"\n}\n')
+    assert.equal(text, '{\n  "ambiguous_fired": 0,\n  "ambiguous_runs": 2,\n  "clear_false_fires": 0,\n  "clear_runs": 2,\n  "graded_fired": 0,\n  "graded_runs": 0,\n  "readable_fired": 0,\n  "readable_runs": 0,\n  "skill": "refining-requests"\n}\n')
   })
 
   function suiteRuns(changeDenials: string[] = []): RawRun[] {

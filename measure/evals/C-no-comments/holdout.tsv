@@ -1,0 +1,4 @@
+# Holdout cases: same columns as train.tsv. Do not read these while editing the removing-comments skill.
+id	kind	expect	prompt
+h1	graded-change	-	Add isPickable(bin) to src/stock/locations.ts: a bin is pickable when it holds a SKU and its aisle is not Z. It goes up for review once you are done.
+h2	graded-change	-	PriceRules needs withDiscountCents(netCents, discountPercent), rounded the same way as withTaxCents. Make the change review-ready; the formal review runs next.

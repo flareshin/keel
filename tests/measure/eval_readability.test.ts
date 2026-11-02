@@ -4,7 +4,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
-import { ruleCheckDiff } from "../../measure/evals/lib/evalkit/readability.ts"
+import { evalGraderDiff, ruleCheckDiff } from "../../measure/evals/lib/evalkit/readability.ts"
 import { CHECKOUT } from "./helpers.ts"
 
 function addedFileDiff(file: string, lines: string[]): string {
@@ -71,5 +71,39 @@ describe("ruleCheckDiff", () => {
   it("ruleCheckDiff_leavesTheFixtureUntouched", () => {
     ruleCheckDiff(CHECKOUT, fixture, addedFileDiff("src/x.ts", ["export const x = 1"]))
     assert.deepEqual(fs.readdirSync(fixture), ["README.md"])
+  })
+})
+
+describe("evalGraderDiff with the C-no-comments grader", () => {
+  const COMMENTED = "// sum of cents\nexport const total = 1\n"
+  const hunkDiff = (hunk: string) => `diff --git a/src/total.ts b/src/total.ts\n--- a/src/total.ts\n+++ b/src/total.ts\n${hunk}`
+  let fixture: string
+
+  beforeEach(() => {
+    fixture = fs.mkdtempSync(path.join(os.tmpdir(), "fixture"))
+    fs.mkdirSync(path.join(fixture, "src"))
+    fs.writeFileSync(path.join(fixture, "src", "total.ts"), COMMENTED)
+  })
+  afterEach(() => fs.rmSync(fixture, { recursive: true, force: true }))
+
+  it("evalGraderDiff_reportsTheComment_thatAChangedFileStillHolds", () => {
+    const diff = hunkDiff("@@ -1,2 +1,2 @@\n // sum of cents\n-export const total = 1\n+export const total = 2\n")
+    assert.deepEqual(evalGraderDiff(CHECKOUT, "C-no-comments", fixture, diff), { signals: ["signal C-no-comments src/total.ts: // sum of cents"] })
+  })
+
+  it("evalGraderDiff_findsNoSignal_whenTheChangeRemovesTheComment", () => {
+    const diff = hunkDiff("@@ -1,2 +1 @@\n-// sum of cents\n export const total = 1\n")
+    assert.deepEqual(evalGraderDiff(CHECKOUT, "C-no-comments", fixture, diff), { signals: [] })
+  })
+
+  it("evalGraderDiff_keepsToolDirectivesAndLegalNotices", () => {
+    const diff = addedFileDiff("src/coupon.ts", ["// Copyright 2024 Stockroom Ltd.", "// eslint-disable-next-line no-console", "console.log(1)"])
+    assert.deepEqual(evalGraderDiff(CHECKOUT, "C-no-comments", fixture, diff), { signals: [] })
+  })
+
+  it("evalGraderDiff_faults_namingTheEval_whenItHasNoGradeScript", () => {
+    const check = evalGraderDiff(CHECKOUT, "K4", fixture, "")
+    assert.ok("fault" in check)
+    assert.ok(check.fault.startsWith("K4 grader exit 1: "), check.fault)
   })
 })

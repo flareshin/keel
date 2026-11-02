@@ -11,7 +11,8 @@ export const AMBIGUOUS = "ambiguous"
 export const CLEAR_CHANGE = "clear-change"
 export const CLEAR_ANSWER = "clear-answer"
 export const READABLE_CHANGE = "readable-change"
-const KINDS = [AMBIGUOUS, CLEAR_CHANGE, CLEAR_ANSWER, READABLE_CHANGE]
+export const GRADED_CHANGE = "graded-change"
+const KINDS = [AMBIGUOUS, CLEAR_CHANGE, CLEAR_ANSWER, READABLE_CHANGE, GRADED_CHANGE]
 const NO_EXPECT = "-"
 
 export class CaseError extends Error {}

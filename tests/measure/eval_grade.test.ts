@@ -5,7 +5,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
-import { AMBIGUOUS, CLEAR_ANSWER, CLEAR_CHANGE, Case, READABLE_CHANGE, splitGaps } from "../../measure/evals/lib/evalkit/cases.ts"
+import { AMBIGUOUS, CLEAR_ANSWER, CLEAR_CHANGE, Case, GRADED_CHANGE, READABLE_CHANGE, splitGaps } from "../../measure/evals/lib/evalkit/cases.ts"
 import { faultReason, graderCommit, runPasses, textAnswers, textAsks } from "../../measure/evals/lib/evalkit/grade.ts"
 import { GENERATED_CLAUDE_MD_HEADER, isKeelLive, projectDirFor, suiteEvalId } from "../../measure/evals/lib/evalkit/liveconfig.ts"
 import { QUESTION_PROTOCOL, claudeCommand } from "../../measure/evals/lib/evalkit/runner.ts"
@@ -18,6 +18,7 @@ const AMBIGUOUS_CASE = new Case("a1", "train", AMBIGUOUS, "-", "Improve this scr
 const CHANGE_CASE = new Case("c1", "train", CLEAR_CHANGE, "-", "Rename x to y.")
 const ANSWER_CASE = new Case("c2", "train", CLEAR_ANSWER, "grandTotalCents", "What does useCart return?")
 const READABLE_CASE = new Case("r1", "train", READABLE_CHANGE, "-", "Add a loader for the vendor report.")
+const GRADED_CASE = new Case("g1", "train", GRADED_CHANGE, "-", "Add a bulk price; this goes to review next.")
 const EMPTY_CATCH_SIGNAL = "signal K5.12 src/load.ts:1 try { run() } catch (e) {}"
 const MAX_TURNS = "error_max_turns"
 
@@ -163,6 +164,13 @@ describe("readable change grade", () => {
   it("readableChange_fails_whenNothingChanged", () => assert.equal(runPasses(READABLE_CASE, facts(), []), false))
   it("readableChange_fails_whenAskToolCalled", () => assert.equal(runPasses(READABLE_CASE, facts({ changed: true, askCalls: 1 }), []), false))
   it("clearChange_ignoresRuleSignals", () => assert.equal(runPasses(CHANGE_CASE, facts({ changed: true }), [EMPTY_CATCH_SIGNAL]), true))
+})
+
+describe("graded change grade", () => {
+  it("gradedChange_passes_whenChangedWithNoGraderSignal", () => assert.equal(runPasses(GRADED_CASE, facts({ changed: true }), []), true))
+  it("gradedChange_fails_whenTheGraderReportsASignal", () => assert.equal(runPasses(GRADED_CASE, facts({ changed: true }), [EMPTY_CATCH_SIGNAL]), false))
+  it("gradedChange_fails_whenNothingChanged", () => assert.equal(runPasses(GRADED_CASE, facts(), []), false))
+  it("gradedChange_passes_whenTheRunAlsoAsked", () => assert.equal(runPasses(GRADED_CASE, facts({ changed: true, askCalls: 1 }), []), true))
 })
 
 describe("splitGaps", () => {

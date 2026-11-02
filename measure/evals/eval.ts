@@ -16,13 +16,14 @@ import { GitError } from "../lib/measurekit/gitutil.ts"
 import { displayText, isJsonObject, JSON_INDENT, parseJson, stringifySorted } from "../lib/measurekit/json.ts"
 import type { JsonObject, JsonValue } from "../lib/measurekit/json.ts"
 import { allRows, loadLedgersFrom } from "../lib/measurekit/ledger.ts"
-import { Case, CaseError, loadCases, READABLE_CHANGE, selectCases, SPLITS, splitGaps } from "./lib/evalkit/cases.ts"
+import { Case, CaseError, GRADED_CHANGE, loadCases, READABLE_CHANGE, selectCases, SPLITS, splitGaps } from "./lib/evalkit/cases.ts"
 import { faultReason, graderCommit, LEFTOVER_FAULT, runPasses } from "./lib/evalkit/grade.ts"
 import { cliConfigDir, configFingerprint, isKeelLive, suiteEvalId } from "./lib/evalkit/liveconfig.ts"
 import { CLAUDE_BINARY, claudeCommand, findOnPath, runOnce } from "./lib/evalkit/runner.ts"
 import type { RunRecord } from "./lib/evalkit/runner.ts"
 import { RunFacts, summarizeStream } from "./lib/evalkit/stream.ts"
-import { ruleCheckDiff } from "./lib/evalkit/readability.ts"
+import { evalGraderDiff, ruleCheckDiff } from "./lib/evalkit/readability.ts"
+import type { RuleCheck } from "./lib/evalkit/readability.ts"
 import { CaseVerdict, splitVerdict, suitePasses } from "./lib/evalkit/verdict.ts"
 import type { SplitVerdict } from "./lib/evalkit/verdict.ts"
 
@@ -326,12 +327,16 @@ function leftoverUnrecorded(record: JsonObject): boolean {
 
 function graded(gradedCase: Case, index: number, record: RunRecord, plan: Plan): RunResult {
   const runFault = faultReason(record.facts, plan.timeoutSeconds)
-  const ruleCheck = runFault === null && gradedCase.kind === READABLE_CHANGE && record.facts.changed
-    ? ruleCheckDiff(env.CHECKOUT_ROOT, plan.fixture, record.diff)
-    : { signals: [] }
+  const ruleCheck = runFault === null && record.facts.changed ? diffCheck(gradedCase, record, plan) : { signals: [] }
   const fault = runFault ?? ("fault" in ruleCheck ? ruleCheck.fault : null)
   const ruleSignals = "signals" in ruleCheck ? ruleCheck.signals : []
   return { case: gradedCase, index, record, ruleSignals, fault, passed: fault === null && runPasses(gradedCase, record.facts, ruleSignals) }
+}
+
+function diffCheck(gradedCase: Case, record: RunRecord, plan: Plan): RuleCheck {
+  if (gradedCase.kind === READABLE_CHANGE) return ruleCheckDiff(env.CHECKOUT_ROOT, plan.fixture, record.diff)
+  if (gradedCase.kind === GRADED_CHANGE) return evalGraderDiff(env.CHECKOUT_ROOT, plan.evalId, plan.fixture, record.diff)
+  return { signals: [] }
 }
 
 function gradeAndWrite(plan: Plan, rawDir: string, results: RunResult[], provenance: Provenance, notes: JsonObject): number {
@@ -375,13 +380,15 @@ function saveConfig(rawDir: string, plan: Plan, results: RunResult[]): void {
 function skillDiagnostic(plan: Plan, results: RunResult[]): JsonObject {
   const ambiguous = results.filter((result) => !result.case.isClear)
   const readable = results.filter((result) => result.case.kind === READABLE_CHANGE)
-  const clear = results.filter((result) => result.case.isClear && result.case.kind !== READABLE_CHANGE)
+  const graded = results.filter((result) => result.case.kind === GRADED_CHANGE)
+  const clear = results.filter((result) => result.case.isClear && result.case.kind !== READABLE_CHANGE && result.case.kind !== GRADED_CHANGE)
   const firedIn = (runs: RunResult[]) => runs.filter((result) => result.record.facts.fired(plan.skill)).length
   return {
     skill: plan.skill,
     ambiguous_runs: ambiguous.length, ambiguous_fired: firedIn(ambiguous),
     clear_runs: clear.length, clear_false_fires: firedIn(clear),
     readable_runs: readable.length, readable_fired: firedIn(readable),
+    graded_runs: graded.length, graded_fired: firedIn(graded),
   }
 }
 

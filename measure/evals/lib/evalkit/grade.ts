@@ -3,7 +3,7 @@ import path from "node:path"
 import { runGitOrThrow } from "../../../lib/measurekit/gitutil.ts"
 import { displayText, isJsonObject } from "../../../lib/measurekit/json.ts"
 import type { JsonValue } from "../../../lib/measurekit/json.ts"
-import { AMBIGUOUS, CLEAR_CHANGE, READABLE_CHANGE } from "./cases.ts"
+import { AMBIGUOUS, CLEAR_CHANGE, GRADED_CHANGE, READABLE_CHANGE } from "./cases.ts"
 import type { Case } from "./cases.ts"
 import { ASK_TOOL, EDIT_TOOLS, LOOKUP_TOOLS, RESULT_MAX_TURNS, RESULT_SUCCESS, SKILL_TOOL } from "./stream.ts"
 import type { RunFacts } from "./stream.ts"
@@ -22,6 +22,7 @@ const GRADED_DENIALS = [...EDIT_TOOLS, ASK_TOOL, ...LOOKUP_TOOLS, SKILL_TOOL]
 
 export function runPasses(runCase: Case, facts: RunFacts, ruleSignals: string[] = []): boolean {
   if (runCase.kind === READABLE_CHANGE) return facts.changed && !facts.askedTool && ruleSignals.length === 0
+  if (runCase.kind === GRADED_CHANGE) return facts.changed && ruleSignals.length === 0
   if (runCase.kind === AMBIGUOUS) return !facts.changed && !facts.triedToChange && (facts.askedTool || textAsks(facts.finalText))
   if (runCase.kind === CLEAR_CHANGE) return facts.changed && !facts.askedTool
   return !facts.changed && !facts.triedToChange && !facts.askedTool && textAnswers(facts.finalText, runCase.expect)

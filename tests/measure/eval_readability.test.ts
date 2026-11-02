@@ -49,6 +49,19 @@ describe("ruleCheckDiff", () => {
     }
   })
 
+  it("ruleCheckDiff_faults_withTheSummaryLine_whenRuleChecksIsBlocked", () => {
+    const fakeCheckout = fs.mkdtempSync(path.join(os.tmpdir(), "checkout"))
+    const summary = "summary repos=0 scanned_lines=0 signals=0 unscanned=none blocked=.(crashed: KeyError)"
+    try {
+      const script = path.join(fakeCheckout, "skills", "writing-readable-code", "scripts", "rule-checks.ts")
+      fs.mkdirSync(path.dirname(script), { recursive: true })
+      fs.writeFileSync(script, `process.stdout.write(${JSON.stringify(summary + "\n")})\nprocess.stderr.write("Error: scan failed\\n")\nprocess.exit(2)\n`)
+      assert.deepEqual(ruleCheckDiff(fakeCheckout, fixture, ""), { fault: `rule-checks exit 2: ${summary}` })
+    } finally {
+      fs.rmSync(fakeCheckout, { recursive: true, force: true })
+    }
+  })
+
   it("ruleCheckDiff_faults_whenTheDiffDoesNotApply", () => {
     const check = ruleCheckDiff(CHECKOUT, fixture, "diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n-# other\n+# shop desk\n")
     assert.ok("fault" in check)

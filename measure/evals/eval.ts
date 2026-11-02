@@ -16,12 +16,13 @@ import { GitError } from "../lib/measurekit/gitutil.ts"
 import { displayText, isJsonObject, JSON_INDENT, parseJson, stringifySorted } from "../lib/measurekit/json.ts"
 import type { JsonObject, JsonValue } from "../lib/measurekit/json.ts"
 import { allRows, loadLedgersFrom } from "../lib/measurekit/ledger.ts"
-import { Case, CaseError, loadCases, selectCases, SPLITS, splitGaps } from "./lib/evalkit/cases.ts"
+import { Case, CaseError, loadCases, READABLE_CHANGE, selectCases, SPLITS, splitGaps } from "./lib/evalkit/cases.ts"
 import { faultReason, graderCommit, LEFTOVER_FAULT, runPasses } from "./lib/evalkit/grade.ts"
 import { cliConfigDir, configFingerprint, isKeelLive, suiteEvalId } from "./lib/evalkit/liveconfig.ts"
 import { CLAUDE_BINARY, claudeCommand, findOnPath, runOnce } from "./lib/evalkit/runner.ts"
 import type { RunRecord } from "./lib/evalkit/runner.ts"
 import { RunFacts, summarizeStream } from "./lib/evalkit/stream.ts"
+import { ruleCheckDiff } from "./lib/evalkit/readability.ts"
 import { CaseVerdict, splitVerdict, suitePasses } from "./lib/evalkit/verdict.ts"
 import type { SplitVerdict } from "./lib/evalkit/verdict.ts"
 
@@ -83,6 +84,7 @@ interface RunResult {
   case: Case
   index: number
   record: RunRecord
+  ruleSignals: string[]
   fault: string | null
   passed: boolean
 }
@@ -156,8 +158,8 @@ function buildPlan(args: EvalArgs): Plan {
   }
   if (cases.length === 0) throw new PlanError(`no case selected (split=${split || "all"}, case=${caseId || "all"})`)
   const fullRun = split === undefined && caseId === undefined
-  if (fullRun && splitGaps(cases).length > 0) throw new PlanError("a full run needs an ambiguous and a clear case in each split: " + splitGaps(cases).join("; "))
-  const fixture = path.join(keelHome, "measure", "evals", evalId, "repo")
+  if (fullRun && splitGaps(cases).length > 0) throw new PlanError("a full run needs each split to hold every kind of case the suite asks for: " + splitGaps(cases).join("; "))
+  const fixture = fixtureOf(keelHome, evalId)
   if (!isDir(fixture)) throw new PlanError(`no fixture repo at ${fixture}`)
   if (findOnPath(CLAUDE_BINARY) === null) throw new PlanError(`no \`${CLAUDE_BINARY}\` on PATH`)
   const configDir = cliConfigDir()
@@ -213,7 +215,7 @@ function runPlan(plan: Plan, rawDir: string): RunResult[] {
   for (const planned of plan.cases) {
     for (let index = 1; index <= plan.repeat; index++) {
       const record = runOnce(planned.prompt, plan.fixture, plan.command, plan.configDir, plan.timeoutSeconds)
-      const result = graded(planned, index, record, plan.timeoutSeconds)
+      const result = graded(planned, index, record, plan)
       saveRun(rawDir, result)
       const outcome = result.fault ? "FAULT " + result.fault : result.passed ? "pass" : "fail"
       process.stderr.write(`  ${planned.id} ${index}/${plan.repeat}: ${outcome}\n`)
@@ -275,9 +277,9 @@ function loadRawDir(evalId: string, rawDir: string): { plan: Plan; results: RunR
   const plan: Plan = {
     evalId, skill: skillEnforcing(evalId, keelHome, overlayDir), cases: configured.filter((configuredCase) => (runsPerCase.get(configuredCase.id) ?? 0) > 0),
     fullRun, repeat, model: (config["model_observed"] || config["model_requested"]) as string, command: config["command"] as string[],
-    fixture: "", configDir: config["config_dir"] as string, keelLive: config["keel_live"] as boolean, timeoutSeconds,
+    fixture: fixtureOf(keelHome, evalId), configDir: config["config_dir"] as string, keelLive: config["keel_live"] as boolean, timeoutSeconds,
   }
-  const results = records.map((record) => regradedRun(rawDir, byId.get(recordCase(record)) as Case, record, plan.timeoutSeconds))
+  const results = records.map((record) => regradedRun(rawDir, byId.get(recordCase(record)) as Case, record, plan))
   const leftoverUnknown = records.filter(leftoverUnrecorded).map((record) => runName(recordCase(record), record["run"] as number))
   return { plan, results, leftoverUnknown }
 }
@@ -296,7 +298,11 @@ function readRuns(rawDir: string): JsonObject[] {
   return records
 }
 
-function regradedRun(rawDir: string, regradedCase: Case, record: JsonObject, timeoutSeconds: number): RunResult {
+function fixtureOf(keelHome: string, evalId: string): string {
+  return path.join(keelHome, "measure", "evals", evalId, "repo")
+}
+
+function regradedRun(rawDir: string, regradedCase: Case, record: JsonObject, plan: Plan): RunResult {
   const stem = path.join(rawDir, runName(regradedCase.id, record["run"] as number))
   const streamText = readRawText(stem + ".stream.jsonl")
   const diff = readRawText(stem + ".diff")
@@ -304,7 +310,7 @@ function regradedRun(rawDir: string, regradedCase: Case, record: JsonObject, tim
     stream: summarizeStream(splitLines(streamText)), exitCode: record["exit"] as number, timedOut: record["timed_out"] as boolean,
     changed: record["changed"] as boolean, leftoverProjectDir: recordedLeftover(record),
   })
-  return graded(regradedCase, record["run"] as number, { facts, streamText, diff }, timeoutSeconds)
+  return graded(regradedCase, record["run"] as number, { facts, streamText, diff }, plan)
 }
 
 function recordedLeftover(record: JsonObject): string | null {
@@ -318,9 +324,14 @@ function leftoverUnrecorded(record: JsonObject): boolean {
   return !("leftover_project_dir" in record) && fault !== undefined && fault !== null && !(fault as string).startsWith(LEFTOVER_FAULT)
 }
 
-function graded(gradedCase: Case, index: number, record: RunRecord, timeoutSeconds: number): RunResult {
-  const fault = faultReason(record.facts, timeoutSeconds)
-  return { case: gradedCase, index, record, fault, passed: fault === null && runPasses(gradedCase, record.facts) }
+function graded(gradedCase: Case, index: number, record: RunRecord, plan: Plan): RunResult {
+  const runFault = faultReason(record.facts, plan.timeoutSeconds)
+  const ruleCheck = runFault === null && gradedCase.kind === READABLE_CHANGE && record.facts.changed
+    ? ruleCheckDiff(env.CHECKOUT_ROOT, plan.fixture, record.diff)
+    : { signals: [] }
+  const fault = runFault ?? ("fault" in ruleCheck ? ruleCheck.fault : null)
+  const ruleSignals = "signals" in ruleCheck ? ruleCheck.signals : []
+  return { case: gradedCase, index, record, ruleSignals, fault, passed: fault === null && runPasses(gradedCase, record.facts, ruleSignals) }
 }
 
 function gradeAndWrite(plan: Plan, rawDir: string, results: RunResult[], provenance: Provenance, notes: JsonObject): number {
@@ -345,7 +356,7 @@ function saveRun(rawDir: string, result: RunResult): void {
   appendJsonl(path.join(rawDir, "runs.jsonl"), {
     case: result.case.id, run: result.index, kind: result.case.kind, exit: facts.exitCode, timed_out: facts.timedOut, changed: facts.changed,
     asked_tool: facts.askedTool, tried_to_change: facts.triedToChange, denied_tools: facts.stream.deniedTools, skill_calls: facts.stream.skillCalls,
-    leftover_project_dir: facts.leftoverProjectDir, fault: result.fault, pass: result.passed,
+    leftover_project_dir: facts.leftoverProjectDir, rule_signals: result.ruleSignals, fault: result.fault, pass: result.passed,
   })
 }
 
@@ -363,11 +374,14 @@ function saveConfig(rawDir: string, plan: Plan, results: RunResult[]): void {
 
 function skillDiagnostic(plan: Plan, results: RunResult[]): JsonObject {
   const ambiguous = results.filter((result) => !result.case.isClear)
-  const clear = results.filter((result) => result.case.isClear)
+  const readable = results.filter((result) => result.case.kind === READABLE_CHANGE)
+  const clear = results.filter((result) => result.case.isClear && result.case.kind !== READABLE_CHANGE)
+  const firedIn = (runs: RunResult[]) => runs.filter((result) => result.record.facts.fired(plan.skill)).length
   return {
     skill: plan.skill,
-    ambiguous_runs: ambiguous.length, ambiguous_fired: ambiguous.filter((result) => result.record.facts.fired(plan.skill)).length,
-    clear_runs: clear.length, clear_false_fires: clear.filter((result) => result.record.facts.fired(plan.skill)).length,
+    ambiguous_runs: ambiguous.length, ambiguous_fired: firedIn(ambiguous),
+    clear_runs: clear.length, clear_false_fires: firedIn(clear),
+    readable_runs: readable.length, readable_fired: firedIn(readable),
   }
 }
 

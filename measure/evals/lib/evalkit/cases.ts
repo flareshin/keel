@@ -10,7 +10,8 @@ export const SPLITS = [TRAIN, HOLDOUT]
 export const AMBIGUOUS = "ambiguous"
 export const CLEAR_CHANGE = "clear-change"
 export const CLEAR_ANSWER = "clear-answer"
-const KINDS = [AMBIGUOUS, CLEAR_CHANGE, CLEAR_ANSWER]
+export const READABLE_CHANGE = "readable-change"
+const KINDS = [AMBIGUOUS, CLEAR_CHANGE, CLEAR_ANSWER, READABLE_CHANGE]
 const NO_EXPECT = "-"
 
 export class CaseError extends Error {}
@@ -77,9 +78,10 @@ export function selectCases(cases: Case[], split: string | undefined, caseId: st
 
 export function splitGaps(cases: Case[]): string[] {
   const gaps: string[] = []
+  const asksAnywhere = cases.some((candidate) => !candidate.isClear)
   for (const split of SPLITS) {
     const inSplit = cases.filter((candidate) => candidate.split === split)
-    if (!inSplit.some((candidate) => !candidate.isClear)) gaps.push(`${split} has no ambiguous case`)
+    if (asksAnywhere && !inSplit.some((candidate) => !candidate.isClear)) gaps.push(`${split} has no ambiguous case`)
     if (!inSplit.some((candidate) => candidate.isClear)) gaps.push(`${split} has no clear case`)
   }
   return gaps

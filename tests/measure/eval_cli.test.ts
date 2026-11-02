@@ -115,6 +115,44 @@ describe("eval cli", () => {
     assert.ok(readText(path.join(report.raw_dir, "c1-1.diff")).includes("src/new.ts"))
   })
 
+  describe("readable-change cases", () => {
+    const readableSuite = (train: string, holdout: string) => {
+      box.writeCases("keel/measure/evals/K4/train.tsv", [caseRow("r1", "readable-change", train)])
+      box.writeCases("keel/measure/evals/K4/holdout.tsv", [caseRow("r2", "readable-change", holdout)])
+    }
+    const writeScenario = (name: string, source: string) =>
+      box.scenario(name, { events: [initEvent(), toolUse("Write", { file_path: "src/load.ts" }), resultEvent("Added it.")], writes: { "src/load.ts": source } })
+
+    it("fullRun_passes_withOnlyReadableChangeCases_whenTheDiffIsClean", () => {
+      box.linkKeel()
+      const clean = writeScenario("clean", "export function orderTotalCents(lines: number[]): number {\n  return lines.reduce((sum, cents) => sum + cents, 0)\n}\n")
+      readableSuite(clean, clean)
+      const [completed, report] = box.runEvalJson("K4", "--model", MODEL, ...RUN_ONCE)
+      assert.deepEqual([completed.status, report.eval_id, report.pass], [0, "K4", true], completed.stderr)
+      assert.deepEqual(readJsonl(path.join(report.raw_dir, "runs.jsonl")).map((run) => run.rule_signals), [[], []])
+      assert.deepEqual([readJson(path.join(report.raw_dir, "skill-diagnostic.json")).readable_runs, readJson(path.join(report.raw_dir, "skill-diagnostic.json")).clear_runs], [2, 0])
+    })
+
+    it("run_fails_andRecordsTheSignal_whenTheDiffHasAnEmptyCatch", () => {
+      const swallow = writeScenario("swallow", "export function load(run: () => void): void {\n  try { run() } catch (e) {}\n}\n")
+      readableSuite(swallow, swallow)
+      const [completed, report] = box.runEvalJson("K4", "--model", MODEL, ...RUN_ONCE, "--case", "r1")
+      assert.deepEqual([completed.status, report.cases[0].runs], [1, [false]], completed.stderr)
+      const [run] = readJsonl(path.join(report.raw_dir, "runs.jsonl"))
+      assert.deepEqual(run.rule_signals.map((line: string) => line.split(" ").slice(0, 3).join(" ")), ["signal K5.12 src/load.ts:2"])
+    })
+
+    it("regrade_rebuildsTheDiff_andGradesItAgain", () => {
+      const swallow = writeScenario("swallow", "export function load(run: () => void): void {\n  try { run() } catch (e) {}\n}\n")
+      readableSuite(swallow, swallow)
+      const [, runReport] = box.runEvalJson("K4", "--model", MODEL, ...RUN_ONCE, "--case", "r1")
+      const calls = box.stubCalls().length
+      const [completed, report] = box.runEvalJson("K4", "--regrade", runReport.raw_dir)
+      assert.deepEqual([completed.status, report.cases[0].runs], [1, [false]], completed.stderr)
+      assert.equal(box.stubCalls().length, calls)
+    })
+  })
+
   it("run_ignoresWritesUnderDotClaude", () => {
     box.linkKeel()
     const askAndSettings = box.scenario("ask-settings", { events: [initEvent(), ASK_EVENT, resultEvent(ASK_TEXT)], writes: { ".claude/settings.local.json": "{}" } })
@@ -251,7 +289,7 @@ describe("eval cli", () => {
     assert.equal(config.claude_md_sha256.length, 64)
     assert.equal(config.skill_md_sha256.length, 64)
     assert.equal(readText(path.join(raw, "a1-1.final.txt")), ASK_TEXT)
-    assert.deepEqual(readJson(path.join(raw, "skill-diagnostic.json")), { skill: "refining-requests", ambiguous_runs: 2, ambiguous_fired: 2, clear_runs: 2, clear_false_fires: 0 })
+    assert.deepEqual(readJson(path.join(raw, "skill-diagnostic.json")), { skill: "refining-requests", ambiguous_runs: 2, ambiguous_fired: 2, clear_runs: 2, clear_false_fires: 0, readable_runs: 0, readable_fired: 0 })
     assert.equal(report.skill.ambiguous_fired, 2)
     assert.deepEqual(fs.readdirSync(raw).filter((name) => name.startsWith("c1-1")).sort(), ["c1-1.diff", "c1-1.final.txt", "c1-1.stream.jsonl"])
   })
@@ -261,7 +299,7 @@ describe("eval cli", () => {
     box.seedSuite(box.askScenario(), box.editScenario())
     const [, report] = box.runEvalJson("K4", "--model", "pinned", ...RUN_ONCE)
     const text = readText(path.join(report.raw_dir, "skill-diagnostic.json"))
-    assert.equal(text, '{\n  "ambiguous_fired": 0,\n  "ambiguous_runs": 2,\n  "clear_false_fires": 0,\n  "clear_runs": 2,\n  "skill": "refining-requests"\n}\n')
+    assert.equal(text, '{\n  "ambiguous_fired": 0,\n  "ambiguous_runs": 2,\n  "clear_false_fires": 0,\n  "clear_runs": 2,\n  "readable_fired": 0,\n  "readable_runs": 0,\n  "skill": "refining-requests"\n}\n')
   })
 
   function suiteRuns(changeDenials: string[] = []): RawRun[] {

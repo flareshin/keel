@@ -5,7 +5,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
-import { AMBIGUOUS, CLEAR_ANSWER, CLEAR_CHANGE, Case } from "../../measure/evals/lib/evalkit/cases.ts"
+import { AMBIGUOUS, CLEAR_ANSWER, CLEAR_CHANGE, Case, READABLE_CHANGE, splitGaps } from "../../measure/evals/lib/evalkit/cases.ts"
 import { faultReason, graderCommit, runPasses, textAnswers, textAsks } from "../../measure/evals/lib/evalkit/grade.ts"
 import { GENERATED_CLAUDE_MD_HEADER, isKeelLive, projectDirFor, suiteEvalId } from "../../measure/evals/lib/evalkit/liveconfig.ts"
 import { QUESTION_PROTOCOL, claudeCommand } from "../../measure/evals/lib/evalkit/runner.ts"
@@ -17,6 +17,8 @@ const TIMEOUT = 300
 const AMBIGUOUS_CASE = new Case("a1", "train", AMBIGUOUS, "-", "Improve this screen.")
 const CHANGE_CASE = new Case("c1", "train", CLEAR_CHANGE, "-", "Rename x to y.")
 const ANSWER_CASE = new Case("c2", "train", CLEAR_ANSWER, "grandTotalCents", "What does useCart return?")
+const READABLE_CASE = new Case("r1", "train", READABLE_CHANGE, "-", "Add a loader for the vendor report.")
+const EMPTY_CATCH_SIGNAL = "signal K5.12 src/load.ts:1 try { run() } catch (e) {}"
 const MAX_TURNS = "error_max_turns"
 
 interface FactsOptions {
@@ -152,6 +154,27 @@ describe("clear change grade", () => {
   it("clearChange_fails_whenEditDeniedAndNothingChanged", () => assert.equal(runPasses(CHANGE_CASE, facts({ denied: ["Edit"] })), false))
   it("clearChange_passes_onMaxTurns_whenChanged", () => {
     assert.equal(runPasses(CHANGE_CASE, facts({ changed: true, subtype: MAX_TURNS, isError: true, exitCode: 1 })), true)
+  })
+})
+
+describe("readable change grade", () => {
+  it("readableChange_passes_whenChangedWithNoRuleSignal", () => assert.equal(runPasses(READABLE_CASE, facts({ changed: true }), []), true))
+  it("readableChange_fails_whenTheDiffCarriesARuleSignal", () => assert.equal(runPasses(READABLE_CASE, facts({ changed: true }), [EMPTY_CATCH_SIGNAL]), false))
+  it("readableChange_fails_whenNothingChanged", () => assert.equal(runPasses(READABLE_CASE, facts(), []), false))
+  it("readableChange_fails_whenAskToolCalled", () => assert.equal(runPasses(READABLE_CASE, facts({ changed: true, askCalls: 1 }), []), false))
+  it("clearChange_ignoresRuleSignals", () => assert.equal(runPasses(CHANGE_CASE, facts({ changed: true }), [EMPTY_CATCH_SIGNAL]), true))
+})
+
+describe("splitGaps", () => {
+  const inSplit = (split: string, kind: string, id: string) => new Case(id, split, kind, "-", "p")
+  it("splitGaps_needsNoAmbiguousCase_whenTheSuiteHasNone", () => {
+    assert.deepEqual(splitGaps([inSplit("train", READABLE_CHANGE, "r1"), inSplit("holdout", READABLE_CHANGE, "r2")]), [])
+  })
+  it("splitGaps_needsAnAmbiguousCaseInEachSplit_whenAnySplitHasOne", () => {
+    assert.deepEqual(splitGaps([inSplit("train", AMBIGUOUS, "a1"), inSplit("train", CLEAR_CHANGE, "c1"), inSplit("holdout", CLEAR_CHANGE, "c2")]), ["holdout has no ambiguous case"])
+  })
+  it("splitGaps_needsAClearCaseInEachSplit", () => {
+    assert.deepEqual(splitGaps([inSplit("train", READABLE_CHANGE, "r1")]), ["holdout has no clear case"])
   })
 })
 

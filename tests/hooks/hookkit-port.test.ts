@@ -205,7 +205,7 @@ describe("protocol output", () => {
 
   it("rewriteInput_printsTheUpdatedInputWithTheNote", () => {
     const expected = '{"hookSpecificOutput": {"hookEventName": "PreToolUse", "updatedInput": {"command": "echo é"}}, ' +
-      '"systemMessage": "note ✓", "suppressOutput": true}\n';
+      '"systemMessage": "note ✓"}\n';
     assert.deepEqual(emit("rewriteInput", { command: "echo é" }, "note ✓"), { code: 0, stdout: expected, stderr: "" });
   });
 

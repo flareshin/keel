@@ -83,7 +83,6 @@ export function rewriteInput(updatedInput: Payload, note: string): number {
   printJson({
     hookSpecificOutput: { hookEventName: "PreToolUse", updatedInput },
     systemMessage: note,
-    suppressOutput: true,
   });
   return EXIT_PASS;
 }

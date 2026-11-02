@@ -6,8 +6,8 @@ import { runGitOrThrow } from "../../lib/measurekit/gitutil.ts"
 const RULE_ID = "C-authoring-agents"
 const AGENT_FILE = /(^|\/)agents\/[^/]+\.md$/
 const REVIEW_ROLE = /review|verif/i
-const RULED_OUT_CLAUSE = /^(not|do not|don't|never)\b/i
-const LIST_ITEM = /^\s+-\s+(.+)$/
+const RULE_OUT = /\b(not|never|don't)\b/i
+const LIST_ITEM = /^\s*-\s+(.+)$/
 
 const { values } = parseArgs({ options: { repo: { type: "string" }, base: { type: "string" }, head: { type: "string" } } })
 const repo = values.repo ?? "."
@@ -42,8 +42,8 @@ function unquoted(value: string): string {
 }
 
 function namesReviewRole(name: string, description: string): boolean {
-  const clauses = description.split(/[.;,]/).map((clause) => clause.trim())
-  return REVIEW_ROLE.test(name) || clauses.some((clause) => !RULED_OUT_CLAUSE.test(clause) && REVIEW_ROLE.test(clause))
+  const sentences = description.split(/[.;]/)
+  return REVIEW_ROLE.test(name) || sentences.some((sentence) => REVIEW_ROLE.test(sentence.split(RULE_OUT)[0] ?? ""))
 }
 
 function problemsOf(file: string, text: string): string[] {

@@ -179,6 +179,32 @@ describe("evalGraderDiff with the C-authoring-agents grader", () => {
     assert.deepEqual(grade("agents/notes-drafter.md", drafter), { signals: [] })
   })
 
+  const pinnedModel = (name: string, description: string) => ["---", `name: ${name}`, `description: ${description}`, "tools: Read", "model: haiku", "---", "You work."]
+
+  for (const description of [
+    "Drafts release notes from the git log. Do not use for fixing bugs, reviewing diffs or verifying fixes.",
+    "Drafts release notes from the git log and never reviews them.",
+    "Drafts release notes from the git log. Don't use it to verify the release.",
+  ]) {
+    it(`evalGraderDiff_findsNoSignal_forAWorkerThatRulesReviewOut_andPinsModel: ${description}`, () => {
+      assert.deepEqual(grade("agents/notes-drafter.md", pinnedModel("notes-drafter", description)), { signals: [] })
+    })
+  }
+
+  for (const description of ["Annotates diffs and reviews them for typos.", "Not for drafting; reviews SQL migrations.", "Not for drafting. Reviews SQL migrations."]) {
+    it(`evalGraderDiff_reportsAReviewerWhoseRoleNoRuleOutReaches_thatPinsModel: ${description}`, () => {
+      assert.deepEqual(grade("agents/diff-checker.md", pinnedModel("diff-checker", description)), { signals: ["signal C-authoring-agents agents/diff-checker.md: a reviewer or verifier pins model"] })
+    })
+  }
+
+  it("evalGraderDiff_findsNoSignal_forASingleQuotedName", () => {
+    assert.deepEqual(grade("agents/log-reader.md", GOOD.map((line) => (line === "name: log-reader" ? "name: 'log-reader'" : line))), { signals: [] })
+  })
+
+  it("evalGraderDiff_findsNoSignal_forAToolsBlockListAtColumnZero", () => {
+    assert.deepEqual(grade("agents/log-reader.md", GOOD.flatMap((line) => (line.startsWith("tools:") ? ["tools:", "- Read", "- Grep"] : [line]))), { signals: [] })
+  })
+
   it("evalGraderDiff_findsNoSignal_forAQuotedName", () => {
     assert.deepEqual(grade("agents/log-reader.md", GOOD.map((line) => (line === "name: log-reader" ? 'name: "log-reader"' : line))), { signals: [] })
   })

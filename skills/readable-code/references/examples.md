@@ -2,6 +2,21 @@
 
 Invented code from a small order-management service, written to show each rule's shape. "After" snippets are illustrative: not compiled.
 
+## Contents
+- K5.1 entry method mixes orchestration with detail
+- K5.3 fallback chain nested five levels
+- K5.4 / K5.8 one concept, many forms
+- K5.5 name hides behavior
+- K5.6 meaning in one file, literals everywhere else
+- K5.8 "must stay in lockstep" comment
+- K5.9 reset effect instead of remount (FE)
+- K5.9 retry-safe write
+- K5.10 one variable, three meanings
+- K5.11 untyped API data in screens (FE)
+- K5.12 swallowed errors
+- K5.14 remove comments and verify the behavior
+- K5.16 test names as spec
+
 ## K5.1 — entry method mixes orchestration with detail
 ```java
 public Invoice createInvoice(OrderRequest request, String userId) {

@@ -1,6 +1,6 @@
 ---
 name: improve
-description: Finding and making one behavior-preserving structural improvement or a specified refactoring in existing code — shallow modules, pass-through layers, dead code, seams nothing varies across. Trigger; "improve this module", "where is this codebase hard to change", "refactor candidates", "refactor this module", "simplify this structure without changing behavior", "architecture review of <area>", a requested legacy cleanup. Do NOT use for code the current diff already changes (readable-code covers it), a behavior bug (fix it with a red test), a recurring review finding a machine can decide (descend), or an unrequested repo-wide sweep.
+description: Finding and making one behavior-preserving structural improvement or a specified refactoring in existing code — shallow modules, pass-through layers, dead code, seams nothing varies across. Trigger; "improve this module", "where is this codebase hard to change", "refactor candidates", "refactor this module", "simplify this structure without changing behavior", "architecture review of a module or area", a requested legacy cleanup. Do NOT use for code the current diff already changes (readable-code covers it), a behavior bug (fix it with a red test), a recurring review finding a machine can decide (descend), or an unrequested repo-wide sweep.
 ---
 
 # Improve

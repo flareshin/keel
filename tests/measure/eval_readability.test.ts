@@ -159,6 +159,24 @@ describe("evalGraderDiff with the C-authoring-agents grader", () => {
     assert.deepEqual(grade("agents/log-reader.md", [...GOOD.slice(0, 4), "model: haiku", ...GOOD.slice(4)]), { signals: [] })
   })
 
+  it("evalGraderDiff_reportsAVerifierNamedOnlyInTheDescription_thatPinsModel", () => {
+    const verifier = ["---", "name: test-rerunner", "description: Verifies a fix by rerunning the failing test.", "tools: Bash, Read", "model: haiku", "---", "You rerun."]
+    assert.deepEqual(grade("agents/test-rerunner.md", verifier), { signals: ["signal C-authoring-agents agents/test-rerunner.md: a reviewer or verifier pins model"] })
+  })
+
+  it("evalGraderDiff_findsNoSignal_forAWorkerThatRulesReviewOut_andPinsModel", () => {
+    const drafter = ["---", "name: notes-drafter", "description: Drafts release notes from the git log. Not for reviewing or verifying the release.", "tools: Read, Write", "model: haiku", "---", "You draft."]
+    assert.deepEqual(grade("agents/notes-drafter.md", drafter), { signals: [] })
+  })
+
+  it("evalGraderDiff_findsNoSignal_forAQuotedName", () => {
+    assert.deepEqual(grade("agents/log-reader.md", GOOD.map((line) => (line === "name: log-reader" ? 'name: "log-reader"' : line))), { signals: [] })
+  })
+
+  it("evalGraderDiff_findsNoSignal_forAToolsBlockList", () => {
+    assert.deepEqual(grade("agents/log-reader.md", GOOD.flatMap((line) => (line.startsWith("tools:") ? ["tools:", "  - Read", "  - Grep"] : [line]))), { signals: [] })
+  })
+
   it("evalGraderDiff_reportsARunThatChangesNoAgentFile", () => {
     assert.deepEqual(grade("notes/log-reader.md", GOOD), { signals: ["signal C-authoring-agents -: no agents/<name>.md file changed"] })
   })

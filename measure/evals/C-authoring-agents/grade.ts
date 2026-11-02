@@ -22,10 +22,9 @@ function frontmatterOf(text: string): Map<string, string> | null {
   let listKey = ""
   for (const line of block.split("\n")) {
     const item = LIST_ITEM.exec(line)
-    if (item !== null && listKey !== "") {
+    if (item !== null) {
       const [, entry = ""] = item
-      const listed = fields.get(listKey) ?? ""
-      fields.set(listKey, listed === "" ? entry.trim() : `${listed}, ${entry.trim()}`)
+      fields.set(listKey, `${fields.get(listKey) ?? ""} ${entry}`.trim())
       continue
     }
     const field = /^([A-Za-z-]+):\s*(.*)$/.exec(line)

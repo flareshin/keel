@@ -164,6 +164,16 @@ describe("evalGraderDiff with the C-authoring-agents grader", () => {
     assert.deepEqual(grade("agents/test-rerunner.md", verifier), { signals: ["signal C-authoring-agents agents/test-rerunner.md: a reviewer or verifier pins model"] })
   })
 
+  it("evalGraderDiff_reportsAReviewerNamedOnlyInTheName_thatPinsModel", () => {
+    const reviewer = ["---", "name: sql-reviewer", "description: Checks SQL migrations and returns a verdict.", "tools: Read", "model: haiku", "---", "You check."]
+    assert.deepEqual(grade("agents/sql-reviewer.md", reviewer), { signals: ["signal C-authoring-agents agents/sql-reviewer.md: a reviewer or verifier pins model"] })
+  })
+
+  it("evalGraderDiff_reportsAnEmptyToolsField_thatAnotherFieldFollows", () => {
+    const lines = ["---", "name: log-reader", "tools:", "description: Reads a CI log and returns the failing test names.", "---", "You read one CI log."]
+    assert.deepEqual(grade("agents/log-reader.md", lines), { signals: ["signal C-authoring-agents agents/log-reader.md: no tools list"] })
+  })
+
   it("evalGraderDiff_findsNoSignal_forAWorkerThatRulesReviewOut_andPinsModel", () => {
     const drafter = ["---", "name: notes-drafter", "description: Drafts release notes from the git log. Not for reviewing or verifying the release.", "tools: Read, Write", "model: haiku", "---", "You draft."]
     assert.deepEqual(grade("agents/notes-drafter.md", drafter), { signals: [] })

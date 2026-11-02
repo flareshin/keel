@@ -14,5 +14,5 @@
     "skipLibCheck": true
   },
   "include": ["**/*.ts"],
-  "exclude": ["node_modules", "measure/evals/review/cases/**", "measure/evals/K4/repo/**"]
+  "exclude": ["node_modules", "measure/evals/review/cases/**", "measure/evals/K4/repo/**", "measure/evals/K5/repo/**"]
 }

@@ -13,7 +13,7 @@ import type { Repo } from './helpers.ts';
 export const AUTHOR = '11111111-1111-4111-8111-111111111111';
 export const AUDIT = '22222222-2222-4222-8222-222222222222';
 export const VERIFY = '33333333-3333-4333-8333-333333333333';
-export const LENSES = ['reuse', 'contract', 'tests', 'readable-code', 'rule-checks'];
+export const LENSES = ['reuse', 'contract', 'tests', 'writing-readable-code', 'rule-checks'];
 
 export class CodexFixture {
   sandbox: Sandbox;

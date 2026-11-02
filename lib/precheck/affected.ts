@@ -12,7 +12,7 @@ export const CORPUS_TESTS = [
 ];
 export const FULL_SUITE_PATTERNS = [
   'hooks/**', 'lib/**', 'measure/lib/**', 'measure/boundary*', 'codex/hooks/**',
-  'codex/lib/**', 'skills/readable-code/scripts/**', 'githooks/**', 'settings/core.json',
+  'codex/lib/**', 'skills/writing-readable-code/scripts/**', 'githooks/**', 'settings/core.json',
 ];
 
 export function affectedTests(root: string, changedPaths: string[]): string[] {

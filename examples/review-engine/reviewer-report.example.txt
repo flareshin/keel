@@ -2,7 +2,7 @@ VERDICT: PASS
 
 Diff: /work/acmecorp-storefront: 3 files changed, 41 insertions(+), 6 deletions(-)
 
-Lenses fired: pricing, readable-code, rule-checks
+Lenses fired: pricing, writing-readable-code, rule-checks
 
 Merge-blocking: none
 

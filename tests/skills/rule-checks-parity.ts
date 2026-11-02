@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { mutate, seededRandom } from "../fuzz.ts";
 import { digestOf, paddedRoot, restored, tokenized } from "../recorded-cases.ts";
 
-const SKILL_SCRIPTS = join(import.meta.dirname, "..", "..", "skills", "readable-code", "scripts");
+const SKILL_SCRIPTS = join(import.meta.dirname, "..", "..", "skills", "writing-readable-code", "scripts");
 export const TYPESCRIPT_SCRIPT = join(SKILL_SCRIPTS, "rule-checks.ts");
 export const FIXTURE_PATH = join(import.meta.dirname, "fixtures", "rule-checks-parity.json");
 const FIXED_COMMIT_DATES = { GIT_AUTHOR_DATE: "2026-01-01T00:00:00Z", GIT_COMMITTER_DATE: "2026-01-01T00:00:00Z" };

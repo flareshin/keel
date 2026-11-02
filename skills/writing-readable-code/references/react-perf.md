@@ -4,7 +4,7 @@ Distilled from Vercel `react-best-practices` (MIT; upstream `vercel-labs/agent-s
 
 Read before writing data loading, large lists or grids, heavy components, or anything on the server side of Next.js. These are writing rules; a review blocks only on the items its own lenses name.
 
-Three items overlap `/readable-code` K5.9 (derive values during render, `useEffect` only for external sync, interaction logic in handlers); K5.9 is the rule, the bullets below are the performance reading of it.
+Three items overlap `/writing-readable-code` K5.9 (derive values during render, `useEffect` only for external sync, interaction logic in handlers); K5.9 is the rule, the bullets below are the performance reading of it.
 
 ## 1. Round trips (CRITICAL)
 

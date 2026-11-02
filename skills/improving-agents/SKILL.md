@@ -1,9 +1,9 @@
 ---
-name: agent-improve
-description: Improving an agent definition or a reusable brief from evidence — diagnose the runs that went wrong, change one component, compare base and candidate on the same task, adopt only what helped. Trigger; "the worker keeps doing X", "improve this agent", the owner correcting the same agent mistake twice, a subagent failing the same way in two runs. Do NOT use for a one-off bad result (fix the brief and rerun), a recurring review finding a machine can decide (descend), or writing a new agent (agent-authoring).
+name: improving-agents
+description: Improving an agent definition or a reusable brief from evidence — diagnose the runs that went wrong, change one component, compare base and candidate on the same task, adopt only what helped. Trigger; "the worker keeps doing X", "improve this agent", the owner correcting the same agent mistake twice, a subagent failing the same way in two runs. Do NOT use for a one-off bad result (fix the brief and rerun), a recurring review finding a machine can decide (descending-findings), or writing a new agent (authoring-agents).
 ---
 
-# Agent improve
+# Improving agents
 
 An agent edit that sounds right can still change nothing, or make another run worse. This skill changes an agent only where a run shows the failure, tests the change against the unchanged agent on the same task, and keeps it only when the comparison says it helped. The diagnosis split, the verdict labels and the cue/lesson/evidence entry are adapted from Harness² (github.com/google-research/harness2 at 1cfe254, Apache-2.0, `harness2/core/prompts.py`); the owner approves adoption, which Harness² does not have.
 
@@ -15,7 +15,7 @@ An agent edit that sounds right can still change nothing, or make another run wo
    - **Procedure**: how the agent worked — a tool error it misread, a step repeated by hand, a check it skipped, a deliverable it did not reopen.
    - **Knowledge**: what a practitioner knows that the agent lacked — a source to read, a structure the result needs, a domain rule.
 
-3. **Pick the lever.** Use the form order in `agent-authoring`: a brief line, the definition body, a skill with a trigger, a script, a hook, always-on text last. Procedure that is skipped despite clear text twice goes to a script or a hook, not more prose. Knowledge with a trigger goes to a skill.
+3. **Pick the lever.** Use the form order in `authoring-agents`: a brief line, the definition body, a skill with a trigger, a script, a hook, always-on text last. Procedure that is skipped despite clear text twice goes to a script or a hook, not more prose. Knowledge with a trigger goes to a skill.
 
 4. **Make one candidate.** Change one component per candidate, on a branch. Leave the deliverable's shape alone: the agent changes how it works, not what it returns. If the evidence argues for no change, stop and say keep-base; that is a result.
 

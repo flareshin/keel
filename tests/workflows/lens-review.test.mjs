@@ -25,7 +25,7 @@ test('lensReview_preparedMetadataSkipsMechanicalAgent_andKeepsAllLenses', async 
 
   assert.equal(result.verdict, 'PASS')
   assert.deepEqual(labels(rt), ['audit:combined', 'report'])
-  assert.deepEqual(result.lensesFired, ['contract', 'readable-code', 'rule-checks'])
+  assert.deepEqual(result.lensesFired, ['contract', 'writing-readable-code', 'rule-checks'])
 })
 
 function finding(id, impact) {
@@ -76,7 +76,7 @@ test('lensReview_handsBackPassWithEvidenceLine_whenRootReviewIsClean', async () 
   const rt = createRuntime({ respond: responder() })
   const result = await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
   assert.equal(result.verdict, 'PASS')
-  assert.deepEqual(labels(rt), ['prepare', 'audit:contract', 'audit:readable-code', 'audit:rule-checks', 'report'])
+  assert.deepEqual(labels(rt), ['prepare', 'audit:contract', 'audit:writing-readable-code', 'audit:rule-checks', 'report'])
   const lines = result.report.split('\n')
   assert.equal(lines[0], 'VERDICT: PASS')
   assert.ok(lines.includes('Diff: /work/app: 2 files changed, 5 insertions(+)'))
@@ -115,7 +115,7 @@ test('lensReview_usesSonnetForTransportAndOpusForJudgment_whenModelsAreOmitted',
   assert.deepEqual(rt.record.agents.map(({ opts }) => [opts.label, opts.model, opts.effort]), [
     ['prepare', 'sonnet', 'low'],
     ['audit:contract', 'opus', 'high'],
-    ['audit:readable-code', 'opus', 'high'],
+    ['audit:writing-readable-code', 'opus', 'high'],
     ['audit:rule-checks', 'opus', 'high'],
     ['verify:contract', 'opus', 'high'],
     ['report', 'sonnet', 'low'],
@@ -133,7 +133,7 @@ test('lensReview_runsJudgmentAsTheAuditorTypeAndTheReporterAsTheReporterType_whi
   assert.deepEqual(rt.record.agents.map(({ opts }) => [opts.label, opts.agentType]), [
     ['prepare', undefined],
     ['audit:contract', 'keel-auditor'],
-    ['audit:readable-code', 'keel-auditor'],
+    ['audit:writing-readable-code', 'keel-auditor'],
     ['audit:rule-checks', 'keel-auditor'],
     ['verify:contract', 'keel-auditor'],
     ['report', 'keel-reporter'],
@@ -185,8 +185,8 @@ test('lensReview_diffsLensesAgainstSnapshotTree_whenWorkingTreeIsReviewed', asyn
   assert.match(childArgs.target, new RegExp(`git -C '/work/app' diff ${SHA_A} ${SHA_B}`))
   const ruleChecks = childArgs.lenses.find((lens) => lens.key === 'rule-checks')
   assert.match(ruleChecks.prompt, new RegExp(`--repo '/work/app' --base ${SHA_A} --head ${SHA_B}`))
-  assert.match(ruleChecks.prompt, /"\$\{KEEL_DATA_DIR:-\$HOME\/\.claude\}"\/skills\/readable-code\/scripts\/rule-checks\.ts/)
-  assert.match(childArgs.lenses.find((lens) => lens.key === 'readable-code').prompt, /Entry point : a\.py/)
+  assert.match(ruleChecks.prompt, /"\$\{KEEL_DATA_DIR:-\$HOME\/\.claude\}"\/skills\/writing-readable-code\/scripts\/rule-checks\.ts/)
+  assert.match(childArgs.lenses.find((lens) => lens.key === 'writing-readable-code').prompt, /Entry point : a\.py/)
   const prepareCommands = preparePromptCommands(rt.record.agents[0].prompt)
   assert.match(prepareCommands.diffs[0], /tree=\$\(cd "\$\{KEEL_DATA_DIR:-\$HOME\/\.claude\}" && bin\/keel snapshot "\$root" \|/)
   assert.match(prepareCommands.runId, /date -u/)
@@ -360,7 +360,7 @@ test('lensReview_sendsRequirementToLensesAndGuideOnlyToReadableCode_whenBothAreG
   assert.match(childArgs.target, /Requirement \(the request as stated, not a claim that the diff meets it\):\nCoupons stack per line\./)
   assert.doesNotMatch(childArgs.target, /Entry point/)
   const guided = childArgs.lenses.filter((lens) => lens.prompt.includes('Entry point : a.py')).map((lens) => lens.key)
-  assert.deepEqual(guided, ['readable-code'])
+  assert.deepEqual(guided, ['writing-readable-code'])
   assert.match(childArgs.lenses[1].prompt, /claims to check against the code, not evidence/)
   assert.doesNotMatch(childArgs.lenses[2].prompt, /reading guide/)
 })
@@ -497,7 +497,7 @@ test('lensReview_loadsDefaultLensesAndGuardrails_whenCallerGivesNoLenses', async
   const rt = createRuntime({ respond: responder({ prepare }) })
   const result = await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF] })
   assert.equal(result.verdict, 'PASS')
-  assert.deepEqual(result.lensesFired, ['reuse', 'readable-code', 'rule-checks'])
+  assert.deepEqual(result.lensesFired, ['reuse', 'writing-readable-code', 'rule-checks'])
   assert.match(auditChildArgs(rt).guardrails, /Not defects here: style\./)
 })
 
@@ -529,9 +529,9 @@ test('lensReview_passesCallerGuardrailsToAudit_whenTheyStateNoClaim', async () =
 
 test('lensReview_keepsCallerBuiltInLens_whenCallerAlreadyGivesReadableCode', async () => {
   const rt = createRuntime({ respond: responder() })
-  const lenses = [...CALLER_LENSES, { key: 'readable-code', prompt: 'Lens: custom readable.' }]
+  const lenses = [...CALLER_LENSES, { key: 'writing-readable-code', prompt: 'Lens: custom readable.' }]
   const result = await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses })
-  assert.deepEqual(result.lensesFired, ['contract', 'readable-code', 'rule-checks'])
+  assert.deepEqual(result.lensesFired, ['contract', 'writing-readable-code', 'rule-checks'])
   assert.equal(auditChildArgs(rt).lenses[1].prompt, 'Lens: custom readable.')
 })
 
@@ -785,7 +785,7 @@ test('lensReview_needsFixesWithLensNotRun_whenAnAuditorThrows', async () => {
   const result = await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
   assert.equal(result.verdict, 'NEEDS_FIXES')
   assert.deepEqual(result.failedLenses, ['contract'])
-  assert.deepEqual(result.lensesFired, ['readable-code', 'rule-checks'])
+  assert.deepEqual(result.lensesFired, ['writing-readable-code', 'rule-checks'])
 })
 
 test('lensReview_failsBeforeAudit_whenDefaultLensesAreEmpty', async () => {
@@ -802,7 +802,7 @@ test('lensReview_putsGuardrailsInEveryAuditAndVerifyPrompt_whenCallerGivesThem',
   const rt = createRuntime({ respond: responder({ audits, verdicts: { c1: { verdict: 'CONFIRMED', evidence: 'reran' } } }) })
   await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES, guardrails: 'Not defects here: naming.' })
   const judged = rt.record.agents.filter((call) => /^(audit|verify):/.test(call.opts.label))
-  assert.deepEqual(judged.map((call) => call.opts.label), ['audit:contract', 'audit:readable-code', 'audit:rule-checks', 'verify:contract'])
+  assert.deepEqual(judged.map((call) => call.opts.label), ['audit:contract', 'audit:writing-readable-code', 'audit:rule-checks', 'verify:contract'])
   for (const call of judged) {
     assert.match(call.prompt, /Not defects here: naming\./)
     assert.match(call.prompt, /A merge-blocking finding needs a repro/)
@@ -814,7 +814,7 @@ test('lensReview_keepsCallerRuleChecksLensOnce_whenCallerAlreadyGivesRuleChecks'
   const lenses = [...CALLER_LENSES, { key: 'rule-checks', prompt: 'Lens: custom rule-checks.' }]
   const result = await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses })
   assert.equal(result.verdict, 'PASS')
-  assert.deepEqual(result.lensesFired, ['contract', 'rule-checks', 'readable-code'])
+  assert.deepEqual(result.lensesFired, ['contract', 'rule-checks', 'writing-readable-code'])
   assert.equal(auditChildArgs(rt).lenses[1].prompt, 'Lens: custom rule-checks.')
 })
 
@@ -828,11 +828,11 @@ test('lensReview_scansReviewedCommit_whenRuleChecksRunsOnACommitRange', async ()
 
 test('lensReview_appendsReadingGuideToCallerReadableLens_whenGuideIsGiven', async () => {
   const rt = createRuntime({ respond: responder() })
-  const lenses = [...CALLER_LENSES, { key: 'readable-code', prompt: 'Lens: custom readable.' }]
+  const lenses = [...CALLER_LENSES, { key: 'writing-readable-code', prompt: 'Lens: custom readable.' }]
   await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses, readingGuide: 'Entry point : a.py' })
   const childLenses = auditChildArgs(rt).lenses
   const guided = childLenses.filter((lens) => lens.prompt.includes('Entry point : a.py')).map((lens) => lens.key)
-  assert.deepEqual(guided, ['readable-code'])
+  assert.deepEqual(guided, ['writing-readable-code'])
   assert.match(childLenses[1].prompt, /^Lens: custom readable\.\nAuthor's reading guide \(claims to check against the code, not evidence\):\nEntry point : a\.py$/)
 })
 
@@ -870,7 +870,7 @@ test('lensReview_namesSkillRulesByK5Label_inEveryBuiltInLensPrompt', async () =>
   const rt = createRuntime({ respond: responder() })
   await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
   const lenses = auditChildArgs(rt).lenses
-  assert.match(lenses.find((lens) => lens.key === 'rule-checks').prompt, /\/readable-code rule K5\.<n>\./)
+  assert.match(lenses.find((lens) => lens.key === 'rule-checks').prompt, /\/writing-readable-code rule K5\.<n>\./)
   for (const lens of lenses) assert.doesNotMatch(lens.prompt, /\bR(?:\d+|<n>)\b/)
 })
 
@@ -897,7 +897,7 @@ test('lensReview_scopesCommentCleanupAndRequiresExecutableEvidence_inReadableLen
   await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
   assert.match(auditChildArgs(rt).guardrails, /git-guard C-comments denies new and changed code comments at write time, so a retained comment is not a finding/)
   assert.match(auditChildArgs(rt).target, /existing-comment cleanup is a separate requested task/)
-  const prompt = auditChildArgs(rt).lenses.find((lens) => lens.key === 'readable-code').prompt
+  const prompt = auditChildArgs(rt).lenses.find((lens) => lens.key === 'writing-readable-code').prompt
   assert.match(prompt, /Do not report comments \(git-guard C-comments judges them at write time\)/)
   assert.match(prompt, /do not expand the task into unrelated legacy cleanup/)
   assert.match(prompt, /Verify behavior from implementation, callers and tests; comments are not evidence/)

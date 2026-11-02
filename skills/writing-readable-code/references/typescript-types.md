@@ -4,7 +4,7 @@ Distilled from pstack `typescript-best-practices` (with its `references/patterns
 
 Read before declaring a type, a function signature or a parse function in a `.ts` or `.tsx` file. These are writing rules; a review blocks only on the items its own lenses name.
 
-Two `/readable-code` rules already cover part of this ground and are not repeated: K5.11 (no new `any`, `as any`, `@ts-ignore` or `@ts-expect-error`; the API layer parses JSON once) and K5.13 (validate external values once where they enter).
+Two `/writing-readable-code` rules already cover part of this ground and are not repeated: K5.11 (no new `any`, `as any`, `@ts-ignore` or `@ts-expect-error`; the API layer parses JSON once) and K5.13 (validate external values once where they enter).
 
 ## Shape
 

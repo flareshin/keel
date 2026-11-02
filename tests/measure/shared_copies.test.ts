@@ -9,7 +9,7 @@ import { GENERATED_HEADER as SKILLS_GENERATED_HEADER } from "../skills/helpers.t
 import { GENERATED_HEADER } from "./eval_helpers.ts"
 import { CHECKOUT, readText } from "./helpers.ts"
 
-const PROMPT_REFINE_SKILL = "skills/prompt-refine/SKILL.md"
+const PROMPT_REFINE_SKILL = "skills/refining-requests/SKILL.md"
 
 describe("shared copies", () => {
   it("generatedClaudeMdHeader_equalsLinkHeader_inEveryCopy", () => {

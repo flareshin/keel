@@ -8,7 +8,7 @@ import type { Completed } from "./helpers.ts"
 export const STUBS_DIR = path.join(CHECKOUT, "tests", "measure", "stubs")
 export const EVAL_TOOL = path.join(CHECKOUT, "measure", "evals", "eval.ts")
 export const EVAL_ID = "K4"
-export const SKILL = "prompt-refine"
+export const SKILL = "refining-requests"
 export const MODEL = "stub-model"
 export const CLI_VERSION = "2.1.296"
 const CASE_COLUMNS = ["id", "kind", "expect", "prompt"] as const

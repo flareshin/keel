@@ -1,6 +1,6 @@
 export const meta = {
   name: 'lens-review',
-  description: 'Code review: the caller lenses plus readable-code and rule-checks through adversarial-audit, ending with a reporter agent whose message starts with VERDICT and carries one KEEL-EVIDENCE line per repo',
+  description: 'Code review: the caller lenses plus writing-readable-code and rule-checks through adversarial-audit, ending with a reporter agent whose message starts with VERDICT and carries one KEEL-EVIDENCE line per repo',
   phases: [
     { title: 'Prepare', detail: 'resolve review bases, snapshot working trees, derive the run id, load default lenses' },
     { title: 'Report', detail: 'reporter agent hands back the verdict and KEEL-EVIDENCE lines' },
@@ -18,7 +18,7 @@ const MECHANICAL_MODEL = A.mechanicalModel || 'sonnet'
 const MECHANICAL_EFFORT = 'low'
 const REPORTER_TYPE = 'keel-reporter'
 const REVIEW_KIND = 'lens-review'
-const READABLE_KEY = 'readable-code'
+const READABLE_KEY = 'writing-readable-code'
 const RULE_CHECKS_KEY = 'rule-checks'
 const BLOCKING_IMPACT = ['high', 'medium']
 const FIX_DELTA_BLOCKING_IMPACT = ['high']
@@ -41,7 +41,7 @@ const DERIVED_RUN_ID = /^rv-\d{8}T\d{6}Z-[0-9a-f]{6}$/
 const SAFE_REF = /^[A-Za-z0-9._\/~^@{}-]+$/
 const CONTROL_CHARS = /[\x00-\x1f\x7f\x85\u2028\u2029]/
 const DATA_DIR = '"${KEEL_DATA_DIR:-$HOME/.claude}"'
-const RULE_CHECKS = `${DATA_DIR}/skills/readable-code/scripts/rule-checks.ts`
+const RULE_CHECKS = `${DATA_DIR}/skills/writing-readable-code/scripts/rule-checks.ts`
 const DEFAULT_LENSES_FILE = `${DATA_DIR}/workflows/review-lenses.json`
 const DERIVE_RUN_ID_COMMAND = `printf 'rv-%s-%s\\n' "$(date -u +%Y%m%dT%H%M%SZ)" "$(od -An -N3 -tx1 /dev/urandom | tr -d ' \\n')"`
 const LOAD_LENSES_COMMAND = `jq -c '{lenses, guardrails}' ${DEFAULT_LENSES_FILE}`
@@ -382,7 +382,7 @@ function withReadingGuide(lens) {
 function buildReadableLens() {
   return {
     key: READABLE_KEY,
-    prompt: `Lens: readable-code. Load the /readable-code checklist and relevant full rule sections and judge new and changed lines against its rules, tagged K5.1-K5.16. Do not report comments (git-guard C-comments judges them at write time) and do not expand the task into unrelated legacy cleanup. Verify behavior from implementation, callers and tests; comments are not evidence, and an explanatory-comment-only change cannot establish a behavior fix. Tool-consumed directive changes are behavior changes and require failing reproduction and passing tool verification. Check the author's reading guide against the code (Entry point, Flow, Changed, Read first); a guide that misstates the code is a finding.\n${buildReadingGuideBlock()}`,
+    prompt: `Lens: writing-readable-code. Load the /writing-readable-code checklist and relevant full rule sections and judge new and changed lines against its rules, tagged K5.1-K5.16. Do not report comments (git-guard C-comments judges them at write time) and do not expand the task into unrelated legacy cleanup. Verify behavior from implementation, callers and tests; comments are not evidence, and an explanatory-comment-only change cannot establish a behavior fix. Tool-consumed directive changes are behavior changes and require failing reproduction and passing tool verification. Check the author's reading guide against the code (Entry point, Flow, Changed, Read first); a guide that misstates the code is a finding.\n${buildReadingGuideBlock()}`,
   }
 }
 
@@ -398,7 +398,7 @@ function buildRuleChecksLens(reviewed) {
   const deltaNote = reviewed.some((target) => target.since) ? ' In a delta review, only a line the delta changes is a candidate.' : ''
   return {
     key: RULE_CHECKS_KEY,
-    prompt: `Lens: rule-checks. Run each command below and quote its \`summary\` line in your notes exactly once:\n${commands.join('\n')}\nNever quote a \`summary\` line from any other run you make; the review counts one quoted summary per listed command. Each \`signal K5.<n> <file:line> <text>\` line is a candidate, not a finding.${deltaNote} Read the line in context with /readable-code rule K5.<n>. Report it only when the rule is broken and its own exception does not cover it. Exit 2 or a \`blocked=\` value other than none means that repo was not checked: report that as a finding, never as clean. \`unscanned=\` names submodules the diff adds or removes and untracked nested repos: list them in your notes, not as findings.`,
+    prompt: `Lens: rule-checks. Run each command below and quote its \`summary\` line in your notes exactly once:\n${commands.join('\n')}\nNever quote a \`summary\` line from any other run you make; the review counts one quoted summary per listed command. Each \`signal K5.<n> <file:line> <text>\` line is a candidate, not a finding.${deltaNote} Read the line in context with /writing-readable-code rule K5.<n>. Report it only when the rule is broken and its own exception does not cover it. Exit 2 or a \`blocked=\` value other than none means that repo was not checked: report that as a finding, never as clean. \`unscanned=\` names submodules the diff adds or removes and untracked nested repos: list them in your notes, not as findings.`,
   }
 }
 

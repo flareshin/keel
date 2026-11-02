@@ -15,7 +15,7 @@ import type { JsonObject } from './writers.ts';
 
 export const KIND = 'codex-lens-review';
 export const VIA = 'CodexSubagents';
-export const LENSES = new Set(['reuse', 'contract', 'tests', 'readable-code', 'rule-checks']);
+export const LENSES = new Set(['reuse', 'contract', 'tests', 'writing-readable-code', 'rule-checks']);
 export const REPORT_KEYS = new Set(['version', 'role', 'repo', 'base', 'tree', 'lenses', 'findings', 'audit_session', 'decisions']);
 const SOURCE_KEYS = new Set(['via', 'session_id', 'audit_id', 'agent_id', 'audit_path', 'agent_transcript_path', 'audit_sha256', 'agent_sha256']);
 const LENS_ITEM_KEYS = new Set(['status', 'evidence']);
@@ -230,7 +230,7 @@ export function digest(content: Uint8Array): string {
 
 export function runRuleChecks(repo: string, base: string, tree: string): string {
   const keelHome = resolve(dirname(realpathSync(import.meta.filename)), '..', '..');
-  const script = join(keelHome, 'skills/readable-code/scripts/rule-checks.ts');
+  const script = join(keelHome, 'skills/writing-readable-code/scripts/rule-checks.ts');
   let stdout: string;
   let returncode: number;
   try {

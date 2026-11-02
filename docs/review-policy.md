@@ -49,7 +49,7 @@ root review without it when the diff changes three or more non-test TS/JS source
 in a repo with tests `keel precheck run` can run (`keel precheck required` decides).
 `keel precheck run` first runs `tsc --noEmit` when the repo has a `tsconfig.json`
 and refuses with tsc's first lines on a type error; after the census it appends
-the readable-code rule-checks lines (`rule-checks signal …`, and the summary as
+the writing-readable-code rule-checks lines (`rule-checks signal …`, and the summary as
 `rule-checks totals …` so a review never counts it as its own rule-checks summary),
 which are signals to fix or explain before review, not findings.
 It is an author claim for the
@@ -58,7 +58,7 @@ tests and contract lenses to check, not evidence: it adds no evidence kind, and
 non-test path changed after it or an existing test line changed; rerun it then,
 and rerun it after adding tests so its survivors are not left open.
 
-[C-no-comments] For every candidate that changes a code file, run `/no-comments`
+[C-no-comments] For every candidate that changes a code file, run `/removing-comments`
 after the tests are green and before `keel review prepare`: a
 `keel-comment-reviewer` agent judges every comment in the files the diff changes
 against K5.14, and the author deletes what it lists as a comment-only commit,
@@ -90,7 +90,7 @@ Choose each run by what changed since the last passing run:
 - Run the full suite (`keel test -- npm test`) once per candidate, before
   requesting its root review, when the change touches code a hook runs:
   `hooks/**`, `lib/**`, `measure/lib/**`, `measure/boundary*`, `codex/hooks/**`,
-  `codex/lib/**`, `skills/readable-code/scripts/**`, `githooks/**` or
+  `codex/lib/**`, `skills/writing-readable-code/scripts/**`, `githooks/**` or
   `settings/core.json`. This list overrides the light rule for the paths it
   names. Run it in the background: it outlasts the foreground limit.
 - After the full suite passed, a fix delta reruns only the tests the fix reaches,
@@ -123,7 +123,7 @@ If the earlier explanation is unavailable, give a brief self-contained recap.
 Do not impose a token cap that would hide a material risk.
 A file list, test PASS or approval command alone is insufficient. Explain
 unfamiliar terms, distinguish intended behavior from verified results, and put
-the explanation before the command. This supplements the readable-code
+the explanation before the command. This supplements the writing-readable-code
 human-understanding gate; it does not grant approval. When no approvable target exists, explain the limitation before
 providing the permitted diagnostic command.
 

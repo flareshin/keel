@@ -113,9 +113,9 @@ recognition is a guardrail, not a sandbox for arbitrary programs.
 
 ## Shared implementation guidance and source refresh
 
-Both runtimes consume `skills/readable-code/references/implementation.md` through
+Both runtimes consume `skills/writing-readable-code/references/implementation.md` through
 the shared skill. Claude links manifest entries into its skills directory; Codex
-discovers all core, overlay and adapter skills, including `improve`, under
+discovers all core, overlay and adapter skills, including `improving-structure`, under
 `~/.agents/skills`. Validate both installers against the same source before
 activation. Host-specific tool and review contracts stay in the adapter.
 

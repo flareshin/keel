@@ -1,11 +1,11 @@
 ---
-name: no-comments
-description: The comment pass before formal review — a fresh read-only reviewer judges every comment in the files a diff changes against K5.14, and the author applies its kill list. Trigger; a candidate that changes a code file is about to go to `keel review prepare` or `/lens-review`, "strip the comments", "no-comments the diff", `/no-comments`. Do NOT use for a docs-only or smoke-only diff, a fix delta after NEEDS_FIXES (the root candidate already had the pass), or files the diff does not change (that cleanup is a separate requested task).
+name: removing-comments
+description: The comment pass before formal review — a fresh read-only reviewer judges every comment in the files a diff changes against K5.14, and the author applies its kill list. Trigger; a candidate that changes a code file is about to go to `keel review prepare` or `/lens-review`, "strip the comments", "removing-comments the diff", `/removing-comments`. Do NOT use for a docs-only or smoke-only diff, a fix delta after NEEDS_FIXES (the root candidate already had the pass), or files the diff does not change (that cleanup is a separate requested task).
 ---
 
-# No comments
+# Removing comments
 
-An author defends its own comments, so a context that did not write them decides which ones go. git-guard C-comments stops most new comments at write time; this pass catches the writes it does not parse and clears the pre-existing comments of every file the diff changes, before the review spends a round on them. Adapted from pstack's `no-comments` skill and Comment Sicko agent in [cursor/plugins](https://github.com/cursor/plugins) (at 4dd1d05, MIT), with keel's narrower K5.14 exceptions.
+An author defends its own comments, so a context that did not write them decides which ones go. git-guard C-comments stops most new comments at write time; this pass catches the writes it does not parse and clears the pre-existing comments of every file the diff changes, before the review spends a round on them. Adapted from pstack's `removing-comments` skill and Comment Sicko agent in [cursor/plugins](https://github.com/cursor/plugins) (at 4dd1d05, MIT), with keel's narrower K5.14 exceptions.
 
 ## How it works
 
@@ -13,7 +13,7 @@ An author defends its own comments, so a context that did not write them decides
 
 2. **Check the list, not the verdicts.** Reject a line only when it cites a file outside the scope, a file:line that holds no comment, a `KEEP` whose tool or notice does not exist, or a `MUST KILL` / `ENCODE` that names a symbol or check that is not there. Rerun the reviewer once with the rejected lines named; a second bad list is reported open in the reading guide. Disagreeing with a `DELETE` is not a ground: the comment goes.
 
-3. **Delete the comments.** Remove every accepted `DELETE` line and nothing else, as its own commit on the branch (`comments: remove <n> comments per the no-comments pass`). That commit is comment-only, so the K5.7 diff signal exempts it; behavior changes stay out of it. A tool-consumed directive tagged `MUST KILL` (a lint or type-check suppression) changes tool behavior, so it stays out of this commit and goes in step 4.
+3. **Delete the comments.** Remove every accepted `DELETE` line and nothing else, as its own commit on the branch (`comments: remove <n> comments per the removing-comments pass`). That commit is comment-only, so the K5.7 diff signal exempts it; behavior changes stay out of it. A tool-consumed directive tagged `MUST KILL` (a lint or type-check suppression) changes tool behavior, so it stays out of this commit and goes in step 4.
 
 4. **Fix each `MUST KILL`.** Rename, extract or retype the named symbol so the code says what the comment said, in the scope of the diff; remove a `MUST KILL` directive in the same change, with the tool run that is red without the fix and green with it. That is a logic change: it ships with a test that fails without it (K3) and goes through the formal review with the rest. A reshape outside the diff's files is reported open, not done.
 

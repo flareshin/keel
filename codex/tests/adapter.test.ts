@@ -138,13 +138,13 @@ describe("installation", () => {
   it("test_install_isIdempotent_andUnlinksOwnedFiles", () => {
     const run = runLink("--write");
     assert.equal(run.status, 0, run.stderr);
-    assert.ok(statSync(join(home, ".agents/skills/readable-code/SKILL.md")).isFile());
+    assert.ok(statSync(join(home, ".agents/skills/writing-readable-code/SKILL.md")).isFile());
     assert.ok(read(join(home, ".codex/AGENTS.md")).includes("Codex runtime"));
     assert.equal(runLink("--check").status, 0);
     assert.deepEqual(actionsOf(runLink("--write")), []);
     assert.equal(runLink("--unlink").status, 0);
     assert.equal(existsSync(join(home, ".codex/AGENTS.md")), false);
-    assert.equal(existsSync(join(home, ".agents/skills/readable-code")), false);
+    assert.equal(existsSync(join(home, ".agents/skills/writing-readable-code")), false);
   });
 
   it("test_conflict_preservesExistingInstructions_andWritesNothing", () => {
@@ -166,9 +166,9 @@ describe("installation", () => {
   });
 
   it("test_existingEquivalentSkill_survivesUnlink", () => {
-    const skill = join(home, ".agents/skills/readable-code");
+    const skill = join(home, ".agents/skills/writing-readable-code");
     mkdirSync(dirname(skill), { recursive: true });
-    symlinkSync(join(KEEL, "skills/readable-code"), skill);
+    symlinkSync(join(KEEL, "skills/writing-readable-code"), skill);
     assert.equal(runLink("--write").status, 0);
     assert.equal(runLink("--unlink").status, 0);
     assert.ok(lstatSync(skill).isSymbolicLink());
@@ -205,7 +205,7 @@ describe("installation", () => {
   });
 
   it("test_duplicateSkills_refuseBeforeWriting", () => {
-    const overlay = join(home, "overlay/skills/readable-code");
+    const overlay = join(home, "overlay/skills/writing-readable-code");
     mkdirSync(overlay, { recursive: true });
     writeFileSync(join(overlay, "SKILL.md"), "duplicate");
     assert.equal(runLink("--write").status, 3);
@@ -218,13 +218,13 @@ describe("installation", () => {
     assert.equal(claude.status, 0, claude.stdout + claude.stderr);
     assert.equal(runLink("--write").status, 0);
 
-    for (const name of ["readable-code", "improve", "descend", "prompt-refine", "no-comments", "agent-authoring", "agent-improve"]) {
+    for (const name of ["writing-readable-code", "improving-structure", "descending-findings", "refining-requests", "removing-comments", "authoring-agents", "improving-agents"]) {
       const claudeSkill = join(home, "data/skills", name);
       const codexSkill = join(home, ".agents/skills", name);
       assert.equal(realpathSync(claudeSkill), realpathSync(codexSkill), name);
       assert.deepEqual(readFileSync(join(claudeSkill, "SKILL.md")), readFileSync(join(codexSkill, "SKILL.md")), name);
     }
-    const reference = "readable-code/references/implementation.md";
+    const reference = "writing-readable-code/references/implementation.md";
     assert.deepEqual(readFileSync(join(home, "data/skills", reference)), readFileSync(join(home, ".agents/skills", reference)));
   });
 
@@ -232,18 +232,18 @@ describe("installation", () => {
     const first = copySource("old-source");
     const second = copySource("new-source");
     assert.equal(runSourceLink(first, "--write").status, 0);
-    const claudeSkill = join(home, ".claude/skills/readable-code");
+    const claudeSkill = join(home, ".claude/skills/writing-readable-code");
     mkdirSync(dirname(claudeSkill), { recursive: true });
-    symlinkSync(join(second, "skills/readable-code"), claudeSkill);
+    symlinkSync(join(second, "skills/writing-readable-code"), claudeSkill);
 
     const refreshed = runSourceLink(second, "--write");
 
     assert.equal(refreshed.status, 0, refreshed.stdout + refreshed.stderr);
-    const codexSkill = join(home, ".agents/skills/readable-code");
+    const codexSkill = join(home, ".agents/skills/writing-readable-code");
     assert.equal(realpathSync(codexSkill), realpathSync(claudeSkill));
     const reference = "references/implementation.md";
     assert.deepEqual(readFileSync(join(codexSkill, reference)), readFileSync(join(claudeSkill, reference)));
-    assert.ok(statSync(join(home, ".agents/skills/improve/SKILL.md")).isFile());
+    assert.ok(statSync(join(home, ".agents/skills/improving-structure/SKILL.md")).isFile());
     assert.equal(runSourceLink(second, "--check").status, 0);
     assert.deepEqual(actionsOf(runSourceLink(second, "--write")), []);
   });
@@ -327,7 +327,7 @@ describe("installation", () => {
     assert.equal(checked.status, 1, checked.stdout);
     assert.deepEqual((JSON.parse(checked.stdout) as Record<string, unknown>)["problems"], []);
     assert.deepEqual(readFileSync(registry), before);
-    assert.equal(realpathSync(join(home, ".agents/skills/readable-code")), join(first, "skills/readable-code"));
+    assert.equal(realpathSync(join(home, ".agents/skills/writing-readable-code")), join(first, "skills/writing-readable-code"));
   });
 
   it("test_refresh_refusesRetargetUsedByAnotherProfile", () => {
@@ -344,7 +344,7 @@ describe("installation", () => {
 
     assert.equal(refused.status, 3, refused.stdout);
     assert.deepEqual(readFileSync(registry), before);
-    assert.equal(realpathSync(join(home, ".agents/skills/readable-code")), join(first, "skills/readable-code"));
+    assert.equal(realpathSync(join(home, ".agents/skills/writing-readable-code")), join(first, "skills/writing-readable-code"));
   });
 
   for (const managed of [false, true]) {
@@ -377,14 +377,14 @@ describe("installation", () => {
     assert.equal(runLink("--unlink").status, 0);
     env["CODEX_HOME"] = second;
     assert.equal(runLink("--check").status, 0);
-    assert.ok(existsSync(join(home, ".agents/skills/readable-code/SKILL.md")));
+    assert.ok(existsSync(join(home, ".agents/skills/writing-readable-code/SKILL.md")));
     assert.equal(runLink("--unlink").status, 0);
-    assert.equal(existsSync(join(home, ".agents/skills/readable-code")) || isSymlink(join(home, ".agents/skills/readable-code")), false);
+    assert.equal(existsSync(join(home, ".agents/skills/writing-readable-code")) || isSymlink(join(home, ".agents/skills/writing-readable-code")), false);
   });
 
   it("test_unlink_doesNotRequireCurrentSourceInventory", () => {
     assert.equal(runLink("--write").status, 0);
-    const duplicate = join(home, "overlay/skills/readable-code");
+    const duplicate = join(home, "overlay/skills/writing-readable-code");
     mkdirSync(duplicate, { recursive: true });
     writeFileSync(join(duplicate, "SKILL.md"), "duplicate");
     assert.equal(runLink("--unlink").status, 0);
@@ -401,7 +401,7 @@ describe("installation", () => {
     }));
     for (const run of await Promise.all(runs)) assert.equal(run.status, 0, run.stderr);
     const registry = readJsonFile(join(home, ".agents/keel-codex-skills.json"));
-    assert.deepEqual(new Set(registry["skills"]["readable-code"]["profiles"]), new Set(profiles.map((profile) => realpathSync(profile))));
+    assert.deepEqual(new Set(registry["skills"]["writing-readable-code"]["profiles"]), new Set(profiles.map((profile) => realpathSync(profile))));
   });
 
   it("test_staleLock_isReclaimed_whenItsOwnerProcessIsGone", () => {
@@ -547,7 +547,7 @@ describe("installation", () => {
     }
 
     const HOOKS_ONLY = { actions: [] as string[], problems: [] as string[] };
-    const SKILLS_ADDED_AFTER_RECORDING = ["no-comments", "agent-authoring", "agent-improve"];
+    const SKILLS_ADDED_AFTER_RECORDING = ["removing-comments", "authoring-agents", "improving-agents"];
 
     function registryWithoutSkillsAddedAfterRecording(registryText: string): string {
       const registry = JSON.parse(registryText);
@@ -617,7 +617,7 @@ describe("installation", () => {
     const statePath = join(home, ".codex/keel-codex-state.json");
     const state = readJsonFile(statePath);
     delete state["skills_home"];
-    const skill = join(home, ".agents/skills/readable-code");
+    const skill = join(home, ".agents/skills/writing-readable-code");
     state["owned"][skill] = fingerprint(skill);
     writeFileSync(statePath, JSON.stringify(state));
     unlinkSync(join(home, ".agents/keel-codex-skills.json"));

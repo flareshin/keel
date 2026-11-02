@@ -6,7 +6,7 @@ import type { Completed } from '../evidence/subprocess.ts';
 export type Typecheck = { ok: true } | { ok: false; head: string };
 
 const KEEL_ROOT = join(import.meta.dirname, '..', '..');
-const RULE_CHECKS = join(KEEL_ROOT, 'skills', 'readable-code', 'scripts', 'rule-checks.ts');
+const RULE_CHECKS = join(KEEL_ROOT, 'skills', 'writing-readable-code', 'scripts', 'rule-checks.ts');
 const TSC_HEAD_LINES = 20;
 const REVIEW_SUMMARY_PREFIX = /^summary /;
 const PRECHECK_SUMMARY_PREFIX = 'totals ';

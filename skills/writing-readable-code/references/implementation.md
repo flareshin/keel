@@ -2,7 +2,7 @@
 
 Writing guidance under K3 and K5 for non-trivial behavior changes. Use the
 project's language and existing patterns; a simple local edit needs no design
-ceremony. This is shared by Claude and Codex through `readable-code`, not an
+ceremony. This is shared by Claude and Codex through `writing-readable-code`, not an
 additional workflow or review lens.
 
 ## Start with the call
@@ -18,7 +18,7 @@ repeating domain decisions. Put each business rule with its owner, rather than
 making callers learn a chain of helper objects. A module earns its place when
 removing it would duplicate real complexity in its callers; a forwarding layer
 that only moves complexity usually does not. Reuse the vocabulary in
-[improve](../../improve/SKILL.md#vocabulary) when discussing module depth; this
+[improving-structure](../../improving-structure/SKILL.md#vocabulary) when discussing module depth; this
 reference does not authorize a scan or cleanup outside the requested diff.
 
 An interface or adapter is justified by a real boundary, variation, test need,
@@ -63,7 +63,7 @@ If callers repeatedly need internal knowledge, new parameters carry the same
 workaround, or type escapes hide an invalid state, revisit the owning interface
 before adding another patch. Compare alternatives when they change ownership,
 compatibility, or testability; a routine edit does not require multiple agents
-or models. Use `prompt-refine` only for unresolved choices that change the work.
+or models. Use `refining-requests` only for unresolved choices that change the work.
 
 Keep verification local to each slice and review the ready candidate once under
 [review policy](../../../docs/review-policy.md). Neither a green slice nor a

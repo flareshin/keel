@@ -103,8 +103,8 @@ The charter lives in [`PRINCIPLES.md`](PRINCIPLES.md). `bin/link` turns it into 
 | K1 | An author never judges its own output. | hook (`ship-gate`) |
 | K2 | Every done or pass claim carries machine-verifiable evidence. | hook (`report-gate`) |
 | K3 | Changed logic ships with tests in the same diff. | hook (`ship-gate`) |
-| K4 | Ask when ambiguous; act when clear. | skill (`prompt-refine`) |
-| K5 | Make only needed, readable changes. | skill (`readable-code`) |
+| K4 | Ask when ambiguous; act when clear. | skill (`refining-requests`) |
+| K5 | Make only needed, readable changes. | skill (`writing-readable-code`) |
 
 `PRINCIPLES.md` also states:
 
@@ -124,7 +124,7 @@ repo  >  hook  >  skill  >  prose
 - **skill**: instructions the agent loads for a task. Used where the rule needs judgment.
 - **prose**: plain text in a document. Weakest.
 
-A rule enters at the strongest layer that can hold it. A `skill` or `prose` row must say why it cannot be stronger (`why_not_stronger`). The `descend` skill moves a recurring review finding down the ladder, for example into a lint rule in the target repo. keel's own text for that rule is then deleted.
+A rule enters at the strongest layer that can hold it. A `skill` or `prose` row must say why it cannot be stronger (`why_not_stronger`). The `descending-findings` skill moves a recurring review finding down the ladder, for example into a lint rule in the target repo. keel's own text for that rule is then deleted.
 
 ## The ledger
 
@@ -216,10 +216,10 @@ Evidence lives under `$KEEL_DATA_DIR/state/keel/evidence/` as immutable JSON fil
 
 ### Skills and workflows
 
-- `prompt-refine` (K4): turns an ambiguous request into an approved brief and asks only the questions that change the work.
-- `readable-code` (K5): rules R1–R16 for code a person can follow. Its `scripts/rule-checks.ts` produces signals for the review's rule-checks lens.
-- `descend`: moves a recurring finding to a stronger layer.
-- `improve`: discover one structural improvement or carry out a specified refactoring, with a before/after behavior pin and equivalence evidence.
+- `refining-requests` (K4): turns an ambiguous request into an approved brief and asks only the questions that change the work.
+- `writing-readable-code` (K5): rules R1–R16 for code a person can follow. Its `scripts/rule-checks.ts` produces signals for the review's rule-checks lens.
+- `descending-findings`: moves a recurring finding to a stronger layer.
+- `improving-structure`: discover one structural improvement or carry out a specified refactoring, with a before/after behavior pin and equivalence evidence.
 - `workflows/lens-review.js`: the review engine. Lenses, adversarial audit, verification, reporter.
 - `workflows/adversarial-audit.js`: independent lens coverage plus batched finding verification.
 
@@ -284,7 +284,7 @@ measure/       run, smoke, propose, boundary, weekly, evals/
 githooks/      pre-commit, pre-push (boundary scan)
 settings/      core.json (hook registration), links.tsv (link manifest)
 stacks/        spring-maven/ (env-preflight hook, settings fragment)
-skills/        prompt-refine/, readable-code/, descend/, improve/, no-comments/, agent-authoring/, agent-improve/
+skills/        refining-requests/, writing-readable-code/, descending-findings/, improving-structure/, removing-comments/, authoring-agents/, improving-agents/
 workflows/     lens-review.js, adversarial-audit.js, review-lenses.json
 agents/        keel-auditor.md, keel-reporter.md, keel-comment-reviewer.md (tool-limited review agent types)
 codex/         Codex adapter
@@ -310,7 +310,7 @@ npm ci   # once, before the typecheck
 npx tsc -p tsconfig.json
 ```
 
-No `py*.ts` module and no argparse clone is left; `measure`, `bin/link` and `lib/evidence` read JSON, paths, files, dates and command lines with plain Node behavior. Some Python semantics are kept on purpose in `hooks/lib/hookkit`, `codex/` and `skills/readable-code/scripts/rule-checks.ts`: the `splitlines` and `strip` character sets (`hooks/lib/hookkit/text.ts`, `apply_patch` text and guard output), CPython's recursion limit in the Codex TOML reader (`codex/lib/toml.ts`), the hooks' JSON spacing and error class names, and the exception names `rule-checks.ts` prints. The changelog's Unreleased section describes the ones that changed behavior.
+No `py*.ts` module and no argparse clone is left; `measure`, `bin/link` and `lib/evidence` read JSON, paths, files, dates and command lines with plain Node behavior. Some Python semantics are kept on purpose in `hooks/lib/hookkit`, `codex/` and `skills/writing-readable-code/scripts/rule-checks.ts`: the `splitlines` and `strip` character sets (`hooks/lib/hookkit/text.ts`, `apply_patch` text and guard output), CPython's recursion limit in the Codex TOML reader (`codex/lib/toml.ts`), the hooks' JSON spacing and error class names, and the exception names `rule-checks.ts` prints. The changelog's Unreleased section describes the ones that changed behavior.
 
 The parity harnesses of the shell parser, `rule-checks`, and the Codex TOML port and path helpers compare the TypeScript with outputs recorded from the earlier Python implementation (Python 3.15.0, macOS) and stored as fixtures under `tests/fixtures/python` and `tests/skills/fixtures`. Each case whose outcome changed since is listed with the result it must give. The parity tests of the hooks, the ship-gate hook and the Codex adapter replay the recorded runs and payloads in `tests/hooks/fixtures`, `tests/ship-gate/fixtures` and `tests/fixtures/python/codex-{hook,cli}-parity` and compare the node code with a golden snapshot of its own output; `node tests/hooks/hook-parity-record.ts`, `node tests/ship-gate/ship-gate-parity-record.ts`, `node codex/tests/hook-parity-record.ts` and `node codex/tests/cli-parity-record.ts` re-record it. The ship-gate, hooks and Codex hook replays skip the recorded cases that tests of their own cover except one case of each outcome class they share; `SHIP_GATE_PARITY_FULL=1`, `HOOK_PARITY_FULL=1` and `CODEX_HOOK_PARITY_FULL=1` replay them all. Each replay is split over eight shard files (`tests/ship-gate/ship-gate-parity-shard-<n>.test.ts`, `tests/hooks/hook-parity-shard-<n>.test.ts`) that `node --test` runs in parallel; `node tests/hooks/hook-parity.ts` still replays the hooks as one run. `measure`, `bin/link` and `lib/evidence` keep only the recorded outcomes (exit code, JSON fields, written files) in `tests/fixtures/measure`, `tests/fixtures/link` and `tests/fixtures/evidence`, and the Codex adapter keeps a golden snapshot of its input boundaries in `tests/fixtures/codex`, re-recorded with `node codex/tests/boundary-record.ts`. The Python recordings are frozen: the tools that recorded them needed the Python, which is gone, and survive only in the git history of the commits that introduced the fixtures. The Codex path test that resolves through `/tmp` and `/private` was recorded on macOS and skips on other platforms.
 
@@ -326,13 +326,13 @@ These published skills shaped keel's own skills:
 
 | keel skill | Influenced by | What it took |
 |---|---|---|
-| `improve` | Matt Pocock's [`improve-codebase-architecture`](https://github.com/mattpocock/skills) and [`codebase-design`](https://github.com/mattpocock/skills/blob/main/skills/engineering/codebase-design/SKILL.md) (at 49dd158, MIT) | The module, interface and depth vocabulary and the deletion test |
-| `improve` | pstack in [cursor/plugins](https://github.com/cursor/plugins) (at 6b78e9f, MIT) | The subtract-before-you-add and migrate-callers ordering rules |
-| `no-comments` and the `keel-comment-reviewer` agent | pstack `no-comments` and Comment Sicko in [cursor/plugins](https://github.com/cursor/plugins) (at 4dd1d05, MIT) | A comment pass by a context that did not write the comments, with reshape flags for surprises in our own code and an encoding offer for claimed constraints; keel keeps its narrower K5.14 exceptions |
-| `readable-code` (rules K5.7, K5.8, K5.10 and `references/typescript-types.md`) and `improve` (friction questions) | pstack `typescript-best-practices`, `principle-type-system-discipline`, `principle-model-the-domain`, `principle-minimize-reader-load` and `architect/references/design-red-flags.md` in [cursor/plugins](https://github.com/cursor/plugins) (at 4dd1d05, MIT) | The TypeScript type-design reference, lifecycle state as one value, domain-grouped modules, hand-synced lists and the 30-second reader test |
-| `readable-code` (implementation guide) | Matt Pocock's `codebase-design`, Addy Osmani's [`incremental-implementation`](https://github.com/addyosmani/agent-skills/blob/main/skills/incremental-implementation/SKILL.md) and [pstack `architect`](https://github.com/cursor/plugins/blob/main/pstack/skills/architect/SKILL.md) (read on 2026-10-19) | Caller-first design and small behavior slices |
+| `improving-structure` | Matt Pocock's [`improve-codebase-architecture`](https://github.com/mattpocock/skills) and [`codebase-design`](https://github.com/mattpocock/skills/blob/main/skills/engineering/codebase-design/SKILL.md) (at 49dd158, MIT) | The module, interface and depth vocabulary and the deletion test |
+| `improving-structure` | pstack in [cursor/plugins](https://github.com/cursor/plugins) (at 6b78e9f, MIT) | The subtract-before-you-add and migrate-callers ordering rules |
+| `removing-comments` and the `keel-comment-reviewer` agent | pstack `removing-comments` and Comment Sicko in [cursor/plugins](https://github.com/cursor/plugins) (at 4dd1d05, MIT) | A comment pass by a context that did not write the comments, with reshape flags for surprises in our own code and an encoding offer for claimed constraints; keel keeps its narrower K5.14 exceptions |
+| `writing-readable-code` (rules K5.7, K5.8, K5.10 and `references/typescript-types.md`) and `improving-structure` (friction questions) | pstack `typescript-best-practices`, `principle-type-system-discipline`, `principle-model-the-domain`, `principle-minimize-reader-load` and `architect/references/design-red-flags.md` in [cursor/plugins](https://github.com/cursor/plugins) (at 4dd1d05, MIT) | The TypeScript type-design reference, lifecycle state as one value, domain-grouped modules, hand-synced lists and the 30-second reader test |
+| `writing-readable-code` (implementation guide) | Matt Pocock's `codebase-design`, Addy Osmani's [`incremental-implementation`](https://github.com/addyosmani/agent-skills/blob/main/skills/incremental-implementation/SKILL.md) and [pstack `architect`](https://github.com/cursor/plugins/blob/main/pstack/skills/architect/SKILL.md) (read on 2026-10-19) | Caller-first design and small behavior slices |
 
-The skill files name their sources too: `skills/improve/SKILL.md`, `skills/no-comments/SKILL.md`, `skills/readable-code/references/implementation.md` and `skills/readable-code/references/typescript-types.md`.
+The skill files name their sources too: `skills/improving-structure/SKILL.md`, `skills/removing-comments/SKILL.md`, `skills/writing-readable-code/references/implementation.md` and `skills/writing-readable-code/references/typescript-types.md`.
 
 ## What keel does not do
 

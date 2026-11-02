@@ -675,7 +675,7 @@ function checkRuleSources(): Array<string | null> {
     `\`useState\` per component ${USE_STATE_SIGNAL}`, `**${DIFF_LINE_SIGNAL} changed lines**`,
     "`@ts-ignore`", "`@ts-expect-error`", '`@SuppressWarnings("unchecked")`', "a disabled `react-hooks/exhaustive-deps`"];
   const missing = pinned.filter((item) => !skill.includes(item));
-  return [expect(missing.length === 0, `readable-code references/rules.md no longer states ${JSON.stringify(missing)}: update the constants`)];
+  return [expect(missing.length === 0, `writing-readable-code references/rules.md no longer states ${JSON.stringify(missing)}: update the constants`)];
 }
 
 function checkCrashContract(): Array<string | null> {

@@ -4,7 +4,7 @@ Written against the official reference documentation: Spring Framework 6.x, Spri
 
 Read before writing a service method that writes, a repository or mapper, anything `@Async`, `@Scheduled` or event-driven, an external call, a controller boundary, or a test. These are writing rules; a review blocks only on the items its own lenses name.
 
-Three `/readable-code` rules already cover the Spring-specific ground and are not repeated: K5.9 (a new transaction boundary goes behind a named helper with a one-line why; a catch inside `@Transactional` states its rollback-only effect at the site), K5.11 (no entities past the controller; no `Map<String, Object>` hiding a shape), K5.12 (never swallow; log the exception object with identifiers; classify by type).
+Three `/writing-readable-code` rules already cover the Spring-specific ground and are not repeated: K5.9 (a new transaction boundary goes behind a named helper with a one-line why; a catch inside `@Transactional` states its rollback-only effect at the site), K5.11 (no entities past the controller; no `Map<String, Object>` hiding a shape), K5.12 (never swallow; log the exception object with identifiers; classify by type).
 
 Sections run from the costliest class of defect to the cheapest.
 

@@ -1,6 +1,6 @@
 # Refactoring without changing behavior
 
-Use this procedure for the selected change from `improve`, whether the user
+Use this procedure for the selected change from `improving-structure`, whether the user
 selected a candidate report or requested the structural change directly.
 
 ## Establish the contract before moving structure
@@ -37,7 +37,7 @@ Inventory callers before changing an interface. Include reflection, configuratio
 string names, tests and documentation as well as static imports. If every caller
 is in the owned change, migrate them and remove the old interface in that same
 change. For independently deployed services, shipped clients or persisted formats,
-keep the staged compatibility path from `improve` step 4; list the consumers and
+keep the staged compatibility path from `improving-structure` step 4; list the consumers and
 the evidence needed before removing it. Do not import a blanket ban on shims
 across an external boundary.
 
@@ -68,7 +68,7 @@ commit, model fan-out or runtime activation is part of this procedure.
 ## Source and adaptation
 
 Adapted from pstack's [Refactoring playbook](https://github.com/cursor/plugins/blob/main/pstack/skills/poteto-mode/playbooks/refactoring.md),
-read on 2026-10-25, alongside the sources already credited in `improve`.
+read on 2026-10-25, alongside the sources already credited in `improving-structure`.
 The upstream material is MIT licensed in `cursor/plugins/pstack/LICENSE`.
 This adaptation keeps keel's staged external-consumer migrations, test evidence,
 author/reviewer separation and owner approval boundaries. It adds no new ledger

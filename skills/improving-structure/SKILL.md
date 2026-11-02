@@ -1,9 +1,9 @@
 ---
-name: improve
-description: Finding and making one behavior-preserving structural improvement or a specified refactoring in existing code — shallow modules, pass-through layers, dead code, seams nothing varies across. Trigger; "improve this module", "where is this codebase hard to change", "refactor candidates", "refactor this module", "simplify this structure without changing behavior", "architecture review of a module or area", a requested legacy cleanup. Do NOT use for code the current diff already changes (readable-code covers it), a behavior bug (fix it with a red test), a recurring review finding a machine can decide (descend), or an unrequested repo-wide sweep.
+name: improving-structure
+description: Finding and making one behavior-preserving structural improvement or a specified refactoring in existing code — shallow modules, pass-through layers, dead code, seams nothing varies across. Trigger; "improve this module", "where is this codebase hard to change", "refactor candidates", "refactor this module", "simplify this structure without changing behavior", "architecture review of a module or area", a requested legacy cleanup. Do NOT use for code the current diff already changes (writing-readable-code covers it), a behavior bug (fix it with a red test), a recurring review finding a machine can decide (descending-findings), or an unrequested repo-wide sweep.
 ---
 
-# Improve
+# Improving structure
 
 K5 keeps unrelated legacy cleanup out of feature diffs and makes it a separate requested task; this skill is that task's procedure. Candidate discovery leaves an HTML report of ranked candidates. A selected improvement or specified refactoring leaves one behavior-preserving diff that goes through the normal review and ship-gate.
 
@@ -17,12 +17,12 @@ The vocabulary and the deletion test are adapted from Matt Pocock's `improve-cod
   names the structural change and its scope: read the affected flow and the reasons
   for the current shape, enter step 4 with that choice, and follow step 5. Do not
   repeat candidate discovery or require another selection. A file name alone does
-  not settle an unclear structural goal; use `prompt-refine` for decisions that
+  not settle an unclear structural goal; use `refining-requests` for decisions that
   change the work.
 
 Before implementing either path, read [Refactoring](references/refactoring.md).
 It defines the behavior pin, equivalence proof and reader-load comparison. Load
-`readable-code` for the changed code. This skill adds no model panel or permission
+`writing-readable-code` for the changed code. This skill adds no model panel or permission
 for commits, activation, PRs or other delivery actions.
 
 ## Vocabulary
@@ -76,7 +76,7 @@ Three tests decide most candidates:
 
    End with a top recommendation and the reason. A separate agent checks the report's `file:line` claims before the user sees it (K1). Then ask the user which candidate to take.
 
-4. **Shape the chosen candidate.** Settle the open decisions with the user per `prompt-refine` (only the ones that change the work). Classify each dependency of the deepened module; the class sets the test strategy:
+4. **Shape the chosen candidate.** Settle the open decisions with the user per `refining-requests` (only the ones that change the work). Classify each dependency of the deepened module; the class sets the test strategy:
 
    | Dependency | Test at the new interface with |
    |---|---|

@@ -114,7 +114,7 @@ test('lensReview_prepareCommandsYieldEvidenceForRealRepo_whenRunInBash', async (
   assert.equal(box.git(repo, 'diff', '--name-only', evidence.review_base, evidence.snapshot_tree), 'a.txt\nb.txt')
   assert.equal(box.git(repo, 'diff', '--cached', '--name-only'), '')
   assert.match(result.report, /2 files changed/)
-  assert.deepEqual(result.lensesFired, ['reuse', 'contract', 'tests', 'readable-code', 'rule-checks'])
+  assert.deepEqual(result.lensesFired, ['reuse', 'contract', 'tests', 'writing-readable-code', 'rule-checks'])
 })
 
 test('lensReview_cliPreparedSnapshotRunsWithoutPrepareAgent_whenCandidateMovesLater', async () => {
@@ -146,7 +146,7 @@ test('lensReview_cliPreparedSnapshotRunsWithoutPrepareAgent_whenCandidateMovesLa
   const evidence = parseEvidenceLine(evidenceLines(result.report)[0])
   assert.equal(evidence.snapshot_tree, target.snapshot_tree)
   assert.equal(box.git(repo, 'show', `${evidence.snapshot_tree}:a.txt`), 'two')
-  assert.deepEqual(result.lensesFired, ['reuse', 'contract', 'tests', 'readable-code', 'rule-checks'])
+  assert.deepEqual(result.lensesFired, ['reuse', 'contract', 'tests', 'writing-readable-code', 'rule-checks'])
   assert.equal(box.git(repo, 'diff', '--cached', '--name-only'), '')
 })
 

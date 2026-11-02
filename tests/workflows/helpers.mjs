@@ -147,7 +147,7 @@ export function createSandbox() {
   writeKeelSnapshotStub(join(dataDir, 'bin', 'keel'))
   copyFileSync(join(WORKFLOWS_DIR, 'review-lenses.json'), join(dataDir, 'workflows', 'review-lenses.json'))
   mkdirSync(join(dataDir, 'skills'), { recursive: true })
-  symlinkSync(join(KEEL_HOME, 'skills', 'readable-code'), join(dataDir, 'skills', 'readable-code'))
+  symlinkSync(join(KEEL_HOME, 'skills', 'writing-readable-code'), join(dataDir, 'skills', 'writing-readable-code'))
   const git = (repo, ...gitArgs) => execFileSync('git', ['-C', repo, ...gitArgs], { env, encoding: 'utf8' }).trim()
   const bash = (command) => execFileSync('bash', ['-c', command], { env, encoding: 'utf8' }).trim()
   return { root, env, git, bash }

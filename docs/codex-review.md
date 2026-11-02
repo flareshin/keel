@@ -1,7 +1,7 @@
 # Native Codex review evidence
 
 Use the same [review policy](review-policy.md) as Claude. The author never reviews
-its own output. Required lenses are reuse, contract, tests, readable-code and
+its own output. Required lenses are reuse, contract, tests, writing-readable-code and
 rule-checks. One independent auditor may cover all five; split auditors by lens
 when risk or scope warrants separate contexts. Findings get a separate verifier;
 a clean audit needs none. Coverage is mandatory; five processes are not.
@@ -13,7 +13,7 @@ a clean audit needs none. Coverage is mandatory; five processes are not.
    than repeating them in every reviewer. Give reviewers requirements and contracts,
    not author verdicts or the entire author conversation.
 2. Spawn a fresh audit child of the author, covering all required lenses, or one
-   child per lens. Read the applicable readable-code checklist and only the full
+   child per lens. Read the applicable writing-readable-code checklist and only the full
    rule sections needed for the change or a finding. Inspect `git show <tree>:<path>`
    and `git diff <base> <tree>`; do not silently inspect a moving working tree.
 3. For each audit with findings, spawn one different verifier child. It checks the
@@ -56,7 +56,7 @@ concrete evidence. A verifier uses `lenses: {}` and its source audit UUID in
     "reuse": {"status": "complete", "evidence": "<inspected existing implementations>"},
     "contract": {"status": "complete", "evidence": "<callers and failure boundaries>"},
     "tests": {"status": "complete", "evidence": "<actual runner records and coverage judgment>"},
-    "readable-code": {"status": "complete", "evidence": "<applicable rules and inspected code>"},
+    "writing-readable-code": {"status": "complete", "evidence": "<applicable rules and inspected code>"},
     "rule-checks": {"status": "complete", "evidence": "<actual scanner summary and signal assessment>"}
   },
   "findings": [],
@@ -83,7 +83,7 @@ Each decision is exactly `{"id":"contract:A1","verdict":"confirmed|refuted",
 "evidence":"<independent proof>"}`. The importer derives NEEDS_FIXES when any
 confirmed or new high/medium finding remains, otherwise PASS.
 
-The rule-checks auditor runs `node skills/readable-code/scripts/rule-checks.ts --repo
+The rule-checks auditor runs `node skills/writing-readable-code/scripts/rule-checks.ts --repo
 <repo> --base <base> --head <tree>` and quotes its exact clean summary once in that
 lens's evidence. Other auditors and finding verifiers do not repeat the scan to
 fill a report field. The importer reruns it to validate the actual target.

@@ -8,7 +8,7 @@ import { splitlines } from "../../hooks/lib/hookkit/text.ts";
 import { scanFences } from "../../measure/lib/measurekit/fences.ts";
 import { AGENTS_DIR, agentPaths, bulletTags, GENERATED_HEADER, K5_SUB_IDS, KEEL_HOME, markdownPaths, PRINCIPLES, read, rulesSection, SKILLS_DIR, skillPaths, VALID_IDS } from "./helpers.ts";
 
-const EXPECTED_SKILLS = new Set(["prompt-refine", "readable-code", "descend", "improve", "no-comments", "agent-authoring", "agent-improve"]);
+const EXPECTED_SKILLS = new Set(["refining-requests", "writing-readable-code", "descending-findings", "improving-structure", "removing-comments", "authoring-agents", "improving-agents"]);
 const CLAUDE_MD_CAP = 4608;
 const PERSONAL_BUDGET = 1024;
 const SKILL_LINE_CAP = 500;
@@ -154,7 +154,7 @@ describe("id tagging", () => {
   });
 
   it("test_readableCode_tagsEachSubCheckOnce_K5_1to16", () => {
-    const path = join(SKILLS_DIR, "readable-code", "SKILL.md");
+    const path = join(SKILLS_DIR, "writing-readable-code", "SKILL.md");
     const subTags = bulletTags(rulesSection(read(path))).map(([, tag]) => tag).filter((tag): tag is string => tag !== null && tag.startsWith("K5."));
     assert.deepEqual([...subTags].sort(), [...K5_SUB_IDS].sort());
   });
@@ -183,7 +183,7 @@ describe("id tagging", () => {
 
 describe("approval wording", () => {
   it("test_approvalDocs_namePlainApproveWithoutReadOrSizeCap_forPrinciplesAndHighTier", () => {
-    for (const path of [PRINCIPLES, join(SKILLS_DIR, "readable-code", "SKILL.md")]) {
+    for (const path of [PRINCIPLES, join(SKILLS_DIR, "writing-readable-code", "SKILL.md")]) {
       const text = read(path);
       assert.ok(text.includes("`keel approve <root_run_id>`"), path);
       assert.ok(!text.includes("<root_run_id> --read`"), path);

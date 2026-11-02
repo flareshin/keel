@@ -186,8 +186,8 @@ describe("summarizeStream", () => {
   })
 
   it("summarizeStream_recordsBareSkillName_forPluginSpelling", () => {
-    const summary = summarizeStream([assistant("Skill", { skill: "plug:prompt-refine" }), assistant("Read", { skill: "prompt-refine" })])
-    assert.deepEqual(summary.skillCalls, ["prompt-refine"])
+    const summary = summarizeStream([assistant("Skill", { skill: "plug:refining-requests" }), assistant("Read", { skill: "refining-requests" })])
+    assert.deepEqual(summary.skillCalls, ["refining-requests"])
   })
 
   it("summarizeStream_skipsNonJsonLines", () => {
@@ -300,12 +300,12 @@ describe("live config", () => {
     root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "keel-eval-cfg-")))
     keel = path.join(root, "keel")
     config = path.join(root, "config")
-    fs.mkdirSync(path.join(keel, "skills", "prompt-refine"), { recursive: true })
+    fs.mkdirSync(path.join(keel, "skills", "refining-requests"), { recursive: true })
     fs.mkdirSync(path.join(config, "skills"), { recursive: true })
   })
   afterEach(() => fs.rmSync(root, { recursive: true, force: true }))
 
-  const linkSkill = () => fs.symlinkSync(path.join(keel, "skills", "prompt-refine"), path.join(config, "skills", "prompt-refine"))
+  const linkSkill = () => fs.symlinkSync(path.join(keel, "skills", "refining-requests"), path.join(config, "skills", "refining-requests"))
   const writeClaudeMd = (firstLine: string) => fs.writeFileSync(path.join(config, "CLAUDE.md"), firstLine + "\n# Principles\n")
 
   it("projectDirFor_slugsTheRealpath_withEveryNonAlphanumericAsDash", () => {
@@ -323,25 +323,25 @@ describe("live config", () => {
   it("isKeelLive_true_whenSkillLinkedIntoKeelAndClaudeMdGenerated", () => {
     linkSkill()
     writeClaudeMd(GENERATED_CLAUDE_MD_HEADER)
-    assert.equal(isKeelLive(config, keel, "prompt-refine"), true)
+    assert.equal(isKeelLive(config, keel, "refining-requests"), true)
   })
 
   it("isKeelLive_false_whenSkillIsARealDirectory", () => {
-    fs.mkdirSync(path.join(config, "skills", "prompt-refine"))
+    fs.mkdirSync(path.join(config, "skills", "refining-requests"))
     writeClaudeMd(GENERATED_CLAUDE_MD_HEADER)
-    assert.equal(isKeelLive(config, keel, "prompt-refine"), false)
+    assert.equal(isKeelLive(config, keel, "refining-requests"), false)
   })
 
   it("isKeelLive_false_whenClaudeMdIsNotGenerated", () => {
     linkSkill()
     writeClaudeMd("# My own CLAUDE.md")
-    assert.equal(isKeelLive(config, keel, "prompt-refine"), false)
+    assert.equal(isKeelLive(config, keel, "refining-requests"), false)
   })
 
   it("isKeelLive_false_whenTheHeaderLineEndsWithCarriageReturn", () => {
     linkSkill()
     fs.writeFileSync(path.join(config, "CLAUDE.md"), GENERATED_CLAUDE_MD_HEADER + "\r\n# Principles\n")
-    assert.equal(isKeelLive(config, keel, "prompt-refine"), false)
+    assert.equal(isKeelLive(config, keel, "refining-requests"), false)
   })
 
   it("isKeelLive_true_whenConfigDirAndKeelHomeAreReachedThroughSymlinks", () => {
@@ -351,7 +351,7 @@ describe("live config", () => {
     const keelAlias = path.join(root, "keel-alias")
     fs.symlinkSync(config, configAlias)
     fs.symlinkSync(keel, keelAlias)
-    assert.equal(isKeelLive(configAlias, keelAlias, "prompt-refine"), true)
+    assert.equal(isKeelLive(configAlias, keelAlias, "refining-requests"), true)
   })
 
   it("suiteEvalId_addsBaselineSuffix_whenKeelIsNotLive", () => {

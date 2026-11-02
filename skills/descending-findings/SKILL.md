@@ -1,9 +1,9 @@
 ---
-name: descend
+name: descending-findings
 description: Moving a recurring review finding down to the strongest layer that can decide it (a type, lint rule, architecture test or CI test in the target repo). Trigger; "descend this rule", "make this a lint rule", "this finding keeps coming back", the owner correcting the same agent mistake twice, the monthly descend pick after a review cycle, a ledger row whose why_not_stronger no longer holds. Do NOT use for a one-off finding (fix it in place), a rule that needs judgment (it stays a skill or lens), or editing keel's own hooks.
 ---
 
-# Descend
+# Descending findings
 
 The enforcement ladder is `repo` > `hook` > `skill` > `prose`. A finding reviewers keep raising by hand costs review time on every diff; once a machine can decide it, it belongs in the target repo, where CI enforces it for every author, human or AI. This skill is the procedure; it leaves the target repo with a red-then-green rule and the ledger with a `layer=repo` row.
 
@@ -49,7 +49,7 @@ The enforcement ladder is `repo` > `hook` > `skill` > `prose`. A finding reviewe
    - `why_not_stronger=-` (repo is the top of the ladder);
    - `incidents` keeps the refs from step 1; `review_by` = today + 60 days.
 
-   A K5.n sub-check of `/readable-code` is not a ledger row: descending it for one repo adds a new row for that repo; the K5.n text stays, because it still serves every other repo. Format example: `examples/skills/descended-row.tsv`.
+   A K5.n sub-check of `/writing-readable-code` is not a ledger row: descending it for one repo adds a new row for that repo; the K5.n text stays, because it still serves every other repo. Format example: `examples/skills/descended-row.tsv`.
 
 7. **Retire keel's text for it.** Delete the rule's text wherever keel stated it only for that repo (a lens line, a skill bullet, a `PERSONAL.md` line, a hook branch). Text that also serves other repos stays. Then run `measure/smoke` and `measure/run <id>` and quote both results.
 

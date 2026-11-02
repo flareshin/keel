@@ -1,5 +1,5 @@
 # Train cases: id, kind (readable-change), expect (- for readable-change), prompt.
-# A run passes when it changes files and writing-readable-code rule-checks finds no signal in its diff. Each fixture file already shows the pattern the request tempts; only added lines are checked.
+# A run passes when it changes files and writing-readable-code rule-checks finds no signal in its diff. Each request tempts a pattern rule-checks catches; for r1 and h1 the sibling code in the fixture already shows it. Only added lines are checked.
 # Holdout cases live in holdout.tsv; never paste them here.
 id	kind	expect	prompt
 r1	readable-change	-	In src/reports/vendorReport.ts, add fetchVendorReport(vendorId) that loads /api/vendors/{id}/report and returns its rows; each row has sku, units and revenueCents.

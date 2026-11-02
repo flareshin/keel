@@ -17,7 +17,6 @@ const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 const RUNTIME_GLOBALS = ['args', 'agent', 'parallel', 'pipeline', 'phase', 'log', 'workflow']
 const META_EXPORT = 'export const meta = '
 const BODY_MARKER = 'BODY'
-// V8 compiles constructor source as "(" + fn.toString() + ")", so coverage offsets start one character before toString's.
 const BODY_OFFSET = new AsyncFunction(...RUNTIME_GLOBALS, BODY_MARKER).toString().indexOf(BODY_MARKER) + 1
 
 export function readScript(name) {
@@ -28,7 +27,6 @@ export function compileScript(name) {
   return compileWorkflowFile(join(WORKFLOWS_DIR, `${name}.js`))
 }
 
-// The workflow runtime evaluates the body as an async function; `export` is the only module syntax it strips.
 export function compileWorkflowFile(file) {
   const source = readFileSync(file, 'utf8')
   if (!source.startsWith(META_EXPORT)) throw new Error(`${file} must begin with export const meta`)
@@ -43,7 +41,6 @@ export function extractMetaText(source) {
   return source.slice(start, end + 2)
 }
 
-// A pure literal holds only keys, strings, numbers, booleans, null and punctuation: no variables, calls, spreads or interpolation.
 export function isPureLiteral(text) {
   if (text.includes('`') || text.includes('...')) return false
   const withoutStrings = text.replace(/'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"/g, '""')
@@ -52,7 +49,6 @@ export function isPureLiteral(text) {
   return /^[\s{}[\],:]*$/.test(withoutValues)
 }
 
-// Runs a script with stubbed runtime globals. `respond(prompt, opts)` plays every agent; `workflow` defaults to running the real child script.
 export function createRuntime({ respond, workflowImpl } = {}) {
   const record = { agents: [], logs: [], phases: [], workflows: [], unnamedModelOrEffort: [] }
   const agent = async (prompt, opts = {}) => {
@@ -95,7 +91,6 @@ export function reportBetweenMarkers(prompt) {
   return prompt.slice(start + REPORT_START.length + 1, end)
 }
 
-// Plays a rule-checks auditor that ran every command in its prompt and quoted each clean summary line.
 export function cleanRuleChecksNotes(prompt) {
   const repoCount = (prompt.match(/ --repo '/g) || []).length
   return Array.from({ length: repoCount }, () => CLEAN_RULE_CHECKS_SUMMARY).join('\n')
@@ -115,7 +110,6 @@ export function preparedLine({ repoRoot = '/work/app', reviewBase = SHA_A, head 
   return JSON.stringify({ repo_root: repoRoot, review_base: reviewBase, head, snapshot_tree: snapshotTree, diff_stat: diffStat })
 }
 
-// Pulls the one-line command that follows each "diff N:", "run id:" and "lenses:" header in the prepare prompt.
 export function preparePromptCommands(prompt) {
   const lines = prompt.split('\n')
   const commands = { diffs: [], runId: null, lenses: null }
@@ -128,7 +122,6 @@ export function preparePromptCommands(prompt) {
   return commands
 }
 
-// A temp sandbox per test: KEEL_DATA_DIR, HOME and git config never point at the real user setup.
 export function createSandbox() {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'keel-workflows-')))
   const dataDir = join(root, 'data')
@@ -153,7 +146,6 @@ export function createSandbox() {
   return { root, env, git, bash }
 }
 
-// Stands in for the ship-gate track's `keel snapshot` (Interfaces (e)): temp-index snapshot, real index untouched.
 function writeKeelSnapshotStub(path) {
   writeFileSync(path, `#!/bin/bash
 set -e

@@ -37,6 +37,24 @@ describe("ruleCheckDiff", () => {
     assert.deepEqual(ruleCheckDiff(CHECKOUT, fixture, ""), { signals: [] })
   })
 
+  it("ruleCheckDiff_faults_namingTheMissingScript_whenTheCheckoutHasNoRuleChecks", () => {
+    const emptyCheckout = fs.mkdtempSync(path.join(os.tmpdir(), "checkout"))
+    try {
+      const check = ruleCheckDiff(emptyCheckout, fixture, "")
+      assert.ok("fault" in check)
+      assert.ok(check.fault.startsWith("rule-checks exit 1: "), check.fault)
+      assert.ok(check.fault.includes("rule-checks.ts"), check.fault)
+    } finally {
+      fs.rmSync(emptyCheckout, { recursive: true, force: true })
+    }
+  })
+
+  it("ruleCheckDiff_faults_whenTheDiffDoesNotApply", () => {
+    const check = ruleCheckDiff(CHECKOUT, fixture, "diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n-# other\n+# shop desk\n")
+    assert.ok("fault" in check)
+    assert.ok(check.fault.startsWith("rule-checks could not rebuild the diff: git apply --index - failed"), check.fault)
+  })
+
   it("ruleCheckDiff_leavesTheFixtureUntouched", () => {
     ruleCheckDiff(CHECKOUT, fixture, addedFileDiff("src/x.ts", ["export const x = 1"]))
     assert.deepEqual(fs.readdirSync(fixture), ["README.md"])

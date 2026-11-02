@@ -142,6 +142,24 @@ describe("eval cli", () => {
       assert.deepEqual(run.rule_signals.map((line: string) => line.split(" ").slice(0, 3).join(" ")), ["signal K5.12 src/load.ts:2"])
     })
 
+    it("skillDiagnostic_countsReadableRunsThatLoadedTheSkill", () => {
+      const fires = box.scenario("fires", { events: [initEvent(), toolUse("Skill", { skill: "refining-requests" }), toolUse("Write", { file_path: "src/load.ts" }), resultEvent("Added it.")], writes: { "src/load.ts": "export const total = 1\n" } })
+      const silent = writeScenario("silent", "export const total = 1\n")
+      readableSuite(fires, silent)
+      const [completed, report] = box.runEvalJson("K4", "--model", MODEL, ...RUN_ONCE)
+      const diagnostic = readJson(path.join(report.raw_dir, "skill-diagnostic.json"))
+      assert.deepEqual([completed.status, diagnostic.readable_runs, diagnostic.readable_fired], [0, 2, 1], completed.stderr)
+    })
+
+    it("fault_whenTheSavedDiffCannotBeRebuilt_andNoEvalLineIsWritten", () => {
+      const binary = writeScenario("binary", "export const total = 1\u0000\n")
+      readableSuite(binary, binary)
+      const [completed, report] = box.runEvalJson("K4", "--model", MODEL, ...RUN_ONCE, "--case", "r1")
+      assert.deepEqual([completed.status, report.written], [1, false], completed.stderr)
+      assert.ok(report.faults[0].reason.startsWith("rule-checks could not rebuild the diff"), report.faults[0].reason)
+      assert.deepEqual(box.evalLines(), [])
+    })
+
     it("regrade_rebuildsTheDiff_andGradesItAgain", () => {
       const swallow = writeScenario("swallow", "export function load(run: () => void): void {\n  try { run() } catch (e) {}\n}\n")
       readableSuite(swallow, swallow)

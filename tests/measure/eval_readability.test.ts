@@ -185,13 +185,26 @@ describe("evalGraderDiff with the C-authoring-agents grader", () => {
     "Drafts release notes from the git log. Do not use for fixing bugs, reviewing diffs or verifying fixes.",
     "Drafts release notes from the git log and never reviews them.",
     "Drafts release notes from the git log. Don't use it to verify the release.",
+    "Drafts release notes from the git log. Never use it to review the release.",
+    "Lists keys missing from any locale file, not for verifying translations.",
+    "Drafts release notes and does NOT verify them.",
   ]) {
     it(`evalGraderDiff_findsNoSignal_forAWorkerThatRulesReviewOut_andPinsModel: ${description}`, () => {
       assert.deepEqual(grade("agents/notes-drafter.md", pinnedModel("notes-drafter", description)), { signals: [] })
     })
   }
 
-  for (const description of ["Annotates diffs and reviews them for typos.", "Not for drafting; reviews SQL migrations.", "Not for drafting. Reviews SQL migrations."]) {
+  for (const description of [
+    "Annotates diffs and reviews them for typos.",
+    "Not for drafting; reviews SQL migrations.",
+    "Not for drafting. Reviews SQL migrations.",
+    "Notes each change and reviews the diff.",
+    "Reads the release notes and verifies each linked ticket is closed.",
+    "Runs whenever a fix lands and verifies the test passes.",
+    "Reruns a test that did not pass before a fix and verifies whether it now passes.",
+    "Does not edit code, only verifies.",
+    "Checks the style rules a linter cannot review.",
+  ]) {
     it(`evalGraderDiff_reportsAReviewerWhoseRoleNoRuleOutReaches_thatPinsModel: ${description}`, () => {
       assert.deepEqual(grade("agents/diff-checker.md", pinnedModel("diff-checker", description)), { signals: ["signal C-authoring-agents agents/diff-checker.md: a reviewer or verifier pins model"] })
     })

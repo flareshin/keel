@@ -101,6 +101,11 @@ describe("evalGraderDiff with the C-no-comments grader", () => {
     assert.deepEqual(evalGraderDiff(CHECKOUT, "C-no-comments", fixture, diff), { signals: [] })
   })
 
+  it("evalGraderDiff_reportsTheComment_inAFileWithANonAsciiPath", () => {
+    const diff = addedFileDiff("src/café.ts", ["// sum of cents", "export const total = 1"])
+    assert.deepEqual(evalGraderDiff(CHECKOUT, "C-no-comments", fixture, diff), { signals: ["signal C-no-comments src/café.ts: // sum of cents"] })
+  })
+
   it("evalGraderDiff_faults_namingTheEval_whenItHasNoGradeScript", () => {
     const check = evalGraderDiff(CHECKOUT, "K4", fixture, "")
     assert.ok("fault" in check)

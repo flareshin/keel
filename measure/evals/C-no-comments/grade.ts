@@ -11,7 +11,7 @@ const repo = values.repo ?? "."
 const base = values.base ?? "HEAD~1"
 const head = values.head ?? "HEAD"
 
-const changedFiles = runGitOrThrow(repo, ["diff", "--name-only", "--diff-filter=AMR", base, head]).split("\n").filter((file) => file !== "")
+const changedFiles = runGitOrThrow(repo, ["diff", "-z", "--name-only", "--diff-filter=AMR", base, head]).split("\0").filter((file) => file !== "")
 let remaining = 0
 for (const file of changedFiles) {
   for (const comment of addedComments(file, "", runGitOrThrow(repo, ["show", `${head}:${file}`]))) {

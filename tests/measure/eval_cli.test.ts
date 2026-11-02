@@ -172,14 +172,42 @@ describe("eval cli", () => {
   })
 
   describe("graded-change cases", () => {
-    it("fault_namesTheEvalGrader_whenTheEvalHasNoGradeScript_andCountsGradedRuns", () => {
-      const write = box.scenario("write", { events: [initEvent(), toolUse("Write", { file_path: "src/load.ts" }), resultEvent("Added it.")], writes: { "src/load.ts": "export const total = 1\n" } })
-      box.writeCases("keel/measure/evals/K4/train.tsv", [caseRow("g1", "graded-change", write)])
-      box.writeCases("keel/measure/evals/K4/holdout.tsv", [caseRow("g2", "graded-change", write)])
+    const writeEvents = [toolUse("Write", { file_path: "src/load.ts" }), resultEvent("Added it.")]
+    const writes = { "src/load.ts": "export const total = 1\n" }
+
+    function gradedSuite(train: string, holdout: string): void {
+      box.writeCases("keel/measure/evals/K4/train.tsv", [caseRow("g1", "graded-change", train)])
+      box.writeCases("keel/measure/evals/K4/holdout.tsv", [caseRow("g2", "graded-change", holdout)])
+    }
+
+    it("fault_namesTheEvalGrader_whenTheEvalHasNoGradeScript", () => {
+      const write = box.scenario("write", { events: [initEvent(), ...writeEvents], writes })
+      gradedSuite(write, write)
       const [completed, report] = box.runEvalJson("K4", "--model", MODEL, ...RUN_ONCE)
       assert.deepEqual([completed.status, report.written], [1, false], completed.stderr)
       assert.ok(report.faults[0].reason.startsWith("K4 grader exit"), report.faults[0].reason)
+    })
+
+    it("skillDiagnostic_countsGradedRunsApartFromClearRuns", () => {
+      const write = box.scenario("write", { events: [initEvent(), ...writeEvents], writes })
+      gradedSuite(write, write)
+      const [, report] = box.runEvalJson("K4", "--model", MODEL, ...RUN_ONCE)
       assert.deepEqual([report.skill.graded_runs, report.skill.clear_runs], [2, 0])
+    })
+
+    it("skillDiagnostic_countsGradedRunsThatLoadedTheSkill", () => {
+      const fires = box.scenario("fires", { events: [initEvent(), toolUse("Skill", { skill: "refining-requests" }), ...writeEvents], writes })
+      const silent = box.scenario("silent", { events: [initEvent(), ...writeEvents], writes })
+      gradedSuite(fires, silent)
+      const [, report] = box.runEvalJson("K4", "--model", MODEL, ...RUN_ONCE)
+      assert.deepEqual([report.skill.graded_runs, report.skill.graded_fired], [2, 1])
+    })
+
+    it("run_failsWithoutRunningTheGrader_whenTheRunChangesNothing", () => {
+      const idle = box.scenario("idle", { events: [initEvent(), resultEvent("Nothing to change.")] })
+      gradedSuite(idle, idle)
+      const [completed, report] = box.runEvalJson("K4", "--model", MODEL, ...RUN_ONCE)
+      assert.deepEqual([report.faults, report.cases.map((entry: any) => entry.runs)], [[], [[false], [false]]], completed.stderr)
     })
   })
 

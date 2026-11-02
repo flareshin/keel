@@ -1,0 +1,4 @@
+# Holdout cases: same columns as train.tsv. Do not read these while editing the writing-readable-code skill.
+id	kind	expect	prompt
+h1	readable-change	-	Add a UserService method that returns a user's notification preferences (email alerts, SMS alerts, digest frequency) for the settings screen.
+h2	readable-change	-	In src/hooks/useOrders.ts, refresh should now load only open orders from /api/orders?status=open; the screen no longer shows closed ones.

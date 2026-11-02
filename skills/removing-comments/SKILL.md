@@ -1,11 +1,11 @@
 ---
 name: removing-comments
-description: The comment pass before formal review — a fresh read-only reviewer judges every comment in the files a diff changes against K5.14, and the author applies its kill list. Trigger; a candidate that changes a code file is about to go to `keel review prepare` or `/lens-review`, "strip the comments", "removing-comments the diff", `/removing-comments`. Do NOT use for a docs-only or smoke-only diff, a fix delta after NEEDS_FIXES (the root candidate already had the pass), or files the diff does not change (that cleanup is a separate requested task).
+description: The comment pass before formal review — a fresh read-only reviewer judges every comment in the files a diff changes against K5.14, and the author applies its kill list. Trigger; a candidate that changes a code file is about to go to `keel review prepare` or `/lens-review`, "strip the comments", "no-comments the diff", `/removing-comments`. Do NOT use for a docs-only or smoke-only diff, a fix delta after NEEDS_FIXES (the root candidate already had the pass), or files the diff does not change (that cleanup is a separate requested task).
 ---
 
 # Removing comments
 
-An author defends its own comments, so a context that did not write them decides which ones go. git-guard C-comments stops most new comments at write time; this pass catches the writes it does not parse and clears the pre-existing comments of every file the diff changes, before the review spends a round on them. Adapted from pstack's `removing-comments` skill and Comment Sicko agent in [cursor/plugins](https://github.com/cursor/plugins) (at 4dd1d05, MIT), with keel's narrower K5.14 exceptions.
+An author defends its own comments, so a context that did not write them decides which ones go. git-guard C-comments stops most new comments at write time; this pass catches the writes it does not parse and clears the pre-existing comments of every file the diff changes, before the review spends a round on them. Adapted from pstack's `no-comments` skill and Comment Sicko agent in [cursor/plugins](https://github.com/cursor/plugins) (at 4dd1d05, MIT), with keel's narrower K5.14 exceptions.
 
 ## How it works
 

@@ -9,7 +9,7 @@ Use this checklist while writing and reviewing changed code. The complete rules
 and exceptions are in [rules.md](references/rules.md); read the sections relevant
 to the change or a candidate finding, rather than loading every reference.
 Documentation-only and configuration-only changes do not require code-style review.
-For signals, run `node "${KEEL_DATA_DIR:-$HOME/.claude}/skills/writing-readable-code/scripts/rule-checks.ts" --repo <repo> --base <base>`; a clean scan is not semantic review.
+For signals, run [rule-checks](scripts/rule-checks.ts) as `node <this skill's directory>/scripts/rule-checks.ts --repo <repo> --base <base>`; a clean scan is not semantic review.
 Writing references, read only for the stack or rule at hand:
 [examples.md](references/examples.md) (before/after per rule),
 [react-perf.md](references/react-perf.md) (FE performance),

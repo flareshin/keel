@@ -112,3 +112,45 @@ describe("evalGraderDiff with the C-no-comments grader", () => {
     assert.ok(check.fault.startsWith("K4 grader exit 1: "), check.fault)
   })
 })
+
+describe("evalGraderDiff with the C-authoring-agents grader", () => {
+  const GOOD = ["---", "name: log-reader", "description: Reads a CI log and returns the failing test names. Not for fixing them.", "tools: Read, Grep", "---", "You read one CI log."]
+  let fixture: string
+
+  beforeEach(() => {
+    fixture = fs.mkdtempSync(path.join(os.tmpdir(), "fixture"))
+    fs.writeFileSync(path.join(fixture, "README.md"), "# desk\n")
+  })
+  afterEach(() => fs.rmSync(fixture, { recursive: true, force: true }))
+
+  const grade = (file: string, lines: string[]) => evalGraderDiff(CHECKOUT, "C-authoring-agents", fixture, addedFileDiff(file, lines))
+
+  it("evalGraderDiff_findsNoSignal_forACompleteAgentDefinition", () => {
+    assert.deepEqual(grade("agents/log-reader.md", GOOD), { signals: [] })
+  })
+
+  it("evalGraderDiff_reportsAnAgentWithoutAToolsList", () => {
+    assert.deepEqual(grade("agents/log-reader.md", GOOD.filter((line) => !line.startsWith("tools:"))), { signals: ["signal C-authoring-agents agents/log-reader.md: no tools list"] })
+  })
+
+  it("evalGraderDiff_reportsANameThatIsNotTheFileName", () => {
+    assert.deepEqual(grade("agents/ci-logs.md", GOOD), { signals: ['signal C-authoring-agents agents/ci-logs.md: name "log-reader" is not the file name'] })
+  })
+
+  it("evalGraderDiff_reportsAnAgentWithoutDescription", () => {
+    assert.deepEqual(grade("agents/log-reader.md", GOOD.filter((line) => !line.startsWith("description:"))), { signals: ["signal C-authoring-agents agents/log-reader.md: no description"] })
+  })
+
+  it("evalGraderDiff_reportsAFileWithoutFrontmatter", () => {
+    assert.deepEqual(grade("agents/log-reader.md", ["You read one CI log."]), { signals: ["signal C-authoring-agents agents/log-reader.md: no frontmatter"] })
+  })
+
+  it("evalGraderDiff_reportsAReviewerThatPinsModel", () => {
+    const reviewer = ["---", "name: sql-reviewer", "description: Reviews SQL migrations and returns a verdict.", "tools: Read", "model: haiku", "---", "You review."]
+    assert.deepEqual(grade("agents/sql-reviewer.md", reviewer), { signals: ["signal C-authoring-agents agents/sql-reviewer.md: a reviewer or verifier pins model"] })
+  })
+
+  it("evalGraderDiff_reportsARunThatChangesNoAgentFile", () => {
+    assert.deepEqual(grade("notes/log-reader.md", GOOD), { signals: ["signal C-authoring-agents -: no agents/<name>.md file changed"] })
+  })
+})

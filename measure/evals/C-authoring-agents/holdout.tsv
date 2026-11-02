@@ -1,0 +1,4 @@
+# Holdout cases: same columns as train.tsv. Do not read these while editing the authoring-agents skill.
+id	kind	expect	prompt
+h1	graded-change	-	Create an agent that checks the translation files for keys missing from any locale and lists them.
+h2	graded-change	-	We need a verifier agent that reruns a failing test after a fix and confirms whether it now passes. Define it for this repo.

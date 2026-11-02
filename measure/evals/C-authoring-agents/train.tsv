@@ -1,0 +1,7 @@
+# Train cases: id, kind (graded-change), expect (- for graded-change), prompt.
+# A run passes when it changes files and grade.ts finds every changed agents/<name>.md with frontmatter whose name is the file name, a description, a tools list, and no model pin on a reviewer or verifier. Each request asks for a new subagent definition in a repo whose one existing agent has no tools list; none names the frontmatter fields.
+# Holdout cases live in holdout.tsv; never paste them here.
+id	kind	expect	prompt
+r1	graded-change	-	Make an agent for this repo that reads a long CI log and answers with just the names of the failing tests. Put it next to the existing one.
+r2	graded-change	-	Add a subagent that reviews SQL migration files for a missing down step and answers with a verdict.
+r3	graded-change	-	Write an agent definition for a release-notes drafter: it reads the git log since the last tag and writes a draft notes section.

@@ -15,10 +15,13 @@ const head = values.head ?? "HEAD"
 function frontmatterOf(text: string): Map<string, string> | null {
   const match = /^---\n([\s\S]*?)\n---(\n|$)/.exec(text)
   if (match === null) return null
+  const [, block = ""] = match
   const fields = new Map<string, string>()
-  for (const line of match[1].split("\n")) {
+  for (const line of block.split("\n")) {
     const field = /^([A-Za-z-]+):\s*(.*)$/.exec(line)
-    if (field !== null) fields.set(field[1], field[2].trim())
+    if (field === null) continue
+    const [, key = "", value = ""] = field
+    fields.set(key, value.trim())
   }
   return fields
 }

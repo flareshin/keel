@@ -45,6 +45,7 @@ export function textAnswers(finalText: string | null, expect: string): boolean {
 export function faultReason(facts: RunFacts, timeoutSeconds: number): string | null {
   const result = facts.result
   if (facts.timedOut) return `timed out after ${timeoutSeconds}s`
+  if (facts.stream.brokenEvents > 0) return `${facts.stream.brokenEvents} stream event line(s) are not valid JSON`
   if (result === null) return "no result event"
   if (result["subtype"] === RESULT_SUCCESS && result["is_error"] === true) return "result has is_error with subtype success (logged out?)"
   if (!hasModelUsage(result["modelUsage"])) return "empty modelUsage (logged out?)"

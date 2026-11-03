@@ -34,13 +34,14 @@ interface FactsOptions {
   modelUsage?: boolean
   leftover?: string | null
   noResult?: boolean
+  brokenEvents?: number
 }
 
 function facts(options: FactsOptions = {}): RunFacts {
-  const { changed = false, askCalls = 0, denied = [], text = "Done.", subtype = "success", isError = false, exitCode = 0, timedOut = false, modelUsage = true, leftover = null, noResult = false } = options
+  const { changed = false, askCalls = 0, denied = [], text = "Done.", subtype = "success", isError = false, exitCode = 0, timedOut = false, modelUsage = true, leftover = null, noResult = false, brokenEvents = 0 } = options
   const usage: JsonObject = modelUsage ? { m: { inputTokens: 1 } } : {}
   const result: JsonObject | null = noResult ? null : { subtype, is_error: isError, result: text, modelUsage: usage }
-  const stream = { init: { model: "m" }, result, askCalls, skillCalls: [], deniedTools: [...denied] }
+  const stream = { init: { model: "m" }, result, askCalls, skillCalls: [], deniedTools: [...denied], brokenEvents }
   return new RunFacts({ stream, exitCode, timedOut, changed, leftoverProjectDir: leftover })
 }
 
@@ -223,7 +224,13 @@ describe("summarizeStream", () => {
 
   it("summarizeStream_skipsNonJsonLines", () => {
     const summary = summarizeStream(["[verbose] starting", assistant("AskUserQuestion", {}), ""])
-    assert.equal(summary.askCalls, 1)
+    assert.deepEqual([summary.askCalls, summary.brokenEvents], [1, 0])
+  })
+
+  it("summarizeStream_countsATruncatedEventLine_asBroken", () => {
+    const truncated = assistant("AskUserQuestion", {}).slice(0, 40)
+    const summary = summarizeStream([assistant("Read", {}), truncated])
+    assert.deepEqual([summary.askCalls, summary.brokenEvents], [0, 1])
   })
 
   it("summarizeStream_keepsInitAndResultAndDeniedTools", () => {
@@ -239,6 +246,9 @@ describe("summarizeStream", () => {
 describe("faultReason", () => {
   it("fault_whenTimedOut", () => assert.ok(faultReason(facts({ timedOut: true, noResult: true, exitCode: 124 }), TIMEOUT)?.includes("timed out")))
   it("fault_whenNoResultEvent", () => assert.equal(faultReason(facts({ noResult: true }), TIMEOUT), "no result event"))
+  it("fault_whenAStreamEventLineIsBroken_evenWithACleanResult", () => {
+    assert.equal(faultReason(facts({ brokenEvents: 2 }), TIMEOUT), "2 stream event line(s) are not valid JSON")
+  })
   it("fault_whenLoggedOutShape_exitOneSuccessIsErrorEmptyModelUsage", () => {
     assert.ok(faultReason(facts({ exitCode: 1, isError: true, modelUsage: false, text: "Not logged in" }), TIMEOUT)?.includes("logged out"))
   })

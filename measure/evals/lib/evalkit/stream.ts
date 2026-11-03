@@ -7,6 +7,8 @@ export const EDIT_TOOLS = ["Edit", "Write"]
 export const LOOKUP_TOOLS = ["Read", "Grep", "Glob"]
 export const RESULT_SUCCESS = "success"
 export const RESULT_MAX_TURNS = "error_max_turns"
+const EVENT_START = "{"
+const BROKEN_EVENT = Symbol("broken event")
 
 export interface StreamSummary {
   init: JsonObject | null
@@ -14,10 +16,11 @@ export interface StreamSummary {
   askCalls: number
   skillCalls: string[]
   deniedTools: string[]
+  brokenEvents: number
 }
 
 export function emptyStreamSummary(): StreamSummary {
-  return { init: null, result: null, askCalls: 0, skillCalls: [], deniedTools: [] }
+  return { init: null, result: null, askCalls: 0, skillCalls: [], deniedTools: [], brokenEvents: 0 }
 }
 
 export interface RunFactsInit {
@@ -70,6 +73,10 @@ export class RunFacts {
 export function summarizeStream(lines: Iterable<string>): StreamSummary {
   const summary = emptyStreamSummary()
   for (const event of jsonEvents(lines)) {
+    if (event === BROKEN_EVENT) {
+      summary.brokenEvents += 1
+      continue
+    }
     const kind = event["type"]
     if (kind === "system" && event["subtype"] === "init") {
       summary.init = event
@@ -84,14 +91,15 @@ export function summarizeStream(lines: Iterable<string>): StreamSummary {
   return summary
 }
 
-function* jsonEvents(lines: Iterable<string>): Generator<JsonObject> {
+function* jsonEvents(lines: Iterable<string>): Generator<JsonObject | typeof BROKEN_EVENT> {
   for (const line of lines) {
     let event: JsonValue
     try {
       event = parseJson(line)
     } catch (error) {
-      if (error instanceof SyntaxError) continue
-      throw error
+      if (!(error instanceof SyntaxError)) throw error
+      if (line.trimStart().startsWith(EVENT_START)) yield BROKEN_EVENT
+      continue
     }
     if (isJsonObject(event)) yield event
   }

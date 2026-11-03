@@ -8,6 +8,7 @@ const AGENT_FILE = /(^|\/)agents\/[^/]+\.md$/
 const REVIEW_ROLE = /review|verif/i
 const RULED_OUT_CLAUSE = /^\s*(?:not|do not|don't|never)\b/i
 const NEGATED_REVIEW = /\b(?:not|never)\s+(?:review|verif)/i
+const LIST_CONTINUATION = /^\s*(?:(?:or|and)\s+)?\w+ing\b/
 const LIST_ITEM = /^\s*-\s+(.+)$/
 
 const { values } = parseArgs({ options: { repo: { type: "string" }, base: { type: "string" }, head: { type: "string" } } })
@@ -47,9 +48,10 @@ function namesReviewRole(name: string, description: string): boolean {
 }
 
 function sentenceNamesReviewRole(sentence: string): boolean {
+  let ruledOut = false
   for (const clause of sentence.split(",")) {
-    if (RULED_OUT_CLAUSE.test(clause)) return false
-    if (REVIEW_ROLE.test(clause.split(NEGATED_REVIEW).join(" "))) return true
+    ruledOut = RULED_OUT_CLAUSE.test(clause) || (ruledOut && LIST_CONTINUATION.test(clause))
+    if (!ruledOut && REVIEW_ROLE.test(clause.split(NEGATED_REVIEW).join(" "))) return true
   }
   return false
 }

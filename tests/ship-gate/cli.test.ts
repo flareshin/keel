@@ -320,6 +320,17 @@ describe('WriteReviewTest', () => {
     assert.deepEqual(sandbox.evidenceFiles('review'), []);
   });
 
+  test('writeReview_refuses_whenReviewerIsAForkOfTheAuthor', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = feature(sandbox);
+    const request = sandbox.reviewRequest(repo);
+    request.source.agent_type = 'fork';
+    const run = sandbox.keel(['evidence', 'write-review'], { stdin: JSON.stringify(request) });
+    assert.equal(run.rc, 3);
+    assert.match(run.stderr, /fork/);
+    assert.deepEqual(sandbox.evidenceFiles('review'), []);
+  });
+
   test('writeReview_refuses_whenAgentTranscriptIsMissing', (t) => {
     const sandbox = new Sandbox(t);
     const repo = feature(sandbox);

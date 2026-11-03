@@ -19,6 +19,7 @@ const SOURCE_KEYS = ['session_id', 'agent_id', 'agent_type', 'transcript_path', 
 const REVIEW_KINDS = ['lens-review', 'single-lens'];
 const VERDICTS = ['PASS', 'NEEDS_FIXES'];
 const VIAS = ['SubagentHandback', 'SubagentStop'];
+const FORK_AGENT_TYPE = 'fork';
 const APPROVAL_SOURCE = 'cli';
 
 export function isJsonRecord(value: unknown): value is JsonObject {
@@ -66,6 +67,9 @@ export function writeReview(request: JsonObject): JsonObject {
 
 export function checkProvenance(source: JsonObject): void {
   if (!source['agent_id']) throw new Refused('no agent_id: review evidence comes from a subagent, never the main thread');
+  if (source['agent_type'] === FORK_AGENT_TYPE) {
+    throw new Refused('reviewer is a fork: it inherits the author\'s conversation, so its verdict is self-review (K1)');
+  }
   const agent = resolveLinks(expandHome(source['agent_transcript_path']));
   if (!isFile(agent)) throw new Refused('agent transcript does not exist: ' + agent);
 }

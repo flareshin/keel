@@ -2,7 +2,7 @@ import { parseArgs } from "node:util"
 
 import { diffStats } from "../../../lib/evidence/gitcmd.ts"
 import { runGitOrThrow } from "../../lib/measurekit/gitutil.ts"
-import { inDetachedWorktree, testFailure } from "../lib/evalkit/fixturetests.ts"
+import { FIXTURE_TEST_SECONDS, inDetachedWorktree, testFailure } from "../lib/evalkit/fixturetests.ts"
 
 const RULE_ID = "C-improving-structure"
 const CANDIDATE_AREAS: Record<string, string[]> = {
@@ -40,7 +40,7 @@ if (growth > 0) problems.push(`source line count grows by ${growth}`)
 const testsBefore = testCaseCount(base)
 const testsAfter = testCaseCount(head)
 if (testsAfter < testsBefore) problems.push(`test cases drop from ${testsBefore} to ${testsAfter}`)
-const failure = await inDetachedWorktree(repo, head, (tree) => testFailure(tree, [process.execPath, "--test"]))
+const failure = await inDetachedWorktree(repo, head, (tree) => testFailure(tree, [process.execPath, "--test"], FIXTURE_TEST_SECONDS))
 if (failure !== null) problems.push(`tests fail at head: ${failure}`)
 for (const problem of problems) console.log(`signal ${RULE_ID} -: ${problem}`)
 console.log(`summary sources=${changedSources.length} areas=${touchedAreas.length} problems=${problems.length}`)

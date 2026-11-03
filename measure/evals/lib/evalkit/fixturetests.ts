@@ -25,7 +25,7 @@ export async function inDetachedWorktree<T>(repo: string, ref: string, use: (tre
   }
 }
 
-export async function testFailure(tree: string, command: string[], timeoutSeconds = FIXTURE_TEST_SECONDS): Promise<string | null> {
+export async function testFailure(tree: string, command: string[], timeoutSeconds: number): Promise<string | null> {
   const [program = "", ...args] = command
   const shown = [path.basename(program), ...args].join(" ")
   try {

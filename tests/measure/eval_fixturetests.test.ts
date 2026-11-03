@@ -5,7 +5,7 @@ import os from "node:os"
 import path from "node:path"
 
 import { GitError, runGitOrThrow } from "../../measure/lib/measurekit/gitutil.ts"
-import { inDetachedWorktree, testFailure } from "../../measure/evals/lib/evalkit/fixturetests.ts"
+import { FIXTURE_TEST_SECONDS, inDetachedWorktree, testFailure } from "../../measure/evals/lib/evalkit/fixturetests.ts"
 
 describe("fixture test runs for eval graders", () => {
   let repo: string
@@ -21,7 +21,11 @@ describe("fixture test runs for eval graders", () => {
     runGitOrThrow(repo, ["add", "-A"])
     runGitOrThrow(repo, ["-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-q", "-m", "fixture"])
   }
-  const nodeTestAtHead = (timeoutSeconds?: number) => inDetachedWorktree(repo, "HEAD", (tree) => testFailure(tree, [process.execPath, "--test"], timeoutSeconds))
+  const nodeTestAtHead = (timeoutSeconds = FIXTURE_TEST_SECONDS) => inDetachedWorktree(repo, "HEAD", (tree) => testFailure(tree, [process.execPath, "--test"], timeoutSeconds))
+
+  it("FIXTURE_TEST_SECONDS_isAFinitePositiveDeadline", () => {
+    assert.ok(Number.isFinite(FIXTURE_TEST_SECONDS) && FIXTURE_TEST_SECONDS > 0)
+  })
 
   it("testFailure_returnsNull_forAGreenSuite", async () => {
     commit({ "a.test.mjs": 'import { test } from "node:test"\ntest("passes", () => {})\n' })
@@ -35,7 +39,7 @@ describe("fixture test runs for eval graders", () => {
 
   it("testFailure_namesTheCommandAndExit_whenNoTestFailureIsPrinted", async () => {
     commit({ "README.md": "fixture\n" })
-    assert.equal(await inDetachedWorktree(repo, "HEAD", (tree) => testFailure(tree, [process.execPath, "-e", "process.exit(3)"])), "node -e process.exit(3) exit 3")
+    assert.equal(await inDetachedWorktree(repo, "HEAD", (tree) => testFailure(tree, [process.execPath, "-e", "process.exit(3)"], FIXTURE_TEST_SECONDS)), "node -e process.exit(3) exit 3")
   })
 
   it("testFailure_reportsATimeout_forASuiteThatNeverFinishes", async () => {

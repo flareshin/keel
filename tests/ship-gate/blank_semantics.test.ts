@@ -79,6 +79,14 @@ describe('a gate decision never reads less strictly than either reading of white
     assert.deepEqual(provenanceReasons(chainWith('ag1')), []);
   });
 
+  test('a review link written by a fork reviewer does not count as agent provenance', () => {
+    const chainBy = (agentType: string): Chain => ({
+      links: [{ evidence_id: 'review-1', review_kind: 'lens-review', source: { agent_id: 'ag1', agent_type: agentType } }],
+    }) as unknown as Chain;
+    assert.deepEqual(provenanceReasons(chainBy('fork')).map((reason) => reason.text), ['review review-1 was written by a fork reviewer']);
+    assert.deepEqual(provenanceReasons(chainBy('keel-reporter')), []);
+  });
+
   for (const waiver of ['["covered elsewhere"]', '{"why":"x"}', '"\\u001f"', '"\\u0085"', '5']) {
     test('a stored no_test_reason of ' + JSON.stringify(waiver) + ' does not waive the K3 test requirement', (t) => {
       const sandbox = new Sandbox(t);

@@ -302,6 +302,9 @@ export function provenanceReasons(chain: Chain): Reason[] {
     if (typeof agentId !== 'string' || agentId === '') {
       return [{ ruleId: K1, text: `review ${link.evidence_id} has no agent provenance` }];
     }
+    if ((link.source || {})['agent_type'] === writers.FORK_AGENT_TYPE) {
+      return [{ ruleId: K1, text: `review ${link.evidence_id} was written by a fork reviewer` }];
+    }
   }
   return [];
 }

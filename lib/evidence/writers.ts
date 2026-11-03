@@ -19,7 +19,7 @@ const SOURCE_KEYS = ['session_id', 'agent_id', 'agent_type', 'transcript_path', 
 const REVIEW_KINDS = ['lens-review', 'single-lens'];
 const VERDICTS = ['PASS', 'NEEDS_FIXES'];
 const VIAS = ['SubagentHandback', 'SubagentStop'];
-const FORK_AGENT_TYPE = 'fork';
+export const FORK_AGENT_TYPE = 'fork';
 const APPROVAL_SOURCE = 'cli';
 
 export function isJsonRecord(value: unknown): value is JsonObject {

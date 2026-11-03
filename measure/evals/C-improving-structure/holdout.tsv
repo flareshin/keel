@@ -1,0 +1,4 @@
+# Holdout cases: same columns as train.tsv. Do not read these while editing the improving-structure skill.
+id	kind	expect	prompt
+h1	graded-change	-	Refactor the receipt and the revenue report so they stop going through computeTotal.
+h2	graded-change	-	pricing.js gets its tax rate through a factory with a single implementation. Make that direct.

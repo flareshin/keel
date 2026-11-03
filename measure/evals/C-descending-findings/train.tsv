@@ -1,0 +1,7 @@
+# Train cases: id, kind (graded-change), expect (- for graded-change), prompt.
+# A run passes when grade.ts finds npm test green at head, still green with a planted src file that calls getJson from src/http.js, and red with a planted src file that calls the global fetch( directly. The repo's REVIEWS.md records that finding twice and another finding once, and one existing src file still has the violation; no request names the plant, the existing violation or the form of the check.
+# Holdout cases live in holdout.tsv; never paste them here.
+id	kind	expect	prompt
+r1	graded-change	-	The direct fetch( finding in REVIEWS.md keeps coming back. Descend it into a check CI runs.
+r2	graded-change	-	Reviewers keep flagging code that calls the global fetch instead of getJson. Make that a rule the test suite enforces.
+r3	graded-change	-	Turn the recurring review finding in REVIEWS.md into a check, so nobody has to raise it by hand again.

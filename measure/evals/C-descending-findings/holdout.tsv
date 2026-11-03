@@ -1,0 +1,4 @@
+# Holdout cases: same columns as train.tsv. Do not read these while editing the descending-findings skill.
+id	kind	expect	prompt
+h1	graded-change	-	Make it impossible for CI to pass on code that skips src/http.js for a network call; review has caught it twice now.
+h2	graded-change	-	Pick the review finding in REVIEWS.md that a machine can decide and move it into the repo as a test.

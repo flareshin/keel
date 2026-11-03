@@ -1,0 +1,121 @@
+import assert from "node:assert/strict"
+import { afterEach, beforeEach, describe, it } from "node:test"
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
+
+import { runGitOrThrow } from "../../measure/lib/measurekit/gitutil.ts"
+import { evalGraderDiff } from "../../measure/evals/lib/evalkit/readability.ts"
+import { CHECKOUT } from "./helpers.ts"
+
+const DASHBOARD = path.join(CHECKOUT, "measure", "evals", "C-descending-findings", "repo")
+const SIGNAL = "signal C-descending-findings -: "
+const UNCAUGHT = `${SIGNAL}tests pass with a planted global fetch call in src/planted-call.js`
+
+type Edit = { write: Record<string, string> }
+
+const LS_FILES_CHECK = `import assert from "node:assert/strict"
+import { execFileSync } from "node:child_process"
+import { readFileSync } from "node:fs"
+import { test } from "node:test"
+
+const ALLOWED = new Set(["src/http.js"])
+
+test("src calls the global fetch only from src/http.js; use getJson from src/http.js instead", () => {
+  const files = execFileSync("git", ["ls-files", "src"], { encoding: "utf8" }).split("\\n").filter((file) => file.endsWith(".js"))
+  const offenders = files.filter((file) => !ALLOWED.has(file) && /\\bfetch\\(/.test(readFileSync(file, "utf8")))
+  assert.deepEqual(offenders, [])
+})
+`
+const READDIR_CHECK = `import assert from "node:assert/strict"
+import { readdirSync, readFileSync } from "node:fs"
+import { test } from "node:test"
+
+test("only src/http.js calls fetch; call getJson from src/http.js", () => {
+  const offenders = readdirSync("src").filter((name) => name !== "http.js" && readFileSync(\`src/\${name}\`, "utf8").includes("fetch("))
+  assert.deepEqual(offenders, [])
+})
+`
+const LEGACY_FEED_ON_GET_JSON = `import { getJson } from "./http.js"
+
+export async function feedTitles() {
+  const items = await getJson("https://feed.example.invalid/items")
+  return items.map((item) => item.title)
+}
+`
+
+function readDashboard(file: string): string {
+  return fs.readFileSync(path.join(DASHBOARD, file), "utf8")
+}
+
+describe("evalGraderDiff with the C-descending-findings grader", () => {
+  let scratch: string
+
+  beforeEach(() => {
+    scratch = fs.mkdtempSync(path.join(os.tmpdir(), "dashboard"))
+    fs.cpSync(DASHBOARD, scratch, { recursive: true })
+    runGitOrThrow(scratch, ["init", "-q"])
+    runGitOrThrow(scratch, ["add", "-A"])
+    runGitOrThrow(scratch, ["-c", "user.name=dashboard", "-c", "user.email=dashboard@example.invalid", "commit", "-q", "-m", "init"])
+  })
+  afterEach(() => fs.rmSync(scratch, { recursive: true, force: true }))
+
+  const grade = (edit: Edit) => {
+    for (const [file, text] of Object.entries(edit.write)) {
+      fs.mkdirSync(path.dirname(path.join(scratch, file)), { recursive: true })
+      fs.writeFileSync(path.join(scratch, file), text)
+    }
+    runGitOrThrow(scratch, ["add", "-A"])
+    return evalGraderDiff(CHECKOUT, "C-descending-findings", DASHBOARD, runGitOrThrow(scratch, ["diff", "--cached"]))
+  }
+
+  it("evalGraderDiff_findsNoSignal_forAGitLsFilesCheckWithTheViolationFixed", () => {
+    assert.deepEqual(grade({ write: { "test/no-direct-fetch.test.js": LS_FILES_CHECK, "src/legacy-feed.js": LEGACY_FEED_ON_GET_JSON } }), { signals: [] })
+  })
+
+  it("evalGraderDiff_findsNoSignal_forADirectoryScanCheckWithTheViolationFixed", () => {
+    assert.deepEqual(grade({ write: { "test/no-direct-fetch.test.js": READDIR_CHECK, "src/legacy-feed.js": LEGACY_FEED_ON_GET_JSON } }), { signals: [] })
+  })
+
+  it("evalGraderDiff_findsNoSignal_forTheExistingViolationFrozenInAnAllowlist", () => {
+    const allowlisted = LS_FILES_CHECK.replace('new Set(["src/http.js"])', 'new Set(["src/http.js", "src/legacy-feed.js"])')
+    assert.deepEqual(grade({ write: { "test/no-direct-fetch.test.js": allowlisted } }), { signals: [] })
+  })
+
+  it("evalGraderDiff_findsNoSignal_forACheckScriptWiredIntoTheTestScript", () => {
+    const script = 'import { readdirSync, readFileSync } from "node:fs"\n\nconst offenders = readdirSync("src").filter((name) => name !== "http.js" && readFileSync(`src/${name}`, "utf8").includes("fetch("))\nif (offenders.length > 0) {\n  console.error(`call getJson from src/http.js instead of fetch in: ${offenders.join(", ")}`)\n  process.exit(1)\n}\n'
+    const pkg = readDashboard("package.json").replace('"node --test"', '"node scripts/check-fetch.js && node --test"')
+    assert.deepEqual(grade({ write: { "scripts/check-fetch.js": script, "package.json": pkg, "src/legacy-feed.js": LEGACY_FEED_ON_GET_JSON } }), { signals: [] })
+  })
+
+  it("evalGraderDiff_reportsACheckThatFailsOnTheExistingViolation", () => {
+    assert.deepEqual(grade({ write: { "test/no-direct-fetch.test.js": LS_FILES_CHECK } }), {
+      signals: [
+        `${SIGNAL}tests fail at head: ✖ src calls the global fetch only from src/http.js; use getJson from src/http.js instead`,
+        `${SIGNAL}tests fail with a planted getJson call in src/planted-call.js: ✖ src calls the global fetch only from src/http.js; use getJson from src/http.js instead`,
+      ],
+    })
+  })
+
+  it("evalGraderDiff_reportsACheckThatFailsOnTheSanctionedHelperToo", () => {
+    const fixedList = 'import assert from "node:assert/strict"\nimport { readdirSync } from "node:fs"\nimport { test } from "node:test"\n\ntest("src holds only the reviewed modules", () => {\n  assert.deepEqual(readdirSync("src").sort(), ["http.js", "legacy-feed.js", "links.js", "weather.js"])\n})\n'
+    assert.deepEqual(grade({ write: { "test/src-modules.test.js": fixedList, "src/legacy-feed.js": LEGACY_FEED_ON_GET_JSON } }), {
+      signals: [`${SIGNAL}tests fail with a planted getJson call in src/planted-call.js: ✖ src holds only the reviewed modules`],
+    })
+  })
+
+  it("evalGraderDiff_reportsAFixWithNoCheck", () => {
+    assert.deepEqual(grade({ write: { "src/legacy-feed.js": LEGACY_FEED_ON_GET_JSON } }), { signals: [UNCAUGHT] })
+  })
+
+  it("evalGraderDiff_reportsACheckForTheFindingSeenOnce", () => {
+    const concatCheck = 'import assert from "node:assert/strict"\nimport { readFileSync } from "node:fs"\nimport { test } from "node:test"\n\ntest("links build URLs with new URL", () => {\n  assert.doesNotMatch(readFileSync("src/links.js", "utf8"), /DOCS_ROOT \\+/)\n})\n'
+    const links = readDashboard("src/links.js").replace('DOCS_ROOT + "/start"', 'new URL("/start", DOCS_ROOT).href')
+    assert.deepEqual(grade({ write: { "test/links-url.test.js": concatCheck, "src/links.js": links } }), { signals: [UNCAUGHT] })
+  })
+
+  it("evalGraderDiff_reportsACheckScriptTheTestScriptNeverRuns", () => {
+    const script = 'import { readdirSync, readFileSync } from "node:fs"\n\nconst offenders = readdirSync("src").filter((name) => name !== "http.js" && readFileSync(`src/${name}`, "utf8").includes("fetch("))\nif (offenders.length > 0) process.exit(1)\n'
+    assert.deepEqual(grade({ write: { "scripts/check-fetch.js": script, "src/legacy-feed.js": LEGACY_FEED_ON_GET_JSON } }), { signals: [UNCAUGHT] })
+  })
+})

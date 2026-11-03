@@ -233,6 +233,11 @@ describe("summarizeStream", () => {
     assert.deepEqual([summary.askCalls, summary.brokenEvents], [0, 1])
   })
 
+  it("summarizeStream_countsAnIndentedTruncatedEventLine_asBroken", () => {
+    const truncated = "  " + assistant("AskUserQuestion", {}).slice(0, 40)
+    assert.equal(summarizeStream([truncated]).brokenEvents, 1)
+  })
+
   it("summarizeStream_keepsInitAndResultAndDeniedTools", () => {
     const lines = [
       '{"type":"system","subtype":"init","model":"m1"}',
@@ -248,6 +253,9 @@ describe("faultReason", () => {
   it("fault_whenNoResultEvent", () => assert.equal(faultReason(facts({ noResult: true }), TIMEOUT), "no result event"))
   it("fault_whenAStreamEventLineIsBroken_evenWithACleanResult", () => {
     assert.equal(faultReason(facts({ brokenEvents: 2 }), TIMEOUT), "2 stream event line(s) are not valid JSON")
+  })
+  it("fault_keepsTheTimeout_whenATimedOutRunEndsOnABrokenEventLine", () => {
+    assert.equal(faultReason(facts({ timedOut: true, noResult: true, exitCode: 124, brokenEvents: 1 }), TIMEOUT), `timed out after ${TIMEOUT}s`)
   })
   it("fault_whenLoggedOutShape_exitOneSuccessIsErrorEmptyModelUsage", () => {
     assert.ok(faultReason(facts({ exitCode: 1, isError: true, modelUsage: false, text: "Not logged in" }), TIMEOUT)?.includes("logged out"))

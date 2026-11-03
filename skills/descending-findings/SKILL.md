@@ -37,7 +37,8 @@ The enforcement ladder is `repo` > `hook` > `skill` > `prose`. A finding reviewe
 
 3. **Red first.** Before the rule is green, reproduce the original finding:
    - add a fixture (or point the rule at the commit that held the finding) and run it: it fails and names the violation;
-   - quote that failing output; it is the proof the rule catches the real case.
+   - quote that failing output; it is the proof the rule catches the real case;
+   - make the tool itself fail too (a missing config, an unreadable report, a scan that recognized zero files) and confirm the gate fails rather than passes. A scanner can exit 0 on findings or on its own error, so an exit code alone does not prove the rule is enforced.
 
 4. **Then green.** Existing violations are either fixed in a separate commit (structure and behavior never mix) or frozen in an explicit allowlist that the test only lets shrink. Every allowlist entry carries a reason, an expiry date and the repo owner's approval; the test fails on an entry past its expiry. Run the repo's test command through `keel test -- <cmd>` and quote the runner summary.
 

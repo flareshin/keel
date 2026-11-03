@@ -15,8 +15,9 @@ its target and the gate's coverage and freshness requirements still hold.
 Use one independent auditor for the complete lens set by default. Split auditors
 by lens when risk or scope warrants separate contexts; coverage stays complete.
 Each auditor reads the context needed for its lens and reports only actionable
-failures within the requirement. A clean lens needs no verifier, and neither does
-a low finding: low never blocks, so the report lists it as `not verified`. A
+failures within the requirement. A clean lens needs no verifier. In the Claude
+workflow neither does a low finding: low never blocks, so the report lists it as
+`not verified`; the Codex importer still needs a decision for every finding. A
 source audit with medium or high findings gets separate verification of those
 findings together. That verifier checks the cited evidence, reproduction and
 relevant callers; it does not repeat the full audit. Every medium or high finding

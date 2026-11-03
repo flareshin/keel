@@ -161,6 +161,17 @@ test('adversarialAudit_keepsFindingAsUnverified_whenVerifierThrows', async () =>
   assert.equal(result.unverified[0].verifyError, 'api down')
 })
 
+test('adversarialAudit_keepsLowFindingsNotVerified_whenVerifierThrows', async () => {
+
+  const audits = { contract: { findings: [finding('c1', 'low'), finding('c2', 'medium')] } }
+  const rt = createRuntime({ respond: respondWith({ audits, verdicts: { c2: new Error('api down') } }) })
+
+  const result = await rt.run('adversarial-audit', { auditMode: 'split', target: '/work/app', lenses: LENSES })
+
+  assert.deepEqual(result.confirmed.map((f) => [f.id, f.verdict.verdict]), [['c1', 'UNVERIFIED_LOW']])
+  assert.deepEqual(result.unverified.map((f) => [f.id, f.verifyError]), [['c2', 'api down']])
+})
+
 test('adversarialAudit_namesModelAndEffortOnEveryAgent_whenDefaultsApply', async () => {
 
   const audits = { contract: { findings: [finding('c1')] } }

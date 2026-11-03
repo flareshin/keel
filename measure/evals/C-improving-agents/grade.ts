@@ -29,9 +29,9 @@ function partsOf(text: string): Map<string, string> {
 }
 
 function changedParts(file: string, status: string): string[] {
-  if (status !== "M") return [file]
+  if (status === "A") return [file]
   const before = partsOf(runGitOrThrow(repo, ["show", `${base}:${file}`]))
-  const after = partsOf(runGitOrThrow(repo, ["show", `${head}:${file}`]))
+  const after = status === "D" ? new Map<string, string>() : partsOf(runGitOrThrow(repo, ["show", `${head}:${file}`]))
   return [...new Set([...before.keys(), ...after.keys()])].filter((part) => before.get(part) !== after.get(part)).map((part) => `${file} ${part}`)
 }
 
@@ -42,11 +42,12 @@ for (let index = 0; index < changes.length; index += 2) {
   const status = changes[index] ?? ""
   const file = changes[index + 1] ?? ""
   if (file.startsWith(EVIDENCE_DIR)) continue
-  if (AGENT_FILE.test(file) || status === "A") leverTouched = true
-  components.push(...(AGENT_FILE.test(file) ? changedParts(file, status) : [file]))
+  const changed = AGENT_FILE.test(file) ? changedParts(file, status) : [file]
+  if (status === "A" || (AGENT_FILE.test(file) && changed.length > 0)) leverTouched = true
+  components.push(...changed)
 }
 const problems: string[] = []
-if (!leverTouched || components.length === 0) problems.push("no agent definition part changed and no file added")
+if (!leverTouched) problems.push("no agent definition part changed and no file added")
 if (components.length > 1) problems.push(`candidate changes more than one component: ${components.join(", ")}`)
 for (const component of components.filter((part) => part.endsWith(` ${OUTPUT_SECTION}`))) problems.push(`the deliverable's shape changed: ${component}`)
 for (const problem of problems) console.log(`signal ${RULE_ID} -: ${problem}`)

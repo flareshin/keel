@@ -11,6 +11,7 @@ const SIGNAL = "signal C-improving-agents -: "
 const AGENT = "agents/ci-log-reader.md"
 const NOTHING_CHANGED = `${SIGNAL}no agent definition part changed and no file added`
 
+const DELETED_AGENT_PARTS = ["frontmatter name", "frontmatter description", "frontmatter tools", "intro", "section Procedure", "section Output"].map((part) => `${AGENT} ${part}`).join(", ")
 const definition = fs.readFileSync(path.join(CI_TOOLS, AGENT), "utf8")
 const GREP_PROCEDURE = definition.replace("1. Open the log file you are given with Read.", "1. Search the whole log you are given with Grep for the lines that mark a failed test; a single Read returns only the first 2000 lines.")
 
@@ -64,9 +65,14 @@ describe("evalGraderDiff with the C-improving-agents grader", () => {
     assert.deepEqual(grade({ write: { "runs/2026-11-03-keep-base.md": "# keep base\n" } }), { signals: [NOTHING_CHANGED] })
   })
 
+  const README_EDIT = fs.readFileSync(path.join(CI_TOOLS, "README.md"), "utf8") + "\nLong logs: search them, do not page through them.\n"
+
   it("evalGraderDiff_reportsARunThatOnlyEditsTheReadme", () => {
-    const readme = fs.readFileSync(path.join(CI_TOOLS, "README.md"), "utf8") + "\nLong logs: search them, do not page through them.\n"
-    assert.deepEqual(grade({ write: { "README.md": readme } }), { signals: [NOTHING_CHANGED] })
+    assert.deepEqual(grade({ write: { "README.md": README_EDIT } }), { signals: [NOTHING_CHANGED] })
+  })
+
+  it("evalGraderDiff_reportsAWhitespaceOnlyAgentTouchBesideAReadmeEdit", () => {
+    assert.deepEqual(grade({ write: { [AGENT]: definition + "\n", "README.md": README_EDIT } }), { signals: [NOTHING_CHANGED] })
   })
 
   const WHITESPACE_EDITS: Record<string, [string, string]> = {
@@ -88,7 +94,16 @@ describe("evalGraderDiff with the C-improving-agents grader", () => {
 
   it("evalGraderDiff_reportsADeletedAgentBesideANewOne", () => {
     assert.deepEqual(grade({ remove: [AGENT], write: { "agents/log-searcher.md": GREP_PROCEDURE.replace("name: ci-log-reader", "name: log-searcher") } }), {
-      signals: [`${SIGNAL}candidate changes more than one component: ${AGENT}, agents/log-searcher.md`],
+      signals: [
+        `${SIGNAL}candidate changes more than one component: ${DELETED_AGENT_PARTS}, agents/log-searcher.md`,
+        `${SIGNAL}the deliverable's shape changed: ${AGENT} section Output`,
+      ],
+    })
+  })
+
+  it("evalGraderDiff_reportsADeletedAgentAsItsPartsAndItsOutput", () => {
+    assert.deepEqual(grade({ remove: [AGENT], write: {} }), {
+      signals: [`${SIGNAL}candidate changes more than one component: ${DELETED_AGENT_PARTS}`, `${SIGNAL}the deliverable's shape changed: ${AGENT} section Output`],
     })
   })
 })

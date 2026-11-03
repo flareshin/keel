@@ -1,10 +1,8 @@
-import fs from "node:fs"
-import os from "node:os"
-import path from "node:path"
 import { parseArgs } from "node:util"
 
+import { diffStats } from "../../../lib/evidence/gitcmd.ts"
 import { runGitOrThrow } from "../../lib/measurekit/gitutil.ts"
-import { runProcess } from "../../lib/measurekit/subprocess.ts"
+import { inDetachedWorktree, testFailure } from "../lib/evalkit/fixturetests.ts"
 
 const RULE_ID = "C-improving-structure"
 const CANDIDATE_AREAS: Record<string, string[]> = {
@@ -13,7 +11,6 @@ const CANDIDATE_AREAS: Record<string, string[]> = {
   "single-adapter tax seam": ["src/tax-provider-factory.js", "src/flat-tax.js", "src/pricing.js"],
 }
 const TEST_CASE = /^\s*(?:test|it)\(/gm
-const DURATION = /\s*\([\d.]+m?s\)\s*$/
 
 const { values } = parseArgs({ options: { repo: { type: "string" }, base: { type: "string" }, head: { type: "string" } } })
 const repo = values.repo ?? "."
@@ -26,30 +23,9 @@ function testCaseCount(ref: string): number {
 }
 
 function sourceLineGrowth(): number {
-  return runGitOrThrow(repo, ["diff", "--numstat", base, head, "--", "src"])
-    .split("\n")
-    .filter((line) => line !== "")
-    .reduce((sum, line) => {
-      const [added = "0", deleted = "0"] = line.split("\t")
-      return sum + Number(added) - Number(deleted)
-    }, 0)
-}
-
-function testFailureAtHead(): string | null {
-  const parent = fs.mkdtempSync(path.join(os.tmpdir(), "pin"))
-  const tree = path.join(parent, "head")
-  try {
-    runGitOrThrow(repo, ["worktree", "add", "-q", "--detach", tree, head])
-    const env = { ...process.env }
-    delete env.NODE_TEST_CONTEXT
-    const completed = runProcess([process.execPath, "--test"], { cwd: tree, env })
-    if (completed.returncode === 0) return null
-    const failing = completed.stdout.split("\n").find((line) => line.startsWith("✖")) ?? `node --test exit ${completed.returncode}`
-    return failing.replace(DURATION, "")
-  } finally {
-    runGitOrThrow(repo, ["worktree", "remove", "--force", tree])
-    fs.rmSync(parent, { recursive: true, force: true })
-  }
+  return [...diffStats(repo, base, head)]
+    .filter(([file]) => file.startsWith("src/"))
+    .reduce((sum, [, stat]) => sum + stat.added - stat.deleted, 0)
 }
 
 const changedSources = runGitOrThrow(repo, ["diff", "-z", "--name-only", base, head, "--", "src"]).split("\0").filter((file) => file !== "")
@@ -64,7 +40,7 @@ if (growth > 0) problems.push(`source line count grows by ${growth}`)
 const testsBefore = testCaseCount(base)
 const testsAfter = testCaseCount(head)
 if (testsAfter < testsBefore) problems.push(`test cases drop from ${testsBefore} to ${testsAfter}`)
-const failure = testFailureAtHead()
+const failure = await inDetachedWorktree(repo, head, (tree) => testFailure(tree, [process.execPath, "--test"]))
 if (failure !== null) problems.push(`tests fail at head: ${failure}`)
 for (const problem of problems) console.log(`signal ${RULE_ID} -: ${problem}`)
 console.log(`summary sources=${changedSources.length} areas=${touchedAreas.length} problems=${problems.length}`)

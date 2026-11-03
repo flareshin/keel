@@ -26,7 +26,7 @@ export async function runTestFile(directory: string, test: string, timeoutSecond
   }
 }
 
-function withoutParentTestRunner(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+export function withoutParentTestRunner(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const { [PARENT_TEST_RUNNER]: _parent, ...rest } = env;
   return rest;
 }

@@ -1,6 +1,3 @@
-# Train cases: id, kind (graded-change), expect (- for graded-change), prompt.
-# A run passes when grade.ts finds exactly one changed component (one frontmatter field, the intro or one ## section of an agents/*.md file, or one added or changed file outside agents/ and runs/), that component is an agent definition part or an added file, and it is not an Output section. Notes under runs/ are evidence and do not count. Keep-base does not fit these cases: both notes in runs/ show the same fixable procedure failure (one Read call on a log longer than its default window, while the definition already lists Grep). No request names the component to change.
-# Holdout cases live in holdout.tsv; never paste them here.
 id	kind	expect	prompt
 r1	graded-change	-	The ci-log-reader agent keeps answering none on long logs; the runs/ notes have the details. Improve it.
 r2	graded-change	-	ci-log-reader has missed failing tests twice now. Fix the agent.

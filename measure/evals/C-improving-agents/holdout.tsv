@@ -1,0 +1,4 @@
+# Holdout cases: same columns as train.tsv. Do not read these while editing the improving-agents skill.
+id	kind	expect	prompt
+h1	graded-change	-	The worker that reads our CI logs keeps doing the same wrong thing on big logs. Make it stop.
+h2	graded-change	-	Two dispatches of ci-log-reader came back with the wrong answer. Change the agent so a third one does not.

@@ -14,6 +14,9 @@ const PRIOR_FINDINGS = A.priorFindings
 const MODEL = A.model || 'opus'
 const UNTIERED_EFFORT = 'high'
 const TIER_EFFORT = { 'smoke-only': 'medium', light: 'medium', standard: 'medium', heavy: 'high' }
+const TRIVIAL_EFFORT = 'low'
+const TRIVIAL_MAX_FILES = 2
+const TRIVIAL_MAX_LINES = 10
 const MECHANICAL_MODEL = A.mechanicalModel || 'sonnet'
 const MECHANICAL_EFFORT = 'low'
 const REPORTER_TYPE = 'keel-reporter'
@@ -62,7 +65,7 @@ const NO_BLOBS = 'none'
 const RERUN_SURVIVORS = /^rerun: survivors\b/m
 const DELTA_NOTE = 'A `since` diff is a delta review: the branch passed review at that tree, so judge only the change after it (read the surrounding code for context, and say so if the change breaks something the earlier PASS relied on).'
 const FIX_DELTA_NOTE = 'A `since` diff is a delta review of a fix: the review at that tree returned NEEDS_FIXES with the merge-blocking findings below, so judge only the change after it (read the surrounding code for context). Each finding below that the change leaves unresolved is a finding again, impact high, at its file:line. In a fix delta only impact high is merge-blocking; a new medium finding is reported as non-blocking. This overrides the high-or-medium rule in the review rules.\nPrior merge-blocking findings:'
-const REVIEW_GUARDRAILS = 'Review rules: a finding is valid only as a failure scenario (input leads to wrong output, an exception or a broken caller) with file:line evidence; style or impression critique is void; nothing outside the request. Impact high or medium = merge-blocking (wrong behavior, data loss, security, a broken caller or contract, fake-green tests); low = non-blocking. A merge-blocking finding needs a repro: a command or input with the observed and the expected result, or `static: <caller|contract|security|concurrency|rule> at file:line` when nothing can be run; without one it is reported as non-blocking. Comments: git-guard C-comments denies new and changed code comments at write time, so a retained comment is not a finding, rule-checks K5.14 signals included. Test obligation: changed logic with no test that would fail if the change were reverted is impact high, never low. Origin: set origin pre-existing only when the failing lines and the failure they cause are already present at the review base (read them with the review base command); otherwise introduced. A prior merge-blocking finding is introduced.'
+const REVIEW_GUARDRAILS = 'Review rules: a finding is valid only as a failure scenario (input leads to wrong output, an exception or a broken caller) with file:line evidence; style or impression critique is void; nothing outside the request. Impact high or medium = merge-blocking (wrong behavior, data loss, security, a broken caller or contract, fake-green tests); low = non-blocking. A merge-blocking finding needs a repro: a command or input with the observed and the expected result, or `static: <caller|contract|security|concurrency|rule> at file:line` when nothing can be run; without one it is reported as non-blocking. Comments: git-guard C-comments denies new and changed code comments at write time, so a retained comment is not a finding, rule-checks K5.14 signals included. Test obligation: changed logic with no test that would fail if the change were reverted is impact high, never low. Do not build the project or run its tests: the recorded `keel test` run is the test evidence and the gate checks it; judge whether a test would fail on revert by reading the test and the code. Origin: set origin pre-existing only when the failing lines and the failure they cause are already present at the review base (read them with the review base command); otherwise introduced. A prior merge-blocking finding is introduced.'
 const PREPARE_SCHEMA = {
   type: 'object',
   properties: {
@@ -203,7 +206,7 @@ async function prepareReview() {
   if (!runId) return { error: `prepare agent returned no valid run id: ${JSON.stringify(output.run_id_output)}` }
   const lensSet = resolveLensSet(output.lenses_output, reviewed.targets)
   if (lensSet.error) return lensSet
-  return { runId, rootRunId: A.rootRunId || runId, reviewed: reviewed.targets, lensSet, priorNeedsFixesRounds: resolvePriorRounds(output.needs_fixes_rounds), effort: resolveEffort(output.risk_class) }
+  return { runId, rootRunId: A.rootRunId || runId, reviewed: reviewed.targets, lensSet, priorNeedsFixesRounds: resolvePriorRounds(output.needs_fixes_rounds), effort: resolveEffort(output.risk_class, reviewed.targets) }
 }
 
 function parsePrecheck(text) {
@@ -332,9 +335,18 @@ function resolvePriorRounds(count) {
   return Number.isInteger(count) && count > 0 ? count : 0
 }
 
-function resolveEffort(riskClass) {
+function resolveEffort(riskClass, targets) {
   if (A.effort) return A.effort
-  return Object.hasOwn(TIER_EFFORT, riskClass) ? TIER_EFFORT[riskClass] : UNTIERED_EFFORT
+  if (!Object.hasOwn(TIER_EFFORT, riskClass)) return UNTIERED_EFFORT
+  if (riskClass !== 'heavy' && targets.every(isTrivialRootDiff)) return TRIVIAL_EFFORT
+  return TIER_EFFORT[riskClass]
+}
+
+function isTrivialRootDiff(target) {
+  const files = target.diff_stat.match(/(\d+) files? changed/)
+  if (target.since || !files) return false
+  const lines = [...target.diff_stat.matchAll(/(\d+) (?:insertions?|deletions?)/g)].reduce((sum, match) => sum + Number(match[1]), 0)
+  return Number(files[1]) <= TRIVIAL_MAX_FILES && lines <= TRIVIAL_MAX_LINES
 }
 
 function resolveRunId(runIdOutput) {
@@ -526,8 +538,9 @@ function describeFindings(title, findings) {
   if (findings.length === 0) return `${title}: none`
   const items = findings.map((f) => {
     const adjusted = f.verdict && f.verdict.verdict === 'ADJUSTED' ? ', ADJUSTED' : ''
+    const notVerified = f.verdict && f.verdict.verdict === 'UNVERIFIED_LOW' ? ', not verified' : ''
     const unreproduced = BLOCKING_IMPACT.includes(f.impact) && !hasRepro(f) ? ', no repro' : ''
-    return `- [${toOneLine(f.impact)}${adjusted}${unreproduced}] ${toOneLine(f.lens)}/${toOneLine(f.id)}: ${toOneLine(f.summary)}\n  At: ${toOneLine(f.file)} - ${toOneLine(f.quote)}\n  Repro: ${hasRepro(f) ? toOneLine(f.repro) : 'none'}\n  Fix: ${toOneLine(f.proposal)}`
+    return `- [${toOneLine(f.impact)}${adjusted}${notVerified}${unreproduced}] ${toOneLine(f.lens)}/${toOneLine(f.id)}: ${toOneLine(f.summary)}\n  At: ${toOneLine(f.file)} - ${toOneLine(f.quote)}\n  Repro: ${hasRepro(f) ? toOneLine(f.repro) : 'none'}\n  Fix: ${toOneLine(f.proposal)}`
   })
   return `${title} (${findings.length}):\n${items.join('\n')}`
 }

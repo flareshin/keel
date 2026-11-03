@@ -152,9 +152,11 @@ test('lensReview_separatesMechanicalOverrideFromAuditModel_whenBothAreGiven', as
   ])
 })
 
-async function runWithRiskClass(riskClass, extraArgs = {}) {
+const NON_TRIVIAL_STAT = ' 3 files changed, 40 insertions(+), 2 deletions(-)'
+
+async function runWithRiskClass(riskClass, extraArgs = {}, diffStat = NON_TRIVIAL_STAT) {
   const rt = createRuntime({ respond: responder() })
-  const prepared = { diff_outputs: [preparedLine()], run_id_output: DERIVED_RUN_ID, lenses_output: '', ...(riskClass === undefined ? {} : { risk_class: riskClass }) }
+  const prepared = { diff_outputs: [preparedLine({ diffStat })], run_id_output: DERIVED_RUN_ID, lenses_output: '', ...(riskClass === undefined ? {} : { risk_class: riskClass }) }
   const result = await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES, prepared, ...extraArgs })
   const auditEfforts = rt.record.agents.filter(({ opts }) => opts.label.startsWith('audit:')).map(({ opts }) => opts.effort)
   return { result, auditEfforts }
@@ -168,6 +170,30 @@ test('lensReview_scalesAuditEffortWithThePreparedRiskClass_whenNoEffortIsGiven',
     assert.equal(result.effort, effort, String(riskClass))
     assert.deepEqual(auditEfforts, [effort, effort, effort], String(riskClass))
   }
+})
+
+test('lensReview_auditsATrivialDiffAtLowEffort_whenTheTierIsNotHeavy', async () => {
+  const cases = [
+    ['standard', ' 1 file changed, 1 insertion(+), 1 deletion(-)', 'low'],
+    ['light', ' 2 files changed, 6 insertions(+), 4 deletions(-)', 'low'],
+    ['standard', ' 2 files changed, 6 insertions(+), 5 deletions(-)', 'medium'],
+    ['standard', ' 3 files changed, 3 insertions(+)', 'medium'],
+    ['heavy', ' 1 file changed, 1 insertion(+)', 'high'],
+    [null, ' 1 file changed, 1 insertion(+)', 'high'],
+    ['standard', '', 'medium'],
+  ]
+  for (const [riskClass, diffStat, effort] of cases) {
+    const { result, auditEfforts } = await runWithRiskClass(riskClass, {}, diffStat)
+    assert.equal(result.effort, effort, `${riskClass}${diffStat}`)
+    assert.deepEqual(auditEfforts, [effort, effort, effort], `${riskClass}${diffStat}`)
+  }
+})
+
+test('lensReview_keepsTheTierEffort_forATrivialDelta', async () => {
+  const rt = createRuntime({ respond: responder() })
+  const prepared = { diff_outputs: [preparedLine({ diffStat: ' 1 file changed, 1 insertion(+)' })], run_id_output: DERIVED_RUN_ID, lenses_output: '', risk_class: 'standard' }
+  const result = await rt.run('lens-review', { auditMode: 'split', diffs: [{ ...ROOT_DIFF, since: SHA_D }], lenses: CALLER_LENSES, rootRunId: 'rv-20261001T000000Z-aaaaaa', prepared })
+  assert.equal(result.effort, 'medium')
 })
 
 test('lensReview_keepsTheCallerEffort_whateverTheRiskClass', async () => {
@@ -209,6 +235,15 @@ test('lensReview_passesNoModuleRepo_whenOneRepoIsReviewed', async () => {
   assert.doesNotMatch(auditChildArgs(rt).lenses.find((lens) => lens.key === 'rule-checks').prompt, /--module-repo/)
 })
 
+test('lensReview_passesWithoutAVerifier_andMarksTheLowFindingNotVerified_whenEveryFindingIsLow', async () => {
+  const audits = { contract: { findings: [finding('c1', 'low')] } }
+  const rt = createRuntime({ respond: responder({ audits }) })
+  const result = await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
+  assert.equal(result.verdict, 'PASS')
+  assert.equal(rt.record.agents.some((call) => call.opts.label.startsWith('verify:')), false)
+  assert.match(result.report, /Non-blocking \(1\):\n- \[low, not verified\] contract\/c1/)
+})
+
 test('lensReview_returnsNeedsFixesThroughReporter_whenBlockingFindingIsConfirmed', async () => {
   const audits = { contract: { findings: [finding('c1', 'medium'), finding('c2', 'low')] } }
   const verdicts = { c1: { verdict: 'CONFIRMED', evidence: 'reran' }, c2: { verdict: 'CONFIRMED', evidence: 'reran' } }
@@ -218,7 +253,7 @@ test('lensReview_returnsNeedsFixesThroughReporter_whenBlockingFindingIsConfirmed
   assert.equal(result.fixableFindings, 1)
   assert.equal(result.report.split('\n')[0], 'VERDICT: NEEDS_FIXES')
   assert.match(result.report, /Merge-blocking \(1\):\n- \[medium\] contract\/c1: summary c1/)
-  assert.match(result.report, /Non-blocking \(1\):\n- \[low\] contract\/c2/)
+  assert.match(result.report, /Non-blocking \(1\):\n- \[low, not verified\] contract\/c2/)
   assert.equal(evidenceLines(result.report).length, 1)
 })
 
@@ -251,7 +286,7 @@ test('lensReview_listsFindingAsPreExisting_whenAuditorAndVerifierBothPlaceItAtTh
   assert.equal(result.verdict, 'PASS')
   assert.deepEqual(result.preExisting.map((f) => f.id), ['c1'])
   assert.deepEqual(result.nonBlocking.map((f) => f.id), ['c2'])
-  assert.match(result.report, /Non-blocking \(1\):\n- \[low\] contract\/c2[^]*\n\nPre-existing \(present at the review base; not merge-blocking\) \(1\):\n- \[high\] contract\/c1/)
+  assert.match(result.report, /Non-blocking \(1\):\n- \[low, not verified\] contract\/c2[^]*\n\nPre-existing \(present at the review base; not merge-blocking\) \(1\):\n- \[high\] contract\/c1/)
 })
 
 test('lensReview_keepsFindingMergeBlocking_whenOnlyOneSidePlacesItAtTheReviewBase', async () => {
@@ -274,6 +309,13 @@ test('lensReview_namesEachRepoReviewBaseForOrigin_inDeltaTarget', async () => {
   assert.match(childArgs.target, new RegExp(`Review base for origin: git -C '/work/app' show ${SHA_A}:<path>`))
   assert.match(childArgs.guardrails, /origin pre-existing only when/)
   assert.match(childArgs.guardrails, /A prior merge-blocking finding is introduced\./)
+})
+
+test('lensReview_tellsAuditorNotToRerunTests_becauseKeelTestIsTheEvidence', async () => {
+  const rt = createRuntime({ respond: responder() })
+  await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
+  assert.match(auditChildArgs(rt).guardrails, /Do not build the project or run its tests/)
+  assert.match(auditChildArgs(rt).guardrails, /`keel test` run is the test evidence/)
 })
 
 const ROUND_ROOT = 'rv-20261001T000000Z-aaaaaa'
@@ -798,7 +840,7 @@ test('lensReview_failsBeforeAudit_whenDefaultLensesAreEmpty', async () => {
 })
 
 test('lensReview_putsGuardrailsInEveryAuditAndVerifyPrompt_whenCallerGivesThem', async () => {
-  const audits = { contract: { findings: [finding('c1', 'low')] } }
+  const audits = { contract: { findings: [finding('c1', 'medium')] } }
   const rt = createRuntime({ respond: responder({ audits, verdicts: { c1: { verdict: 'CONFIRMED', evidence: 'reran' } } }) })
   await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES, guardrails: 'Not defects here: naming.' })
   const judged = rt.record.agents.filter((call) => /^(audit|verify):/.test(call.opts.label))

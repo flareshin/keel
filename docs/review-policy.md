@@ -15,11 +15,20 @@ its target and the gate's coverage and freshness requirements still hold.
 Use one independent auditor for the complete lens set by default. Split auditors
 by lens when risk or scope warrants separate contexts; coverage stays complete.
 Each auditor reads the context needed for its lens and reports only actionable
-failures within the requirement. A clean lens needs no verifier. A source audit with
-findings gets separate verification of its findings together. That verifier
-checks the cited evidence, reproduction and relevant callers; it does not repeat
-the full audit. Every finding needs an individual evidenced decision. Missing,
-duplicate or unavailable decisions cannot establish a clean result.
+failures within the requirement. A clean lens needs no verifier, and neither does
+a low finding: low never blocks, so the report lists it as `not verified`. A
+source audit with medium or high findings gets separate verification of those
+findings together. That verifier checks the cited evidence, reproduction and
+relevant callers; it does not repeat the full audit. Every medium or high finding
+needs an individual evidenced decision. Missing, duplicate or unavailable
+decisions cannot establish a clean result.
+
+A trivial diff is a root review (no `since`) whose `git diff --shortstat`
+from the review base shows at most 2 files and at most 10 changed lines
+(insertions plus deletions) in every repo, with a tier other than heavy. Claude
+audits it at `low` effort, and it skips the removing-comments pass; every other
+gate (tests, lens-review evidence, owner approval) still applies. The limits are
+`TRIVIAL_MAX_FILES` and `TRIVIAL_MAX_LINES` in `workflows/lens-review.js`.
 
 Keep the required lenses, test obligations, immutable evidence and owner approval
 gates. Batching is an execution change, not an exemption from those requirements.
@@ -64,13 +73,17 @@ after the tests are green and before `keel review prepare`: a
 against K5.14, and the author deletes what it lists as a comment-only commit,
 reshapes each `MUST KILL` symbol with a test, and offers each `ENCODE` check to the
 owner. Its summary line and anything left open go in the reading guide's
-Decisions. Skip it for docs-only and smoke-only diffs and for a fix delta; a
-test-only diff still gets it, since K5.14 covers test code.
+Decisions. Skip it for docs-only, smoke-only and trivial diffs (see Candidate and scope) and
+for a fix delta; a test-only diff still gets it, since K5.14 covers test code.
 
 ## Test runs
 
 The gate's test check (K3) asks for one passing `keel test` run whose recorded
 content matches every outgoing changed file. It does not ask for the full suite.
+Reviewers do not build the project or run its tests: that recorded run is the
+test evidence, and a reviewer judges whether a test would fail on revert by
+reading it. A rerun cost a measured standard company-repo review about 3 of its 8 audit
+minutes.
 Choose each run by what changed since the last passing run:
 
 - While iterating and after each review fix, run `keel test --affected`
@@ -213,8 +226,9 @@ The CLI pins the candidate without an agent; review reads the pinned Git objects
 Claude audit and verification use `opus`. Their effort follows the change's risk
 tier, which `keel review prepare` reports as `risk_class` from the repo's gated
 row and risk rules (the heaviest across repos): `medium` for smoke-only, light
-and standard, `high` for heavy and `high` when any repo has no gated row or no
-tier was prepared. A caller `effort` overrides the tier. Measured on two
+and standard, `low` for a trivial diff (above), `high` for heavy and `high`
+when any repo has no gated row or no tier was prepared. A caller `effort`
+overrides the tier. Measured on two
 standard keel diffs, `medium` caught every merge-blocking finding `high` caught
 and dropped only low-impact ones. Fallback preparation
 and report transport default to `sonnet` / `low`; `mechanicalModel` overrides

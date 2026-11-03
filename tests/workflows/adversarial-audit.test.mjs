@@ -74,6 +74,31 @@ test('adversarialAudit_partitionsFindingsByVerdict_whenVerifiersAnswer', async (
   assert.equal(adjusted.lens, 'contract')
 })
 
+test('adversarialAudit_startsNoVerifier_whenEveryFindingIsLow', async () => {
+
+  const audits = { contract: { findings: [finding('c1', 'low'), finding('c2', 'low')] } }
+  const rt = createRuntime({ respond: respondWith({ audits }) })
+
+  const result = await rt.run('adversarial-audit', { auditMode: 'split', target: '/work/app', lenses: LENSES })
+
+  assert.deepEqual(rt.record.agents.map((call) => call.opts.label), ['audit:contract', 'audit:tests'])
+  assert.deepEqual(result.confirmed.map((f) => [f.id, f.verdict.verdict]), [['c1', 'UNVERIFIED_LOW'], ['c2', 'UNVERIFIED_LOW']])
+  assert.deepEqual(result.unverified, [])
+})
+
+test('adversarialAudit_verifiesOnlyTheNonLowFindings_whenImpactsAreMixed', async () => {
+
+  const audits = { contract: { findings: [finding('c1', 'low'), finding('c2', 'medium')] } }
+  const verdicts = { c2: { verdict: 'CONFIRMED', evidence: 'reran' } }
+  const rt = createRuntime({ respond: respondWith({ audits, verdicts }) })
+
+  const result = await rt.run('adversarial-audit', { auditMode: 'split', target: '/work/app', lenses: LENSES })
+
+  const verify = rt.record.agents.find((call) => call.opts.label === 'verify:contract')
+  assert.deepEqual(JSON.parse(verify.prompt.split('\nFindings: ')[1]).map((f) => f.id), ['c2'])
+  assert.deepEqual(result.confirmed.map((f) => [f.id, f.verdict.verdict]), [['c1', 'UNVERIFIED_LOW'], ['c2', 'CONFIRMED']])
+})
+
 test('adversarialAudit_keepsAuditorAndVerifierOriginApart_whenBothAreGiven', async () => {
 
   const audits = { contract: { findings: [{ ...finding('c1'), origin: 'pre-existing' }] } }

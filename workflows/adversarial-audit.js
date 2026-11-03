@@ -16,6 +16,8 @@ const MODEL = A.model || 'opus'
 const EFFORT = A.effort || 'high'
 const AUDITOR_TYPE = 'keel-auditor'
 const AUDIT_MODE = A.auditMode || 'combined'
+const NON_BLOCKING_IMPACT = 'low'
+const UNVERIFIED_LOW = { verdict: 'UNVERIFIED_LOW', evidence: 'not verified: impact low never blocks a merge' }
 
 const FINDINGS_SCHEMA = {
   type: 'object',
@@ -156,10 +158,11 @@ function auditLens(lens) {
 
 async function verifyLensFindings(audit, lens) {
   if (!hasValidFindingIds(audit?.findings)) return { lens: lens.key, verified: [], notes: '', failed: true }
-  const findings = audit.findings
+  const lows = audit.findings.filter((finding) => finding?.impact === NON_BLOCKING_IMPACT).map((finding) => ({ ...finding, lens: lens.key, verdict: UNVERIFIED_LOW }))
+  const findings = audit.findings.filter((finding) => finding?.impact !== NON_BLOCKING_IMPACT)
   const ids = findings.map((finding) => finding?.id)
   const notes = audit.notes || ''
-  if (findings.length === 0) return { lens: lens.key, verified: [], notes }
+  if (findings.length === 0) return { lens: lens.key, verified: lows, notes }
   try {
     const response = await agent(buildVerifyPrompt(findings), {
       label: `verify:${lens.key}`, phase: 'Verify', schema: DECISIONS_SCHEMA, model: MODEL, effort: EFFORT, agentType: AUDITOR_TYPE,
@@ -171,9 +174,9 @@ async function verifyLensFindings(audit, lens) {
       const verdict = !hasUnknownDecision && matching.length === 1 && isEvidencedVerdict(matching[0]) ? matching[0] : null
       return applyVerdict(finding, lens, demoteIncompleteAdjustment(verdict))
     })
-    return { lens: lens.key, verified, notes }
+    return { lens: lens.key, verified: [...lows, ...verified], notes }
   } catch (e) {
-    return { lens: lens.key, verified: findings.map((finding) => ({ ...finding, lens: lens.key, verdict: null, verifyError: String(e?.message || e) })), notes }
+    return { lens: lens.key, verified: [...lows, ...findings.map((finding) => ({ ...finding, lens: lens.key, verdict: null, verifyError: String(e?.message || e) }))], notes }
   }
 }
 

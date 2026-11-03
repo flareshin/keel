@@ -1,6 +1,6 @@
 ---
 name: removing-comments
-description: The comment pass before formal review — a fresh read-only reviewer judges every comment in the files a diff changes against K5.14, and the author applies its kill list. Trigger; a candidate that changes a code file is about to go to `keel review prepare` or `/lens-review`, "strip the comments", "no-comments the diff", `/removing-comments`. Do NOT use for a docs-only or smoke-only diff, a fix delta after NEEDS_FIXES (the root candidate already had the pass), or files the diff does not change (that cleanup is a separate requested task).
+description: The comment pass before formal review — a fresh read-only reviewer judges every comment in the files a diff changes against K5.14, and the author applies its kill list. Trigger; a candidate that changes a code file is about to go to `keel review prepare` or `/lens-review`, "strip the comments", "no-comments the diff", `/removing-comments`. Do NOT use for a docs-only, smoke-only or trivial diff (at most 2 files and 10 changed lines, not heavy; docs/review-policy.md), a fix delta after NEEDS_FIXES (the root candidate already had the pass), or files the diff does not change (that cleanup is a separate requested task).
 ---
 
 # Removing comments

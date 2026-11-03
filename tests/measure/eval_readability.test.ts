@@ -190,6 +190,14 @@ describe("evalGraderDiff with the C-authoring-agents grader", () => {
     "Drafts release notes and does NOT verify them.",
     "Do not use for writing code, or reviewing it.",
     "Do not use for writing code, and reviewing it.",
+    "Not for fixing bugs, singles out and reviews risky diffs.",
+    "Drafts release notes from the git log. Do NOT use for a quick lookup, fixing code, or a review dispatch.",
+    "Drafts release notes from the git log. Do not use for bug fixes, code review or verification.",
+    "Drafts release notes from the git log. Not for code edits, reviews or verification.",
+    "Drafts release notes from the git log. Do not use for editing code, code reviews or verifying fixes.",
+    "Lists missing locale keys. Do not use it to fix translations, review them, or verify them.",
+    "Drafts release notes from the git log. Do not use for fixing bugs, reviews that only cover style.",
+    "Drafts release notes from the git log. Not for drafting, button copy reviews or verification.",
   ]) {
     it(`evalGraderDiff_findsNoSignal_forAWorkerThatRulesReviewOut_andPinsModel: ${description}`, () => {
       assert.deepEqual(grade("agents/notes-drafter.md", pinnedModel("notes-drafter", description)), { signals: [] })
@@ -208,7 +216,8 @@ describe("evalGraderDiff with the C-authoring-agents grader", () => {
     "Checks the style rules a linter cannot review.",
     "Never edits code, only verifies.",
     "Never writes files, only reviews the incoming diff.",
-    "Not for fixing bugs, singles out and reviews risky diffs.",
+    "Not for drafting, but reviews SQL migrations.",
+    "Not for writing code, instead reviews it.",
     "Drafts release notes, reviewing each linked diff.",
   ]) {
     it(`evalGraderDiff_reportsAReviewerWhoseRoleNoRuleOutReaches_thatPinsModel: ${description}`, () => {

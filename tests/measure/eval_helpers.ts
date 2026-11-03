@@ -1,7 +1,11 @@
 import { spawnSync } from "node:child_process"
 import fs from "node:fs"
+import os from "node:os"
 import path from "node:path"
+import { afterEach, beforeEach } from "node:test"
 
+import { runGitOrThrow } from "../../measure/lib/measurekit/gitutil.ts"
+import { evalGraderDiff } from "../../measure/evals/lib/evalkit/readability.ts"
 import { CHECKOUT, MeasureSandbox, charterRow } from "./helpers.ts"
 import type { Completed } from "./helpers.ts"
 
@@ -161,5 +165,28 @@ export class EvalSandbox extends MeasureSandbox {
     const logs = path.join(this.data, "logs")
     if (!fs.existsSync(logs)) return []
     return fs.readdirSync(logs).filter((name) => name.startsWith("keel-eval-")).sort().map((name) => path.join(logs, name))
+  }
+}
+
+export type FixtureEdit = { write: Record<string, string>; remove?: string[] }
+
+export function fixtureEditGrader(evalId: string, fixture: string): (edit: FixtureEdit) => ReturnType<typeof evalGraderDiff> {
+  let scratch = ""
+  beforeEach(() => {
+    scratch = fs.mkdtempSync(path.join(os.tmpdir(), evalId))
+    fs.cpSync(fixture, scratch, { recursive: true })
+    runGitOrThrow(scratch, ["init", "-q"])
+    runGitOrThrow(scratch, ["add", "-A"])
+    runGitOrThrow(scratch, ["-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-q", "-m", "init"])
+  })
+  afterEach(() => fs.rmSync(scratch, { recursive: true, force: true }))
+  return (edit) => {
+    for (const file of edit.remove ?? []) fs.rmSync(path.join(scratch, file))
+    for (const [file, text] of Object.entries(edit.write)) {
+      fs.mkdirSync(path.dirname(path.join(scratch, file)), { recursive: true })
+      fs.writeFileSync(path.join(scratch, file), text)
+    }
+    runGitOrThrow(scratch, ["add", "-A"])
+    return evalGraderDiff(CHECKOUT, evalId, fixture, runGitOrThrow(scratch, ["diff", "--cached"]))
   }
 }

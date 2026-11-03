@@ -1,27 +1,24 @@
 import assert from "node:assert/strict"
-import { afterEach, beforeEach, describe, it } from "node:test"
+import { describe, it } from "node:test"
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
 
-import { runGitOrThrow } from "../../measure/lib/measurekit/gitutil.ts"
-import { evalGraderDiff } from "../../measure/evals/lib/evalkit/readability.ts"
 import { CHECKOUT } from "./helpers.ts"
+import { fixtureEditGrader } from "./eval_helpers.ts"
+import type { FixtureEdit } from "./eval_helpers.ts"
 
 const SHOP = path.join(CHECKOUT, "measure", "evals", "C-improving-structure", "repo")
 const SIGNAL = "signal C-improving-structure -: "
 
-type Edit = { write: Record<string, string>; remove?: string[] }
-
-const DIRECT_CALLERS: Edit = {
+const DIRECT_CALLERS: FixtureEdit = {
   remove: ["src/pricing-service.js"],
   write: {
     "src/receipt.js": readShop("src/receipt.js").replace('import { computeTotal } from "./pricing-service.js"', 'import { priceOrder } from "./pricing.js"').replace("computeTotal(order)", "priceOrder(order)"),
     "src/report.js": readShop("src/report.js").replace('import { computeTotal } from "./pricing-service.js"', 'import { priceOrder } from "./pricing.js"').replace("computeTotal(order)", "priceOrder(order)"),
   },
 }
-const NO_LEGACY_DISCOUNT: Edit = { remove: ["src/legacy-discount.js"], write: {} }
-const DIRECT_TAX: Edit = {
+const NO_LEGACY_DISCOUNT: FixtureEdit = { remove: ["src/legacy-discount.js"], write: {} }
+const DIRECT_TAX: FixtureEdit = {
   remove: ["src/tax-provider-factory.js"],
   write: {
     "src/pricing.js": readShop("src/pricing.js").replace('import { createTaxProvider } from "./tax-provider-factory.js"', 'import { FlatTax } from "./flat-tax.js"').replace("createTaxProvider()", "new FlatTax()"),
@@ -32,28 +29,12 @@ function readShop(file: string): string {
   return fs.readFileSync(path.join(SHOP, file), "utf8")
 }
 
-function merged(...edits: Edit[]): Edit {
+function merged(...edits: FixtureEdit[]): FixtureEdit {
   return { write: Object.assign({}, ...edits.map((edit) => edit.write)), remove: edits.flatMap((edit) => edit.remove ?? []) }
 }
 
 describe("evalGraderDiff with the C-improving-structure grader", () => {
-  let scratch: string
-
-  beforeEach(() => {
-    scratch = fs.mkdtempSync(path.join(os.tmpdir(), "shop"))
-    fs.cpSync(SHOP, scratch, { recursive: true })
-    runGitOrThrow(scratch, ["init", "-q"])
-    runGitOrThrow(scratch, ["add", "-A"])
-    runGitOrThrow(scratch, ["-c", "user.name=shop", "-c", "user.email=shop@example.invalid", "commit", "-q", "-m", "init"])
-  })
-  afterEach(() => fs.rmSync(scratch, { recursive: true, force: true }))
-
-  const grade = (edit: Edit) => {
-    for (const file of edit.remove ?? []) fs.rmSync(path.join(scratch, file))
-    for (const [file, text] of Object.entries(edit.write)) fs.writeFileSync(path.join(scratch, file), text)
-    runGitOrThrow(scratch, ["add", "-A"])
-    return evalGraderDiff(CHECKOUT, "C-improving-structure", SHOP, runGitOrThrow(scratch, ["diff", "--cached"]))
-  }
+  const grade = fixtureEditGrader("C-improving-structure", SHOP)
 
   it("evalGraderDiff_findsNoSignal_forCallersMovedOffThePassThrough", () => {
     assert.deepEqual(grade(DIRECT_CALLERS), { signals: [] })

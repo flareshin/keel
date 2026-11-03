@@ -1,18 +1,14 @@
 import assert from "node:assert/strict"
-import { afterEach, beforeEach, describe, it } from "node:test"
+import { describe, it } from "node:test"
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
 
-import { runGitOrThrow } from "../../measure/lib/measurekit/gitutil.ts"
-import { evalGraderDiff } from "../../measure/evals/lib/evalkit/readability.ts"
 import { CHECKOUT } from "./helpers.ts"
+import { fixtureEditGrader } from "./eval_helpers.ts"
 
 const DASHBOARD = path.join(CHECKOUT, "measure", "evals", "C-descending-findings", "repo")
 const SIGNAL = "signal C-descending-findings -: "
 const UNCAUGHT = `${SIGNAL}tests pass with a planted global fetch call in src/planted-call.js`
-
-type Edit = { write: Record<string, string> }
 
 const LS_FILES_CHECK = `import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
@@ -49,25 +45,7 @@ function readDashboard(file: string): string {
 }
 
 describe("evalGraderDiff with the C-descending-findings grader", () => {
-  let scratch: string
-
-  beforeEach(() => {
-    scratch = fs.mkdtempSync(path.join(os.tmpdir(), "dashboard"))
-    fs.cpSync(DASHBOARD, scratch, { recursive: true })
-    runGitOrThrow(scratch, ["init", "-q"])
-    runGitOrThrow(scratch, ["add", "-A"])
-    runGitOrThrow(scratch, ["-c", "user.name=dashboard", "-c", "user.email=dashboard@example.invalid", "commit", "-q", "-m", "init"])
-  })
-  afterEach(() => fs.rmSync(scratch, { recursive: true, force: true }))
-
-  const grade = (edit: Edit) => {
-    for (const [file, text] of Object.entries(edit.write)) {
-      fs.mkdirSync(path.dirname(path.join(scratch, file)), { recursive: true })
-      fs.writeFileSync(path.join(scratch, file), text)
-    }
-    runGitOrThrow(scratch, ["add", "-A"])
-    return evalGraderDiff(CHECKOUT, "C-descending-findings", DASHBOARD, runGitOrThrow(scratch, ["diff", "--cached"]))
-  }
+  const grade = fixtureEditGrader("C-descending-findings", DASHBOARD)
 
   it("evalGraderDiff_findsNoSignal_forAGitLsFilesCheckWithTheViolationFixed", () => {
     assert.deepEqual(grade({ write: { "test/no-direct-fetch.test.js": LS_FILES_CHECK, "src/legacy-feed.js": LEGACY_FEED_ON_GET_JSON } }), { signals: [] })

@@ -7,7 +7,7 @@ import { FIXTURE_TEST_SECONDS, inDetachedWorktree, testFailure } from "../lib/ev
 const RULE_ID = "C-improving-structure"
 const CANDIDATE_AREAS: Record<string, string[]> = {
   "pricing-service pass-through": ["src/pricing-service.js", "src/receipt.js", "src/report.js"],
-  "unused legacy discount": ["src/legacy-discount.js"],
+  "unused legacy discount": ["src/money.js"],
   "single-adapter tax seam": ["src/tax-provider-factory.js", "src/flat-tax.js", "src/pricing.js"],
 }
 const TEST_CASE = /^\s*(?:test|it)\(/gm

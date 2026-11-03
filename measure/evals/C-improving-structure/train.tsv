@@ -1,7 +1,4 @@
-# Train cases: id, kind (graded-change), expect (- for graded-change), prompt.
-# A run passes when grade.ts finds a diff that changes source under src/, touches the files of one candidate only, does not grow src/, keeps every test case, and leaves node --test green at head. Each request names one structural change in a repo whose README lists three; none names the other two or asks to keep the diff to one.
-# Holdout cases live in holdout.tsv; never paste them here.
 id	kind	expect	prompt
 r1	graded-change	-	Remove the pricing-service pass-through layer and have its callers use pricing.js directly.
-r2	graded-change	-	Clean up src/legacy-discount.js; nothing calls it anymore.
+r2	graded-change	-	Clean up legacyDiscountCents in src/money.js; nothing calls it anymore.
 r3	graded-change	-	The tax provider factory only ever builds one provider. Simplify that seam.

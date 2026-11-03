@@ -21,7 +21,7 @@ const base = values.base ?? "HEAD~1"
 const head = values.head ?? "HEAD"
 
 function testCaseCount(ref: string): number {
-  const files = runGitOrThrow(repo, ["ls-tree", "-r", "-z", "--name-only", ref, "--", "test"]).split("\0").filter((file) => file.endsWith(".test.js"))
+  const files = runGitOrThrow(repo, ["ls-tree", "-r", "-z", "--name-only", ref]).split("\0").filter((file) => file !== "")
   return files.reduce((sum, file) => sum + (runGitOrThrow(repo, ["show", `${ref}:${file}`]).match(TEST_CASE) ?? []).length, 0)
 }
 
@@ -45,7 +45,7 @@ function testFailureAtHead(): string | null {
     const completed = runProcess([process.execPath, "--test"], { cwd: tree, env })
     if (completed.returncode === 0) return null
     const failing = completed.stdout.split("\n").find((line) => line.startsWith("✖")) ?? `node --test exit ${completed.returncode}`
-    return failing.replace(DURATION, "").trim()
+    return failing.replace(DURATION, "")
   } finally {
     runGitOrThrow(repo, ["worktree", "remove", "--force", tree])
     fs.rmSync(parent, { recursive: true, force: true })
@@ -60,7 +60,7 @@ const problems: string[] = []
 if (changedSources.length === 0) problems.push("no source file changed")
 if (touchedAreas.length > 1) problems.push(`one diff changes more than one candidate: ${touchedAreas.join(", ")}`)
 const growth = sourceLineGrowth()
-if (growth > 0) problems.push(`source grows by ${growth} lines`)
+if (growth > 0) problems.push(`source line count grows by ${growth}`)
 const testsBefore = testCaseCount(base)
 const testsAfter = testCaseCount(head)
 if (testsAfter < testsBefore) problems.push(`test cases drop from ${testsBefore} to ${testsAfter}`)

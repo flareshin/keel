@@ -29,8 +29,9 @@ function holdoutLeaks(checkout: string): string[] {
     for (const mentioning of cases.filter((candidate) => HOLDOUT_MENTION.test(candidate.prompt))) {
       leaks.push(`${evalId} ${mentioning.split} case ${mentioning.id}: prompt mentions the holdout`)
     }
-    const trainPrompts = new Set(cases.filter((candidate) => candidate.split === TRAIN).map((candidate) => candidate.prompt.trim()))
-    for (const copied of cases.filter((candidate) => candidate.split === HOLDOUT && trainPrompts.has(candidate.prompt.trim()))) {
+    const trainFile = path.join(checkout, "measure", "evals", evalId, TRAIN + ".tsv")
+    const trainText = fs.existsSync(trainFile) ? fs.readFileSync(trainFile, "utf8") : ""
+    for (const copied of cases.filter((candidate) => candidate.split === HOLDOUT && trainText.includes(candidate.prompt.trim()))) {
       leaks.push(`${evalId} holdout case ${copied.id}: prompt also in ${TRAIN}.tsv`)
     }
   }
@@ -71,6 +72,16 @@ describe("holdout separation", () => {
     it("holdoutLeaks_reportsAHoldoutPromptPastedIntoTrain", () => {
       fs.appendFileSync(casesFile(TRAIN), `r2\tgraded-change\t-\t${HOLDOUT_PROMPT}\n`)
       assert.deepEqual(holdoutLeaks(scratch), ["E holdout case h1: prompt also in train.tsv"])
+    })
+
+    it("holdoutLeaks_reportsAHoldoutPromptPastedIntoATrainComment", () => {
+      fs.appendFileSync(casesFile(TRAIN), `# h1\tgraded-change\t-\t${HOLDOUT_PROMPT}\n`)
+      assert.deepEqual(holdoutLeaks(scratch), ["E holdout case h1: prompt also in train.tsv"])
+    })
+
+    it("holdoutLeaks_reportsAHoldoutPromptThatPointsAtTheHoldout", () => {
+      fs.appendFileSync(casesFile(HOLDOUT), "h2\tgraded-change\t-\tCompare with the other holdout case first.\n")
+      assert.deepEqual(holdoutLeaks(scratch), ["E holdout case h2: prompt mentions the holdout"])
     })
 
     it("holdoutLeaks_reportsATrainPromptThatPointsAtTheHoldout", () => {

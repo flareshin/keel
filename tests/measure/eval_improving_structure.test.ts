@@ -17,7 +17,7 @@ const DIRECT_CALLERS: FixtureEdit = {
     "src/report.js": readShop("src/report.js").replace('import { computeTotal } from "./pricing-service.js"', 'import { priceOrder } from "./pricing.js"').replace("computeTotal(order)", "priceOrder(order)"),
   },
 }
-const NO_LEGACY_DISCOUNT: FixtureEdit = { remove: ["src/legacy-discount.js"], write: {} }
+const NO_LEGACY_DISCOUNT: FixtureEdit = { write: { "src/money.js": 'export function dollars(cents) {\n  return (cents / 100).toFixed(2)\n}\n' } }
 const DIRECT_TAX: FixtureEdit = {
   remove: ["src/tax-provider-factory.js"],
   write: {
@@ -40,8 +40,12 @@ describe("evalGraderDiff with the C-improving-structure grader", () => {
     assert.deepEqual(grade(DIRECT_CALLERS), { signals: [] })
   })
 
-  it("evalGraderDiff_findsNoSignal_forTheUnusedModuleDeleted", () => {
+  it("evalGraderDiff_findsNoSignal_forTheUnusedFunctionRemoved", () => {
     assert.deepEqual(grade(NO_LEGACY_DISCOUNT), { signals: [] })
+  })
+
+  it("evalGraderDiff_reportsTheMoneyModuleDeletedWithTheUnusedFunction", () => {
+    assert.deepEqual(grade({ remove: ["src/money.js"], write: {} }), { signals: [`${SIGNAL}tests fail at head: ✖ test/receipt.test.js`] })
   })
 
   it("evalGraderDiff_findsNoSignal_forTheSingleAdapterSeamInlined", () => {
@@ -71,7 +75,7 @@ describe("evalGraderDiff with the C-improving-structure grader", () => {
   }
 
   it("evalGraderDiff_reportsAnEditToTheLegacyDiscountBesideTheTaxSeam_asTwoCandidates", () => {
-    const touched = { write: { "src/legacy-discount.js": readShop("src/legacy-discount.js").replace("\n", " \n") } }
+    const touched = { write: { "src/money.js": readShop("src/money.js").replace("\n", " \n") } }
     assert.deepEqual(grade(merged(touched, DIRECT_TAX)), { signals: [`${SIGNAL}one diff changes more than one candidate: unused legacy discount, single-adapter tax seam`] })
   })
 
@@ -85,8 +89,8 @@ describe("evalGraderDiff with the C-improving-structure grader", () => {
   })
 
   it("evalGraderDiff_reportsASourceThatGrows", () => {
-    const grown = readShop("src/legacy-discount.js") + "export const NO_DISCOUNT_CENTS = 0\n"
-    assert.deepEqual(grade({ write: { "src/legacy-discount.js": grown } }), { signals: [`${SIGNAL}source line count grows by 1`] })
+    const grown = readShop("src/money.js") + "export const NO_DISCOUNT_CENTS = 0\n"
+    assert.deepEqual(grade({ write: { "src/money.js": grown } }), { signals: [`${SIGNAL}source line count grows by 1`] })
   })
 
   it("evalGraderDiff_reportsATestCaseDeletedWithTheChange", () => {

@@ -3,5 +3,5 @@
 # Holdout cases live in holdout.tsv; never paste them here.
 id	kind	expect	prompt
 r1	graded-change	-	Remove the pricing-service pass-through layer and have its callers use pricing.js directly.
-r2	graded-change	-	Clean up src/legacy-discount.js; nothing calls it anymore.
+r2	graded-change	-	Clean up legacyDiscountCents in src/money.js; nothing calls it anymore.
 r3	graded-change	-	The tax provider factory only ever builds one provider. Simplify that seam.

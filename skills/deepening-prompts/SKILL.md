@@ -31,7 +31,6 @@ Add these when the work calls for them:
 
 - **Test the belief.** When the owner states a cause ("it's an onboarding problem"), it becomes the first claim under Doubt: the agent reproduces that cause from the raw source before building on it.
 - **Crew.** For analysis or report work that spans fields, add one Method line naming two to four roles by what each does in this one agent's work: a forensic accountant reconciles every total against the ledger; a red team argues the opposite conclusion from the same data. Ask for the work the role does, never for its voice, and never dispatch a role as a separate agent.
-- **The bar.** State the standard as a number or a pass/fail threshold (every total reconciles to the cent; p95 under 300 ms on the held-out week), not as "high quality". It changes how well the work is done, not what is delivered.
 
 Deeper, not bigger: the scope and the deliverable stay what the owner asked for. Work worth doing beyond them goes under Not doing with one line on why it matters.
 

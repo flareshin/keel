@@ -4,7 +4,7 @@ import { runGitOrThrow } from "../../lib/measurekit/gitutil.ts"
 
 const RULE_ID = "K4"
 const BRIEF_FILE = /(^|\/)briefs\/[^/]+\.md$/
-const REQUIRED_LINES = ["Outcome", "Rawest source", "Method", "Judge"]
+const REQUIRED_LINES = ["Outcome", "Rawest source", "Method", "Judge", "Doubt"]
 const RAW_SOURCE_PATH = /\b(?:data|logs)\/[\w.-]+/
 
 const { values } = parseArgs({ options: { repo: { type: "string" }, base: { type: "string" }, head: { type: "string" } } })

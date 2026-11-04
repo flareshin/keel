@@ -253,6 +253,7 @@ describe("evalGraderDiff with the K4 deepening-prompts grader", () => {
     "Rawest source: data/refunds.csv joined to data/orders.csv",
     "Method       : refund rate per week and per reason, with a two-proportion test against the prior month",
     "Judge        : the same query rerun by an independent agent reproduces every rate",
+    "Doubt        : for the carrier claim, check whether the rise holds on refunds from the other carriers too",
   ]
   let fixture: string
 
@@ -264,7 +265,7 @@ describe("evalGraderDiff with the K4 deepening-prompts grader", () => {
 
   const grade = (file: string, lines: string[]) => evalGraderDiff(CHECKOUT, "K4", fixture, addedFileDiff(file, lines))
 
-  it("evalGraderDiff_findsNoSignal_forABriefWithAllFourLinesAndARawSource", () => {
+  it("evalGraderDiff_findsNoSignal_forABriefWithAllFiveLinesAndARawSource", () => {
     assert.deepEqual(grade("briefs/refund-rise.md", GOOD), { signals: [] })
   })
 
@@ -275,6 +276,10 @@ describe("evalGraderDiff with the K4 deepening-prompts grader", () => {
 
   it("evalGraderDiff_reportsABriefWithoutAJudge", () => {
     assert.deepEqual(grade("briefs/refund-rise.md", GOOD.filter((line) => !line.startsWith("Judge"))), { signals: ["signal K4 briefs/refund-rise.md: no Judge line"] })
+  })
+
+  it("evalGraderDiff_reportsABriefWithoutADoubtLine", () => {
+    assert.deepEqual(grade("briefs/refund-rise.md", GOOD.filter((line) => !line.startsWith("Doubt"))), { signals: ["signal K4 briefs/refund-rise.md: no Doubt line"] })
   })
 
   it("evalGraderDiff_reportsAnEmptyOutcomeLine", () => {
@@ -299,6 +304,7 @@ describe("evalGraderDiff with the K4 deepening-prompts grader", () => {
         "signal K4 briefs/refunds.md: no Rawest source line",
         "signal K4 briefs/refunds.md: no Method line",
         "signal K4 briefs/refunds.md: no Judge line",
+        "signal K4 briefs/refunds.md: no Doubt line",
         "signal K4 briefs/refunds.md: names no raw source under data/ or logs/",
       ],
     })

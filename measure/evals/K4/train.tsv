@@ -1,7 +1,7 @@
 # Train cases: id, kind (ambiguous | clear-change | clear-answer | graded-change), expect (an identifier only a correct answer contains; - otherwise), prompt.
 # Split by tab; prompts are one line each and keep their quotes verbatim. Holdout cases live in holdout.tsv; never paste them here.
 # Grading sees only ask-or-act, never the brief's slots: d1 and d2 guard the fire boundary for the Depth slot, not its content.
-# graded-change cases are the act-when-clear side (skills/deepening-prompts): a loose one-reading request for an agent brief passes when grade.ts finds every changed briefs/<slug>.md with non-empty Outcome, Rawest source, Method and Judge lines and a raw source under data/ or logs/. None names the four lines or a raw file.
+# graded-change cases are the act-when-clear side (skills/deepening-prompts): a loose one-reading request for an agent brief passes when grade.ts finds every changed briefs/<slug>.md with non-empty Outcome, Rawest source, Method, Judge and Doubt lines and a raw source under data/ or logs/. None names the five lines or a raw file.
 id	kind	expect	prompt
 a2	ambiguous	-	Clean up the vendor report stuff, you know what I mean.
 a3	ambiguous	-	Fix the failing test in the PR we just opened.

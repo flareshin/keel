@@ -43,6 +43,8 @@ interface ReviewFields {
   tree?: string
   head?: string
   transcript?: string | null
+  repoRoot?: string
+  reviewBase?: string
 }
 
 describe("C-precheck runner", () => {
@@ -68,6 +70,8 @@ describe("C-precheck runner", () => {
       head: fields.head ?? null,
       snapshot_tree: fields.head === undefined ? fields.tree ?? TREE : null,
       reviewed_tree: fields.tree ?? TREE,
+      ...(fields.repoRoot === undefined ? {} : { repo_root: fields.repoRoot }),
+      ...(fields.reviewBase === undefined ? {} : { review_base: fields.reviewBase }),
       paths: [
         ...(fields.paths ?? THREE_SOURCES).map((changed) => ({ path: changed, blob: "b".repeat(40), mode: "100644" })),
         ...(fields.deleted ?? []).map((removed) => ({ path: removed, blob: null, mode: "000000" })),
@@ -104,7 +108,63 @@ describe("C-precheck runner", () => {
     assert.equal(result.count, 1)
     assert.deepEqual(result.items, [{
       run_id: "rv-a", created_at: NOW_TS, repos: ["flareshin/keel"], verdict: "NEEDS_FIXES", prechecked: true, mutation_tests_findings: 2,
+      existing_test_lines_removed: null,
     }])
+  })
+
+  const givenRepoHistory = (before: Record<string, string>, after: Record<string, string | null>) => {
+    const repo = path.join(box.root, "author-repo")
+    for (const [file, text] of Object.entries(before)) box.write(path.join("author-repo", file), text)
+    box.initRepo(repo)
+    const base = box.commitAll(repo, "Base")
+    for (const [file, text] of Object.entries(after)) {
+      if (text === null) box.git(repo, "rm", "-q", file)
+      else box.write(path.join("author-repo", file), text)
+    }
+    box.commitAll(repo, "Change")
+    return { repoRoot: repo, reviewBase: base, tree: box.git(repo, "rev-parse", "HEAD^{tree}").trim() }
+  }
+
+  const removedFlagOf = (history: { repoRoot: string; reviewBase: string; tree: string }) => {
+    givenReview({ runId: "rv-a", ...history })
+    givenPrecheck(history.tree)
+    return runMetric().items[0].existing_test_lines_removed
+  }
+
+  it("existingTestLineRemovedBetweenReviewBaseAndReviewedTree_marksTheRunAsRemovingTestLines", () => {
+    const history = givenRepoHistory(
+      { "lib/a.ts": "a\n", "tests/a.test.ts": "check one\ncheck two\n" },
+      { "lib/a.ts": "a changed\n", "tests/a.test.ts": "check one\n" },
+    )
+    assert.equal(removedFlagOf(history), true)
+  })
+
+  it("existingTestFileDeleted_marksTheRunAsRemovingTestLines", () => {
+    const history = givenRepoHistory(
+      { "lib/a.ts": "a\n", "tests/a.test.ts": "check one\n" },
+      { "lib/a.ts": "a changed\n", "tests/a.test.ts": null },
+    )
+    assert.equal(removedFlagOf(history), true)
+  })
+
+  it("testsOnlyAddedAndSourceLinesRemoved_doesNotMarkTheRun", () => {
+    const history = givenRepoHistory(
+      { "lib/a.ts": "a\nb\n", "tests/a.test.ts": "check one\n" },
+      { "lib/a.ts": "a\n", "tests/a.test.ts": "check one\ncheck two\n", "tests/b.test.ts": "check new\n" },
+    )
+    assert.equal(removedFlagOf(history), false)
+  })
+
+  it("reviewWhoseCheckoutIsGone_leavesTheTestLinesFlagUnknown", () => {
+    const history = givenRepoHistory({ "tests/a.test.ts": "check one\ncheck two\n" }, { "tests/a.test.ts": "check one\n" })
+    assert.equal(removedFlagOf({ ...history, repoRoot: path.join(box.root, "gone") }), null)
+  })
+
+  it("oneRunOverTwoRepos_removingTestLinesInOneRepo_marksTheRunEvenWhenTheOtherRepoIsUnknown", () => {
+    const history = givenRepoHistory({ "tests/a.test.ts": "check one\ncheck two\n" }, { "tests/a.test.ts": "check one\n" })
+    givenReview({ runId: "rv-a", repo: "flareshin/keel", ...history })
+    givenReview({ runId: "rv-a", repo: "flareshin/keel-overlay", tree: OTHER_TREE })
+    assert.equal(runMetric().items[0].existing_test_lines_removed, true)
   })
 
   it("reviewOfACommittedHead_matchesThePrecheckOfItsReviewedTree", () => {

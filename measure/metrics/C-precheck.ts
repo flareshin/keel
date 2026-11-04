@@ -1,6 +1,7 @@
 import path from "node:path"
 
-import { DELETED_BLOB, isPrecheckSource, REQUIRED_SCRIPT_SOURCES } from "../../lib/precheck/binding.ts"
+import { DELETED_BLOB, describeTestChange, isPrecheckSource, REQUIRED_SCRIPT_SOURCES } from "../../lib/precheck/binding.ts"
+import { objectType } from "../../lib/evidence/gitcmd.ts"
 import * as store from "../../lib/evidence/store.ts"
 import * as env from "../lib/measurekit/env.ts"
 import { dateOption, parseCommandLine, printJson, runMain, stringOption, EXIT_OK } from "../lib/measurekit/cli.ts"
@@ -31,6 +32,8 @@ interface FirstReview {
   verdict: string
   tree: string
   transcript: string | null
+  repoRoot: string | null
+  reviewBase: string | null
 }
 
 function main(argv: string[]): number {
@@ -60,6 +63,8 @@ function coveredFirstReviewsByRun(since: string): Map<string, FirstReview[]> {
       verdict: review["verdict"] as string,
       tree: review["reviewed_tree"] as string,
       transcript: transcriptPath(review),
+      repoRoot: stringOrNull(review["repo_root"]),
+      reviewBase: stringOrNull(review["review_base"]),
     }])
   }
   return runs
@@ -85,8 +90,11 @@ function sourceFileCount(review: JsonObject): number {
 
 function transcriptPath(review: JsonObject): string | null {
   const source = review["source"]
-  const transcript = isJsonObject(source) ? source["agent_transcript_path"] : undefined
-  return typeof transcript === "string" ? transcript : null
+  return stringOrNull(isJsonObject(source) ? source["agent_transcript_path"] : undefined)
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" ? value : null
 }
 
 function summarize(runId: string, repos: FirstReview[], prechecked: Set<string>) {
@@ -98,7 +106,21 @@ function summarize(runId: string, repos: FirstReview[], prechecked: Set<string>)
     verdict: first.verdict,
     prechecked: repos.every((review) => prechecked.has(review.tree)),
     mutation_tests_findings: first.verdict === NEEDS_FIXES ? mutationShapedTestsFindings(first.transcript) : 0,
+    existing_test_lines_removed: anyRepoRemovedTestLines(repos),
   }
+}
+
+function anyRepoRemovedTestLines(repos: FirstReview[]): boolean | null {
+  const answers = repos.map(removedTestLines)
+  if (answers.includes(true)) return true
+  return answers.includes(null) ? null : false
+}
+
+function removedTestLines(review: FirstReview): boolean | null {
+  const { repoRoot, reviewBase, tree } = review
+  if (repoRoot === null || reviewBase === null) return null
+  if (objectType(repoRoot, reviewBase) === null || objectType(repoRoot, tree) === null) return null
+  return describeTestChange(repoRoot, reviewBase, tree).lines_removed
 }
 
 function mutationShapedTestsFindings(transcript: string | null): number | null {

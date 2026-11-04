@@ -8,9 +8,14 @@ export const DELETED_BLOB = '0'.repeat(40);
 const PRECHECK_HEADER = /^precheck tree ([0-9a-f]{40})(?: ·|$)/u;
 export const REQUIRED_SCRIPT_SOURCES = 3;
 
+export interface TestChange {
+  lines_removed: boolean;
+  lines_added: boolean;
+}
+
 export interface PrecheckBinding {
   blobs: Record<string, string>;
-  test_change: { lines_removed: boolean, lines_added: boolean } | null;
+  test_change: TestChange | null;
 }
 
 export interface PrecheckRequirement {
@@ -47,9 +52,9 @@ function nonTestBlobs(repo: string, base: string, end: string): Record<string, s
   return Object.fromEntries(changed.map((entry) => [entry.path, entry.blob ?? DELETED_BLOB]));
 }
 
-function describeTestChange(repo: string, precheckTree: string, end: string): PrecheckBinding['test_change'] {
-  const stats = diffStats(repo, precheckTree, end);
-  const changedTests = diffEntries(repo, precheckTree, end).filter((entry) => isTestPath(entry.path));
+export function describeTestChange(repo: string, from: string, end: string): TestChange {
+  const stats = diffStats(repo, from, end);
+  const changedTests = diffEntries(repo, from, end).filter((entry) => isTestPath(entry.path));
   return {
     lines_removed: changedTests.some((entry) => rewritesExistingTest(entry, stats.get(entry.path))),
     lines_added: changedTests.some((entry) => entry.oldBlob === null || (stats.get(entry.path)?.added ?? 0) > 0),

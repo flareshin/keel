@@ -1,6 +1,6 @@
 ---
 name: deepening-prompts
-description: Load before handing a request to an agent when the owner's words have one reading but are loose, terse or shallow — rewrite them into a deeper brief (the outcome behind the task, the rawest source, the methods a top practitioner would use, an outside judge, and the doubt that attacks the result) so the agent does the expert version, not the literal one. Trigger; an imprecise one-line request about to become a subagent brief, a workflow agent prompt or a ticket task, "make this prompt deeper", "rewrite this for the agent", "deep prompt". Do NOT use for a request with two plausible readings (refining-requests asks first), a fully specified mechanical task (a rename, an exact edit list), a question answered here without delegating, or a review dispatch (lens-review and removing-comments own their briefs).
+description: Load before handing a request to an agent when the owner's words have one reading but are loose, terse or shallow — rewrite them into a deeper brief (the outcome behind the task, the rawest source, the methods a top practitioner would use, an outside judge, and the doubt that attacks the result) so the agent does the expert version, not the literal one. Trigger; an imprecise one-line request about to become a subagent brief, a workflow agent prompt or a ticket task, "write the brief for", "brief an agent on", "get an agent to", "make this prompt deeper", "rewrite this for the agent", "deep prompt". Load it before judging such a request ambiguous: it sends a real fork to refining-requests itself. Do NOT use for a request with two plausible readings (refining-requests asks first), a fully specified mechanical task (a rename, an exact edit list), a question answered here without delegating, or a review dispatch (lens-review and removing-comments own their briefs).
 ---
 
 # Deepening prompts
@@ -15,7 +15,7 @@ The owner often states a request in a few loose words. Passed through as written
 | Two readings that lead to different work | Stop and load `refining-requests` |
 | Fully specified or mechanical | Pass it through unchanged |
 
-Deepening can surface a fork the words hid, such as two different outcomes the work could serve. That fork is ambiguity: hand it to `refining-requests` instead of asking a second way.
+Deepening can surface a fork the words hid. Readings that are layers of one outcome are not a fork: "did the migration work" means both that it ran cleanly and that it fixed what it was for, so the brief states the outcome behind both as `assumed:` and Method checks each layer. Readings that need different deliverables or a different scope are a fork: hand it to `refining-requests` instead of asking a second way.
 
 ## Answer five questions
 

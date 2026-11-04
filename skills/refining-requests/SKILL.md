@@ -1,6 +1,6 @@
 ---
 name: refining-requests
-description: Load first, before any lookup, when a request is ambiguous — turn it into an approved brief (goal, target, deliverable, scope, done-when) and ask only questions that change the work. Trigger; two or more plausible readings, no target or deliverable, a vague verb with no object ("clean it up", "improve this", "just handle it"). Do NOT use for a single-reading request, a step of an agreed plan, or a pure question.
+description: Load first, before any lookup, when a request is ambiguous — turn it into an approved brief (goal, target, deliverable, scope, done-when) and ask only questions that change the work. Trigger; two or more plausible readings, no target or deliverable, a vague verb with no object ("clean it up", "improve this", "just handle it"). Do NOT use for a single-reading request, a step of an agreed plan, a pure question, or a request to write an agent brief on a named subject (deepening-prompts loads first and sends a real fork here).
 ---
 
 # Refining requests

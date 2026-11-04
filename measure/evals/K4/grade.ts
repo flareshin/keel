@@ -12,13 +12,14 @@ const repo = values.repo ?? "."
 const base = values.base ?? "HEAD~1"
 const head = values.head ?? "HEAD"
 
-function labeledLine(label: string): RegExp {
-  return new RegExp(`^[ \\t>*_-]*${label}[*_]*[ \\t]*:[*_]*[ \\t]*\\S`, "im")
+function labeledValue(text: string, label: string): string {
+  const match = new RegExp(`^[ \\t>*_-]*${label}[*_]*[ \\t]*:[*_]*[ \\t]*(\\S.*)$`, "im").exec(text)
+  return match?.[1] ?? ""
 }
 
 function problemsOf(text: string): string[] {
-  const problems = REQUIRED_LINES.filter((label) => !labeledLine(label).test(text)).map((label) => `no ${label} line`)
-  if (!RAW_SOURCE_PATH.test(text)) problems.push("names no raw source under data/ or logs/")
+  const problems = REQUIRED_LINES.filter((label) => labeledValue(text, label) === "").map((label) => `no ${label} line`)
+  if (!RAW_SOURCE_PATH.test(labeledValue(text, "Rawest source"))) problems.push("names no raw source under data/ or logs/")
   return problems
 }
 

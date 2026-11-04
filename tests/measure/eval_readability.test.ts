@@ -287,6 +287,11 @@ describe("evalGraderDiff with the K4 deepening-prompts grader", () => {
     assert.deepEqual(grade("briefs/refund-rise.md", digest), { signals: ["signal K4 briefs/refund-rise.md: names no raw source under data/ or logs/"] })
   })
 
+  it("evalGraderDiff_reportsADigestAsTheRawestSource_evenWhenAnotherLineNamesRawData", () => {
+    const digestFirst = GOOD.map((line) => (line.startsWith("Rawest") ? "Rawest source: reports/weekly-summary.md" : line.startsWith("Method") ? "Method       : count rows in data/orders.csv" : line))
+    assert.deepEqual(grade("briefs/refund-rise.md", digestFirst), { signals: ["signal K4 briefs/refund-rise.md: names no raw source under data/ or logs/"] })
+  })
+
   it("evalGraderDiff_reportsAShallowTaskOnlyBrief_withEveryMissingPart", () => {
     assert.deepEqual(grade("briefs/refunds.md", ["Task: find out why refunds went up."]), {
       signals: [

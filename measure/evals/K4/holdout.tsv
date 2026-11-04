@@ -1,3 +1,5 @@
-# Held-out refining-requests behavior cases; never read while editing skills/refining-requests.
+# Held-out refining-requests and deepening-prompts behavior cases; never read while editing skills/refining-requests or skills/deepening-prompts.
 id	kind	expect	prompt
 h2	ambiguous	-	Make the dashboard better, whatever you think is best.
+hg1	graded-change	-	Brief an agent on sorting out the duplicate customers.
+hg2	graded-change	-	Need a brief so an agent can tell me if checkout is broken.

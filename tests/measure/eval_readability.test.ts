@@ -107,9 +107,9 @@ describe("evalGraderDiff with the C-no-comments grader", () => {
   })
 
   it("evalGraderDiff_faults_namingTheEval_whenItHasNoGradeScript", () => {
-    const check = evalGraderDiff(CHECKOUT, "K4", fixture, "")
+    const check = evalGraderDiff(CHECKOUT, "K5", fixture, "")
     assert.ok("fault" in check)
-    assert.ok(check.fault.startsWith("K4 grader exit 1: "), check.fault)
+    assert.ok(check.fault.startsWith("K5 grader exit 1: "), check.fault)
   })
 })
 
@@ -243,5 +243,63 @@ describe("evalGraderDiff with the C-authoring-agents grader", () => {
 
   it("evalGraderDiff_reportsARunThatChangesNoAgentFile", () => {
     assert.deepEqual(grade("notes/log-reader.md", GOOD), { signals: ["signal C-authoring-agents -: no agents/<name>.md file changed"] })
+  })
+})
+
+describe("evalGraderDiff with the K4 deepening-prompts grader", () => {
+  const GOOD = [
+    "# Refund rise",
+    "Outcome      : decide whether the refund rise is one carrier's late deliveries before next week's carrier review",
+    "Rawest source: data/refunds.csv joined to data/orders.csv",
+    "Method       : refund rate per week and per reason, with a two-proportion test against the prior month",
+    "Judge        : the same query rerun by an independent agent reproduces every rate",
+  ]
+  let fixture: string
+
+  beforeEach(() => {
+    fixture = fs.mkdtempSync(path.join(os.tmpdir(), "fixture"))
+    fs.writeFileSync(path.join(fixture, "README.md"), "# acme-ops\n")
+  })
+  afterEach(() => fs.rmSync(fixture, { recursive: true, force: true }))
+
+  const grade = (file: string, lines: string[]) => evalGraderDiff(CHECKOUT, "K4", fixture, addedFileDiff(file, lines))
+
+  it("evalGraderDiff_findsNoSignal_forABriefWithAllFourLinesAndARawSource", () => {
+    assert.deepEqual(grade("briefs/refund-rise.md", GOOD), { signals: [] })
+  })
+
+  it("evalGraderDiff_findsNoSignal_forBoldMarkdownLabels", () => {
+    const bold = GOOD.map((line) => line.replace(/^(\w[\w ]*?)\s*:/, "- **$1:**"))
+    assert.deepEqual(grade("briefs/refund-rise.md", bold), { signals: [] })
+  })
+
+  it("evalGraderDiff_reportsABriefWithoutAJudge", () => {
+    assert.deepEqual(grade("briefs/refund-rise.md", GOOD.filter((line) => !line.startsWith("Judge"))), { signals: ["signal K4 briefs/refund-rise.md: no Judge line"] })
+  })
+
+  it("evalGraderDiff_reportsAnEmptyOutcomeLine", () => {
+    const empty = GOOD.map((line) => (line.startsWith("Outcome") ? "Outcome:" : line))
+    assert.deepEqual(grade("briefs/refund-rise.md", empty), { signals: ["signal K4 briefs/refund-rise.md: no Outcome line"] })
+  })
+
+  it("evalGraderDiff_reportsABriefThatReadsOnlyTheDigest", () => {
+    const digest = GOOD.map((line) => (line.startsWith("Rawest") ? "Rawest source: reports/weekly-summary.md" : line))
+    assert.deepEqual(grade("briefs/refund-rise.md", digest), { signals: ["signal K4 briefs/refund-rise.md: names no raw source under data/ or logs/"] })
+  })
+
+  it("evalGraderDiff_reportsAShallowTaskOnlyBrief_withEveryMissingPart", () => {
+    assert.deepEqual(grade("briefs/refunds.md", ["Task: find out why refunds went up."]), {
+      signals: [
+        "signal K4 briefs/refunds.md: no Outcome line",
+        "signal K4 briefs/refunds.md: no Rawest source line",
+        "signal K4 briefs/refunds.md: no Method line",
+        "signal K4 briefs/refunds.md: no Judge line",
+        "signal K4 briefs/refunds.md: names no raw source under data/ or logs/",
+      ],
+    })
+  })
+
+  it("evalGraderDiff_reportsARunThatWritesNoBriefFile", () => {
+    assert.deepEqual(grade("notes/refunds.md", GOOD), { signals: ["signal K4 -: no briefs/<slug>.md file changed"] })
   })
 })

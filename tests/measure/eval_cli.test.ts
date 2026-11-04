@@ -7,7 +7,7 @@ import path from "node:path"
 import { graderCommit } from "../../measure/evals/lib/evalkit/grade.ts"
 import { ASK_EVENT, ASK_TEXT, EDIT_EVENT, MODEL, EvalSandbox, caseRow, initEvent, readJson, readJsonl, resultEvent, toolUse } from "./eval_helpers.ts"
 import type { RawRun } from "./eval_helpers.ts"
-import { CHECKOUT, readText } from "./helpers.ts"
+import { CHECKOUT, charterRow, readText } from "./helpers.ts"
 
 const RUN_ONCE = ["--repeat", "1"]
 
@@ -182,10 +182,13 @@ describe("eval cli", () => {
 
     it("fault_namesTheEvalGrader_whenTheEvalHasNoGradeScript", () => {
       const write = box.scenario("write", { events: [initEvent(), ...writeEvents], writes })
-      gradedSuite(write, write)
-      const [completed, report] = box.runEvalJson("K4", "--model", MODEL, ...RUN_ONCE)
+      box.writeLedger("keel/ledger.tsv", [charterRow("K9", { layer: "skill", enforced_at: "skill:refining-requests", why_not_stronger: "Semantic.", metric: "evals:K9" })])
+      box.write("keel/measure/evals/K9/repo/README.md", "# demo\n")
+      box.writeCases("keel/measure/evals/K9/train.tsv", [caseRow("g1", "graded-change", write)])
+      box.writeCases("keel/measure/evals/K9/holdout.tsv", [caseRow("g2", "graded-change", write)])
+      const [completed, report] = box.runEvalJson("K9", "--model", MODEL, ...RUN_ONCE)
       assert.deepEqual([completed.status, report.written], [1, false], completed.stderr)
-      assert.ok(report.faults[0].reason.startsWith("K4 grader exit"), report.faults[0].reason)
+      assert.ok(report.faults[0].reason.startsWith("K9 grader exit"), report.faults[0].reason)
     })
 
     it("skillDiagnostic_countsGradedRunsApartFromClearRuns", () => {

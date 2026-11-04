@@ -8,7 +8,7 @@ import { splitlines } from "../../hooks/lib/hookkit/text.ts";
 import { scanFences } from "../../measure/lib/measurekit/fences.ts";
 import { AGENTS_DIR, agentPaths, bulletTags, GENERATED_HEADER, K5_SUB_IDS, KEEL_HOME, markdownPaths, PRINCIPLES, read, rulesSection, SKILLS_DIR, skillPaths, VALID_IDS } from "./helpers.ts";
 
-const EXPECTED_SKILLS = new Set(["refining-requests", "writing-readable-code", "descending-findings", "improving-structure", "removing-comments", "authoring-agents", "improving-agents"]);
+const EXPECTED_SKILLS = new Set(["refining-requests", "writing-readable-code", "descending-findings", "improving-structure", "removing-comments", "authoring-agents", "improving-agents", "deepening-prompts"]);
 const CLAUDE_MD_CAP = 4608;
 const PERSONAL_BUDGET = 1024;
 const SKILL_LINE_CAP = 500;

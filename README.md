@@ -284,7 +284,7 @@ measure/       run, smoke, propose, boundary, weekly, evals/
 githooks/      pre-commit, pre-push (boundary scan)
 settings/      core.json (hook registration), links.tsv (link manifest)
 stacks/        spring-maven/ (env-preflight hook, settings fragment)
-skills/        refining-requests/, writing-readable-code/, descending-findings/, improving-structure/, removing-comments/, authoring-agents/, improving-agents/
+skills/        refining-requests/, writing-readable-code/, descending-findings/, improving-structure/, removing-comments/, authoring-agents/, improving-agents/, deepening-prompts/
 workflows/     lens-review.js, adversarial-audit.js, review-lenses.json
 agents/        keel-auditor.md, keel-reporter.md, keel-comment-reviewer.md (tool-limited review agent types)
 codex/         Codex adapter
@@ -331,8 +331,9 @@ These published skills shaped keel's own skills:
 | `removing-comments` and the `keel-comment-reviewer` agent | pstack `no-comments` and Comment Sicko in [cursor/plugins](https://github.com/cursor/plugins) (at 4dd1d05, MIT) | A comment pass by a context that did not write the comments, with reshape flags for surprises in our own code and an encoding offer for claimed constraints; keel keeps its narrower K5.14 exceptions |
 | `writing-readable-code` (rules K5.7, K5.8, K5.10 and `references/typescript-types.md`) and `improving-structure` (friction questions) | pstack `typescript-best-practices`, `principle-type-system-discipline`, `principle-model-the-domain`, `principle-minimize-reader-load` and `architect/references/design-red-flags.md` in [cursor/plugins](https://github.com/cursor/plugins) (at 4dd1d05, MIT) | The TypeScript type-design reference, lifecycle state as one value, domain-grouped modules, hand-synced lists and the 30-second reader test |
 | `writing-readable-code` (implementation guide) | Matt Pocock's `codebase-design`, Addy Osmani's [`incremental-implementation`](https://github.com/addyosmani/agent-skills/blob/main/skills/incremental-implementation/SKILL.md) and [pstack `architect`](https://github.com/cursor/plugins/blob/main/pstack/skills/architect/SKILL.md) (read on 2026-10-19) | Caller-first design and small behavior slices |
+| `deepening-prompts` | Felix Rieseberg's ["How to be more ambitious: a tutorial for humans with models"](https://felixrieseberg.com/how-to-be-more-ambitious-a-tutorial-for-humans-with-models/) (read on 2026-11-04) | The deeper-not-bigger rewrite: the outcome behind the task, the rawest source, expert methods, an outside judge, verbs over nouns and a crew of roles asked for their work, not their voice |
 
-The skill files name their sources too: `skills/improving-structure/SKILL.md`, `skills/removing-comments/SKILL.md`, `skills/writing-readable-code/references/implementation.md` and `skills/writing-readable-code/references/typescript-types.md`.
+The skill files name their sources too: `skills/improving-structure/SKILL.md`, `skills/removing-comments/SKILL.md`, `skills/writing-readable-code/references/implementation.md`, `skills/writing-readable-code/references/typescript-types.md` and `skills/deepening-prompts/SKILL.md`.
 
 ## What keel does not do
 

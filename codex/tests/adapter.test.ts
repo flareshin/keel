@@ -218,7 +218,7 @@ describe("installation", () => {
     assert.equal(claude.status, 0, claude.stdout + claude.stderr);
     assert.equal(runLink("--write").status, 0);
 
-    for (const name of ["writing-readable-code", "improving-structure", "descending-findings", "refining-requests", "removing-comments", "authoring-agents", "improving-agents"]) {
+    for (const name of ["writing-readable-code", "improving-structure", "descending-findings", "refining-requests", "removing-comments", "authoring-agents", "improving-agents", "deepening-prompts"]) {
       const claudeSkill = join(home, "data/skills", name);
       const codexSkill = join(home, ".agents/skills", name);
       assert.equal(realpathSync(claudeSkill), realpathSync(codexSkill), name);
@@ -547,7 +547,7 @@ describe("installation", () => {
     }
 
     const HOOKS_ONLY = { actions: [] as string[], problems: [] as string[] };
-    const SKILLS_ADDED_AFTER_RECORDING = ["removing-comments", "authoring-agents", "improving-agents"];
+    const SKILLS_ADDED_AFTER_RECORDING = ["removing-comments", "authoring-agents", "improving-agents", "deepening-prompts"];
 
     function registryWithoutSkillsAddedAfterRecording(registryText: string): string {
       const registry = JSON.parse(registryText);

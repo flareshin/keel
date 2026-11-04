@@ -1,6 +1,7 @@
-# Train cases: id, kind (ambiguous | clear-change | clear-answer), expect (an identifier only a correct answer contains; - otherwise), prompt.
+# Train cases: id, kind (ambiguous | clear-change | clear-answer | graded-change), expect (an identifier only a correct answer contains; - otherwise), prompt.
 # Split by tab; prompts are one line each and keep their quotes verbatim. Holdout cases live in holdout.tsv; never paste them here.
 # Grading sees only ask-or-act, never the brief's slots: d1 and d2 guard the fire boundary for the Depth slot, not its content.
+# graded-change cases are the act-when-clear side (skills/deepening-prompts): a loose one-reading request for an agent brief passes when grade.ts finds every changed briefs/<slug>.md with non-empty Outcome, Rawest source, Method and Judge lines and a raw source under data/ or logs/. None names the four lines or a raw file.
 id	kind	expect	prompt
 a2	ambiguous	-	Clean up the vendor report stuff, you know what I mean.
 a3	ambiguous	-	Fix the failing test in the PR we just opened.
@@ -9,3 +10,6 @@ c2	clear-answer	grandTotalCents	What does the useCart hook in src/hooks/useCart.
 c4	clear-answer	4317	Which port does the dev server listen on when I run npm run dev?
 d1	ambiguous	-	Our numbers have looked off lately, can you analyze what is going on?
 d2	clear-change	-	In src/screens/DashboardScreen.tsx, leave orders whose status is "cancelled" out of the revenue total.
+g1	graded-change	-	Get an agent to figure out why refunds went up, write the brief for it.
+g2	graded-change	-	Brief an agent to look into the slow orders page.
+g3	graded-change	-	Write up the agent brief for checking whether the FALL10 coupon actually worked.

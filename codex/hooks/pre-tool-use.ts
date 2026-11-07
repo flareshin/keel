@@ -23,6 +23,7 @@ const GUARD_TIMEOUT_SECONDS = 35;
 const GUARDED_TOOLS = ["Bash", "Edit", "Write"];
 const PATCH_PREFIXES = ["*** Add File: ", "*** Update File: ", "*** Delete File: ", "*** Move to: "];
 const HUNK_HEADER = "@@";
+const END_OF_FILE_MARKER = "*** End of File";
 const HUNK_LINE_PREFIXES = [" ", "+", "-"];
 const BLANK_CONTEXT_LINE = " ";
 const ADAPTER_FILES = ["AGENTS.md", "hooks.json", "keel-codex-state.json"];
@@ -75,31 +76,41 @@ export function normalize(payload: unknown): Call[] {
   const calls: Call[] = [];
   let path: string | null = null;
   let hunks: string[][] = [];
+  let anchors: string[] = [];
+  let endsAtEndOfFile = false;
   for (const line of splitlines(patch)) {
     const prefix = PATCH_PREFIXES.find((item) => line.startsWith(item));
     if (prefix !== undefined) {
-      if (path !== null) calls.push(editCall(payload, path, hunks));
+      if (path !== null) calls.push(editCall(payload, path, hunks, anchors, !endsAtEndOfFile));
       path = line.slice(prefix.length);
       hunks = [];
+      anchors = [];
+      endsAtEndOfFile = false;
     } else if (line.startsWith(HUNK_HEADER)) {
       hunks.push([]);
+      anchors.push(trimSpace(line.slice(HUNK_HEADER.length)));
     } else if (HUNK_LINE_PREFIXES.some((item) => line.startsWith(item))) {
-      if (hunks.length === 0) hunks.push([]);
+      if (hunks.length === 0) {
+        hunks.push([]);
+        anchors.push("");
+      }
       hunks.at(-1)?.push(line);
+    } else if (line === END_OF_FILE_MARKER) {
+      endsAtEndOfFile = true;
     } else if (line === "" && hunks.length > 0) {
       hunks.at(-1)?.push(BLANK_CONTEXT_LINE);
     }
   }
-  if (path !== null) calls.push(editCall(payload, path, hunks));
+  if (path !== null) calls.push(editCall(payload, path, hunks, anchors, !endsAtEndOfFile));
   if (calls.length === 0) throw new Refusal("apply_patch has no recognized file operations");
   return calls;
 }
 
-function editCall(payload: Record<string, unknown>, path: string, hunks: string[][]): Call {
+function editCall(payload: Record<string, unknown>, path: string, hunks: string[][], anchors: string[], replayable: boolean): Call {
   const lines = hunks.flat();
   const added = lines.filter((line) => line.startsWith("+")).map((line) => line.slice(1));
   const removed = lines.filter((line) => line.startsWith("-")).map((line) => line.slice(1));
-  const tool_input = { file_path: path, content: added.join("\n"), keel_removed: removed.join("\n"), keel_partial: true, keel_hunks: hunks };
+  const tool_input = { file_path: path, content: added.join("\n"), keel_removed: removed.join("\n"), keel_partial: true, keel_hunks: replayable ? hunks : [], keel_anchors: replayable ? anchors : [] };
   return { ...payload, tool_name: "Write", tool_input };
 }
 

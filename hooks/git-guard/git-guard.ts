@@ -44,6 +44,10 @@ const C_ISOLATION = "C-isolation";
 const C_COMMENTS = "C-comments";
 const STDOUT_FD = "1";
 const READ_WRITE_REDIRECT = "<>";
+const LOOSE_DASHES = /[\u2010-\u2015\u2212]/gu;
+const LOOSE_SINGLE_QUOTES = /[\u2018-\u201B]/gu;
+const LOOSE_DOUBLE_QUOTES = /[\u201C-\u201F]/gu;
+const LOOSE_SPACES = /[\u00A0\u2002-\u200A\u202F\u205F\u3000]/gu;
 const TEE_SHORT_APPEND = /^-[^-]*a/u;
 export const DROP_COMMENTS = "Remove the listed comment lines and resubmit the edit; put the reasoning in the reading guide.";
 const EDIT_TOOLS: ReadonlySet<string> = new Set(["edit", "write", "notebookedit", "multiedit"]);
@@ -251,20 +255,39 @@ function patchedFile(toolArgs: Payload, before: string): string | null {
   const hunks = getField(toolArgs, "keel_hunks");
   if (getField(toolArgs, "keel_partial") !== true || !Array.isArray(hunks) || hunks.length === 0) return null;
   if (!hunks.every((hunk) => Array.isArray(hunk) && hunk.every((line) => typeof line === "string"))) return null;
+  const anchors = getField(toolArgs, "keel_anchors") ?? hunks.map(() => "");
+  if (!Array.isArray(anchors) || anchors.length !== hunks.length || !anchors.every((anchor) => typeof anchor === "string")) return null;
   const lines = (hunks as string[][]).flat();
   const changed = (sign: string) => lines.filter((line) => line.startsWith(sign)).map((line) => line.slice(1)).join("\n");
   if (changed("+") !== getField(toolArgs, "content") || changed("-") !== getField(toolArgs, "keel_removed")) return null;
   let text = before.split("\n");
   let cursor = 0;
-  for (const hunk of hunks as string[][]) {
+  for (const [index, hunk] of (hunks as string[][]).entries()) {
+    const anchor = anchors[index] as string;
+    if (anchor !== "") {
+      const anchorAt = anchorIndexOf(text, anchor, cursor);
+      if (anchorAt === -1) return null;
+      cursor = anchorAt + 1;
+    }
     const oldLines = hunk.filter((line) => !line.startsWith("+")).map((line) => line.slice(1));
     const newLines = hunk.filter((line) => !line.startsWith("-")).map((line) => line.slice(1));
     const start = linesIndexOf(text, oldLines, cursor);
-    if (oldLines.length === 0 || start === -1 || linesIndexOf(text, oldLines, start + 1) !== -1) return null;
+    const fitsElsewhere = anchor === "" && linesIndexOf(text, oldLines, start + 1) !== -1;
+    if (oldLines.length === 0 || start === -1 || fitsElsewhere) return null;
     text = [...text.slice(0, start), ...newLines, ...text.slice(start + oldLines.length)];
     cursor = start + newLines.length;
   }
   return text.join("\n");
+}
+
+function anchorIndexOf(lines: readonly string[], anchor: string, from: number): number {
+  const wanted = looseLine(anchor);
+  const fits = lines.flatMap((line, index) => (index >= from && looseLine(line) === wanted ? [index] : []));
+  return fits.length === 1 ? (fits[0] as number) : -1;
+}
+
+function looseLine(line: string): string {
+  return trimSpace(line.replace(LOOSE_DASHES, "-").replace(LOOSE_SINGLE_QUOTES, "'").replace(LOOSE_DOUBLE_QUOTES, '"').replace(LOOSE_SPACES, " "));
 }
 
 function linesIndexOf(lines: readonly string[], block: readonly string[], from: number): number {

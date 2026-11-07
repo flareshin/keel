@@ -752,10 +752,24 @@ describe("guard", () => {
   });
 
   it("test_patch_keepsEachHunkWithItsContextLines", () => {
-    const patch = "*** Begin Patch\n*** Update File: a.py\n@@ def f():\n x = 1\n-y = 2\n+y = 3\n@@\n z = 4\n+w = 5\n*** End of File\n*** Add File: b.py\n+x\n*** End Patch";
+    const patch = "*** Begin Patch\n*** Update File: a.py\n@@ def f():\n x = 1\n-y = 2\n+y = 3\n@@\n z = 4\n+w = 5\n*** Add File: b.py\n+x\n*** End Patch";
     const calls = normalize(payload("apply_patch", { command: patch }));
     assert.deepEqual(calls[0]?.tool_input["keel_hunks"], [[" x = 1", "-y = 2", "+y = 3"], [" z = 4", "+w = 5"]]);
     assert.deepEqual(calls[1]?.tool_input["keel_hunks"], [["+x"]]);
+    assert.deepEqual([calls[0]?.tool_input["keel_anchors"], calls[1]?.tool_input["keel_anchors"]], [["def f():", ""], [""]]);
+  });
+
+  it("test_patch_sendsNoHunks_forAFileWithAnEndOfFileHunk", () => {
+    const patch = "*** Begin Patch\n*** Update File: a.py\n@@ def f():\n x = 1\n+y = 2\n@@ def g():\n z = 3\n+w = 4\n*** End of File\n*** Update File: b.py\n@@ def h():\n v = 5\n+u = 6\n*** End Patch";
+    const calls = normalize(payload("apply_patch", { command: patch }));
+    assert.deepEqual(calls.map((call) => [call.tool_input["keel_hunks"], call.tool_input["keel_anchors"]]), [[[], []], [[[" v = 5", "+u = 6"]], ["def h():"]]]);
+    assert.equal(calls[0]?.tool_input["content"], "y = 2\nw = 4");
+  });
+
+  it("test_patch_keepsAByteOrderMarkInTheAnchor_asApplyPatchMatchesIt", () => {
+    const patch = "*** Begin Patch\n*** Update File: a.py\n@@ ﻿def a():\n x = 1\n+y = 2\n*** End Patch";
+    const calls = normalize(payload("apply_patch", { command: patch }));
+    assert.deepEqual(calls[0]?.tool_input["keel_anchors"], ["﻿def a():"]);
   });
 
   it("test_patch_readsAnEmptyHunkLineAsABlankContextLine", () => {

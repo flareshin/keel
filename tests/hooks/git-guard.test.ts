@@ -2263,6 +2263,81 @@ describe("CommentWriteTest", () => {
     assertCommentDenied(edit("Write", toolArgs), "# sets y");
   });
 
+  it("codexPatch_replaysTheHunkAfterItsAnchor_whenTheContextFitsMoreThanOnePlace", () => {
+    const source = 'def a():\n    x = 1\n    y = 2\ndef b():\n    s = """\n    x = 1\n    y = 2\n    """\n';
+    const hunk = ["     x = 1", "+    # inside the string", "     y = 2"];
+    const toolArgs = (anchor: string) => ({
+      file_path: codeFile("twice.py", source), content: "    # inside the string", keel_removed: "", keel_partial: true, keel_hunks: [hunk], keel_anchors: [anchor],
+    });
+
+    assertPassed(edit("Write", toolArgs("def b():")));
+    assertCommentDenied(edit("Write", toolArgs("def a():")), "# inside the string");
+    assertCommentDenied(edit("Write", toolArgs("def c():")), "# inside the string");
+  });
+
+  it("codexPatch_judgesTheAddedLinesAlone_whenTheAnchorFitsMoreThanOneLine", () => {
+    const cases = [
+      { source: 'S = """\n  def b():\n    x = 1\n"""\ndef b():\n    x = 1\n', anchor: "def b():", indent: "    " },
+      { source: 'S = """\n  def b():\n    x = 1\n"""\ndef b(): \n    x = 1\n', anchor: "def b():", indent: "    " },
+      { source: 'S = """\ndef m():\n        x = 1\n"""\nclass C:\n    def m():\n        x = 1\n', anchor: "def m():", indent: "        " },
+      { source: 'S = """\n    # marker\nx = 1\n"""\n# marker\u0085\nx = 1\n', anchor: "# marker", indent: "" },
+      { source: 'S = """\n    # marker \u2014 a\nx = 1\n"""\n# marker - a\nx = 1\n', anchor: "# marker - a", indent: "" },
+    ];
+    for (const [index, { source, anchor, indent }] of cases.entries()) {
+      const toolArgs = {
+        file_path: codeFile(`anchor${index}.py`, source), content: `${indent}# real comment`, keel_removed: "", keel_partial: true,
+        keel_hunks: [[` ${indent}x = 1`, `+${indent}# real comment`]], keel_anchors: [anchor],
+      };
+
+      assertCommentDenied(edit("Write", toolArgs), "# real comment");
+    }
+  });
+
+  it("codexPatch_replaysAtTheFirstContextFitAfterTheAnchor_whenTheContextFitsAgainLater", () => {
+    const source = 'def b():\n    s = """\n    x = 1\n    """\n    x = 1\n';
+    const toolArgs = {
+      file_path: codeFile("later.py", source), content: "    # inside the string", keel_removed: "", keel_partial: true,
+      keel_hunks: [["     x = 1", "+    # inside the string"]], keel_anchors: ["def b():"],
+    };
+
+    assertPassed(edit("Write", toolArgs));
+  });
+
+  it("codexPatch_replaysTheHunkAfterItsAnchor_whenTheAnchorFitsOnlyAfterFoldingPunctuationAndSpaces", () => {
+    const hunk = ["     x = 1", "+    # inside the string", "     y = 2"];
+    for (const [index, fileAnchor] of ["# marker — a", "# it’s a", "# say “hi”", "# marker a"].entries()) {
+      const source = `def a():\n    x = 1\n    y = 2\ns = """\n${fileAnchor}\n    x = 1\n    y = 2\n"""\n`;
+      const anchor = ["# marker - a", "# it's a", '# say "hi"', "# marker a"][index] as string;
+      const toolArgs = {
+        file_path: codeFile(`folded${index}.py`, source), content: "    # inside the string", keel_removed: "", keel_partial: true, keel_hunks: [hunk], keel_anchors: [anchor],
+      };
+
+      assertPassed(edit("Write", toolArgs));
+    }
+  });
+
+  it("codexPatch_judgesTheAddedLinesAlone_whenTheAnchorFitsOneLineExactlyAndAnotherAfterFolding", () => {
+    const source = '# marker — a\nx = 1\ns = """\n# marker - a\nx = 1\n"""\n';
+    const toolArgs = {
+      file_path: codeFile("exactAndFolded.py", source), content: "# real comment", keel_removed: "", keel_partial: true,
+      keel_hunks: [[" x = 1", "+# real comment"]], keel_anchors: ["# marker - a"],
+    };
+
+    assertCommentDenied(edit("Write", toolArgs), "# real comment");
+  });
+
+  it("codexPatch_judgesTheAddedLinesAlone_whenTheAnchorsDoNotFitTheHunks", () => {
+    const source = 'def a():\n    x = 1\n    y = 2\ndef b():\n    s = """\n    x = 1\n    y = 2\n    """\n';
+    const hunk = ["     x = 1", "+    # inside the string", "     y = 2"];
+    for (const anchors of [["def b():", "def a():"], "def b():"]) {
+      const toolArgs = {
+        file_path: codeFile("twice.py", source), content: "    # inside the string", keel_removed: "", keel_partial: true, keel_hunks: [hunk], keel_anchors: anchors,
+      };
+
+      assertCommentDenied(edit("Write", toolArgs), "# inside the string");
+    }
+  });
+
   it("codexPatch_judgesTheAddedLinesAlone_whenTheHunksDoNotFitTheCall", () => {
     const source = 'TEXT = """\n# not a comment\n"""\n';
     const forged = { file_path: codeFile("text.py", source), content: "# not a comment", keel_removed: "", keel_partial: true, keel_hunks: [[' TEXT = """']] };

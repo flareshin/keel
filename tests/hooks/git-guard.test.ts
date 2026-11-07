@@ -699,7 +699,7 @@ describe("KnownValuesTest", () => {
     assert.ok(fromFile.stderr.includes("PR text holds the value of DB_PASSWORD"), fromFile.stderr);
     assert.ok(fromFile.stderr.trimEnd().endsWith(ASK_USER), fromFile.stderr);
     assert.ok(!fromFile.stderr.includes(PASSWORD));
-    for (const attached of ["gh pr create --title t -Fb.md", "gh pr create --title t -F=b.md"]) {
+    for (const attached of ["gh pr create --title t -Fb.md", "gh pr create --title t -F=b.md", "gh pr create -t t -dF b.md", "gh pr create -t t -dFb.md"]) {
       const result = guard(attached, repo);
       assertDenied(result, "F-secrets");
       assert.ok(result.stderr.includes("PR text holds the value of DB_PASSWORD"), result.stderr);
@@ -888,7 +888,10 @@ describe("KnownValuesTest", () => {
   it("commit_failsClosedAskingTheUser_whenTheMessageFileHoldsAKnownValueAndTheScannerIsMissing", () => {
     sandbox.env["KEEL_BOUNDARY"] = join(sandbox.root, "no-such-scanner");
     sandbox.write(join(repo, "msg.txt"), `Rotate ${TOKEN}\n`);
-    for (const command of ["git commit --allow-empty -F msg.txt", "git commit --allow-empty --file=msg.txt", "gh pr create --title t --body-file msg.txt"]) {
+    for (const command of [
+      "git commit --allow-empty -F msg.txt", "git commit --allow-empty --file=msg.txt", "gh pr create --title t --body-file msg.txt",
+      "git commit --allow-empty -aF msg.txt", "git commit --allow-empty '-F' msg.txt", "gh pr create -t t -dF msg.txt",
+    ]) {
       const result = guard(command, repo);
       assert.equal(result.code, 2, result.stderr);
       assert.ok(result.stderr.trimEnd().endsWith(ASK_USER), result.stderr);

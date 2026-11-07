@@ -81,8 +81,9 @@ const COMMIT_SHORT_ATTACHED_VALUE_FLAGS: ReadonlySet<string> = new Set(["S", "u"
 const COMMIT_NO_VERIFY_SHORT_FLAG = "n";
 const STAGING_SUBCOMMANDS: ReadonlySet<string> = new Set(["add", "stage"]);
 const PLAIN_CALL_TEXT_RE = /^(?:[A-Za-z0-9 \t\n'"_.,:;=@%+\-\/]|&&)*$/;
-const READS_MESSAGE_FILE_RE = /(?:^|\s)(?:-F|--file|--body-file)/;
-const PR_FILE_OPTIONS: ReadonlySet<string> = new Set(["-F", "--body-file"]);
+const PR_BODY_FILE_LONG_OPTION = "--body-file";
+const PR_BODY_FILE_SHORT_FLAG = "F";
+const PR_SHORT_VALUE_FLAGS: ReadonlySet<string> = new Set(["A", "a", "B", "b", "H", "l", "m", "p", "R", "r", "T", "t"]);
 const PR_TEXT_SUBCOMMANDS: ReadonlySet<string> = new Set(["create", "edit", "merge"]);
 const UNPUSHED = ["--not", "--remotes"];
 const STDIN_PATH = "-";
@@ -133,7 +134,6 @@ interface Violation {
   text: string;
   repo?: string | null;
   kind?: typeof PROCEDURAL_KIND;
-  commandHoldsSecret?: true;
 }
 
 interface CommitOption {
@@ -176,7 +176,7 @@ function main(): number {
 
 function nextStepFor(payload: Payload, violations: readonly Violation[]): string {
   if (violations.every((violation) => violation.ruleId === C_COMMENTS)) return DROP_COMMENTS;
-  if (protocol.toolName(payload) !== "bash" || violations.some((violation) => violation.commandHoldsSecret)) return protocol.ASK_USER;
+  if (protocol.toolName(payload) !== "bash") return protocol.ASK_USER;
   const command = commandOf(protocol.toolInput(payload));
   if (mayHoldKnownValue(command)) return protocol.ASK_USER;
   return protocol.runYourself(`cd ${shlexQuote(protocol.cwdOrProcessDirectory(payload))} && ${command}`);
@@ -588,9 +588,10 @@ function checkGitOrPr(
 }
 
 function checkPrText(ghArgv: readonly string[], step: Step, readMessageInputs: () => readonly string[]): Violation[] {
-  if (ghArgv[1] !== "pr" || ghArgv.length < 3 || !PR_TEXT_SUBCOMMANDS.has(ghArgv[2] ?? "")) return [];
-  const args = ghArgv.slice(3);
-  const text = messageSpellings([...args, ...readMessageInputs(), ...readMessageFiles(args, PR_FILE_OPTIONS, step)].join("\n"), step);
+  const args = prTextArgs(ghArgv);
+  if (args === null) return [];
+  const bodyFiles = prBodyFilePaths(args).flatMap((path) => messageSourceTexts(path, step));
+  const text = messageSpellings([...args, ...readMessageInputs(), ...bodyFiles].join("\n"), step);
   const violations = commandTextSecretViolations(PR_TEXT_SHOWN, text);
   if (!testCaseFolded(ATTRIBUTION_RE, text)) return violations;
   return [{
@@ -865,7 +866,7 @@ function commandTextSecretViolations(shown: string, text: string): Violation[] {
   const hits = knownValueHits(() => knownvalues.numberedLines(shown, text));
   if (hits.length === 0) return [];
   const sources = [...new Set(hits.map((hit) => `${shown} holds the value of ${hit.known.key} (${hit.known.origin})`))];
-  return [{ ...secretsViolation(sources, null), commandHoldsSecret: true }];
+  return [secretsViolation(sources, null)];
 }
 
 function knownValueViolations(readLines: () => Iterable<knownvalues.Line>, repoKey: string | null = null): Violation[] {
@@ -1023,11 +1024,22 @@ function failClosedIfGuarded(raw: string, error: unknown): number {
 function mayHoldKnownValue(command: string): boolean {
   try {
     if (knownvalues.load(overlayPath(...KNOWN_VALUES_FILE)).length === 0) return false;
-    if (!PLAIN_CALL_TEXT_RE.test(command) || READS_MESSAGE_FILE_RE.test(command)) return true;
+    if (!PLAIN_CALL_TEXT_RE.test(command) || namesMessageFile(command)) return true;
     return knownValueHits(() => knownvalues.numberedLines(COMMAND_SHOWN, commandSpellings(command))).length > 0;
   } catch {
     return true;
   }
+}
+
+function namesMessageFile(command: string): boolean {
+  return parseCommands(command).some((parsed) => parsed.argv.some((_, start) => messageFilePaths(parsed.argv.slice(start)).length > 0));
+}
+
+function messageFilePaths(argv: readonly string[]): string[] {
+  if (basename(argv[0] ?? "") === "gh") return prBodyFilePaths(prTextArgs(ghSubcommandArgv(argv)) ?? []);
+  const position = gitSubcommandIndex(argv);
+  if (position === null || argv[position] !== "commit") return [];
+  return commitOptionValues(argv.slice(position + 1)).filter(([name]) => COMMIT_FILE_OPTIONS.has(name)).map(([, value]) => value);
 }
 
 function commandSpellings(command: string): string {
@@ -1094,17 +1106,32 @@ function commitOptionValues(args: readonly string[]): Array<[name: string, value
   return pairs;
 }
 
-function readMessageFiles(args: readonly string[], options: ReadonlySet<string>, step: Step): string[] {
-  const texts: string[] = [];
-  const longOptions = Array.from(options).filter((option) => option.startsWith("--"));
-  const shortOptions = Array.from(options).filter((option) => !option.startsWith("--"));
-  args.forEach((arg, index) => {
-    const attachedShort = shortOptions.find((option) => arg.startsWith(option) && arg.length > option.length);
-    if (options.has(arg) && index + 1 < args.length) texts.push(...messageSourceTexts(args[index + 1] ?? "", step));
-    else if (longOptions.some((option) => arg.startsWith(option + "="))) texts.push(...messageSourceTexts(partition(arg, "=")[2], step));
-    else if (attachedShort) texts.push(...messageSourceTexts(arg.slice(attachedShort.length).replace(/^=/, ""), step));
-  });
-  return texts;
+function prTextArgs(ghArgv: readonly string[]): string[] | null {
+  if (ghArgv[1] !== "pr" || ghArgv.length < 3 || !PR_TEXT_SUBCOMMANDS.has(ghArgv[2] ?? "")) return null;
+  return ghArgv.slice(3);
+}
+
+function prBodyFilePaths(args: readonly string[]): string[] {
+  const paths: string[] = [];
+  for (const [index, arg] of args.entries()) {
+    if (arg === "--") break;
+    if (arg === PR_BODY_FILE_LONG_OPTION && index + 1 < args.length) paths.push(args[index + 1] ?? "");
+    else if (arg.startsWith(PR_BODY_FILE_LONG_OPTION + "=")) paths.push(partition(arg, "=")[2]);
+    else if (arg.startsWith("-") && !arg.startsWith("--")) paths.push(...shortClusterBodyFile(arg, args[index + 1]));
+  }
+  return paths;
+}
+
+function shortClusterBodyFile(cluster: string, nextArg: string | undefined): string[] {
+  const flags = Array.from(cluster.slice(1));
+  for (const [position, flag] of flags.entries()) {
+    if (PR_SHORT_VALUE_FLAGS.has(flag)) return [];
+    if (flag !== PR_BODY_FILE_SHORT_FLAG) continue;
+    const attached = flags.slice(position + 1).join("").replace(/^=/, "");
+    if (attached) return [attached];
+    return nextArg === undefined ? [] : [nextArg];
+  }
+  return [];
 }
 
 function messageSourceTexts(path: string, step: Step, relativeTo: string = step.directory): string[] {

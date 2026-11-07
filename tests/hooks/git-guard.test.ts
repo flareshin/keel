@@ -701,6 +701,16 @@ describe("KnownValuesTest", () => {
     assert.ok(!fromFile.stderr.includes(PASSWORD));
   });
 
+  it("commit_passes_whenAnUnreadableFileIsPipedIntoAnotherCommandOfTheCall", () => {
+    sandbox.write(join(repo, "locked.bin"), "data\n");
+    chmodSync(join(repo, "locked.bin"), 0o000);
+    try {
+      assertPassed(guard("cat < locked.bin | wc -c; git commit --allow-empty -m ok", repo));
+    } finally {
+      chmodSync(join(repo, "locked.bin"), 0o644);
+    }
+  });
+
   it("commandText_denied_whenStdinReadsTheMessageFromAFileHoldingAKnownValue", () => {
     sandbox.write(join(repo, "msg.txt"), `Rotate ${TOKEN}\n`);
     for (const [command, shown] of [

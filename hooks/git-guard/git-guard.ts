@@ -329,7 +329,7 @@ function checkBash(command: string, cwd: string): Violation[] {
   ];
   const plainCallText = PLAIN_CALL_TEXT_RE.test(command);
   call.forEach((step, index) => {
-    violations.push(...checkGitOrPr(step, call, index, [...callBodies, ...stdinTexts(call, index)], plainCallText));
+    violations.push(...checkGitOrPr(step, call, index, () => [...callBodies, ...stdinTexts(call, index)], plainCallText));
   });
   return unique(violations);
 }
@@ -574,24 +574,24 @@ function gitHookSkip(step: Step, index: number): string | null {
 }
 
 function checkGitOrPr(
-  step: Step, call: readonly Step[], index: number, messageInputs: readonly string[], plainCallText: boolean,
+  step: Step, call: readonly Step[], index: number, readMessageInputs: () => readonly string[], plainCallText: boolean,
 ): Violation[] {
-  if (step.name === "gh") return checkPrText(ghSubcommandArgv(step.argv), step, messageInputs);
+  if (step.name === "gh") return checkPrText(ghSubcommandArgv(step.argv), step, readMessageInputs);
   const argv = step.argv;
   const position = gitSubcommandIndex(argv);
   if (position === null) return [];
   const repoDirectory = gitDirectory(argv, step.directory, step.expansion);
   if (argv[position] === "commit") {
-    return checkCommit(argv.slice(position + 1), step, repoDirectory, call.slice(0, index), messageInputs, plainCallText);
+    return checkCommit(argv.slice(position + 1), step, repoDirectory, call.slice(0, index), readMessageInputs, plainCallText);
   }
   if (argv[position] === "push") return checkPush(argv.slice(position + 1), repoDirectory);
   return [];
 }
 
-function checkPrText(ghArgv: readonly string[], step: Step, messageInputs: readonly string[]): Violation[] {
+function checkPrText(ghArgv: readonly string[], step: Step, readMessageInputs: () => readonly string[]): Violation[] {
   if (ghArgv[1] !== "pr" || ghArgv.length < 3 || !PR_TEXT_SUBCOMMANDS.has(ghArgv[2] ?? "")) return [];
   const args = ghArgv.slice(3);
-  const text = withVariableValues([...args, ...messageInputs, ...readMessageFiles(args, PR_FILE_OPTIONS, step)].join("\n"), step);
+  const text = withVariableValues([...args, ...readMessageInputs(), ...readMessageFiles(args, PR_FILE_OPTIONS, step)].join("\n"), step);
   const violations = commandTextSecretViolations(PR_TEXT_SHOWN, text);
   if (!testCaseFolded(ATTRIBUTION_RE, text)) return violations;
   return [{
@@ -601,11 +601,11 @@ function checkPrText(ghArgv: readonly string[], step: Step, messageInputs: reado
 }
 
 function checkCommit(
-  args: readonly string[], step: Step, repoDirectory: string, earlierSteps: readonly Step[], messageInputs: readonly string[],
+  args: readonly string[], step: Step, repoDirectory: string, earlierSteps: readonly Step[], readMessageInputs: () => readonly string[],
   plainCallText: boolean,
 ): Violation[] {
   const violations: Violation[] = [];
-  const message = withVariableValues(commitMessageTexts(args, step, repoDirectory, messageInputs).join("\n"), step);
+  const message = withVariableValues(commitMessageTexts(args, step, repoDirectory, readMessageInputs()).join("\n"), step);
   if (testCaseFolded(ATTRIBUTION_RE, message)) {
     violations.push({ ruleId: F_ATTRIBUTION, text: "AI-tool attribution in the commit message; remove it." });
   }

@@ -93,14 +93,16 @@ describe("eval cli", () => {
     assert.ok(readJson(path.join(report.raw_dir, "config.json")).command.join(" ").includes(unlocked))
   })
 
-  it("usageError_whenTheSuiteToolsFileAllowsAToolTheRunnerKeepsDenied", () => {
-    box.seedSuite(box.askScenario(), box.editScenario())
-    box.write("keel/measure/evals/K4/tools.json", JSON.stringify({ allow: ["Bash"] }))
-    const completed = box.runEval("K4", "--model", MODEL, ...RUN_ONCE)
-    assert.equal(completed.status, 2, completed.stderr)
-    assert.ok(completed.stderr.includes('tools.json: "allow" may list only Agent'), completed.stderr)
-    assert.equal(box.stubCalls().length, 0)
-  })
+  for (const allow of [["Bash"], "Agent"]) {
+    it(`usageError_whenTheSuiteToolsFileAllows_${JSON.stringify(allow)}`, () => {
+      box.seedSuite(box.askScenario(), box.editScenario())
+      box.write("keel/measure/evals/K4/tools.json", JSON.stringify({ allow }))
+      const completed = box.runEval("K4", "--model", MODEL, ...RUN_ONCE)
+      assert.equal(completed.status, 2, completed.stderr)
+      assert.ok(completed.stderr.includes('tools.json: "allow" may list only Agent'), completed.stderr)
+      assert.equal(box.stubCalls().length, 0)
+    })
+  }
 
   it("subsetRun_writesPartialAndCaseLines_neverK4", () => {
     box.linkKeel()

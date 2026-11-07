@@ -731,6 +731,28 @@ describe("KnownValuesTest", () => {
     }
   });
 
+  it("commit_failsClosedAskingTheUser_whenShellQuotingSplitsTheKnownValueAndTheScannerIsMissing", () => {
+    sandbox.env["KEEL_BOUNDARY"] = join(sandbox.root, "no-such-scanner");
+    const half = PASSWORD.slice(0, PASSWORD.length / 2);
+    for (const spelling of [`'Rotate ${half}''${half}'`, `Rotate\\ ${half.slice(0, -1)}\\${half.slice(-1)}${half}`]) {
+      const result = guard(`git commit --allow-empty -m ${spelling}`, repo);
+      assert.equal(result.code, 2);
+      assert.ok(result.stderr.includes("internal error"), result.stderr);
+      assert.ok(result.stderr.trimEnd().endsWith(ASK_USER), result.stderr);
+      assert.ok(!result.stderr.includes(spelling), result.stderr);
+    }
+  });
+
+  it("commit_asksTheUser_whenShellQuotingSplitsAKnownValueOutsideTheMessage", () => {
+    sandbox.write(join(repo, "conf.py"), `PASS = '${PASSWORD}'\n`);
+    sandbox.git(repo, "add", "conf.py");
+    const tail = TOKEN.slice(4);
+    const result = guard(`git -c http.extraheader='Authorization: Bearer tok-'"${tail}" commit -m 'Add conf'`, repo);
+    assertDenied(result, "F-secrets");
+    assert.ok(result.stderr.trimEnd().endsWith(ASK_USER), result.stderr);
+    assert.ok(!result.stderr.includes(tail), result.stderr);
+  });
+
   it("commit_failsClosedAskingTheUser_whenTheKnownValuesListIsMalformed", () => {
     sandbox.write(join(sandbox.overlay, "git-guard", "known-values.tsv"), "source\tpattern\nbogus\tX\nenv\tACME_API_TOKEN\n");
     const result = guard(`git commit --allow-empty -m 'Fix ${TOKEN}'`, repo);

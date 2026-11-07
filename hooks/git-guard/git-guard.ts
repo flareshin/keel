@@ -24,6 +24,7 @@ import { notebookCellChange } from "./notebook.ts";
 import type { CodeChange } from "./notebook.ts";
 import { currentBranch, findRepoKey, findToplevel, git, gitOutputOrNull, isCommit, isOutsideEveryRepository } from "../lib/hookkit/repo.ts";
 import { RUN_TIME_WORD_RE } from "../lib/hookkit/commands.ts";
+import { parseCommands } from "../lib/hookkit/parser.ts";
 import { ghSubcommandArgv, gitDirectory, gitSubcommandIndex, interpretPush, isConfigRead } from "../lib/hookkit/gitargs.ts";
 import { steps } from "../lib/hookkit/steps.ts";
 import type { Step } from "../lib/hookkit/steps.ts";
@@ -999,10 +1000,17 @@ function failClosedIfGuarded(raw: string, error: unknown): number {
 
 function mayHoldKnownValue(command: string): boolean {
   try {
-    return knownValueHits(() => knownvalues.numberedLines(COMMAND_SHOWN, command)).length > 0;
+    return knownValueHits(() => knownvalues.numberedLines(COMMAND_SHOWN, commandSpellings(command))).length > 0;
   } catch {
     return true;
   }
+}
+
+function commandSpellings(command: string): string {
+  const parsedWords = parseCommands(command).flatMap((parsed) => [
+    ...parsed.argv, ...parsed.assignments.map(([, value]) => value), ...parsed.heredocs,
+  ]);
+  return [command, ...parsedWords].join("\n");
 }
 
 function salvage(raw: string): { session: string | null; command: string | null } {

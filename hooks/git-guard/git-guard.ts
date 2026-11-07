@@ -83,6 +83,8 @@ const PR_TEXT_SUBCOMMANDS: ReadonlySet<string> = new Set(["create", "edit", "mer
 const UNPUSHED = ["--not", "--remotes"];
 const STDIN_PATH = "-";
 const KEEL_CLI_NAMES: ReadonlySet<string> = new Set(["keel", "keel.ts"]);
+const COMMIT_MESSAGE_SHOWN = "commit message";
+const PR_TEXT_SHOWN = "PR text";
 const HOOKED_SUBCOMMANDS: ReadonlySet<string> = new Set(["commit", "merge", "push"]);
 const LIVE_MOVING_SUBCOMMANDS: ReadonlySet<string> = new Set([
   "checkout", "switch", "restore", "reset", "add", "rm", "mv", "commit", "cherry-pick", "revert", "am", "apply",
@@ -126,6 +128,7 @@ interface Violation {
   text: string;
   repo?: string | null;
   kind?: typeof PROCEDURAL_KIND;
+  commandHoldsSecret?: true;
 }
 
 interface CommitOption {
@@ -168,7 +171,7 @@ function main(): number {
 
 function nextStepFor(payload: Payload, violations: readonly Violation[]): string {
   if (violations.every((violation) => violation.ruleId === C_COMMENTS)) return DROP_COMMENTS;
-  if (protocol.toolName(payload) !== "bash") return protocol.ASK_USER;
+  if (protocol.toolName(payload) !== "bash" || violations.some((violation) => violation.commandHoldsSecret)) return protocol.ASK_USER;
   const command = commandOf(protocol.toolInput(payload));
   return protocol.runYourself(`cd ${shlexQuote(protocol.cwdOrProcessDirectory(payload))} && ${command}`);
 }
@@ -562,12 +565,13 @@ function checkGitOrPr(
 function checkPrText(ghArgv: readonly string[], step: Step, callHeredocs: readonly string[]): Violation[] {
   if (ghArgv[1] !== "pr" || ghArgv.length < 3 || !PR_TEXT_SUBCOMMANDS.has(ghArgv[2] ?? "")) return [];
   const args = ghArgv.slice(3);
-  const texts = [...args, ...callHeredocs, ...readMessageFiles(args, PR_FILE_OPTIONS, step)];
-  if (!testCaseFolded(ATTRIBUTION_RE, texts.join("\n"))) return [];
+  const text = [...args, ...callHeredocs, ...readMessageFiles(args, PR_FILE_OPTIONS, step)].join("\n");
+  const violations = commandTextSecretViolations(PR_TEXT_SHOWN, text);
+  if (!testCaseFolded(ATTRIBUTION_RE, text)) return violations;
   return [{
     ruleId: F_ATTRIBUTION,
     text: "AI-tool attribution in a PR title or body, a merge commit message, or text this call writes for them; remove it.",
-  }];
+  }, ...violations];
 }
 
 function checkCommit(
@@ -575,9 +579,11 @@ function checkCommit(
   plainCallText: boolean,
 ): Violation[] {
   const violations: Violation[] = [];
-  if (testCaseFolded(ATTRIBUTION_RE, commitMessageTexts(args, step, callHeredocs).join("\n"))) {
+  const message = commitMessageTexts(args, step, callHeredocs).join("\n");
+  if (testCaseFolded(ATTRIBUTION_RE, message)) {
     violations.push({ ruleId: F_ATTRIBUTION, text: "AI-tool attribution in the commit message; remove it." });
   }
+  violations.push(...commandTextSecretViolations(COMMIT_MESSAGE_SHOWN, message));
   const toplevel = findToplevel(repoDirectory);
   if (toplevel === null) {
     const repoUnknown = !plainCallText || isUnresolved(repoDirectory) || earlierSteps.length > 0;
@@ -828,6 +834,10 @@ function listOrEmpty(value: unknown, field: string): unknown[] {
 
 function noGet(value: unknown): AttributeError {
   return new AttributeError(`'${pythonTypeName(value)}' object has no attribute 'get'`);
+}
+
+function commandTextSecretViolations(shown: string, text: string): Violation[] {
+  return knownValueViolations(() => knownvalues.numberedLines(shown, text)).map((violation) => ({ ...violation, commandHoldsSecret: true }));
 }
 
 function knownValueViolations(readLines: () => Iterable<knownvalues.Line>, repoKey: string | null = null): Violation[] {

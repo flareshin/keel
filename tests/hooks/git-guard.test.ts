@@ -681,6 +681,26 @@ describe("KnownValuesTest", () => {
     assert.deepEqual(assertFired(sandbox, "F-secrets", "deny", "git-guard").map((fire) => fire["kind"]), [undefined]);
   });
 
+  it("commit_denied_whenTheMessageHoldsAKnownValue", () => {
+    const result = guard(`git commit --allow-empty -m 'Rotate ${PASSWORD}'`, repo);
+    assertDenied(result, "F-secrets");
+    assert.ok(result.stderr.includes("holds the value of DB_PASSWORD"), result.stderr);
+    assert.ok(!result.stderr.includes(PASSWORD));
+  });
+
+  it("prText_denied_whenTheBodyOrABodyFileHoldsAKnownValue", () => {
+    const inline = guard(`gh pr create --title t --body "token ${TOKEN}"`, repo);
+    assertDenied(inline, "F-secrets");
+    assert.ok(inline.stderr.includes("holds the value of ACME_API_TOKEN"), inline.stderr);
+    assert.ok(!inline.stderr.includes(TOKEN));
+    const fromFile = guard(`cat > b.md <<'EOF'\nSummary ${PASSWORD}\nEOF\ngh pr create --title t --body-file b.md`, repo);
+    assertDenied(fromFile, "F-secrets");
+  });
+
+  it("prText_passes_whenTheBodyIsClean", () => {
+    assertPassed(guard('gh pr create --title t --body "clean summary"', repo));
+  });
+
   it("commit_passes_whenStagedLinesAreClean", () => {
     sandbox.write(join(repo, "conf.py"), "x = 1\n");
     sandbox.git(repo, "add", "conf.py");

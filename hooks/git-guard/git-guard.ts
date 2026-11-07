@@ -129,6 +129,7 @@ interface Violation {
   text: string;
   repo?: string | null;
   kind?: typeof PROCEDURAL_KIND;
+  commandHoldsSecret?: true;
 }
 
 interface CommitOption {
@@ -171,7 +172,7 @@ function main(): number {
 
 function nextStepFor(payload: Payload, violations: readonly Violation[]): string {
   if (violations.every((violation) => violation.ruleId === C_COMMENTS)) return DROP_COMMENTS;
-  if (protocol.toolName(payload) !== "bash") return protocol.ASK_USER;
+  if (protocol.toolName(payload) !== "bash" || violations.some((violation) => violation.commandHoldsSecret)) return protocol.ASK_USER;
   const command = commandOf(protocol.toolInput(payload));
   if (mayHoldKnownValue(command)) return protocol.ASK_USER;
   return protocol.runYourself(`cd ${shlexQuote(protocol.cwdOrProcessDirectory(payload))} && ${command}`);
@@ -841,7 +842,7 @@ function commandTextSecretViolations(shown: string, text: string): Violation[] {
   const hits = knownValueHits(() => knownvalues.numberedLines(shown, text));
   if (hits.length === 0) return [];
   const sources = [...new Set(hits.map((hit) => `${shown} holds the value of ${hit.known.key} (${hit.known.origin})`))];
-  return [secretsViolation(sources, null)];
+  return [{ ...secretsViolation(sources, null), commandHoldsSecret: true }];
 }
 
 function knownValueViolations(readLines: () => Iterable<knownvalues.Line>, repoKey: string | null = null): Violation[] {

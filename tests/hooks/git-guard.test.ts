@@ -717,6 +717,20 @@ describe("KnownValuesTest", () => {
     assert.ok(!result.stderr.includes(TOKEN), result.stderr);
   });
 
+  it("commandText_asksTheUser_whenShellQuotingSplitsTheKnownValue", () => {
+    const half = PASSWORD.slice(0, PASSWORD.length / 2);
+    const tail = TOKEN.slice(4);
+    for (const command of [
+      `git commit --allow-empty -m 'Rotate ${half}''${half}'`,
+      `gh pr create --title t --body 'token tok-'"${tail}"`,
+    ]) {
+      const result = guard(command, repo);
+      assertDenied(result, "F-secrets");
+      assert.ok(result.stderr.trimEnd().endsWith(ASK_USER), result.stderr);
+      assert.ok(!result.stderr.includes(`${half}''${half}`) && !result.stderr.includes(tail), result.stderr);
+    }
+  });
+
   it("commit_failsClosedAskingTheUser_whenTheKnownValuesListIsMalformed", () => {
     sandbox.write(join(sandbox.overlay, "git-guard", "known-values.tsv"), "source\tpattern\nbogus\tX\nenv\tACME_API_TOKEN\n");
     const result = guard(`git commit --allow-empty -m 'Fix ${TOKEN}'`, repo);

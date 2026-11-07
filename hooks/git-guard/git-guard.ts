@@ -28,7 +28,7 @@ import { hereStrings, parseCommands } from "../lib/hookkit/parser.ts";
 import { ghSubcommandArgv, gitDirectory, gitSubcommandIndex, interpretPush, isConfigRead } from "../lib/hookkit/gitargs.ts";
 import { steps } from "../lib/hookkit/steps.ts";
 import type { Step } from "../lib/hookkit/steps.ts";
-import { expandVariables, resolveDirectory, variableLookup } from "../lib/hookkit/variables.ts";
+import { resolveDirectory } from "../lib/hookkit/variables.ts";
 import { fileWriteOf, operands, writeTargets } from "../lib/hookkit/writes.ts";
 import { TimeoutExpired } from "../../measure/lib/measurekit/timeout.ts";
 import { OSError, run } from "../lib/hookkit/subprocess.ts";
@@ -50,6 +50,7 @@ const LOOSE_DOUBLE_QUOTES = /[\u201C-\u201F]/gu;
 const LOOSE_SPACES = /[\u00A0\u2002-\u200A\u202F\u205F\u3000]/gu;
 const TEE_SHORT_APPEND = /^-[^-]*a/u;
 export const DROP_COMMENTS = "Remove the listed comment lines and resubmit the edit; put the reasoning in the reading guide.";
+export const WRITE_MESSAGE_FILE = "Write the message to a file in a separate call, then pass it with a plain -F <path> (gh: --body-file <path>).";
 const EDIT_TOOLS: ReadonlySet<string> = new Set(["edit", "write", "notebookedit", "multiedit"]);
 const REPO_RULES_HEADER = ["origin_glob", "action", "pattern", "rule_id", "message"] as const;
 const GATED_REPOS_HEADER = ["origin", "gate", "integration_base", "risk_rules", "tests"] as const;
@@ -61,8 +62,6 @@ export const BOUNDARY_TIMEOUT_SECONDS = 8;
 const BOUNDARY_EXIT_CLEAN = 0;
 const BOUNDARY_EXIT_HITS = 1;
 const COMMIT_MESSAGE_OPTIONS: ReadonlySet<string> = new Set(["-m", "--message"]);
-const LINE_CONTINUATION = "\\\n";
-const QUOTE_CHARS_RE = /['"]/g;
 const COMMIT_FILE_OPTIONS: ReadonlySet<string> = new Set(["-F", "--file"]);
 const COMMIT_STAGING_LONG_OPTIONS: ReadonlySet<string> = new Set(["--all"]);
 const COMMIT_LONG_VALUE_OPTIONS: ReadonlySet<string> = new Set([
@@ -87,12 +86,18 @@ const COMMIT_NO_VERIFY_SHORT_FLAG = "n";
 const STAGING_SUBCOMMANDS: ReadonlySet<string> = new Set(["add", "stage"]);
 const PLAIN_CALL_TEXT_RE = /^(?:[A-Za-z0-9 \t\n'"_.,:;=@%+\-\/]|&&)*$/;
 const PR_BODY_FILE_LONG_OPTION = "--body-file";
+const PR_BODY_FILE_OPTIONS: ReadonlySet<string> = new Set(["-F", PR_BODY_FILE_LONG_OPTION]);
 const PR_BODY_FILE_SHORT_FLAG = "F";
+const SHORT_FLAG_CLUSTER_RE = /^-[^-]./u;
+const UNREAD_WORD_RE = /[$`]|\\\n/u;
 const PR_TEXT_SUBCOMMANDS: ReadonlySet<string> = new Set(["create", "edit", "merge"]);
 const UNPUSHED = ["--not", "--remotes"];
 const STDIN_PATH = "-";
 const KEEL_CLI_NAMES: ReadonlySet<string> = new Set(["keel", "keel.ts"]);
 const COMMIT_MESSAGE_SHOWN = "commit message";
+const UNREAD_MESSAGE_TEXT = "Known values are loaded, and this commit message or PR text reaches git or gh in a form the hook does not read: " +
+  "stdin, a here-string or pipe, a $ or backtick expansion, a line continuation inside quotes, an abbreviated option, a short-flag cluster, " +
+  "or a file that does not exist yet.";
 const PR_TEXT_SHOWN = "PR text";
 const COMMAND_SHOWN = "command";
 const HOOKED_SUBCOMMANDS: ReadonlySet<string> = new Set(["commit", "merge", "push"]);
@@ -148,6 +153,17 @@ interface CommitOption {
   attachedValue: string | null;
 }
 
+interface MessageSource {
+  words: string[];
+  files: string[];
+  plain: boolean;
+}
+
+interface ReadMessage {
+  texts: string[];
+  plain: boolean;
+}
+
 function noCommitOption(): CommitOption {
   return { stages: false, interactive: false, skipsHooks: false, valueName: null, attachedValue: null };
 }
@@ -182,6 +198,7 @@ function nextStepFor(payload: Payload, violations: readonly Violation[]): string
   if (violations.every((violation) => violation.ruleId === C_COMMENTS)) return DROP_COMMENTS;
   if (protocol.toolName(payload) !== "bash") return protocol.ASK_USER;
   const command = commandOf(protocol.toolInput(payload));
+  if (violations.every((violation) => violation.text === UNREAD_MESSAGE_TEXT)) return WRITE_MESSAGE_FILE;
   if (mayHoldKnownValue(command)) return protocol.ASK_USER;
   return protocol.runYourself(`cd ${shlexQuote(protocol.cwdOrProcessDirectory(payload))} && ${command}`);
 }
@@ -348,15 +365,13 @@ function editedText(toolArgs: Payload, edits: readonly unknown[]): string {
 
 function checkBash(command: string, cwd: string): Violation[] {
   const call = steps(command, cwd);
-  const callBodies = call.flatMap((step) => [...step.heredocs, ...hereStrings(step.command)]);
+  const callHeredocs = call.flatMap((step) => step.heredocs);
   const violations = [
     ...checkKeelCommands(call), ...checkProtectedWrites(call), ...checkLiveCheckouts(call), ...checkHookSkips(call),
     ...checkHookDisablingWrites(call), ...checkCommentWrites(call),
   ];
   const plainCallText = PLAIN_CALL_TEXT_RE.test(command);
-  call.forEach((step, index) => {
-    violations.push(...checkGitOrPr(step, call, index, () => [...callBodies, ...stdinTexts(call, index)], plainCallText));
-  });
+  call.forEach((step, index) => violations.push(...checkGitOrPr(step, call, index, callHeredocs, plainCallText)));
   return unique(violations);
 }
 
@@ -380,24 +395,6 @@ function stdinBody(call: readonly Step[], index: number): string | null {
   const previous = call[index - 1];
   const pipedFromPrevious = previous !== undefined && previous.command.pipesToNext && !sendsStdoutAway(previous);
   return pipedFromPrevious ? stdinBody(call, index - 1) : null;
-}
-
-function stdinTexts(call: readonly Step[], index: number): string[] {
-  const step = call[index];
-  const texts = step === undefined ? [] : redirectedFileTexts(step);
-  let previous = index - 1;
-  while (previous >= 0 && call[previous]?.command.pipesToNext) {
-    const piped = call[previous] as Step;
-    const words = piped.argv.slice(1);
-    texts.push(...words, ...redirectedFileTexts(piped));
-    if (piped.name === "cat") texts.push(...words.flatMap((word) => messageSourceTexts(word, piped)));
-    previous -= 1;
-  }
-  return texts;
-}
-
-function redirectedFileTexts(step: Step): string[] {
-  return step.command.redirects.filter((redirect) => redirect.op === "<").flatMap((redirect) => messageSourceTexts(redirect.target, step));
 }
 
 function sendsStdoutAway(step: Step): boolean {
@@ -596,26 +593,26 @@ function gitHookSkip(step: Step, index: number): string | null {
 }
 
 function checkGitOrPr(
-  step: Step, call: readonly Step[], index: number, readMessageInputs: () => readonly string[], plainCallText: boolean,
+  step: Step, call: readonly Step[], index: number, callHeredocs: readonly string[], plainCallText: boolean,
 ): Violation[] {
-  if (step.name === "gh") return checkPrText(ghSubcommandArgv(step.argv), step, readMessageInputs);
+  if (step.name === "gh") return checkPrText(ghSubcommandArgv(step.argv), step, callHeredocs);
   const argv = step.argv;
   const position = gitSubcommandIndex(argv);
   if (position === null) return [];
   const repoDirectory = gitDirectory(argv, step.directory, step.expansion);
   if (argv[position] === "commit") {
-    return checkCommit(argv.slice(position + 1), step, repoDirectory, call.slice(0, index), readMessageInputs, plainCallText);
+    return checkCommit(argv.slice(position + 1), step, repoDirectory, call.slice(0, index), callHeredocs, plainCallText);
   }
   if (argv[position] === "push") return checkPush(argv.slice(position + 1), repoDirectory);
   return [];
 }
 
-function checkPrText(ghArgv: readonly string[], step: Step, readMessageInputs: () => readonly string[]): Violation[] {
+function checkPrText(ghArgv: readonly string[], step: Step, callHeredocs: readonly string[]): Violation[] {
   const args = prTextArgs(ghArgv);
   if (args === null) return [];
-  const bodyFiles = prBodyFilePaths(args).flatMap((path) => messageSourceTexts(path, step));
-  const text = messageSpellings([...args, ...readMessageInputs(), ...bodyFiles].join("\n"), step);
-  const violations = commandTextSecretViolations(PR_TEXT_SHOWN, text);
+  const message = readMessage(prMessageSource(args), step, step.directory);
+  const text = [...callHeredocs, ...message.texts].join("\n");
+  const violations = [...commandTextSecretViolations(PR_TEXT_SHOWN, text), ...unreadMessageViolations(message)];
   if (!testCaseFolded(ATTRIBUTION_RE, text)) return violations;
   return [{
     ruleId: F_ATTRIBUTION,
@@ -624,15 +621,16 @@ function checkPrText(ghArgv: readonly string[], step: Step, readMessageInputs: (
 }
 
 function checkCommit(
-  args: readonly string[], step: Step, repoDirectory: string, earlierSteps: readonly Step[], readMessageInputs: () => readonly string[],
+  args: readonly string[], step: Step, repoDirectory: string, earlierSteps: readonly Step[], callHeredocs: readonly string[],
   plainCallText: boolean,
 ): Violation[] {
   const violations: Violation[] = [];
-  const message = messageSpellings(commitMessageTexts(args, step, repoDirectory, readMessageInputs()).join("\n"), step);
-  if (testCaseFolded(ATTRIBUTION_RE, message)) {
+  const message = readMessage(commitMessageSource(args), step, repoDirectory);
+  const text = [...callHeredocs, ...message.texts].join("\n");
+  if (testCaseFolded(ATTRIBUTION_RE, text)) {
     violations.push({ ruleId: F_ATTRIBUTION, text: "AI-tool attribution in the commit message; remove it." });
   }
-  violations.push(...commandTextSecretViolations(COMMIT_MESSAGE_SHOWN, message));
+  violations.push(...commandTextSecretViolations(COMMIT_MESSAGE_SHOWN, text), ...unreadMessageViolations(message));
   const toplevel = findToplevel(repoDirectory);
   if (toplevel === null) {
     const repoUnknown = !plainCallText || isUnresolved(repoDirectory) || earlierSteps.length > 0;
@@ -898,8 +896,12 @@ function knownValueViolations(readLines: () => Iterable<knownvalues.Line>, repoK
 }
 
 function knownValueHits(readLines: () => Iterable<knownvalues.Line>): knownvalues.Hit[] {
-  const values = knownvalues.load(overlayPath(...KNOWN_VALUES_FILE));
+  const values = loadKnownValues();
   return values.length > 0 ? knownvalues.find(readLines(), values) : [];
+}
+
+function loadKnownValues(): knownvalues.KnownValue[] {
+  return knownvalues.load(overlayPath(...KNOWN_VALUES_FILE));
 }
 
 function secretsViolation(sources: readonly string[], repoKey: string | null): Violation {
@@ -1046,7 +1048,7 @@ function failClosedIfGuarded(raw: string, error: unknown): number {
 
 function mayHoldKnownValue(command: string): boolean {
   try {
-    if (knownvalues.load(overlayPath(...KNOWN_VALUES_FILE)).length === 0) return false;
+    if (loadKnownValues().length === 0) return false;
     if (!PLAIN_CALL_TEXT_RE.test(command) || namesMessageFile(command)) return true;
     return knownValueHits(() => knownvalues.numberedLines(COMMAND_SHOWN, commandSpellings(command))).length > 0;
   } catch {
@@ -1055,24 +1057,25 @@ function mayHoldKnownValue(command: string): boolean {
 }
 
 function namesMessageFile(command: string): boolean {
-  return parseCommands(command).some((parsed) => parsed.argv.some((_, start) => messageFilePaths(parsed.argv.slice(start)).length > 0));
+  return parseCommands(command).some((parsed) => parsed.argv.some((_, start) => {
+    const source = messageSourceOf(parsed.argv.slice(start));
+    return source !== null && (source.files.length > 0 || !source.plain);
+  }));
 }
 
-function messageFilePaths(argv: readonly string[]): string[] {
-  if (basename(argv[0] ?? "") === "gh") return prBodyFilePaths(prTextArgs(ghSubcommandArgv(argv)) ?? []);
+function messageSourceOf(argv: readonly string[]): MessageSource | null {
+  if (basename(argv[0] ?? "") === "gh") {
+    const args = prTextArgs(ghSubcommandArgv(argv));
+    return args === null ? null : prMessageSource(args);
+  }
   const position = gitSubcommandIndex(argv);
-  if (position === null || argv[position] !== "commit") return [];
-  return commitOptionValues(argv.slice(position + 1)).filter(([name]) => COMMIT_FILE_OPTIONS.has(name)).map(([, value]) => value);
+  if (position === null || argv[position] !== "commit") return null;
+  return commitMessageSource(argv.slice(position + 1));
 }
 
 function commandSpellings(command: string): string {
-  const parsedWords = parseCommands(command).flatMap((parsed) => [
-    ...parsed.argv, ...parsed.assignments.map(([, value]) => value), ...parsed.heredocs,
-    ...parsed.redirects.map((redirect) => redirect.target),
-  ]);
-  const spelled = [command, ...parsedWords].join("\n");
-  const joined = withLineContinuationsJoined(spelled);
-  return [spelled, joined, withoutQuotes(joined)].join("\n");
+  const parsedWords = parseCommands(command).flatMap((parsed) => [...parsed.argv, ...parsed.assignments.map(([, value]) => value)]);
+  return [command, ...parsedWords].join("\n");
 }
 
 function salvage(raw: string): { session: string | null; command: string | null } {
@@ -1089,44 +1092,57 @@ function salvage(raw: string): { session: string | null; command: string | null 
   return { session: getField(payload, "session_id") as string | null, command: isNonEmptyString(command) ? command : null };
 }
 
-function commitMessageTexts(args: readonly string[], step: Step, repoDirectory: string, messageInputs: readonly string[]): string[] {
-  const texts = [...messageInputs];
-  for (const [name, value] of commitOptionValues(args)) {
-    if (COMMIT_MESSAGE_OPTIONS.has(name)) texts.push(value);
-    else if (COMMIT_FILE_OPTIONS.has(name)) texts.push(...messageSourceTexts(value, step, repoDirectory));
-  }
-  return texts;
+function unreadMessageViolations(message: ReadMessage): Violation[] {
+  if (message.plain || loadKnownValues().length === 0) return [];
+  return [{ ruleId: F_SECRETS, kind: PROCEDURAL_KIND, text: UNREAD_MESSAGE_TEXT }];
 }
 
-function messageSpellings(text: string, step: Step): string {
-  const joined = withLineContinuationsJoined(text);
-  const expanded = expandVariables(joined, variableLookup(step.directory, step.expansion));
-  return [...new Set([text, joined, expanded, withoutQuotes(expanded)])].join("\n");
+function readMessage(source: MessageSource, step: Step, fileDirectory: string): ReadMessage {
+  const fileTexts = source.files.map((path) => messageFileText(path, step, fileDirectory));
+  const readTexts = fileTexts.filter((text): text is string => text !== null);
+  return { texts: [...source.words, ...readTexts], plain: source.plain && readTexts.length === fileTexts.length };
 }
 
-function withLineContinuationsJoined(text: string): string {
-  return text.replaceAll(LINE_CONTINUATION, "");
+function messageFileText(path: string, step: Step, fileDirectory: string): string | null {
+  if (path === STDIN_PATH) return null;
+  const resolved = resolveDirectory(fileDirectory, path, step.expansion);
+  return isFile(resolved) ? withLfLineEnds(readFileSync(resolved, "utf8")) : null;
 }
 
-function withoutQuotes(text: string): string {
-  return text.replace(QUOTE_CHARS_RE, "");
+function withLfLineEnds(text: string): string {
+  return text.replace(/\r\n?/g, "\n");
 }
 
-function commitOptionValues(args: readonly string[]): Array<[name: string, value: string]> {
-  const pairs: Array<[string, string]> = [];
+function commitMessageSource(args: readonly string[]): MessageSource {
+  const source: MessageSource = { words: [], files: [], plain: true };
   let index = 0;
   while (index < args.length && args[index] !== "--") {
     const arg = args[index] ?? "";
     const option = arg.startsWith("-") && arg !== STDIN_PATH ? readCommitOption(arg) : noCommitOption();
-    if (valueFollows(option) && index + 1 < args.length) {
-      pairs.push([option.valueName ?? "", args[index + 1] ?? ""]);
-      index += 1;
-    } else if (option.attachedValue !== null) {
-      pairs.push([option.valueName ?? "", option.attachedValue]);
-    }
-    index += 1;
+    const value = valueFollows(option) ? args[index + 1] : option.attachedValue;
+    if (abbreviatesMessageOption(arg)) source.plain = false;
+    if (value !== undefined && value !== null) addCommitMessageValue(source, arg, option.valueName, value);
+    index += valueFollows(option) ? 2 : 1;
   }
-  return pairs;
+  return source;
+}
+
+function addCommitMessageValue(source: MessageSource, arg: string, optionName: string | null, value: string): void {
+  if (optionName === null) return;
+  if (COMMIT_MESSAGE_OPTIONS.has(optionName)) source.words.push(value);
+  else if (COMMIT_FILE_OPTIONS.has(optionName)) source.files.push(value);
+  else return;
+  const spelledPlainly = arg === optionName || arg.startsWith("--");
+  if (!spelledPlainly || UNREAD_WORD_RE.test(value)) source.plain = false;
+}
+
+function abbreviatesMessageOption(arg: string): boolean {
+  const name = partition(arg, "=")[0];
+  return name.startsWith("--") && !COMMIT_LONG_VALUE_OPTIONS.has(name) && abbreviatedMessageSourceOption(name) !== null;
+}
+
+function abbreviatedMessageSourceOption(name: string): string | null {
+  return COMMIT_MESSAGE_SOURCE_LONG_OPTIONS.find((option) => option.startsWith(name)) ?? null;
 }
 
 function prTextArgs(ghArgv: readonly string[]): string[] | null {
@@ -1134,35 +1150,14 @@ function prTextArgs(ghArgv: readonly string[]): string[] | null {
   return ghArgv.slice(3);
 }
 
-function prBodyFilePaths(args: readonly string[]): string[] {
-  const paths: string[] = [];
+function prMessageSource(args: readonly string[]): MessageSource {
+  const source: MessageSource = { words: [...args], files: [], plain: !args.some((arg) => UNREAD_WORD_RE.test(arg)) };
   for (const [index, arg] of args.entries()) {
-    if (arg === PR_BODY_FILE_LONG_OPTION && index + 1 < args.length) paths.push(args[index + 1] ?? "");
-    else if (arg.startsWith(PR_BODY_FILE_LONG_OPTION + "=")) paths.push(partition(arg, "=")[2]);
-    else if (arg.startsWith("-") && !arg.startsWith("--")) paths.push(...shortClusterBodyFile(arg, args[index + 1]));
+    if (PR_BODY_FILE_OPTIONS.has(arg) && index + 1 < args.length) source.files.push(args[index + 1] ?? "");
+    else if (arg.startsWith(PR_BODY_FILE_LONG_OPTION + "=")) source.files.push(partition(arg, "=")[2]);
+    else if (SHORT_FLAG_CLUSTER_RE.test(arg) && arg.includes(PR_BODY_FILE_SHORT_FLAG)) source.plain = false;
   }
-  return paths;
-}
-
-function shortClusterBodyFile(cluster: string, nextArg: string | undefined): string[] {
-  const position = cluster.indexOf(PR_BODY_FILE_SHORT_FLAG, 1);
-  if (position < 0) return [];
-  const attached = cluster.slice(position + 1).replace(/^=/, "");
-  return [attached, nextArg ?? ""].filter((path) => path !== "");
-}
-
-function messageSourceTexts(path: string, step: Step, relativeTo: string = step.directory): string[] {
-  const expanded = expandVariables(path, variableLookup(step.directory, step.expansion));
-  const resolved = resolveDirectory(relativeTo, expanded, step.expansion);
-  return isFile(resolved) ? [withLfLineEnds(readFileSync(resolved, "utf8"))] : [];
-}
-
-function withLfLineEnds(text: string): string {
-  return text.replace(/\r\n?/g, "\n");
-}
-
-function abbreviatedMessageSourceOption(name: string): string | null {
-  return COMMIT_MESSAGE_SOURCE_LONG_OPTIONS.find((option) => option.startsWith(name)) ?? null;
+  return source;
 }
 
 function readCommitOption(arg: string): CommitOption {

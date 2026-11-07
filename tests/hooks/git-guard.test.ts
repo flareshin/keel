@@ -7,7 +7,7 @@ import {
   assertBulletIdsSeeded, assertFired, bash, GIT_GUARD, HookSandbox, KEEL_HOME, preToolUse, withEnv,
 } from "./helpers.ts";
 import type { HookResult } from "./helpers.ts";
-import { BOUNDARY_TIMEOUT_SECONDS, DROP_COMMENTS, GuardError, scanStagedSecrets } from "../../hooks/git-guard/git-guard.ts";
+import { BOUNDARY_TIMEOUT_SECONDS, DROP_COMMENTS, GuardError, scanStagedSecrets, WRITE_MESSAGE_FILE } from "../../hooks/git-guard/git-guard.ts";
 import { HOOK_GIT_TIMEOUT_SECONDS } from "../../hooks/lib/hookkit/repo.ts";
 import { MAX_JSON_DEPTH } from "../../measure/lib/measurekit/json.ts";
 
@@ -636,6 +636,14 @@ describe("KnownValuesTest", () => {
     repo = sandbox.makeRepo("example", "app");
   });
 
+  function assertMessageFormDenied(command: string, secret: string = TOKEN): void {
+    const result = guard(command, repo);
+    assert.equal(result.code, 2, result.stderr);
+    assert.ok(result.stderr.includes("[F-secrets]"), result.stderr);
+    assert.equal(lastLine(result.stderr), WRITE_MESSAGE_FILE, result.stderr);
+    assert.ok(!result.stderr.includes(secret), result.stderr);
+  }
+
   it("write_deniedWithFSecrets_whenContentHoldsAConfigPassword", () => {
     const result = edit("Write", { file_path: join(repo, "report.md"), content: `Rotate it:\npassword was ${PASSWORD}\n` });
     assertDenied(result, "F-secrets");
@@ -699,13 +707,18 @@ describe("KnownValuesTest", () => {
     assert.ok(fromFile.stderr.includes("PR text holds the value of DB_PASSWORD"), fromFile.stderr);
     assert.ok(fromFile.stderr.trimEnd().endsWith(ASK_USER), fromFile.stderr);
     assert.ok(!fromFile.stderr.includes(PASSWORD));
-    for (const attached of [
-      "gh pr create --title t -Fb.md", "gh pr create --title t -F=b.md", "gh pr create --title t --body-file=b.md",
-      "gh pr create -t t -dF b.md", "gh pr create -t t -dFb.md", "gh pr merge 1 -mF b.md", "gh pr merge 1 -rF b.md",
+    const longAttached = guard("gh pr create --title t --body-file=b.md", repo);
+    assertDenied(longAttached, "F-secrets");
+    assert.ok(longAttached.stderr.includes("PR text holds the value of DB_PASSWORD"), longAttached.stderr);
+  });
+
+  it("prText_deniedAsAMessageForm_whenTheBodyFileFlagSitsInAShortFlagCluster", () => {
+    sandbox.write(join(repo, "b.md"), `Summary ${PASSWORD}\n`);
+    for (const command of [
+      "gh pr create --title t -Fb.md", "gh pr create --title t -F=b.md", "gh pr create -t t -dF b.md",
+      "gh pr create -t t -dFb.md", "gh pr merge 1 -mF b.md", "gh pr merge 1 -rF b.md",
     ]) {
-      const result = guard(attached, repo);
-      assertDenied(result, "F-secrets");
-      assert.ok(result.stderr.includes("PR text holds the value of DB_PASSWORD"), result.stderr);
+      assertMessageFormDenied(command, PASSWORD);
     }
   });
 
@@ -720,20 +733,39 @@ describe("KnownValuesTest", () => {
     }
   });
 
-  it("commandText_denied_whenStdinReadsTheMessageFromAFileHoldingAKnownValue", () => {
+  it("commandText_deniedAsAMessageForm_whenStdinCarriesTheMessage", () => {
     sandbox.write(join(repo, "msg.txt"), `Rotate ${TOKEN}\n`);
-    for (const [command, shown] of [
-      ["cat msg.txt | git commit --allow-empty -F -", "commit message"],
-      ["git commit --allow-empty -F - < msg.txt", "commit message"],
-      ["cat msg.txt | gh pr create --title t --body-file -", "PR text"],
-      ["gh pr create --title t --body-file - < msg.txt", "PR text"],
-      ["cat < msg.txt | git commit --allow-empty -F -", "commit message"],
-      ["cat msg.txt | cat | git commit --allow-empty -F -", "commit message"],
-    ] as const) {
-      const result = guard(command, repo);
-      assertDenied(result, "F-secrets");
-      assert.ok(result.stderr.includes(`${shown} holds the value of ACME_API_TOKEN`), result.stderr);
-      assert.ok(!result.stderr.includes(TOKEN), result.stderr);
+    for (const command of [
+      "cat msg.txt | git commit --allow-empty -F -", "git commit --allow-empty -F - < msg.txt",
+      "cat msg.txt | gh pr create --title t --body-file -", "gh pr create --title t --body-file - < msg.txt",
+      "cat < msg.txt | git commit --allow-empty -F -", "cat msg.txt | cat | git commit --allow-empty -F -",
+      `git commit --allow-empty -F - <<< 'Rotate ${TOKEN}'`, `echo 'Rotate ${TOKEN}' | git commit --allow-empty -F -`,
+      `gh pr create --title t --body-file - <<< 'token ${TOKEN}'`, `printf 'token ${TOKEN}' | gh pr create --title t --body-file=-`,
+      `git commit --allow-empty -F - <<E\nRotate tok-\\\n${TOKEN.slice(4)}\nE`, "git commit --allow-empty -F /dev/stdin < msg.txt",
+    ]) {
+      assertMessageFormDenied(command);
+    }
+  });
+
+  it("commit_deniedAsAMessageForm_evenWhenTheMessageIsClean", () => {
+    for (const command of [
+      "git commit --allow-empty -F - <<< 'Fix parser'", "cat > m.txt <<'EOF'\nFix parser\nEOF\ngit commit --allow-empty -F m.txt",
+      "git commit --allow-empty -F missing.txt", `git commit --allow-empty -m "$(cat <<'EOF'\nFix parser\nEOF\n)"`,
+      "git commit --allow-empty -m \"`echo Fix`\"", "git commit --allow-empty -sm 'Fix parser'", "git commit --allow-empty -mFix",
+      'gh pr create --title t --body "$B"', "gh pr create --title t --body-file missing.md",
+    ]) {
+      assertMessageFormDenied(command);
+    }
+  });
+
+  it("messageForms_pass_whenPlainWordsOrAReadableFileCarryACleanMessage", () => {
+    sandbox.write(join(repo, "msg.txt"), "Fix parser\n");
+    for (const command of [
+      "git commit --allow-empty -m 'Fix parser' -m Body", "git commit --allow-empty --message='Fix parser'",
+      "git commit --allow-empty -F msg.txt", "git commit --allow-empty --file msg.txt", "git commit --allow-empty --file=msg.txt",
+      "gh pr create --title t --body-file msg.txt", "gh pr merge 1 --squash -F msg.txt", "gh pr edit 1 --body 'Fix parser'",
+    ]) {
+      assertPassed(guard(command, repo));
     }
   });
 
@@ -745,54 +777,31 @@ describe("KnownValuesTest", () => {
     assert.ok(!result.stderr.includes(TOKEN), result.stderr);
   });
 
-  it("commit_denied_whenGitDashCNamesTheMessageFileThroughTheShellsPwd", () => {
+  it("commit_deniedAsAMessageForm_whenTheMessageFilePathExpandsAVariable", () => {
     sandbox.write(join(repo, "msg.txt"), `Rotate ${TOKEN}\n`);
     mkdirSync(join(repo, "sub"), { recursive: true });
-    const result = guard('git -C sub commit --allow-empty -F "$PWD/msg.txt"', repo);
-    assertDenied(result, "F-secrets");
-    assert.ok(result.stderr.includes("commit message holds the value of ACME_API_TOKEN"), result.stderr);
+    assertMessageFormDenied('git -C sub commit --allow-empty -F "$PWD/msg.txt"');
   });
 
   it("commandText_denied_whenQuotingSplitsTheKnownValueInsideADefaultWord", () => {
     const tail = TOKEN.slice(4);
-    const inMessage = guard(`git commit --allow-empty -m \${X:-'tok-'"${tail}"}`, repo);
-    assertDenied(inMessage, "F-secrets");
-    assert.ok(inMessage.stderr.includes("commit message holds the value of ACME_API_TOKEN"), inMessage.stderr);
+    assertMessageFormDenied(`git commit --allow-empty -m \${X:-'tok-'"${tail}"}`, tail);
     const elsewhere = guard(`git -c x=\${X:-'tok-'"${tail}"} commit --no-verify --allow-empty -m ok`, repo);
     assert.equal(elsewhere.code, 2, elsewhere.stderr);
     assert.ok(elsewhere.stderr.trimEnd().endsWith(ASK_USER), elsewhere.stderr);
     assert.ok(!elsewhere.stderr.includes(tail), elsewhere.stderr);
   });
 
-  it("commandText_denied_whenAVariableGivesTheMessageAKnownValue", () => {
-    for (const [command, shown] of [
-      [`T=${TOKEN}; git commit --allow-empty -m "$T"`, "commit message"],
-      ['git commit --allow-empty -m "rotate $ACME_API_TOKEN"', "commit message"],
-      [`T=${TOKEN}; gh pr create --title t --body "\${T}"`, "PR text"],
-    ] as const) {
-      const result = guard(command, repo);
-      assertDenied(result, "F-secrets");
-      assert.ok(result.stderr.includes(`${shown} holds the value of ACME_API_TOKEN`), result.stderr);
-      assert.ok(!result.stderr.includes(TOKEN), result.stderr);
+  it("commandText_deniedAsAMessageForm_whenAVariableGivesTheMessage", () => {
+    for (const command of [
+      `T=${TOKEN}; git commit --allow-empty -m "$T"`, 'git commit --allow-empty -m "rotate $ACME_API_TOKEN"',
+      `T=${TOKEN}; gh pr create --title t --body "\${T}"`,
+    ]) {
+      assertMessageFormDenied(command);
     }
   });
 
-  it("commandText_denied_whenStdinGivesTheMessageAKnownValue", () => {
-    for (const [command, shown] of [
-      [`git commit --allow-empty -F - <<< 'Rotate ${TOKEN}'`, "commit message"],
-      [`echo 'Rotate ${TOKEN}' | git commit --allow-empty -F -`, "commit message"],
-      [`gh pr create --title t --body-file - <<< 'token ${TOKEN}'`, "PR text"],
-      [`printf 'token ${TOKEN}' | gh pr create --title t --body-file=-`, "PR text"],
-    ] as const) {
-      const result = guard(command, repo);
-      assertDenied(result, "F-secrets");
-      assert.ok(result.stderr.includes(`${shown} holds the value of ACME_API_TOKEN`), result.stderr);
-      assert.ok(result.stderr.trimEnd().endsWith(ASK_USER), result.stderr);
-      assert.ok(!result.stderr.includes(TOKEN), result.stderr);
-    }
-  });
-
-  it("commit_denied_whenAnAbbreviatedLongOptionCarriesTheKnownValue", () => {
+  it("commit_deniedAsAMessageForm_whenAnAbbreviatedLongOptionCarriesTheMessage", () => {
     sandbox.write(join(repo, "msg.txt"), `Rotate ${PASSWORD}\n`);
     for (const command of [
       `git commit --allow-empty --mess='Rotate ${PASSWORD}'`, `git commit --allow-empty --mes 'Rotate ${PASSWORD}'`,
@@ -801,7 +810,11 @@ describe("KnownValuesTest", () => {
       const result = guard(command, repo);
       assertDenied(result, "F-secrets");
       assert.ok(result.stderr.includes("commit message holds the value of DB_PASSWORD"), result.stderr);
+      assert.ok(result.stderr.includes("in a form the hook does not read"), result.stderr);
+      assert.ok(result.stderr.trimEnd().endsWith(ASK_USER), result.stderr);
+      assert.ok(!result.stderr.includes(PASSWORD), result.stderr);
     }
+    assertMessageFormDenied("git commit --allow-empty --mes ok");
   });
 
   it("commit_denied_whenTheMessageFileHoldsAKnownValue", () => {
@@ -848,18 +861,10 @@ describe("KnownValuesTest", () => {
     }
   });
 
-  it("commandText_denied_whenALineContinuationSplitsTheKnownValueInTheMessage", () => {
+  it("commandText_deniedAsAMessageForm_whenALineContinuationSplitsTheKnownValueInTheMessage", () => {
     const tail = TOKEN.slice(4);
-    for (const [command, shown] of [
-      [`git commit --allow-empty -m "Rotate tok-\\\n${tail}"`, "commit message"],
-      [`git commit --allow-empty -F - <<E\nRotate tok-\\\n${tail}\nE`, "commit message"],
-      [`gh pr create --title t --body "tok-\\\n${tail}"`, "PR text"],
-    ] as const) {
-      const result = guard(command, repo);
-      assertDenied(result, "F-secrets");
-      assert.ok(result.stderr.includes(`${shown} holds the value of ACME_API_TOKEN`), result.stderr);
-      assert.ok(result.stderr.trimEnd().endsWith(ASK_USER), result.stderr);
-      assert.ok(!result.stderr.includes(tail), result.stderr);
+    for (const command of [`git commit --allow-empty -m "Rotate tok-\\\n${tail}"`, `gh pr create --title t --body "tok-\\\n${tail}"`]) {
+      assertMessageFormDenied(command, tail);
     }
   });
 
@@ -895,6 +900,11 @@ describe("KnownValuesTest", () => {
       assert.equal(result.code, 2, result.stderr);
       assert.ok(result.stderr.trimEnd().endsWith(ASK_USER), result.stderr);
     }
+    for (const command of ["git commit --no-verify --allow-empty -am ok", "git commit --no-verify --allow-empty --mes ok"]) {
+      const result = guard(command, repo);
+      assert.equal(result.code, 2, result.stderr);
+      assert.ok(result.stderr.trimEnd().endsWith(ASK_USER), result.stderr);
+    }
     const plain = guard("git commit --no-verify --allow-empty -m ok", repo);
     assert.equal(plain.code, 2, plain.stderr);
     assert.ok(plain.stderr.includes(RUN_YOURSELF), plain.stderr);
@@ -905,11 +915,16 @@ describe("KnownValuesTest", () => {
     sandbox.write(join(repo, "msg.txt"), `Rotate ${TOKEN}\n`);
     for (const command of [
       "git commit --allow-empty -F msg.txt", "git commit --allow-empty --file=msg.txt", "gh pr create --title t --body-file msg.txt",
-      "git commit --allow-empty -aF msg.txt", "git commit --allow-empty '-F' msg.txt", "gh pr create -t t -dF msg.txt",
+      "git commit --allow-empty '-F' msg.txt",
     ]) {
       const result = guard(command, repo);
       assert.equal(result.code, 2, result.stderr);
       assert.ok(result.stderr.trimEnd().endsWith(ASK_USER), result.stderr);
+    }
+    for (const command of ["git commit --allow-empty -aF msg.txt", "gh pr create -t t -dF msg.txt"]) {
+      const result = guard(command, repo);
+      assert.equal(result.code, 2, result.stderr);
+      assert.ok(!result.stderr.includes(RUN_YOURSELF) && !result.stderr.includes(TOKEN), result.stderr);
     }
   });
 
@@ -1059,6 +1074,17 @@ describe("AttributionTest", () => {
 
   it("commit_passes_whenMessageIsClean", () => {
     assertPassed(guard('git commit -m "Fix parser edge case"', repo));
+  });
+
+  it("messageForms_passAsBefore_whenNoKnownValuesAreLoaded", () => {
+    sandbox.write(join(repo, "b.md"), "Summary\n");
+    for (const command of [
+      "echo 'Fix parser' | git commit --allow-empty -F -", 'git commit --allow-empty -m "$MSG"',
+      "git commit --allow-empty --mess='Fix parser'", "git commit --allow-empty --mes 'Fix parser'", "gh pr create -t t -dF b.md",
+      "git commit --allow-empty -F missing.txt",
+    ]) {
+      assertPassed(guard(command, repo));
+    }
   });
 
   it("grep_passes_whenSearchingForTrailerText", () => {

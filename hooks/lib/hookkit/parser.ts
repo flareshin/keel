@@ -47,8 +47,11 @@ function codeStrings(commands: readonly SimpleCommand[], index: number): string[
   }
   const runsScriptFile = args.some((arg) => !arg.startsWith("-"));
   if (runsScriptFile) return [];
-  const hereStrings = command.redirects.filter((redirect) => redirect.op === "<<<").map((redirect) => redirect.target);
-  return [...command.heredocs, ...hereStrings, ...heredocsPipedInto(commands, index)];
+  return [...command.heredocs, ...hereStrings(command), ...heredocsPipedInto(commands, index)];
+}
+
+export function hereStrings(command: SimpleCommand): string[] {
+  return command.redirects.filter((redirect) => redirect.op === "<<<").map((redirect) => redirect.target);
 }
 
 function heredocsPipedInto(commands: readonly SimpleCommand[], index: number): string[] {

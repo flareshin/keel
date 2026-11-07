@@ -24,7 +24,7 @@ import { notebookCellChange } from "./notebook.ts";
 import type { CodeChange } from "./notebook.ts";
 import { currentBranch, findRepoKey, findToplevel, git, gitOutputOrNull, isCommit, isOutsideEveryRepository } from "../lib/hookkit/repo.ts";
 import { RUN_TIME_WORD_RE } from "../lib/hookkit/commands.ts";
-import { parseCommands } from "../lib/hookkit/parser.ts";
+import { hereStrings, parseCommands } from "../lib/hookkit/parser.ts";
 import { ghSubcommandArgv, gitDirectory, gitSubcommandIndex, interpretPush, isConfigRead } from "../lib/hookkit/gitargs.ts";
 import { steps } from "../lib/hookkit/steps.ts";
 import type { Step } from "../lib/hookkit/steps.ts";
@@ -81,6 +81,7 @@ const COMMIT_SHORT_ATTACHED_VALUE_FLAGS: ReadonlySet<string> = new Set(["S", "u"
 const COMMIT_NO_VERIFY_SHORT_FLAG = "n";
 const STAGING_SUBCOMMANDS: ReadonlySet<string> = new Set(["add", "stage"]);
 const PLAIN_CALL_TEXT_RE = /^(?:[A-Za-z0-9 \t\n'"_.,:;=@%+\-\/]|&&)*$/;
+const READS_MESSAGE_FILE_RE = /(?:^|\s)(?:-F|--file|--body-file)/;
 const PR_FILE_OPTIONS: ReadonlySet<string> = new Set(["-F", "--body-file"]);
 const PR_TEXT_SUBCOMMANDS: ReadonlySet<string> = new Set(["create", "edit", "merge"]);
 const UNPUSHED = ["--not", "--remotes"];
@@ -324,7 +325,7 @@ function editedText(toolArgs: Payload, edits: readonly unknown[]): string {
 
 function checkBash(command: string, cwd: string): Violation[] {
   const call = steps(command, cwd);
-  const callBodies = call.flatMap((step) => [...step.heredocs, ...hereStrings(step)]);
+  const callBodies = call.flatMap((step) => [...step.heredocs, ...hereStrings(step.command)]);
   const violations = [
     ...checkKeelCommands(call), ...checkProtectedWrites(call), ...checkLiveCheckouts(call), ...checkHookSkips(call),
     ...checkHookDisablingWrites(call), ...checkCommentWrites(call),
@@ -351,15 +352,11 @@ function checkCommentWrites(call: readonly Step[]): Violation[] {
 function stdinBody(call: readonly Step[], index: number): string | null {
   const step = call[index];
   if (step === undefined || !copiesStdin(step)) return null;
-  const bodies = [...step.heredocs, ...hereStrings(step).map((text) => text + "\n")];
+  const bodies = [...step.heredocs, ...hereStrings(step.command).map((text) => text + "\n")];
   if (bodies.length > 0) return bodies.length === 1 ? (bodies[0] ?? null) : null;
   const previous = call[index - 1];
   const pipedFromPrevious = previous !== undefined && previous.command.pipesToNext && !sendsStdoutAway(previous);
   return pipedFromPrevious ? stdinBody(call, index - 1) : null;
-}
-
-function hereStrings(step: Step): string[] {
-  return step.command.redirects.filter((redirect) => redirect.op === "<<<").map((redirect) => redirect.target);
 }
 
 function stdinTexts(call: readonly Step[], index: number): string[] {
@@ -1025,6 +1022,8 @@ function failClosedIfGuarded(raw: string, error: unknown): number {
 
 function mayHoldKnownValue(command: string): boolean {
   try {
+    if (knownvalues.load(overlayPath(...KNOWN_VALUES_FILE)).length === 0) return false;
+    if (!PLAIN_CALL_TEXT_RE.test(command) || READS_MESSAGE_FILE_RE.test(command)) return true;
     return knownValueHits(() => knownvalues.numberedLines(COMMAND_SHOWN, commandSpellings(command))).length > 0;
   } catch {
     return true;

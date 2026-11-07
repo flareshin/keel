@@ -874,6 +874,27 @@ describe("KnownValuesTest", () => {
     assert.ok(!result.stderr.includes(`${half}'"${half}`), result.stderr);
   });
 
+  it("deny_asksTheUser_whenKnownValuesExistAndTheCommandUsesShellSyntaxBeyondPlainWords", () => {
+    for (const command of ['git commit --no-verify --allow-empty -m "$MSG"', "echo x | git commit --no-verify --allow-empty -F -"]) {
+      const result = guard(command, repo);
+      assert.equal(result.code, 2, result.stderr);
+      assert.ok(result.stderr.trimEnd().endsWith(ASK_USER), result.stderr);
+    }
+    const plain = guard("git commit --no-verify --allow-empty -m ok", repo);
+    assert.equal(plain.code, 2, plain.stderr);
+    assert.ok(plain.stderr.includes(RUN_YOURSELF), plain.stderr);
+  });
+
+  it("commit_failsClosedAskingTheUser_whenTheMessageFileHoldsAKnownValueAndTheScannerIsMissing", () => {
+    sandbox.env["KEEL_BOUNDARY"] = join(sandbox.root, "no-such-scanner");
+    sandbox.write(join(repo, "msg.txt"), `Rotate ${TOKEN}\n`);
+    for (const command of ["git commit --allow-empty -F msg.txt", "git commit --allow-empty --file=msg.txt", "gh pr create --title t --body-file msg.txt"]) {
+      const result = guard(command, repo);
+      assert.equal(result.code, 2, result.stderr);
+      assert.ok(result.stderr.trimEnd().endsWith(ASK_USER), result.stderr);
+    }
+  });
+
   it("commit_failsClosedAskingTheUser_whenTheKnownValuesListIsMalformed", () => {
     sandbox.write(join(sandbox.overlay, "git-guard", "known-values.tsv"), "source\tpattern\nbogus\tX\nenv\tACME_API_TOKEN\n");
     const result = guard(`git commit --allow-empty -m 'Fix ${TOKEN}'`, repo);

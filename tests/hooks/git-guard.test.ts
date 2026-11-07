@@ -693,8 +693,37 @@ describe("KnownValuesTest", () => {
     assertDenied(inline, "F-secrets");
     assert.ok(inline.stderr.includes("holds the value of ACME_API_TOKEN"), inline.stderr);
     assert.ok(!inline.stderr.includes(TOKEN));
-    const fromFile = guard(`cat > b.md <<'EOF'\nSummary ${PASSWORD}\nEOF\ngh pr create --title t --body-file b.md`, repo);
+    sandbox.write(join(repo, "b.md"), `Summary ${PASSWORD}\n`);
+    const fromFile = guard("gh pr create --title t --body-file b.md", repo);
     assertDenied(fromFile, "F-secrets");
+    assert.ok(fromFile.stderr.includes("PR text holds the value of DB_PASSWORD"), fromFile.stderr);
+    assert.ok(!fromFile.stderr.includes(PASSWORD));
+  });
+
+  it("commit_denied_whenTheMessageFileHoldsAKnownValue", () => {
+    sandbox.write(join(repo, "msg.txt"), `Rotate ${PASSWORD}\n`);
+    const result = guard("git commit --allow-empty -F msg.txt", repo);
+    assertDenied(result, "F-secrets");
+    assert.ok(result.stderr.includes("commit message holds the value of DB_PASSWORD"), result.stderr);
+    assert.ok(!result.stderr.includes(PASSWORD));
+  });
+
+  it("commit_asksTheUserWithoutEchoingTheCommand_whenTheValueSitsOutsideTheMessage", () => {
+    sandbox.write(join(repo, "conf.py"), `PASS = '${PASSWORD}'\n`);
+    sandbox.git(repo, "add", "conf.py");
+    const result = guard(`git -c http.extraheader='Authorization: Bearer ${TOKEN}' commit -m 'Add conf'`, repo);
+    assertDenied(result, "F-secrets");
+    assert.ok(result.stderr.trimEnd().endsWith(ASK_USER), result.stderr);
+    assert.ok(!result.stderr.includes(TOKEN), result.stderr);
+  });
+
+  it("commit_failsClosedAskingTheUser_whenTheKnownValuesListIsMalformed", () => {
+    sandbox.write(join(sandbox.overlay, "git-guard", "known-values.tsv"), "source\tpattern\nbogus\tX\nenv\tACME_API_TOKEN\n");
+    const result = guard(`git commit --allow-empty -m 'Fix ${TOKEN}'`, repo);
+    assert.equal(result.code, 2);
+    assert.ok(result.stderr.includes("internal error"), result.stderr);
+    assert.ok(result.stderr.trimEnd().endsWith(ASK_USER), result.stderr);
+    assert.ok(!result.stderr.includes(TOKEN), result.stderr);
   });
 
   it("commandText_namesTheSourceWithoutALineNumber_whenTheMessageHoldsAKnownValue", () => {

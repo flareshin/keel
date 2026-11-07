@@ -701,6 +701,21 @@ describe("KnownValuesTest", () => {
     assert.ok(!fromFile.stderr.includes(PASSWORD));
   });
 
+  it("commandText_denied_whenStdinReadsTheMessageFromAFileHoldingAKnownValue", () => {
+    sandbox.write(join(repo, "msg.txt"), `Rotate ${TOKEN}\n`);
+    for (const [command, shown] of [
+      ["cat msg.txt | git commit --allow-empty -F -", "commit message"],
+      ["git commit --allow-empty -F - < msg.txt", "commit message"],
+      ["cat msg.txt | gh pr create --title t --body-file -", "PR text"],
+      ["gh pr create --title t --body-file - < msg.txt", "PR text"],
+    ] as const) {
+      const result = guard(command, repo);
+      assertDenied(result, "F-secrets");
+      assert.ok(result.stderr.includes(`${shown} holds the value of ACME_API_TOKEN`), result.stderr);
+      assert.ok(!result.stderr.includes(TOKEN), result.stderr);
+    }
+  });
+
   it("commandText_denied_whenStdinGivesTheMessageAKnownValue", () => {
     for (const [command, shown] of [
       [`git commit --allow-empty -F - <<< 'Rotate ${TOKEN}'`, "commit message"],

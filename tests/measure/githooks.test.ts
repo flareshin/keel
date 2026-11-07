@@ -4,9 +4,7 @@ import { afterEach, beforeEach, describe, it } from "node:test"
 import fs from "node:fs"
 import path from "node:path"
 
-import { GITHOOKS_DIR, MEASURE_DIR, MeasureSandbox, readText } from "./helpers.ts"
-
-const argvStub = (log: string): string => `#!/bin/bash\necho "$@" >> "${log}"\necho '{"scanned":0,"hits":[]}'\n`
+import { GITHOOKS_DIR, MeasureSandbox } from "./helpers.ts"
 
 describe("githooks", () => {
   let box: MeasureSandbox
@@ -22,7 +20,6 @@ describe("githooks", () => {
     spawnSync("git", ["init", "-q", "--bare", remote], { env: box.env })
     box.initRepo(repo, remote)
     box.git(repo, "config", "core.hooksPath", GITHOOKS_DIR)
-    box.env["KEEL_BOUNDARY"] = path.join(MEASURE_DIR, "boundary.ts")
   })
   afterEach(() => box.cleanup())
 
@@ -33,10 +30,13 @@ describe("githooks", () => {
     box.git(repo, "add", name)
   }
 
-  function useArgvStub(): string {
-    const log = path.join(box.root, "boundary-argv.log")
-    box.env["KEEL_BOUNDARY"] = box.write("stubs/boundary", argvStub(log), true)
-    return log
+  function fakeKeelHome(): string {
+    box.write("fake-keel/measure/boundary", "#!/bin/bash\nexit 0\n", true)
+    return path.join(box.root, "fake-keel")
+  }
+
+  function removeLexicon(): void {
+    fs.rmSync(path.join(box.overlay, "boundary", "lexicon.txt"))
   }
 
   it("preCommit_blocksTheCommit_whenStagedLinesHitTheLexicon", () => {
@@ -55,7 +55,7 @@ describe("githooks", () => {
   })
 
   it("preCommit_blocksTheCommit_whenTheOverlayLexiconIsMissing", () => {
-    fs.rmSync(path.join(box.overlay, "boundary", "lexicon.txt"))
+    removeLexicon()
     stage("a.txt", "public text\n")
     const completed = gitResult("commit", "-q", "-m", "Add a")
     assert.notEqual(completed.status, 0)
@@ -80,11 +80,23 @@ describe("githooks", () => {
     assert.ok(completed.stderr.includes("matches lexicon:2"))
   })
 
-  it("preCommit_passesStagedFlag_toTheScanner", () => {
-    const log = useArgvStub()
-    stage("a.txt", "x\n")
-    gitResult("commit", "-q", "-m", "Add a")
-    assert.equal(readText(log), "--staged\n")
+  it("preCommit_scansOnlyStagedLines_whenTheWorkTreeHoldsAnUnstagedHit", () => {
+    stage("a.txt", "public text\n")
+    box.write("work/a.txt", "made for acmecorp\n")
+    const completed = gitResult("commit", "-q", "-m", "Add a")
+    assert.equal(completed.status, 0, completed.stderr)
+  })
+
+  it("preCommit_runsTheScannerBesideItself_whenTheEnvironmentNamesAnotherOne", () => {
+    stage("a.txt", "made for acmecorp\n")
+    for (const override of [{ KEEL_BOUNDARY: "/usr/bin/true" }, { KEEL_HOME: fakeKeelHome() }]) {
+      Object.assign(box.env, override)
+      const completed = gitResult("commit", "-q", "-m", "Add a")
+      assert.notEqual(completed.status, 0)
+      assert.ok(completed.stderr.includes("a.txt:1 matches lexicon:1"), completed.stderr)
+      delete box.env["KEEL_BOUNDARY"]
+      box.env["KEEL_HOME"] = box.keel
+    }
   })
 
   it("prePush_blocksThePush_whenACommitMessageHitsTheLexicon", () => {
@@ -103,25 +115,38 @@ describe("githooks", () => {
     assert.equal(completed.status, 0, completed.stderr)
   })
 
-  it("prePush_scansOnlyNewCommits_whenTheBranchExistsRemotely", () => {
+  it("prePush_runsTheScannerBesideItself_whenTheEnvironmentNamesAnotherOne", () => {
     box.write("work/a.txt", "public\n")
-    const first = box.commitAll(repo, "Add a")
-    gitResult("push", "-q", "origin", "HEAD:refs/heads/main")
-    box.write("work/a.txt", "public\nmore\n")
-    const second = box.commitAll(repo, "Add more")
-    const log = useArgvStub()
+    box.commitAll(repo, "Fix TKT-4321")
+    for (const override of [{ KEEL_BOUNDARY: "/usr/bin/true" }, { KEEL_HOME: fakeKeelHome() }]) {
+      Object.assign(box.env, override)
+      const completed = gitResult("push", "-q", "origin", "HEAD:refs/heads/main")
+      assert.notEqual(completed.status, 0)
+      assert.ok(completed.stderr.includes("pre-push: pushed commits hit the public boundary"), completed.stderr)
+      delete box.env["KEEL_BOUNDARY"]
+      box.env["KEEL_HOME"] = box.keel
+    }
+    assert.equal(box.git(remote, "for-each-ref"), "")
+  })
+
+  it("prePush_scansOnlyNewCommits_whenTheBranchExistsRemotely", () => {
+    box.write("work/a.txt", "zebraword\n")
+    box.commitAll(repo, "Add a")
+    assert.equal(gitResult("push", "-q", "origin", "HEAD:refs/heads/main").status, 0)
+    box.write("overlay/boundary/lexicon.txt", "ACMECORP\nTKT-\nZEBRAWORD\n")
+    box.write("work/b.txt", "public\n")
+    box.commitAll(repo, "Add b")
     const completed = gitResult("push", "-q", "origin", "HEAD:refs/heads/main")
     assert.equal(completed.status, 0, completed.stderr)
-    assert.equal(readText(log), `--range ${first}..${second}\n`)
   })
 
   it("prePush_skipsTheScanner_whenOnlyDeletingABranch", () => {
     box.write("work/a.txt", "public\n")
     box.commitAll(repo, "Add a")
     gitResult("push", "-q", "origin", "HEAD:refs/heads/topic")
-    const log = useArgvStub()
+    removeLexicon()
     const completed = gitResult("push", "-q", "origin", ":refs/heads/topic")
     assert.equal(completed.status, 0, completed.stderr)
-    assert.equal(fs.existsSync(log), false)
+    assert.equal(box.git(remote, "for-each-ref"), "")
   })
 })

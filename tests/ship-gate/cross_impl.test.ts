@@ -14,8 +14,10 @@ import type { SnapshotStore } from '../recorded-cases.ts';
 import { KEEL_HOME, LOGIC_WITH_TEST, Sandbox } from './helpers.ts';
 import type { Repo, Run } from './helpers.ts';
 import { canonicalText, readFixture } from './outcomes.ts';
+import { frozenClockEnv } from '../frozen-clock.ts';
 
 const FIXED_COMMIT_DATE = '2026-01-01T00:00:00Z';
+const PYTHON_STORE_RECORDED_AT = '2026-10-23T06:57:00Z';
 const NON_ASCII_PATHS = { 'src/é😀 "q".py': 'print("é")\n', 'src/plain.py': 'print(1)\n', 'tests/test_plain.py': 'def test_a():\n    assert True\n' };
 
 class Pipeline {
@@ -298,6 +300,8 @@ describe('cross-implementation evidence compatibility', () => {
     const recorded = readFixture<{ pythonWrittenStore: PythonWrittenEvidence }>('cross-impl.json', sandbox.root).pythonWrittenStore;
     rmSync(sandbox.root, { recursive: true, force: true });
     materialize(recorded.store, recorded.snapshot, sandbox.root);
+    t.mock.timers.enable({ apis: ['Date'], now: Date.parse(PYTHON_STORE_RECORDED_AT) });
+    Object.assign(sandbox.env, frozenClockEnv(PYTHON_STORE_RECORDED_AT));
 
     const files = filesUnder(join(mixed.dataDir, 'state', 'keel', 'evidence')).filter((path) => path.endsWith('.json'));
     assert.ok(files.length >= 6);

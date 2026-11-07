@@ -9,10 +9,12 @@ import { isJsonObject, stringifySorted } from "../../measure/lib/measurekit/json
 import { KEEL_HOME } from "./helpers.ts";
 import { FIRES_LOG_NAME } from "../recorded-sample.ts";
 import { sampleCorpus } from "./ship-gate-parity-sample.ts";
+import { frozenClockEnv } from "../frozen-clock.ts";
 
 export const FIXTURE_DIRECTORY = join(import.meta.dirname, "fixtures", "ship-gate-parity");
 export const SUITES = ["python-keel", "ts-keel", "message-contract", "extra"] as const;
 const RUN_TIMEOUT_MS = 120_000;
+const RECORDED_AT = "2026-10-23T06:13:00Z";
 const MAX_MISMATCHES_SHOWN = 60;
 const TIMESTAMP_PLACEHOLDER = "<ts>";
 const DECODE_DETAIL = /\bJsonSyntaxError: [^\n]*/g;
@@ -145,7 +147,7 @@ function selectCases(cases: readonly RecordedCase[], suites: readonly Suite[], o
 function replay(testCase: RecordedCase, store: RecordedStore, root: string): Run {
   const execution = {
     command: [process.execPath, join(KEEL_HOME, testCase.script), ...testCase.args], stdin: restored(testCase.stdin, root),
-    env: envFromTemplate(store.envs[testCase.env] as Record<string, string>, root), cwd: restored(testCase.cwd, root), timeoutMs: RUN_TIMEOUT_MS,
+    env: { ...envFromTemplate(store.envs[testCase.env] as Record<string, string>, root), ...frozenClockEnv(RECORDED_AT) }, cwd: restored(testCase.cwd, root), timeoutMs: RUN_TIMEOUT_MS,
   };
   return runInSandbox(root, (target) => materialize(store, testCase.snapshot, target), execution, readTree);
 }

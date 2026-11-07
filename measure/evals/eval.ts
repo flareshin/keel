@@ -19,7 +19,7 @@ import { allRows, loadLedgersFrom } from "../lib/measurekit/ledger.ts"
 import { Case, CaseError, GRADED_CHANGE, loadCases, READABLE_CHANGE, selectCases, SPLITS, splitGaps } from "./lib/evalkit/cases.ts"
 import { faultReason, graderCommit, LEFTOVER_FAULT, runPasses } from "./lib/evalkit/grade.ts"
 import { cliConfigDir, configFingerprint, isKeelLive, suiteEvalId } from "./lib/evalkit/liveconfig.ts"
-import { CLAUDE_BINARY, claudeCommand, findOnPath, runOnce } from "./lib/evalkit/runner.ts"
+import { CLAUDE_BINARY, claudeCommand, findOnPath, runOnce, UNLOCKABLE_TOOLS } from "./lib/evalkit/runner.ts"
 import type { RunRecord } from "./lib/evalkit/runner.ts"
 import { RunFacts, summarizeStream } from "./lib/evalkit/stream.ts"
 import { evalGraderDiff, ruleCheckDiff } from "./lib/evalkit/readability.ts"
@@ -33,6 +33,7 @@ const PARTIAL_SUFFIX = "-partial"
 const CASE_SUFFIX = ".case"
 const SKILL_ENFORCEMENT = "skill:"
 const RAW_DIR_PREFIX = "keel-eval-"
+const SUITE_TOOLS_FILE = "tools.json"
 const RUN_RECORD_KEYS = ["case", "run", "kind", "exit", "timed_out", "changed"]
 const COMMAND: CommandSpec = {
   prog: "measure/evals/eval",
@@ -165,8 +166,9 @@ function buildPlan(args: EvalArgs): Plan {
   if (findOnPath(CLAUDE_BINARY) === null) throw new PlanError(`no \`${CLAUDE_BINARY}\` on PATH`)
   const configDir = cliConfigDir()
   const model = args.model as string
+  const command = claudeCommand(model, suiteUnlockedTools(keelHome, evalId))
   return {
-    evalId, skill, cases, fullRun, repeat: args.repeat, model, command: claudeCommand(model), fixture, configDir,
+    evalId, skill, cases, fullRun, repeat: args.repeat, model, command, fixture, configDir,
     keelLive: isKeelLive(configDir, keelHome, skill), timeoutSeconds: args.timeoutSeconds,
   }
 }
@@ -176,6 +178,16 @@ function skillEnforcing(evalId: string, keelHome: string, overlayDir: string): s
   if (row === undefined) throw new PlanError(`no ledger row with id ${JSON.stringify(evalId)}`)
   if (!row.enforcedAt.startsWith(SKILL_ENFORCEMENT)) throw new PlanError(`ledger row ${evalId} is enforced at ${row.enforcedAt}, not by a skill`)
   return row.enforcedAt.slice(SKILL_ENFORCEMENT.length)
+}
+
+function suiteUnlockedTools(keelHome: string, evalId: string): string[] {
+  const toolsFile = path.join(keelHome, "measure", "evals", evalId, SUITE_TOOLS_FILE)
+  if (!fs.existsSync(toolsFile)) return []
+  const allow = readJsonObject(toolsFile)["allow"]
+  if (!Array.isArray(allow) || !allow.every((tool) => typeof tool === "string" && UNLOCKABLE_TOOLS.includes(tool))) {
+    throw new PlanError(`${toolsFile}: "allow" may list only ${UNLOCKABLE_TOOLS.join(", ")}`)
+  }
+  return allow as string[]
 }
 
 function configDirFault(configDir: string): string | null {

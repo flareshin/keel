@@ -1,5 +1,6 @@
+import { getJson } from "./http.js"
+
 export async function feedTitles() {
-  const response = await fetch("https://feed.example.invalid/items")
-  const items = await response.json()
+  const items = await getJson("https://feed.example.invalid/items")
   return items.map((item) => item.title)
 }

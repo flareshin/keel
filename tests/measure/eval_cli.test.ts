@@ -83,6 +83,27 @@ describe("eval cli", () => {
     assert.equal(fs.existsSync(call.cwd), false, "the temp repo is removed after the run")
   })
 
+  it("fullRun_unlocksTheAgentTool_andRecordsTheCommand_whenTheSuiteToolsFileAllowsIt", () => {
+    box.seedSuite(box.askScenario(), box.editScenario())
+    box.write("keel/measure/evals/K4/tools.json", JSON.stringify({ allow: ["Agent"] }))
+    const [completed, report] = box.runEvalJson("K4", "--model", MODEL, ...RUN_ONCE)
+    assert.equal(completed.status, 0, completed.stderr)
+    const unlocked = "--tools Skill,Read,Grep,Glob,Edit,Write,AskUserQuestion,Agent --disallowedTools Bash,NotebookEdit,Workflow,WebFetch,WebSearch"
+    assert.ok(box.stubCalls()[0].argv.join(" ").includes(unlocked), box.stubCalls()[0].argv.join(" "))
+    assert.ok(readJson(path.join(report.raw_dir, "config.json")).command.join(" ").includes(unlocked))
+  })
+
+  for (const allow of [["Bash"], "Agent"]) {
+    it(`usageError_whenTheSuiteToolsFileAllows_${JSON.stringify(allow)}`, () => {
+      box.seedSuite(box.askScenario(), box.editScenario())
+      box.write("keel/measure/evals/K4/tools.json", JSON.stringify({ allow }))
+      const completed = box.runEval("K4", "--model", MODEL, ...RUN_ONCE)
+      assert.equal(completed.status, 2, completed.stderr)
+      assert.ok(completed.stderr.includes('tools.json: "allow" may list only Agent'), completed.stderr)
+      assert.equal(box.stubCalls().length, 0)
+    })
+  }
+
   it("subsetRun_writesPartialAndCaseLines_neverK4", () => {
     box.linkKeel()
     box.seedSuite(box.askScenario(), box.editScenario())

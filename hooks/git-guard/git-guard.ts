@@ -28,7 +28,7 @@ import { parseCommands } from "../lib/hookkit/parser.ts";
 import { ghSubcommandArgv, gitDirectory, gitSubcommandIndex, interpretPush, isConfigRead } from "../lib/hookkit/gitargs.ts";
 import { steps } from "../lib/hookkit/steps.ts";
 import type { Step } from "../lib/hookkit/steps.ts";
-import { resolveDirectory } from "../lib/hookkit/variables.ts";
+import { expandVariables, resolveDirectory, variableLookup } from "../lib/hookkit/variables.ts";
 import { fileWriteOf, operands, writeTargets } from "../lib/hookkit/writes.ts";
 import { TimeoutExpired } from "../../measure/lib/measurekit/timeout.ts";
 import { OSError, run } from "../lib/hookkit/subprocess.ts";
@@ -591,7 +591,7 @@ function checkGitOrPr(
 function checkPrText(ghArgv: readonly string[], step: Step, messageInputs: readonly string[]): Violation[] {
   if (ghArgv[1] !== "pr" || ghArgv.length < 3 || !PR_TEXT_SUBCOMMANDS.has(ghArgv[2] ?? "")) return [];
   const args = ghArgv.slice(3);
-  const text = [...args, ...messageInputs, ...readMessageFiles(args, PR_FILE_OPTIONS, step)].join("\n");
+  const text = withVariableValues([...args, ...messageInputs, ...readMessageFiles(args, PR_FILE_OPTIONS, step)].join("\n"), step);
   const violations = commandTextSecretViolations(PR_TEXT_SHOWN, text);
   if (!testCaseFolded(ATTRIBUTION_RE, text)) return violations;
   return [{
@@ -605,7 +605,7 @@ function checkCommit(
   plainCallText: boolean,
 ): Violation[] {
   const violations: Violation[] = [];
-  const message = commitMessageTexts(args, step, messageInputs).join("\n");
+  const message = withVariableValues(commitMessageTexts(args, step, repoDirectory, messageInputs).join("\n"), step);
   if (testCaseFolded(ATTRIBUTION_RE, message)) {
     violations.push({ ruleId: F_ATTRIBUTION, text: "AI-tool attribution in the commit message; remove it." });
   }
@@ -1051,13 +1051,18 @@ function salvage(raw: string): { session: string | null; command: string | null 
   return { session: getField(payload, "session_id") as string | null, command: isNonEmptyString(command) ? command : null };
 }
 
-function commitMessageTexts(args: readonly string[], step: Step, messageInputs: readonly string[]): string[] {
+function commitMessageTexts(args: readonly string[], step: Step, repoDirectory: string, messageInputs: readonly string[]): string[] {
   const texts = [...messageInputs];
   for (const [name, value] of commitOptionValues(args)) {
     if (COMMIT_MESSAGE_OPTIONS.has(name)) texts.push(value);
-    else if (COMMIT_FILE_OPTIONS.has(name)) texts.push(...messageSourceTexts(value, step));
+    else if (COMMIT_FILE_OPTIONS.has(name)) texts.push(...messageSourceTexts(value, step, repoDirectory));
   }
   return texts;
+}
+
+function withVariableValues(text: string, step: Step): string {
+  const expanded = expandVariables(text, variableLookup(step.directory, step.expansion));
+  return expanded === text ? text : `${text}\n${expanded}`;
 }
 
 function commitOptionValues(args: readonly string[]): Array<[name: string, value: string]> {
@@ -1087,8 +1092,8 @@ function readMessageFiles(args: readonly string[], options: ReadonlySet<string>,
   return texts;
 }
 
-function messageSourceTexts(path: string, step: Step): string[] {
-  const resolved = resolveDirectory(step.directory, path, step.expansion);
+function messageSourceTexts(path: string, step: Step, directory: string = step.directory): string[] {
+  const resolved = resolveDirectory(directory, path, step.expansion);
   return isFile(resolved) ? [withLfLineEnds(readFileSync(resolved, "utf8"))] : [];
 }
 

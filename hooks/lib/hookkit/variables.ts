@@ -5,9 +5,11 @@ const VARIABLE_RE = new RegExp(String.raw`\$\{([${WORD_CHARS}]+)\}|\$([${WORD_CH
 export type Variables = Map<string, string>;
 
 export function resolveDirectory(directory: string, target: string, environment: Variables): string {
-  const lookup = (name: string): string | undefined =>
-    callValue(name, directory, environment) ?? (name === "OLDPWD" ? undefined : environmentValue(name));
-  return normalizePath(joinPath(directory, expandUser(expandVariables(target, lookup))));
+  return normalizePath(joinPath(directory, expandUser(expandVariables(target, variableLookup(directory, environment)))));
+}
+
+export function variableLookup(directory: string, environment: Variables): (name: string) => string | undefined {
+  return (name) => callValue(name, directory, environment) ?? (name === "OLDPWD" ? undefined : environmentValue(name));
 }
 
 export function expandVariables(text: string, lookup: (name: string) => string | undefined): string {

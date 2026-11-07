@@ -708,6 +708,29 @@ describe("KnownValuesTest", () => {
       ["git commit --allow-empty -F - < msg.txt", "commit message"],
       ["cat msg.txt | gh pr create --title t --body-file -", "PR text"],
       ["gh pr create --title t --body-file - < msg.txt", "PR text"],
+      ["cat < msg.txt | git commit --allow-empty -F -", "commit message"],
+      ["cat msg.txt | cat | git commit --allow-empty -F -", "commit message"],
+    ] as const) {
+      const result = guard(command, repo);
+      assertDenied(result, "F-secrets");
+      assert.ok(result.stderr.includes(`${shown} holds the value of ACME_API_TOKEN`), result.stderr);
+      assert.ok(!result.stderr.includes(TOKEN), result.stderr);
+    }
+  });
+
+  it("commit_denied_whenGitDashCPointsTheMessageFileAtAnotherDirectory", () => {
+    sandbox.write(join(repo, "sub", "msg.txt"), `Rotate ${TOKEN}\n`);
+    const result = guard("git -C sub commit --allow-empty -F msg.txt", repo);
+    assertDenied(result, "F-secrets");
+    assert.ok(result.stderr.includes("commit message holds the value of ACME_API_TOKEN"), result.stderr);
+    assert.ok(!result.stderr.includes(TOKEN), result.stderr);
+  });
+
+  it("commandText_denied_whenAVariableGivesTheMessageAKnownValue", () => {
+    for (const [command, shown] of [
+      [`T=${TOKEN}; git commit --allow-empty -m "$T"`, "commit message"],
+      ['git commit --allow-empty -m "rotate $ACME_API_TOKEN"', "commit message"],
+      [`T=${TOKEN}; gh pr create --title t --body "\${T}"`, "PR text"],
     ] as const) {
       const result = guard(command, repo);
       assertDenied(result, "F-secrets");

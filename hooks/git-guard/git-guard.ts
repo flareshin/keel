@@ -85,14 +85,15 @@ const PR_BODY_FILE_LONG_OPTION = "--body-file";
 const PR_BODY_FILE_OPTIONS: ReadonlySet<string> = new Set(["-F", PR_BODY_FILE_LONG_OPTION]);
 const PR_BODY_FILE_SHORT_FLAG = "F";
 const SHORT_FLAG_CLUSTER_RE = /^-[^-]./u;
-const EXPANSION_RE = /[$`]/u;
+const UNREAD_WORD_RE = /[$`]|\\\n/u;
 const PR_TEXT_SUBCOMMANDS: ReadonlySet<string> = new Set(["create", "edit", "merge"]);
 const UNPUSHED = ["--not", "--remotes"];
 const STDIN_PATH = "-";
 const KEEL_CLI_NAMES: ReadonlySet<string> = new Set(["keel", "keel.ts"]);
 const COMMIT_MESSAGE_SHOWN = "commit message";
 const UNREAD_MESSAGE_TEXT = "Known values are loaded, and this commit message or PR text reaches git or gh in a form the hook does not read: " +
-  "stdin, a here-string or pipe, a $ or backtick expansion, an abbreviated option, a short-flag cluster, or a file that does not exist yet.";
+  "stdin, a here-string or pipe, a $ or backtick expansion, a line continuation inside quotes, an abbreviated option, a short-flag cluster, " +
+  "or a file that does not exist yet.";
 const PR_TEXT_SHOWN = "PR text";
 const COMMAND_SHOWN = "command";
 const HOOKED_SUBCOMMANDS: ReadonlySet<string> = new Set(["commit", "merge", "push"]);
@@ -1109,7 +1110,7 @@ function addCommitMessageValue(source: MessageSource, arg: string, optionName: s
   else if (COMMIT_FILE_OPTIONS.has(optionName)) source.files.push(value);
   else return;
   const spelledPlainly = arg === optionName || arg.startsWith("--");
-  if (!spelledPlainly || EXPANSION_RE.test(value)) source.plain = false;
+  if (!spelledPlainly || UNREAD_WORD_RE.test(value)) source.plain = false;
 }
 
 function abbreviatesMessageOption(arg: string): boolean {
@@ -1123,7 +1124,7 @@ function prTextArgs(ghArgv: readonly string[]): string[] | null {
 }
 
 function prMessageSource(args: readonly string[]): MessageSource {
-  const source: MessageSource = { words: [...args], files: [], plain: !args.some((arg) => EXPANSION_RE.test(arg)) };
+  const source: MessageSource = { words: [...args], files: [], plain: !args.some((arg) => UNREAD_WORD_RE.test(arg)) };
   for (const [index, arg] of args.entries()) {
     if (PR_BODY_FILE_OPTIONS.has(arg) && index + 1 < args.length) source.files.push(args[index + 1] ?? "");
     else if (arg.startsWith(PR_BODY_FILE_LONG_OPTION + "=")) source.files.push(partition(arg, "=")[2]);

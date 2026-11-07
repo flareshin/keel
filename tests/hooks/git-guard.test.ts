@@ -804,11 +804,15 @@ describe("KnownValuesTest", () => {
   it("commit_deniedAsAMessageForm_whenAnAbbreviatedLongOptionCarriesTheMessage", () => {
     sandbox.write(join(repo, "msg.txt"), `Rotate ${PASSWORD}\n`);
     for (const command of [
-      `git commit --allow-empty --mess='Rotate ${PASSWORD}'`, `git commit --allow-empty --mes 'Rotate ${PASSWORD}'`,
-      "git commit --allow-empty --fil=msg.txt",
+      `git commit --allow-empty --mess='Rotate ${PASSWORD}'`, "git commit --allow-empty --fil=msg.txt",
     ]) {
       assertMessageFormDenied(command, PASSWORD);
     }
+    const spaced = guard(`git commit --allow-empty --mes 'Rotate ${PASSWORD}'`, repo);
+    assertDenied(spaced, "F-secrets");
+    assert.ok(spaced.stderr.includes("in a form the hook does not read"), spaced.stderr);
+    assert.ok(spaced.stderr.trimEnd().endsWith(ASK_USER), spaced.stderr);
+    assert.ok(!spaced.stderr.includes(PASSWORD), spaced.stderr);
   });
 
   it("commit_denied_whenTheMessageFileHoldsAKnownValue", () => {
@@ -855,17 +859,10 @@ describe("KnownValuesTest", () => {
     }
   });
 
-  it("commandText_denied_whenALineContinuationSplitsTheKnownValueInTheMessage", () => {
+  it("commandText_deniedAsAMessageForm_whenALineContinuationSplitsTheKnownValueInTheMessage", () => {
     const tail = TOKEN.slice(4);
-    for (const [command, shown] of [
-      [`git commit --allow-empty -m "Rotate tok-\\\n${tail}"`, "commit message"],
-      [`gh pr create --title t --body "tok-\\\n${tail}"`, "PR text"],
-    ] as const) {
-      const result = guard(command, repo);
-      assertDenied(result, "F-secrets");
-      assert.ok(result.stderr.includes(`${shown} holds the value of ACME_API_TOKEN`), result.stderr);
-      assert.ok(result.stderr.trimEnd().endsWith(ASK_USER), result.stderr);
-      assert.ok(!result.stderr.includes(tail), result.stderr);
+    for (const command of [`git commit --allow-empty -m "Rotate tok-\\\n${tail}"`, `gh pr create --title t --body "tok-\\\n${tail}"`]) {
+      assertMessageFormDenied(command, tail);
     }
   });
 
@@ -911,11 +908,16 @@ describe("KnownValuesTest", () => {
     sandbox.write(join(repo, "msg.txt"), `Rotate ${TOKEN}\n`);
     for (const command of [
       "git commit --allow-empty -F msg.txt", "git commit --allow-empty --file=msg.txt", "gh pr create --title t --body-file msg.txt",
-      "git commit --allow-empty -aF msg.txt", "git commit --allow-empty '-F' msg.txt", "gh pr create -t t -dF msg.txt",
+      "git commit --allow-empty '-F' msg.txt",
     ]) {
       const result = guard(command, repo);
       assert.equal(result.code, 2, result.stderr);
       assert.ok(result.stderr.trimEnd().endsWith(ASK_USER), result.stderr);
+    }
+    for (const command of ["git commit --allow-empty -aF msg.txt", "gh pr create -t t -dF msg.txt"]) {
+      const result = guard(command, repo);
+      assert.equal(result.code, 2, result.stderr);
+      assert.ok(!result.stderr.includes(RUN_YOURSELF) && !result.stderr.includes(TOKEN), result.stderr);
     }
   });
 

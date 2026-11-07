@@ -704,6 +704,11 @@ describe("KeelCommandTest", () => {
     assertDenied(guard("echo rv-1 | xargs keel approve"), "K1");
   });
 
+  it("bash_denied_whenKeelApproveRunsTheTsEntryThroughNode", () => {
+    assertDenied(guard("node /x/bin/keel.ts approve rv-1"), "K1");
+    assertDenied(guard('node "$KEEL_HOME/bin/keel.ts" evidence write-review'), "K1");
+  });
+
   it("bash_denied_whenEvidenceWriteReviewFedByPipe", () => {
     assertDenied(guard("echo '{}' | keel evidence write-review"), "K1");
   });

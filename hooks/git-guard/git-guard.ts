@@ -82,7 +82,7 @@ const PR_FILE_OPTIONS: ReadonlySet<string> = new Set(["-F", "--body-file"]);
 const PR_TEXT_SUBCOMMANDS: ReadonlySet<string> = new Set(["create", "edit", "merge"]);
 const UNPUSHED = ["--not", "--remotes"];
 const STDIN_PATH = "-";
-const KEEL_CLI_NAME = "keel";
+const KEEL_CLI_NAMES: ReadonlySet<string> = new Set(["keel", "keel.ts"]);
 const HOOKED_SUBCOMMANDS: ReadonlySet<string> = new Set(["commit", "merge", "push"]);
 const LIVE_MOVING_SUBCOMMANDS: ReadonlySet<string> = new Set([
   "checkout", "switch", "restore", "reset", "add", "rm", "mv", "commit", "cherry-pick", "revert", "am", "apply",
@@ -391,7 +391,7 @@ function checkKeelCommands(call: readonly Step[]): Violation[] {
 }
 
 function keelArguments(argv: readonly string[]): string[] {
-  const index = argv.findIndex((word) => basename(word) === KEEL_CLI_NAME);
+  const index = argv.findIndex((word) => KEEL_CLI_NAMES.has(basename(word)));
   return index < 0 ? [] : argv.slice(index + 1);
 }
 

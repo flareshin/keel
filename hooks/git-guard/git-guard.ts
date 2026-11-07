@@ -391,7 +391,7 @@ function checkKeelCommands(call: readonly Step[]): Violation[] {
 }
 
 function keelArguments(argv: readonly string[]): string[] {
-  const index = argv.findIndex((word) => KEEL_CLI_NAMES.has(basename(word)));
+  const index = argv.findIndex((word) => KEEL_CLI_NAMES.has(basename(word).toLowerCase()));
   return index < 0 ? [] : argv.slice(index + 1);
 }
 

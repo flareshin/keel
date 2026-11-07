@@ -709,6 +709,11 @@ describe("KeelCommandTest", () => {
     assertDenied(guard('node "$KEEL_HOME/bin/keel.ts" evidence write-review'), "K1");
   });
 
+  it("bash_denied_whenTheKeelCliNameDiffersOnlyInCase", () => {
+    assertDenied(guard("node /x/bin/Keel.ts approve rv-1"), "K1");
+    assertDenied(guard("/x/bin/KEEL approve rv-1"), "K1");
+  });
+
   it("bash_denied_whenEvidenceWriteReviewFedByPipe", () => {
     assertDenied(guard("echo '{}' | keel evidence write-review"), "K1");
   });

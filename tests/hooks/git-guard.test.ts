@@ -706,6 +706,7 @@ describe("KnownValuesTest", () => {
     chmodSync(join(repo, "locked.bin"), 0o000);
     try {
       assertPassed(guard("cat < locked.bin | wc -c; git commit --allow-empty -m ok", repo));
+      assertPassed(guard("cat < locked.bin | gh pr view 1; git commit --allow-empty -m ok", repo));
     } finally {
       chmodSync(join(repo, "locked.bin"), 0o644);
     }
@@ -808,6 +809,21 @@ describe("KnownValuesTest", () => {
     }
   });
 
+  it("commandText_denied_whenALineContinuationSplitsTheKnownValueInTheMessage", () => {
+    const tail = TOKEN.slice(4);
+    for (const [command, shown] of [
+      [`git commit --allow-empty -m "Rotate tok-\\\n${tail}"`, "commit message"],
+      [`git commit --allow-empty -F - <<E\nRotate tok-\\\n${tail}\nE`, "commit message"],
+      [`gh pr create --title t --body "tok-\\\n${tail}"`, "PR text"],
+    ] as const) {
+      const result = guard(command, repo);
+      assertDenied(result, "F-secrets");
+      assert.ok(result.stderr.includes(`${shown} holds the value of ACME_API_TOKEN`), result.stderr);
+      assert.ok(result.stderr.trimEnd().endsWith(ASK_USER), result.stderr);
+      assert.ok(!result.stderr.includes(tail), result.stderr);
+    }
+  });
+
   it("commit_asksTheUser_whenShellQuotingSplitsAKnownValueOutsideTheMessage", () => {
     sandbox.write(join(repo, "conf.py"), `PASS = '${PASSWORD}'\n`);
     sandbox.git(repo, "add", "conf.py");
@@ -816,6 +832,7 @@ describe("KnownValuesTest", () => {
       `git -c http.extraheader='Authorization: Bearer tok-'"${tail}" commit -m 'Add conf'`,
       `GIT_TRACE_LABEL='tok-'"${tail}" git commit -m 'Add conf'`,
       `git commit -m 'Add conf' <<< 'tok-'"${tail}"`,
+      `git -c http.extraheader="Bearer tok-\\\n${tail}" commit -m 'Add conf'`,
     ]) {
       const result = guard(command, repo);
       assertDenied(result, "F-secrets");

@@ -57,6 +57,7 @@ export const BOUNDARY_TIMEOUT_SECONDS = 8;
 const BOUNDARY_EXIT_CLEAN = 0;
 const BOUNDARY_EXIT_HITS = 1;
 const COMMIT_MESSAGE_OPTIONS: ReadonlySet<string> = new Set(["-m", "--message"]);
+const LINE_CONTINUATION = "\\\n";
 const COMMIT_FILE_OPTIONS: ReadonlySet<string> = new Set(["-F", "--file"]);
 const COMMIT_STAGING_LONG_OPTIONS: ReadonlySet<string> = new Set(["--all"]);
 const COMMIT_LONG_VALUE_OPTIONS: ReadonlySet<string> = new Set([
@@ -366,9 +367,9 @@ function stdinTexts(call: readonly Step[], index: number): string[] {
   let previous = index - 1;
   while (previous >= 0 && call[previous]?.command.pipesToNext) {
     const piped = call[previous] as Step;
-    const operands = piped.argv.slice(1);
-    texts.push(...operands, ...redirectedFileTexts(piped));
-    if (piped.name === "cat") texts.push(...operands.flatMap((operand) => messageSourceTexts(operand, piped)));
+    const words = piped.argv.slice(1);
+    texts.push(...words, ...redirectedFileTexts(piped));
+    if (piped.name === "cat") texts.push(...words.flatMap((word) => messageSourceTexts(word, piped)));
     previous -= 1;
   }
   return texts;
@@ -591,7 +592,7 @@ function checkGitOrPr(
 function checkPrText(ghArgv: readonly string[], step: Step, readMessageInputs: () => readonly string[]): Violation[] {
   if (ghArgv[1] !== "pr" || ghArgv.length < 3 || !PR_TEXT_SUBCOMMANDS.has(ghArgv[2] ?? "")) return [];
   const args = ghArgv.slice(3);
-  const text = withVariableValues([...args, ...readMessageInputs(), ...readMessageFiles(args, PR_FILE_OPTIONS, step)].join("\n"), step);
+  const text = messageSpellings([...args, ...readMessageInputs(), ...readMessageFiles(args, PR_FILE_OPTIONS, step)].join("\n"), step);
   const violations = commandTextSecretViolations(PR_TEXT_SHOWN, text);
   if (!testCaseFolded(ATTRIBUTION_RE, text)) return violations;
   return [{
@@ -605,7 +606,7 @@ function checkCommit(
   plainCallText: boolean,
 ): Violation[] {
   const violations: Violation[] = [];
-  const message = withVariableValues(commitMessageTexts(args, step, repoDirectory, readMessageInputs()).join("\n"), step);
+  const message = messageSpellings(commitMessageTexts(args, step, repoDirectory, readMessageInputs()).join("\n"), step);
   if (testCaseFolded(ATTRIBUTION_RE, message)) {
     violations.push({ ruleId: F_ATTRIBUTION, text: "AI-tool attribution in the commit message; remove it." });
   }
@@ -1034,7 +1035,8 @@ function commandSpellings(command: string): string {
     ...parsed.argv, ...parsed.assignments.map(([, value]) => value), ...parsed.heredocs,
     ...parsed.redirects.map((redirect) => redirect.target),
   ]);
-  return [command, ...parsedWords].join("\n");
+  const spelled = [command, ...parsedWords].join("\n");
+  return `${spelled}\n${withLineContinuationsJoined(spelled)}`;
 }
 
 function salvage(raw: string): { session: string | null; command: string | null } {
@@ -1060,9 +1062,14 @@ function commitMessageTexts(args: readonly string[], step: Step, repoDirectory: 
   return texts;
 }
 
-function withVariableValues(text: string, step: Step): string {
-  const expanded = expandVariables(text, variableLookup(step.directory, step.expansion));
-  return expanded === text ? text : `${text}\n${expanded}`;
+function messageSpellings(text: string, step: Step): string {
+  const joined = withLineContinuationsJoined(text);
+  const expanded = expandVariables(joined, variableLookup(step.directory, step.expansion));
+  return [...new Set([text, joined, expanded])].join("\n");
+}
+
+function withLineContinuationsJoined(text: string): string {
+  return text.replaceAll(LINE_CONTINUATION, "");
 }
 
 function commitOptionValues(args: readonly string[]): Array<[name: string, value: string]> {

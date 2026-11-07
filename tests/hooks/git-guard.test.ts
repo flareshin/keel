@@ -747,10 +747,25 @@ describe("KnownValuesTest", () => {
     sandbox.write(join(repo, "conf.py"), `PASS = '${PASSWORD}'\n`);
     sandbox.git(repo, "add", "conf.py");
     const tail = TOKEN.slice(4);
-    const result = guard(`git -c http.extraheader='Authorization: Bearer tok-'"${tail}" commit -m 'Add conf'`, repo);
-    assertDenied(result, "F-secrets");
+    for (const command of [
+      `git -c http.extraheader='Authorization: Bearer tok-'"${tail}" commit -m 'Add conf'`,
+      `GIT_TRACE_LABEL='tok-'"${tail}" git commit -m 'Add conf'`,
+      `git commit -m 'Add conf' <<< 'tok-'"${tail}"`,
+    ]) {
+      const result = guard(command, repo);
+      assertDenied(result, "F-secrets");
+      assert.ok(result.stderr.trimEnd().endsWith(ASK_USER), result.stderr);
+      assert.ok(!result.stderr.includes(tail), result.stderr);
+    }
+  });
+
+  it("commit_failsClosedAskingTheUser_whenAHereStringMessageSplitsTheKnownValueAndTheScannerIsMissing", () => {
+    sandbox.env["KEEL_BOUNDARY"] = join(sandbox.root, "no-such-scanner");
+    const half = PASSWORD.slice(0, PASSWORD.length / 2);
+    const result = guard(`git commit --allow-empty -F - <<< 'Rotate ${half}'"${half}"`, repo);
+    assert.equal(result.code, 2);
     assert.ok(result.stderr.trimEnd().endsWith(ASK_USER), result.stderr);
-    assert.ok(!result.stderr.includes(tail), result.stderr);
+    assert.ok(!result.stderr.includes(`${half}'"${half}`), result.stderr);
   });
 
   it("commit_failsClosedAskingTheUser_whenTheKnownValuesListIsMalformed", () => {

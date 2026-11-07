@@ -1009,6 +1009,7 @@ function mayHoldKnownValue(command: string): boolean {
 function commandSpellings(command: string): string {
   const parsedWords = parseCommands(command).flatMap((parsed) => [
     ...parsed.argv, ...parsed.assignments.map(([, value]) => value), ...parsed.heredocs,
+    ...parsed.redirects.map((redirect) => redirect.target),
   ]);
   return [command, ...parsedWords].join("\n");
 }

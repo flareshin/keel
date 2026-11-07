@@ -766,6 +766,12 @@ describe("guard", () => {
     assert.equal(calls[0]?.tool_input["content"], "y = 2\nw = 4");
   });
 
+  it("test_patch_keepsAByteOrderMarkInTheAnchor_asApplyPatchMatchesIt", () => {
+    const patch = "*** Begin Patch\n*** Update File: a.py\n@@ ﻿def a():\n x = 1\n+y = 2\n*** End Patch";
+    const calls = normalize(payload("apply_patch", { command: patch }));
+    assert.deepEqual(calls[0]?.tool_input["keel_anchors"], ["﻿def a():"]);
+  });
+
   it("test_patch_readsAnEmptyHunkLineAsABlankContextLine", () => {
     const patch = "*** Begin Patch\n*** Update File: a.py\n@@\n-x = 1\n+x = 2\n\n return x\n*** End Patch";
     const calls = normalize(payload("apply_patch", { command: patch }));

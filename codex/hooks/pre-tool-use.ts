@@ -88,7 +88,7 @@ export function normalize(payload: unknown): Call[] {
       endsAtEndOfFile = false;
     } else if (line.startsWith(HUNK_HEADER)) {
       hunks.push([]);
-      anchors.push(line.slice(HUNK_HEADER.length).trim());
+      anchors.push(trimSpace(line.slice(HUNK_HEADER.length)));
     } else if (HUNK_LINE_PREFIXES.some((item) => line.startsWith(item))) {
       if (hunks.length === 0) {
         hunks.push([]);

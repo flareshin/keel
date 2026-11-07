@@ -2303,6 +2303,29 @@ describe("CommentWriteTest", () => {
     assertPassed(edit("Write", toolArgs));
   });
 
+  it("codexPatch_replaysTheHunkAfterItsAnchor_whenTheAnchorFitsOnlyAfterFoldingPunctuationAndSpaces", () => {
+    const hunk = ["     x = 1", "+    # inside the string", "     y = 2"];
+    for (const [index, fileAnchor] of ["# marker — a", "# it’s a", "# say “hi”", "# marker a"].entries()) {
+      const source = `def a():\n    x = 1\n    y = 2\ns = """\n${fileAnchor}\n    x = 1\n    y = 2\n"""\n`;
+      const anchor = ["# marker - a", "# it's a", '# say "hi"', "# marker a"][index] as string;
+      const toolArgs = {
+        file_path: codeFile(`folded${index}.py`, source), content: "    # inside the string", keel_removed: "", keel_partial: true, keel_hunks: [hunk], keel_anchors: [anchor],
+      };
+
+      assertPassed(edit("Write", toolArgs));
+    }
+  });
+
+  it("codexPatch_judgesTheAddedLinesAlone_whenTheAnchorFitsOneLineExactlyAndAnotherAfterFolding", () => {
+    const source = '# marker — a\nx = 1\ns = """\n# marker - a\nx = 1\n"""\n';
+    const toolArgs = {
+      file_path: codeFile("exactAndFolded.py", source), content: "# real comment", keel_removed: "", keel_partial: true,
+      keel_hunks: [[" x = 1", "+# real comment"]], keel_anchors: ["# marker - a"],
+    };
+
+    assertCommentDenied(edit("Write", toolArgs), "# real comment");
+  });
+
   it("codexPatch_judgesTheAddedLinesAlone_whenTheAnchorsDoNotFitTheHunks", () => {
     const source = 'def a():\n    x = 1\n    y = 2\ndef b():\n    s = """\n    x = 1\n    y = 2\n    """\n';
     const hunk = ["     x = 1", "+    # inside the string", "     y = 2"];

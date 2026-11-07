@@ -58,6 +58,7 @@ const BOUNDARY_EXIT_CLEAN = 0;
 const BOUNDARY_EXIT_HITS = 1;
 const COMMIT_MESSAGE_OPTIONS: ReadonlySet<string> = new Set(["-m", "--message"]);
 const LINE_CONTINUATION = "\\\n";
+const QUOTE_CHARS_RE = /['"]/g;
 const COMMIT_FILE_OPTIONS: ReadonlySet<string> = new Set(["-F", "--file"]);
 const COMMIT_STAGING_LONG_OPTIONS: ReadonlySet<string> = new Set(["--all"]);
 const COMMIT_LONG_VALUE_OPTIONS: ReadonlySet<string> = new Set([
@@ -1036,7 +1037,8 @@ function commandSpellings(command: string): string {
     ...parsed.redirects.map((redirect) => redirect.target),
   ]);
   const spelled = [command, ...parsedWords].join("\n");
-  return `${spelled}\n${withLineContinuationsJoined(spelled)}`;
+  const joined = withLineContinuationsJoined(spelled);
+  return [spelled, joined, withoutQuotes(joined)].join("\n");
 }
 
 function salvage(raw: string): { session: string | null; command: string | null } {
@@ -1065,11 +1067,15 @@ function commitMessageTexts(args: readonly string[], step: Step, repoDirectory: 
 function messageSpellings(text: string, step: Step): string {
   const joined = withLineContinuationsJoined(text);
   const expanded = expandVariables(joined, variableLookup(step.directory, step.expansion));
-  return [...new Set([text, joined, expanded])].join("\n");
+  return [...new Set([text, joined, expanded, withoutQuotes(expanded)])].join("\n");
 }
 
 function withLineContinuationsJoined(text: string): string {
   return text.replaceAll(LINE_CONTINUATION, "");
+}
+
+function withoutQuotes(text: string): string {
+  return text.replace(QUOTE_CHARS_RE, "");
 }
 
 function commitOptionValues(args: readonly string[]): Array<[name: string, value: string]> {
@@ -1092,15 +1098,19 @@ function commitOptionValues(args: readonly string[]): Array<[name: string, value
 function readMessageFiles(args: readonly string[], options: ReadonlySet<string>, step: Step): string[] {
   const texts: string[] = [];
   const longOptions = Array.from(options).filter((option) => option.startsWith("--"));
+  const shortOptions = Array.from(options).filter((option) => !option.startsWith("--"));
   args.forEach((arg, index) => {
+    const attachedShort = shortOptions.find((option) => arg.startsWith(option) && arg.length > option.length);
     if (options.has(arg) && index + 1 < args.length) texts.push(...messageSourceTexts(args[index + 1] ?? "", step));
     else if (longOptions.some((option) => arg.startsWith(option + "="))) texts.push(...messageSourceTexts(partition(arg, "=")[2], step));
+    else if (attachedShort) texts.push(...messageSourceTexts(arg.slice(attachedShort.length).replace(/^=/, ""), step));
   });
   return texts;
 }
 
-function messageSourceTexts(path: string, step: Step, directory: string = step.directory): string[] {
-  const resolved = resolveDirectory(directory, path, step.expansion);
+function messageSourceTexts(path: string, step: Step, relativeTo: string = step.directory): string[] {
+  const expanded = expandVariables(path, variableLookup(step.directory, step.expansion));
+  const resolved = resolveDirectory(relativeTo, expanded, step.expansion);
   return isFile(resolved) ? [withLfLineEnds(readFileSync(resolved, "utf8"))] : [];
 }
 

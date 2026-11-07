@@ -699,6 +699,11 @@ describe("KnownValuesTest", () => {
     assert.ok(fromFile.stderr.includes("PR text holds the value of DB_PASSWORD"), fromFile.stderr);
     assert.ok(fromFile.stderr.trimEnd().endsWith(ASK_USER), fromFile.stderr);
     assert.ok(!fromFile.stderr.includes(PASSWORD));
+    for (const attached of ["gh pr create --title t -Fb.md", "gh pr create --title t -F=b.md"]) {
+      const result = guard(attached, repo);
+      assertDenied(result, "F-secrets");
+      assert.ok(result.stderr.includes("PR text holds the value of DB_PASSWORD"), result.stderr);
+    }
   });
 
   it("commit_passes_whenAnUnreadableFileIsPipedIntoAnotherCommandOfTheCall", () => {
@@ -735,6 +740,25 @@ describe("KnownValuesTest", () => {
     assertDenied(result, "F-secrets");
     assert.ok(result.stderr.includes("commit message holds the value of ACME_API_TOKEN"), result.stderr);
     assert.ok(!result.stderr.includes(TOKEN), result.stderr);
+  });
+
+  it("commit_denied_whenGitDashCNamesTheMessageFileThroughTheShellsPwd", () => {
+    sandbox.write(join(repo, "msg.txt"), `Rotate ${TOKEN}\n`);
+    mkdirSync(join(repo, "sub"), { recursive: true });
+    const result = guard('git -C sub commit --allow-empty -F "$PWD/msg.txt"', repo);
+    assertDenied(result, "F-secrets");
+    assert.ok(result.stderr.includes("commit message holds the value of ACME_API_TOKEN"), result.stderr);
+  });
+
+  it("commandText_denied_whenQuotingSplitsTheKnownValueInsideADefaultWord", () => {
+    const tail = TOKEN.slice(4);
+    const inMessage = guard(`git commit --allow-empty -m \${X:-'tok-'"${tail}"}`, repo);
+    assertDenied(inMessage, "F-secrets");
+    assert.ok(inMessage.stderr.includes("commit message holds the value of ACME_API_TOKEN"), inMessage.stderr);
+    const elsewhere = guard(`git -c x=\${X:-'tok-'"${tail}"} commit --no-verify --allow-empty -m ok`, repo);
+    assert.equal(elsewhere.code, 2, elsewhere.stderr);
+    assert.ok(elsewhere.stderr.trimEnd().endsWith(ASK_USER), elsewhere.stderr);
+    assert.ok(!elsewhere.stderr.includes(tail), elsewhere.stderr);
   });
 
   it("commandText_denied_whenAVariableGivesTheMessageAKnownValue", () => {

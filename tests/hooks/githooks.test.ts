@@ -60,4 +60,10 @@ describe("GithooksBoundaryTest", () => {
     assert.equal(runHook("pre-push", { KEEL_BOUNDARY: "/usr/bin/true" }, line), BLOCKED);
     assert.equal(runHook("pre-push", { KEEL_HOME: fakeKeelHome() }, line), BLOCKED);
   });
+
+  it("prePush_passesWithoutScanning_whenTheRefIsDeleted", () => {
+    const zeros = "0".repeat(40);
+    assert.equal(runHook("pre-push", {}, `(delete) ${zeros} refs/heads/old ${"1".repeat(40)}\n`), 0);
+    assert.equal(runHook("pre-push", {}, ""), 0);
+  });
 });

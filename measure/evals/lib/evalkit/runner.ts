@@ -12,8 +12,10 @@ import { RunFacts, summarizeStream } from "./stream.ts"
 
 export const CLAUDE_BINARY = "claude"
 const MAX_TURNS = 8
-const ALLOWED_TOOLS = "Skill,Read,Grep,Glob,Edit,Write,AskUserQuestion"
-const DENIED_TOOLS = "Bash,NotebookEdit,Agent,Task,Workflow,WebFetch,WebSearch"
+const ALLOWED_TOOLS = ["Skill", "Read", "Grep", "Glob", "Edit", "Write", "AskUserQuestion"]
+const DENIED_TOOLS = ["Bash", "NotebookEdit", "Agent", "Task", "Workflow", "WebFetch", "WebSearch"]
+const DENIED_NAMES_OF_UNLOCKABLE_TOOL: Record<string, string[]> = { Agent: ["Agent", "Task"] }
+export const UNLOCKABLE_TOOLS = Object.keys(DENIED_NAMES_OF_UNLOCKABLE_TOOL)
 const TIMEOUT_EXIT = 124
 export const UNSIGNED = ["-c", "commit.gpgsign=false"]
 export const NEUTRAL_PROJECT_NAME = "app"
@@ -37,11 +39,14 @@ export interface ClaudeRun {
   streamText: string
 }
 
-export function claudeCommand(model: string): string[] {
+export function claudeCommand(model: string, unlockedTools: string[] = []): string[] {
+  const unlockedNames = unlockedTools.flatMap((tool) => DENIED_NAMES_OF_UNLOCKABLE_TOOL[tool] ?? [])
+  const tools = [...ALLOWED_TOOLS, ...unlockedTools]
+  const denied = DENIED_TOOLS.filter((tool) => !unlockedNames.includes(tool))
   return [
     CLAUDE_BINARY, "-p", "--model", model, "--output-format", "stream-json", "--verbose",
     "--settings", '{"disableAllHooks":true}',
-    "--tools", ALLOWED_TOOLS, "--disallowedTools", DENIED_TOOLS,
+    "--tools", tools.join(","), "--disallowedTools", denied.join(","),
     "--permission-mode", "acceptEdits", "--strict-mcp-config",
     "--max-turns", String(MAX_TURNS), "--no-session-persistence", "--append-system-prompt", QUESTION_PROTOCOL,
   ]

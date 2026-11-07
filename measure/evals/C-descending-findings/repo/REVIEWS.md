@@ -10,4 +10,4 @@
 
 ## PR 19: feed card
 
-- `src/legacy-feed.js` calls the global `fetch(` directly instead of `getJson` from `src/http.js`; a non-2xx response would be read as feed items. Left as is for the release.
+- `src/legacy-feed.js` called the global `fetch(` directly instead of `getJson` from `src/http.js`, so a non-2xx response was read as feed items. Fixed by switching to `getJson`.

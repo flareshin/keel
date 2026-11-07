@@ -2,8 +2,8 @@
 # Blocks a commit whose staged lines hit the public-boundary rules (overlay lexicon, regexes, generic rules).
 # Install: git config core.hooksPath githooks
 set -e
-keel_home=${KEEL_HOME:-$(cd -P "$(dirname "$0")/.." && pwd)}
-boundary=${KEEL_BOUNDARY:-$keel_home/measure/boundary}
+keel_home=$(cd -P "$(dirname "$0")/.." && pwd)
+boundary=$keel_home/measure/boundary
 
 status=0
 "$boundary" --staged >/dev/null || status=$?

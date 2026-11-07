@@ -697,6 +697,19 @@ describe("KnownValuesTest", () => {
     assertDenied(fromFile, "F-secrets");
   });
 
+  it("commandText_namesTheSourceWithoutALineNumber_whenTheMessageHoldsAKnownValue", () => {
+    const result = guard(`gh pr create --title t --body "token ${TOKEN}"`, repo);
+    assert.ok(result.stderr.includes("PR text holds the value of ACME_API_TOKEN"), result.stderr);
+  });
+
+  it("commit_failsClosedWithoutEchoingTheCommand_whenTheMessageHoldsAKnownValueAndTheScannerIsMissing", () => {
+    sandbox.env["KEEL_BOUNDARY"] = join(sandbox.root, "no-such-scanner");
+    const result = guard(`git commit --allow-empty -m 'Rotate ${PASSWORD}'`, repo);
+    assert.equal(result.code, 2);
+    assert.ok(result.stderr.includes("internal error"), result.stderr);
+    assert.ok(!result.stderr.includes(PASSWORD), result.stderr);
+  });
+
   it("prText_passes_whenTheBodyIsClean", () => {
     assertPassed(guard('gh pr create --title t --body "clean summary"', repo));
   });

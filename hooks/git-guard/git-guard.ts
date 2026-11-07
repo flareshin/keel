@@ -85,6 +85,7 @@ const STDIN_PATH = "-";
 const KEEL_CLI_NAMES: ReadonlySet<string> = new Set(["keel", "keel.ts"]);
 const COMMIT_MESSAGE_SHOWN = "commit message";
 const PR_TEXT_SHOWN = "PR text";
+const COMMAND_SHOWN = "command";
 const HOOKED_SUBCOMMANDS: ReadonlySet<string> = new Set(["commit", "merge", "push"]);
 const LIVE_MOVING_SUBCOMMANDS: ReadonlySet<string> = new Set([
   "checkout", "switch", "restore", "reset", "add", "rm", "mv", "commit", "cherry-pick", "revert", "am", "apply",
@@ -837,14 +838,24 @@ function noGet(value: unknown): AttributeError {
 }
 
 function commandTextSecretViolations(shown: string, text: string): Violation[] {
-  return knownValueViolations(() => knownvalues.numberedLines(shown, text)).map((violation) => ({ ...violation, commandHoldsSecret: true }));
+  const hits = knownValueHits(() => knownvalues.numberedLines(shown, text));
+  if (hits.length === 0) return [];
+  const sources = [...new Set(hits.map((hit) => `${shown} holds the value of ${hit.known.key} (${hit.known.origin})`))];
+  return [{ ...secretsViolation(sources, null), commandHoldsSecret: true }];
 }
 
 function knownValueViolations(readLines: () => Iterable<knownvalues.Line>, repoKey: string | null = null): Violation[] {
+  const hits = knownValueHits(readLines);
+  return hits.length === 0 ? [] : [secretsViolation(hits.map((hit) => hit.describe()), repoKey)];
+}
+
+function knownValueHits(readLines: () => Iterable<knownvalues.Line>): knownvalues.Hit[] {
   const values = knownvalues.load(overlayPath(...KNOWN_VALUES_FILE));
-  const hits = values.length > 0 ? knownvalues.find(readLines(), values) : [];
-  if (hits.length === 0) return [];
-  return [{ ruleId: F_SECRETS, repo: repoKey, text: `Known secret values written out: ${protocol.listed(hits.map((hit) => hit.describe()))}. Redact them.` }];
+  return values.length > 0 ? knownvalues.find(readLines(), values) : [];
+}
+
+function secretsViolation(sources: readonly string[], repoKey: string | null): Violation {
+  return { ruleId: F_SECRETS, repo: repoKey, text: `Known secret values written out: ${protocol.listed(sources)}. Redact them.` };
 }
 
 function repoRuleViolations(repoKey: string | null, paths: readonly string[], actions: readonly string[]): Violation[] {
@@ -981,8 +992,16 @@ function failClosedIfGuarded(raw: string, error: unknown): number {
   const bullet: protocol.Bullet = [
     F_ATTRIBUTION, `The guard could not check this commit, push, PR text or protected write (${errorName(error)}).`,
   ];
-  const nextStep = command ? protocol.runYourself(command) : protocol.ASK_USER;
+  const nextStep = command && !mayHoldKnownValue(command) ? protocol.runYourself(command) : protocol.ASK_USER;
   return protocol.deny(protocol.formatMessage(HOOK, "internal error on a guarded command; refusing it", [bullet], nextStep));
+}
+
+function mayHoldKnownValue(command: string): boolean {
+  try {
+    return knownValueHits(() => knownvalues.numberedLines(COMMAND_SHOWN, command)).length > 0;
+  } catch {
+    return true;
+  }
 }
 
 function salvage(raw: string): { session: string | null; command: string | null } {

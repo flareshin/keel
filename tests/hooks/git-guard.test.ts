@@ -697,7 +697,23 @@ describe("KnownValuesTest", () => {
     const fromFile = guard("gh pr create --title t --body-file b.md", repo);
     assertDenied(fromFile, "F-secrets");
     assert.ok(fromFile.stderr.includes("PR text holds the value of DB_PASSWORD"), fromFile.stderr);
+    assert.ok(fromFile.stderr.trimEnd().endsWith(ASK_USER), fromFile.stderr);
     assert.ok(!fromFile.stderr.includes(PASSWORD));
+  });
+
+  it("commandText_denied_whenStdinGivesTheMessageAKnownValue", () => {
+    for (const [command, shown] of [
+      [`git commit --allow-empty -F - <<< 'Rotate ${TOKEN}'`, "commit message"],
+      [`echo 'Rotate ${TOKEN}' | git commit --allow-empty -F -`, "commit message"],
+      [`gh pr create --title t --body-file - <<< 'token ${TOKEN}'`, "PR text"],
+      [`printf 'token ${TOKEN}' | gh pr create --title t --body-file=-`, "PR text"],
+    ] as const) {
+      const result = guard(command, repo);
+      assertDenied(result, "F-secrets");
+      assert.ok(result.stderr.includes(`${shown} holds the value of ACME_API_TOKEN`), result.stderr);
+      assert.ok(result.stderr.trimEnd().endsWith(ASK_USER), result.stderr);
+      assert.ok(!result.stderr.includes(TOKEN), result.stderr);
+    }
   });
 
   it("commit_denied_whenTheMessageFileHoldsAKnownValue", () => {
@@ -705,6 +721,7 @@ describe("KnownValuesTest", () => {
     const result = guard("git commit --allow-empty -F msg.txt", repo);
     assertDenied(result, "F-secrets");
     assert.ok(result.stderr.includes("commit message holds the value of DB_PASSWORD"), result.stderr);
+    assert.ok(result.stderr.trimEnd().endsWith(ASK_USER), result.stderr);
     assert.ok(!result.stderr.includes(PASSWORD));
   });
 

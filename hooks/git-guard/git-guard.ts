@@ -322,13 +322,15 @@ function editedText(toolArgs: Payload, edits: readonly unknown[]): string {
 
 function checkBash(command: string, cwd: string): Violation[] {
   const call = steps(command, cwd);
-  const callHeredocs = call.flatMap((step) => step.heredocs);
+  const callBodies = call.flatMap((step) => [...step.heredocs, ...hereStrings(step)]);
   const violations = [
     ...checkKeelCommands(call), ...checkProtectedWrites(call), ...checkLiveCheckouts(call), ...checkHookSkips(call),
     ...checkHookDisablingWrites(call), ...checkCommentWrites(call),
   ];
   const plainCallText = PLAIN_CALL_TEXT_RE.test(command);
-  call.forEach((step, index) => violations.push(...checkGitOrPr(step, call, index, callHeredocs, plainCallText)));
+  call.forEach((step, index) => {
+    violations.push(...checkGitOrPr(step, call, index, [...callBodies, ...pipedInWords(call, index)], plainCallText));
+  });
   return unique(violations);
 }
 
@@ -347,12 +349,25 @@ function checkCommentWrites(call: readonly Step[]): Violation[] {
 function stdinBody(call: readonly Step[], index: number): string | null {
   const step = call[index];
   if (step === undefined || !copiesStdin(step)) return null;
-  const hereStrings = step.command.redirects.filter((redirect) => redirect.op === "<<<").map((redirect) => redirect.target + "\n");
-  const bodies = [...step.heredocs, ...hereStrings];
+  const bodies = [...step.heredocs, ...hereStrings(step).map((text) => text + "\n")];
   if (bodies.length > 0) return bodies.length === 1 ? (bodies[0] ?? null) : null;
   const previous = call[index - 1];
   const pipedFromPrevious = previous !== undefined && previous.command.pipesToNext && !sendsStdoutAway(previous);
   return pipedFromPrevious ? stdinBody(call, index - 1) : null;
+}
+
+function hereStrings(step: Step): string[] {
+  return step.command.redirects.filter((redirect) => redirect.op === "<<<").map((redirect) => redirect.target);
+}
+
+function pipedInWords(call: readonly Step[], index: number): string[] {
+  const words: string[] = [];
+  let previous = index - 1;
+  while (previous >= 0 && call[previous]?.command.pipesToNext) {
+    words.push(...(call[previous]?.argv.slice(1) ?? []));
+    previous -= 1;
+  }
+  return words;
 }
 
 function sendsStdoutAway(step: Step): boolean {
@@ -551,24 +566,24 @@ function gitHookSkip(step: Step, index: number): string | null {
 }
 
 function checkGitOrPr(
-  step: Step, call: readonly Step[], index: number, callHeredocs: readonly string[], plainCallText: boolean,
+  step: Step, call: readonly Step[], index: number, callBodies: readonly string[], plainCallText: boolean,
 ): Violation[] {
-  if (step.name === "gh") return checkPrText(ghSubcommandArgv(step.argv), step, callHeredocs);
+  if (step.name === "gh") return checkPrText(ghSubcommandArgv(step.argv), step, callBodies);
   const argv = step.argv;
   const position = gitSubcommandIndex(argv);
   if (position === null) return [];
   const repoDirectory = gitDirectory(argv, step.directory, step.expansion);
   if (argv[position] === "commit") {
-    return checkCommit(argv.slice(position + 1), step, repoDirectory, call.slice(0, index), callHeredocs, plainCallText);
+    return checkCommit(argv.slice(position + 1), step, repoDirectory, call.slice(0, index), callBodies, plainCallText);
   }
   if (argv[position] === "push") return checkPush(argv.slice(position + 1), repoDirectory);
   return [];
 }
 
-function checkPrText(ghArgv: readonly string[], step: Step, callHeredocs: readonly string[]): Violation[] {
+function checkPrText(ghArgv: readonly string[], step: Step, callBodies: readonly string[]): Violation[] {
   if (ghArgv[1] !== "pr" || ghArgv.length < 3 || !PR_TEXT_SUBCOMMANDS.has(ghArgv[2] ?? "")) return [];
   const args = ghArgv.slice(3);
-  const text = [...args, ...callHeredocs, ...readMessageFiles(args, PR_FILE_OPTIONS, step)].join("\n");
+  const text = [...args, ...callBodies, ...readMessageFiles(args, PR_FILE_OPTIONS, step)].join("\n");
   const violations = commandTextSecretViolations(PR_TEXT_SHOWN, text);
   if (!testCaseFolded(ATTRIBUTION_RE, text)) return violations;
   return [{
@@ -578,11 +593,11 @@ function checkPrText(ghArgv: readonly string[], step: Step, callHeredocs: readon
 }
 
 function checkCommit(
-  args: readonly string[], step: Step, repoDirectory: string, earlierSteps: readonly Step[], callHeredocs: readonly string[],
+  args: readonly string[], step: Step, repoDirectory: string, earlierSteps: readonly Step[], callBodies: readonly string[],
   plainCallText: boolean,
 ): Violation[] {
   const violations: Violation[] = [];
-  const message = commitMessageTexts(args, step, callHeredocs).join("\n");
+  const message = commitMessageTexts(args, step, callBodies).join("\n");
   if (testCaseFolded(ATTRIBUTION_RE, message)) {
     violations.push({ ruleId: F_ATTRIBUTION, text: "AI-tool attribution in the commit message; remove it." });
   }
@@ -1028,8 +1043,8 @@ function salvage(raw: string): { session: string | null; command: string | null 
   return { session: getField(payload, "session_id") as string | null, command: isNonEmptyString(command) ? command : null };
 }
 
-function commitMessageTexts(args: readonly string[], step: Step, callHeredocs: readonly string[]): string[] {
-  const texts = [...callHeredocs];
+function commitMessageTexts(args: readonly string[], step: Step, callBodies: readonly string[]): string[] {
+  const texts = [...callBodies];
   for (const [name, value] of commitOptionValues(args)) {
     if (COMMIT_MESSAGE_OPTIONS.has(name)) texts.push(value);
     else if (COMMIT_FILE_OPTIONS.has(name)) texts.push(...messageSourceTexts(value, step));

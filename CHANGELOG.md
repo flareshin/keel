@@ -407,6 +407,11 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
   hook that let the action through without judging it (for K2, `no final text to judge`), so 2,552 such lines had
   made K2 look exercised. Every keel and overlay `fires:` row that logged warn lines on the owner's machine also
   logs deny, pass or record lines, so none drops to zero.
+- `run:risk` counts a quiet repo's default branch as seen past the rework horizon only from a `FETCH_HEAD` line
+  that names the branch fetched from origin's URL (with the `user@` part of a `scheme://` or scp-like URL dropped, and a
+  trailing `/` or `.git` too), in the checkout or any of its worktrees. A `FETCH_HEAD` from another remote, or a
+  checkout with no `origin` remote, leaves the ship not computable (`default branch not fetched past the horizon`)
+  instead of decided.
 
 ### Added
 - `agent-authoring` and `agent-improve` skills: the first picks the cheapest form for delegated work (a brief to an existing agent, a skill, a script, a new agent definition, a hook, always-on text last) and states what a definition and a brief carry; the second changes an agent only where two runs show the same failure, compares base and candidate three times each on the same task with a deterministic or blind separate grader, labels each component `helped`, `hurt`, `no observed effect` or `confounded`, and adopts only `helped` through the normal review. Rules cite K1, K2 and K5; no new ledger row. Adapted from Harness² (google-research/harness2 at 1cfe254, Apache-2.0).

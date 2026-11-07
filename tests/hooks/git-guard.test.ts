@@ -804,15 +804,17 @@ describe("KnownValuesTest", () => {
   it("commit_deniedAsAMessageForm_whenAnAbbreviatedLongOptionCarriesTheMessage", () => {
     sandbox.write(join(repo, "msg.txt"), `Rotate ${PASSWORD}\n`);
     for (const command of [
-      `git commit --allow-empty --mess='Rotate ${PASSWORD}'`, "git commit --allow-empty --fil=msg.txt",
+      `git commit --allow-empty --mess='Rotate ${PASSWORD}'`, `git commit --allow-empty --mes 'Rotate ${PASSWORD}'`,
+      "git commit --allow-empty --fil=msg.txt",
     ]) {
-      assertMessageFormDenied(command, PASSWORD);
+      const result = guard(command, repo);
+      assertDenied(result, "F-secrets");
+      assert.ok(result.stderr.includes("commit message holds the value of DB_PASSWORD"), result.stderr);
+      assert.ok(result.stderr.includes("in a form the hook does not read"), result.stderr);
+      assert.ok(result.stderr.trimEnd().endsWith(ASK_USER), result.stderr);
+      assert.ok(!result.stderr.includes(PASSWORD), result.stderr);
     }
-    const spaced = guard(`git commit --allow-empty --mes 'Rotate ${PASSWORD}'`, repo);
-    assertDenied(spaced, "F-secrets");
-    assert.ok(spaced.stderr.includes("in a form the hook does not read"), spaced.stderr);
-    assert.ok(spaced.stderr.trimEnd().endsWith(ASK_USER), spaced.stderr);
-    assert.ok(!spaced.stderr.includes(PASSWORD), spaced.stderr);
+    assertMessageFormDenied("git commit --allow-empty --mes ok");
   });
 
   it("commit_denied_whenTheMessageFileHoldsAKnownValue", () => {
@@ -894,6 +896,11 @@ describe("KnownValuesTest", () => {
 
   it("deny_asksTheUser_whenKnownValuesExistAndTheCommandUsesShellSyntaxBeyondPlainWords", () => {
     for (const command of ['git commit --no-verify --allow-empty -m "$MSG"', "echo x | git commit --no-verify --allow-empty -F -"]) {
+      const result = guard(command, repo);
+      assert.equal(result.code, 2, result.stderr);
+      assert.ok(result.stderr.trimEnd().endsWith(ASK_USER), result.stderr);
+    }
+    for (const command of ["git commit --no-verify --allow-empty -am ok", "git commit --no-verify --allow-empty --mes ok"]) {
       const result = guard(command, repo);
       assert.equal(result.code, 2, result.stderr);
       assert.ok(result.stderr.trimEnd().endsWith(ASK_USER), result.stderr);
@@ -1073,7 +1080,8 @@ describe("AttributionTest", () => {
     sandbox.write(join(repo, "b.md"), "Summary\n");
     for (const command of [
       "echo 'Fix parser' | git commit --allow-empty -F -", 'git commit --allow-empty -m "$MSG"',
-      "git commit --allow-empty --mess='Fix parser'", "gh pr create -t t -dF b.md", "git commit --allow-empty -F missing.txt",
+      "git commit --allow-empty --mess='Fix parser'", "git commit --allow-empty --mes 'Fix parser'", "gh pr create -t t -dF b.md",
+      "git commit --allow-empty -F missing.txt",
     ]) {
       assertPassed(guard(command, repo));
     }

@@ -1115,7 +1115,11 @@ function addCommitMessageValue(source: MessageSource, arg: string, optionName: s
 
 function abbreviatesMessageOption(arg: string): boolean {
   const name = partition(arg, "=")[0];
-  return name.startsWith("--") && COMMIT_MESSAGE_SOURCE_LONG_OPTIONS.some((option) => option !== name && option.startsWith(name));
+  return name.startsWith("--") && !COMMIT_LONG_VALUE_OPTIONS.has(name) && abbreviatedMessageSourceOption(name) !== null;
+}
+
+function abbreviatedMessageSourceOption(name: string): string | null {
+  return COMMIT_MESSAGE_SOURCE_LONG_OPTIONS.find((option) => option.startsWith(name)) ?? null;
 }
 
 function prTextArgs(ghArgv: readonly string[]): string[] | null {
@@ -1136,7 +1140,7 @@ function prMessageSource(args: readonly string[]): MessageSource {
 function readCommitOption(arg: string): CommitOption {
   if (arg.startsWith("--")) {
     const [name, hasInlineValue, inlineValue] = partition(arg, "=");
-    const valueName = COMMIT_LONG_VALUE_OPTIONS.has(name) ? name : null;
+    const valueName = COMMIT_LONG_VALUE_OPTIONS.has(name) ? name : abbreviatedMessageSourceOption(name);
     return {
       stages: COMMIT_STAGING_LONG_OPTIONS.has(name), interactive: COMMIT_INTERACTIVE_LONG_OPTIONS.has(name), skipsHooks: false, valueName,
       attachedValue: valueName && hasInlineValue ? inlineValue : null,

@@ -136,6 +136,7 @@ describe("githooks", () => {
     box.write("overlay/boundary/lexicon.txt", "ACMECORP\nTKT-\nZEBRAWORD\n")
     box.write("work/b.txt", "public\n")
     box.commitAll(repo, "Add b")
+    box.git(repo, "update-ref", "-d", "refs/remotes/origin/main")
     const completed = gitResult("push", "-q", "origin", "HEAD:refs/heads/main")
     assert.equal(completed.status, 0, completed.stderr)
   })

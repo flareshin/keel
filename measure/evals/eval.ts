@@ -19,7 +19,7 @@ import { allRows, loadLedgersFrom } from "../lib/measurekit/ledger.ts"
 import { Case, CaseError, GRADED_CHANGE, loadCases, READABLE_CHANGE, selectCases, SPLITS, splitGaps } from "./lib/evalkit/cases.ts"
 import { faultReason, graderCommit, LEFTOVER_FAULT, runPasses } from "./lib/evalkit/grade.ts"
 import { cliConfigDir, configFingerprint, isKeelLive, suiteEvalId } from "./lib/evalkit/liveconfig.ts"
-import { CLAUDE_BINARY, claudeCommand, findOnPath, runOnce, UNLOCKABLE_TOOLS } from "./lib/evalkit/runner.ts"
+import { CLAUDE_BINARY, claudeCommand, DEFAULT_MAX_TURNS, findOnPath, runOnce, UNLOCKABLE_TOOLS } from "./lib/evalkit/runner.ts"
 import type { RunRecord } from "./lib/evalkit/runner.ts"
 import { RunFacts, summarizeStream } from "./lib/evalkit/stream.ts"
 import { evalGraderDiff, ruleCheckDiff } from "./lib/evalkit/readability.ts"
@@ -34,6 +34,7 @@ const CASE_SUFFIX = ".case"
 const SKILL_ENFORCEMENT = "skill:"
 const RAW_DIR_PREFIX = "keel-eval-"
 const SUITE_TOOLS_FILE = "tools.json"
+const SUITE_MAX_TURNS_CEILING = 50
 const RUN_RECORD_KEYS = ["case", "run", "kind", "exit", "timed_out", "changed"]
 const COMMAND: CommandSpec = {
   prog: "measure/evals/eval",
@@ -166,7 +167,8 @@ function buildPlan(args: EvalArgs): Plan {
   if (findOnPath(CLAUDE_BINARY) === null) throw new PlanError(`no \`${CLAUDE_BINARY}\` on PATH`)
   const configDir = cliConfigDir()
   const model = args.model as string
-  const command = claudeCommand(model, suiteUnlockedTools(keelHome, evalId))
+  const settings = suiteRunSettings(keelHome, evalId)
+  const command = claudeCommand(model, settings.unlockedTools, settings.maxTurns)
   return {
     evalId, skill, cases, fullRun, repeat: args.repeat, model, command, fixture, configDir,
     keelLive: isKeelLive(configDir, keelHome, skill), timeoutSeconds: args.timeoutSeconds,
@@ -180,14 +182,19 @@ function skillEnforcing(evalId: string, keelHome: string, overlayDir: string): s
   return row.enforcedAt.slice(SKILL_ENFORCEMENT.length)
 }
 
-function suiteUnlockedTools(keelHome: string, evalId: string): string[] {
+function suiteRunSettings(keelHome: string, evalId: string): { unlockedTools: string[]; maxTurns: number } {
   const toolsFile = path.join(keelHome, "measure", "evals", evalId, SUITE_TOOLS_FILE)
-  if (!fs.existsSync(toolsFile)) return []
-  const allow = readJsonObject(toolsFile)["allow"]
+  if (!fs.existsSync(toolsFile)) return { unlockedTools: [], maxTurns: DEFAULT_MAX_TURNS }
+  const settings = readJsonObject(toolsFile)
+  const allow = settings["allow"]
   if (!Array.isArray(allow) || !allow.every((tool) => typeof tool === "string" && UNLOCKABLE_TOOLS.includes(tool))) {
     throw new PlanError(`${toolsFile}: "allow" may list only ${UNLOCKABLE_TOOLS.join(", ")}`)
   }
-  return allow as string[]
+  const maxTurns = settings["max_turns"] ?? DEFAULT_MAX_TURNS
+  if (typeof maxTurns !== "number" || !Number.isInteger(maxTurns) || maxTurns < 1 || maxTurns > SUITE_MAX_TURNS_CEILING) {
+    throw new PlanError(`${toolsFile}: "max_turns" must be a whole number from 1 to ${SUITE_MAX_TURNS_CEILING}`)
+  }
+  return { unlockedTools: allow as string[], maxTurns }
 }
 
 function configDirFault(configDir: string): string | null {

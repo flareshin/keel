@@ -65,6 +65,8 @@ const COMMIT_LONG_VALUE_OPTIONS: ReadonlySet<string> = new Set([
   "--message", "--file", "--author", "--date", "--cleanup", "--fixup", "--squash", "--reuse-message",
   "--reedit-message", "--template", "--trailer", "--pathspec-from-file",
 ]);
+const COMMIT_MESSAGE_SOURCE_LONG_OPTIONS: readonly string[] = ["--message", "--file"];
+const MIN_ABBREVIATED_LONG_OPTION_LENGTH = 3;
 const COMMIT_STAGING_SHORT_FLAGS: ReadonlySet<string> = new Set(["a"]);
 const COMMIT_INTERACTIVE_LONG_OPTIONS: ReadonlySet<string> = new Set(["--patch", "--interactive"]);
 const COMMIT_INTERACTIVE_SHORT_FLAGS: ReadonlySet<string> = new Set(["p"]);
@@ -83,7 +85,6 @@ const STAGING_SUBCOMMANDS: ReadonlySet<string> = new Set(["add", "stage"]);
 const PLAIN_CALL_TEXT_RE = /^(?:[A-Za-z0-9 \t\n'"_.,:;=@%+\-\/]|&&)*$/;
 const PR_BODY_FILE_LONG_OPTION = "--body-file";
 const PR_BODY_FILE_SHORT_FLAG = "F";
-const PR_SHORT_VALUE_FLAGS: ReadonlySet<string> = new Set(["A", "a", "B", "b", "H", "l", "m", "p", "R", "r", "T", "t"]);
 const PR_TEXT_SUBCOMMANDS: ReadonlySet<string> = new Set(["create", "edit", "merge"]);
 const UNPUSHED = ["--not", "--remotes"];
 const STDIN_PATH = "-";
@@ -1123,15 +1124,10 @@ function prBodyFilePaths(args: readonly string[]): string[] {
 }
 
 function shortClusterBodyFile(cluster: string, nextArg: string | undefined): string[] {
-  const flags = Array.from(cluster.slice(1));
-  for (const [position, flag] of flags.entries()) {
-    if (PR_SHORT_VALUE_FLAGS.has(flag)) return [];
-    if (flag !== PR_BODY_FILE_SHORT_FLAG) continue;
-    const attached = flags.slice(position + 1).join("").replace(/^=/, "");
-    if (attached) return [attached];
-    return nextArg === undefined ? [] : [nextArg];
-  }
-  return [];
+  const position = cluster.indexOf(PR_BODY_FILE_SHORT_FLAG, 1);
+  if (position < 0) return [];
+  const attached = cluster.slice(position + 1).replace(/^=/, "");
+  return [attached, nextArg ?? ""].filter((path) => path !== "");
 }
 
 function messageSourceTexts(path: string, step: Step, relativeTo: string = step.directory): string[] {
@@ -1144,10 +1140,15 @@ function withLfLineEnds(text: string): string {
   return text.replace(/\r\n?/g, "\n");
 }
 
+function abbreviatedMessageSourceOption(name: string): string | null {
+  if (name.length < MIN_ABBREVIATED_LONG_OPTION_LENGTH) return null;
+  return COMMIT_MESSAGE_SOURCE_LONG_OPTIONS.find((option) => option.startsWith(name)) ?? null;
+}
+
 function readCommitOption(arg: string): CommitOption {
   if (arg.startsWith("--")) {
     const [name, hasInlineValue, inlineValue] = partition(arg, "=");
-    const valueName = COMMIT_LONG_VALUE_OPTIONS.has(name) ? name : null;
+    const valueName = COMMIT_LONG_VALUE_OPTIONS.has(name) ? name : abbreviatedMessageSourceOption(name);
     return {
       stages: COMMIT_STAGING_LONG_OPTIONS.has(name), interactive: COMMIT_INTERACTIVE_LONG_OPTIONS.has(name), skipsHooks: false, valueName,
       attachedValue: valueName && hasInlineValue ? inlineValue : null,

@@ -699,7 +699,10 @@ describe("KnownValuesTest", () => {
     assert.ok(fromFile.stderr.includes("PR text holds the value of DB_PASSWORD"), fromFile.stderr);
     assert.ok(fromFile.stderr.trimEnd().endsWith(ASK_USER), fromFile.stderr);
     assert.ok(!fromFile.stderr.includes(PASSWORD));
-    for (const attached of ["gh pr create --title t -Fb.md", "gh pr create --title t -F=b.md", "gh pr create -t t -dF b.md", "gh pr create -t t -dFb.md"]) {
+    for (const attached of [
+      "gh pr create --title t -Fb.md", "gh pr create --title t -F=b.md", "gh pr create --title t --body-file=b.md",
+      "gh pr create -t t -dF b.md", "gh pr create -t t -dFb.md", "gh pr merge 1 -mF b.md", "gh pr merge 1 -rF b.md",
+    ]) {
       const result = guard(attached, repo);
       assertDenied(result, "F-secrets");
       assert.ok(result.stderr.includes("PR text holds the value of DB_PASSWORD"), result.stderr);
@@ -786,6 +789,18 @@ describe("KnownValuesTest", () => {
       assert.ok(result.stderr.includes(`${shown} holds the value of ACME_API_TOKEN`), result.stderr);
       assert.ok(result.stderr.trimEnd().endsWith(ASK_USER), result.stderr);
       assert.ok(!result.stderr.includes(TOKEN), result.stderr);
+    }
+  });
+
+  it("commit_denied_whenAnAbbreviatedLongOptionCarriesTheKnownValue", () => {
+    sandbox.write(join(repo, "msg.txt"), `Rotate ${PASSWORD}\n`);
+    for (const command of [
+      `git commit --allow-empty --mess='Rotate ${PASSWORD}'`, `git commit --allow-empty --mes 'Rotate ${PASSWORD}'`,
+      "git commit --allow-empty --fil=msg.txt",
+    ]) {
+      const result = guard(command, repo);
+      assertDenied(result, "F-secrets");
+      assert.ok(result.stderr.includes("commit message holds the value of DB_PASSWORD"), result.stderr);
     }
   });
 

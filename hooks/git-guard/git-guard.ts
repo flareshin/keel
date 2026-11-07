@@ -66,7 +66,6 @@ const COMMIT_LONG_VALUE_OPTIONS: ReadonlySet<string> = new Set([
   "--reedit-message", "--template", "--trailer", "--pathspec-from-file",
 ]);
 const COMMIT_MESSAGE_SOURCE_LONG_OPTIONS: readonly string[] = ["--message", "--file"];
-const MIN_ABBREVIATED_LONG_OPTION_LENGTH = 3;
 const COMMIT_STAGING_SHORT_FLAGS: ReadonlySet<string> = new Set(["a"]);
 const COMMIT_INTERACTIVE_LONG_OPTIONS: ReadonlySet<string> = new Set(["--patch", "--interactive"]);
 const COMMIT_INTERACTIVE_SHORT_FLAGS: ReadonlySet<string> = new Set(["p"]);
@@ -1115,7 +1114,6 @@ function prTextArgs(ghArgv: readonly string[]): string[] | null {
 function prBodyFilePaths(args: readonly string[]): string[] {
   const paths: string[] = [];
   for (const [index, arg] of args.entries()) {
-    if (arg === "--") break;
     if (arg === PR_BODY_FILE_LONG_OPTION && index + 1 < args.length) paths.push(args[index + 1] ?? "");
     else if (arg.startsWith(PR_BODY_FILE_LONG_OPTION + "=")) paths.push(partition(arg, "=")[2]);
     else if (arg.startsWith("-") && !arg.startsWith("--")) paths.push(...shortClusterBodyFile(arg, args[index + 1]));
@@ -1141,7 +1139,6 @@ function withLfLineEnds(text: string): string {
 }
 
 function abbreviatedMessageSourceOption(name: string): string | null {
-  if (name.length < MIN_ABBREVIATED_LONG_OPTION_LENGTH) return null;
   return COMMIT_MESSAGE_SOURCE_LONG_OPTIONS.find((option) => option.startsWith(name)) ?? null;
 }
 

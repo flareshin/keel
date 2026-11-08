@@ -43,7 +43,7 @@ The brief is all the agent knows. Include:
 - **Already ruled out**: what you checked and what it showed, so the agent does not redo it.
 - **Scope**: what is in, what is out, and that it does not commit, push or widen the change unless told.
 - **Done when**: the check that proves it and the evidence to quote — a runner summary, an exit code, a count.
-- **Return shape**: the format and length of the reply.
+- **Return shape**: the format and length of the reply. When the deliverable has a shape the agent must match (a report, a layout, a file format), point at a finished example to copy (or inline a short one when none exists), beside the checkable first line or schema, not in place of it.
 - **On failure**: one bounded fallback and a stop condition; a tool error is reported with its output, not retried blindly.
 
 Leave out your hypothesis as a fact, your verdict on the work and any "this looks correct" language: an agent handed a conclusion tends to return it confirmed. A coding brief tells the agent to load `writing-readable-code` or inlines the rules the task touches.

@@ -15,7 +15,7 @@ An agent edit that sounds right can still change nothing, or make another run wo
    - **Procedure**: how the agent worked — a tool error it misread, a step repeated by hand, a check it skipped, a deliverable it did not reopen.
    - **Knowledge**: what a practitioner knows that the agent lacked — a source to read, a structure the result needs, a domain rule.
 
-3. **Pick the lever.** Use the form order in `authoring-agents`: a brief line, the definition body, a skill with a trigger, a script, a hook, always-on text last. Procedure that is skipped despite clear text twice goes to a script or a hook, not more prose. Knowledge with a trigger goes to a skill.
+3. **Pick the lever.** Use the form order in `authoring-agents`: a brief line, the definition body, a skill with a trigger, a script, a hook, always-on text last. Procedure that is skipped despite clear text twice goes to a script or a hook, not more prose. Knowledge with a trigger goes to a skill. An output-form rule (a structure, layout or style the result must have) that the runs ignored although its text was clear gets a worked example beside it, not more rule text: a finished instance to copy, or a bad and a good version that differ in that one rule. Agents follow a pattern shown in an example more reliably than the same pattern stated only as a rule; Stageshow ships gold examples to copy as its quality bar (github.com/benjitaylor/skills at 299140f, MIT, `stageshow`).
 
 4. **Make one candidate.** Change one component per candidate, on a branch. Leave the deliverable's shape alone: the agent changes how it works, not what it returns. If the evidence argues for no change, stop and say keep-base; that is a result.
 

@@ -69,6 +69,8 @@ describe("smoke run", () => {
     const completed = harness.box.runMeasure("smoke")
     assert.equal(completed.status, 0, completed.stderr)
     assert.match(completed.stderr, /^smoke ok with 2 warnings: /m)
+    assert.ok(completed.stderr.includes("WARN  caps/memory-index"), completed.stderr)
+    assert.ok(completed.stderr.includes("WARN  mod-trust/all"), completed.stderr)
   })
 
   it("smoke_runIdHasTheStampAndSixHexDigits", () => {

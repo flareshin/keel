@@ -72,8 +72,8 @@ function writeHandoff(place: RepoPlace, note: string): void {
 
 function renderHandoff(place: RepoPlace, note: string): string {
   const toplevel = place.toplevel;
-  const dirty = gitOutputOrNull(["status", "--porcelain"], toplevel) || "";
-  const dirtyCount = splitlines(dirty).filter((line) => line !== "").length;
+  const dirty = gitOutputOrNull(["status", "--porcelain"], toplevel);
+  const dirtyCount = dirty === null ? null : splitlines(dirty).filter((line) => line !== "").length;
   const lines = [
     `# HANDOFF — ${basename(place.main)}`,
     "",
@@ -90,10 +90,16 @@ function renderHandoff(place: RepoPlace, note: string): string {
   ];
   const upstreamPosition = upstreamPositionOf(toplevel);
   if (upstreamPosition) lines.push(`- upstream: ${upstreamPosition}`);
-  lines.push("", `## Uncommitted (${dirtyCount})`);
-  lines.push(...(dirtyCount > 0 ? ["```", dirty, "```"] : ["(none — working tree clean)"]));
+  lines.push("", `## Uncommitted (${dirtyCount ?? "?"})`);
+  lines.push(...uncommittedBody(dirty, dirtyCount));
   const recent = gitOutputOrNull(["log", "-3", "--pretty=%h %ad %s", "--date=short"], toplevel) || "?";
   return [...lines, "", "## Recent commits", "```", recent, "```", ""].join("\n");
+}
+
+function uncommittedBody(dirty: string | null, dirtyCount: number | null): string[] {
+  if (dirty === null) return ["(unknown — git status failed; check the tree before resuming)"];
+  if (dirtyCount === 0) return ["(none — working tree clean)"];
+  return ["```", dirty, "```"];
 }
 
 function resumeNote(path: string): string {

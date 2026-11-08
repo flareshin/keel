@@ -84,6 +84,14 @@ describe("CliModesTest", () => {
     assert.equal(cli(["--path"]).stdout.trim(), handoffFile());
   });
 
+  it("note_reportsUncommittedUnknown_whenGitStatusFails", () => {
+    sandbox.write(join(repo, ".git", "index"), "not an index");
+    cli(["next: check the tree"]);
+    const note = read(handoffFile());
+    assert.ok(note.includes("## Uncommitted (?)"), note);
+    assert.ok(!note.includes("working tree clean"), note);
+  });
+
   it("cli_failsWithUsage_whenOutsideRepo", () => {
     const outside = join(sandbox.root, "plain");
     mkdirSync(outside);

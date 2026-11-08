@@ -139,14 +139,13 @@ export function reconcile(
   desired: Map<string, ManagedFile>, skills: Map<string, ManagedFile>, agentsHome: string, statePath: string, mode: LinkMode,
   files: SkillFiles = realSkillFiles,
 ): CommandResult {
-  const { owned, migrated } = readProfile(statePath, agentsHome);
+  const owned = readProfile(statePath, agentsHome);
   const skillPlan = planSkills(agentsHome, dirname(statePath), skills);
   const { changes, problems } = planFiles(desired, owned);
   problems.push(...skillPlan.problems);
   const actions = [...changes, ...skillPlan.create.keys(), ...Array.from(skillPlan.replace.keys(), (path) => `retarget ${path}`),
     ...skillPlan.remove.map((path) => `remove ${path}`)];
   if (skillPlan.changed) actions.push("update shared skill references");
-  if (migrated) actions.push("migrate profile ownership; preserve legacy skill links");
   if (problems.length > 0) {
     const stdout = JSON.stringify({ actions, problems, written: 0 }) + "\n";
     return { code: mode.write || mode.unlink ? REFUSED_EXIT_CODE : mode.check ? CHECK_PENDING_EXIT_CODE : 0, stdout, stderr: "" };
@@ -186,7 +185,7 @@ function writeAll(
   writeAtomic(statePath, JSON.stringify({ owned: Object.fromEntries(owned), skills_home: agentsHome }, null, JSON_INDENT) + "\n");
 }
 
-function readProfile(statePath: string, agentsHome: string): { owned: Map<string, string>; migrated: boolean } {
+function readProfile(statePath: string, agentsHome: string): Map<string, string> {
   const state = readJson(statePath);
   const recorded = Object.hasOwn(state, "owned") ? state["owned"] : {};
   if (!isJsonObject(recorded) || Object.values(recorded).some((value) => typeof value !== "string")) {
@@ -195,14 +194,11 @@ function readProfile(statePath: string, agentsHome: string): { owned: Map<string
   const homeOnRecord = Object.hasOwn(state, "skills_home") ? state["skills_home"] : agentsHome;
   if (homeOnRecord !== agentsHome) throw new Refusal("profile belongs to a different skills home; use its original --home");
   const allowed = new Set(["AGENTS.md", "hooks.json"].map((name) => childPath(dirname(statePath), name)));
-  const skillsRoot = childPath(agentsHome, "skills");
   const owned = new Map(Object.entries(recorded as { [key: string]: string }));
-  const legacy = new Set(Array.from(owned.keys()).filter((name) => dirname(name) === skillsRoot));
-  if (Array.from(owned.keys()).some((name) => !allowed.has(name) && !legacy.has(name))) {
+  if (Array.from(owned.keys()).some((name) => !allowed.has(name))) {
     throw new Refusal("profile ownership contains an unexpected path");
   }
-  for (const name of legacy) owned.delete(name);
-  return { owned, migrated: Object.keys(state).length > 0 && !Object.hasOwn(state, "skills_home") };
+  return owned;
 }
 
 function planFiles(desired: Map<string, ManagedFile>, owned: Map<string, string>): { changes: string[]; problems: string[] } {

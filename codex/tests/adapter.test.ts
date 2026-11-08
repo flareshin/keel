@@ -3,14 +3,12 @@ import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync,
-  unlinkSync, utimesSync, writeFileSync,
+  utimesSync, writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { run } from "../../hooks/lib/hookkit/subprocess.ts";
-import { materialize } from "../../tests/recorded-cases.ts";
-import type { SnapshotStore } from "../../tests/recorded-cases.ts";
 import { recordedAnswers } from "../../tests/recorded.ts";
 import type { CompletedProcess } from "../../hooks/lib/hookkit/subprocess.ts";
 import { withEnv } from "../../tests/hooks/helpers.ts";
@@ -523,8 +521,6 @@ describe("installation", () => {
 
   describe("reading a profile the Python installer wrote", () => {
     interface PythonInstall {
-      store: SnapshotStore;
-      snapshot: string;
       agents: string;
       agentsBytes: string;
       ownedAgentsDigest: string;
@@ -535,18 +531,6 @@ describe("installation", () => {
       return recordedAnswers<unknown, PythonInstall>("codex-python-install", [{ install: "write" }], { "{{ROOT}}": home, "{{KEEL_HOME}}": dirname(ADAPTER) })[0] as PythonInstall;
     }
 
-    function restoredPythonInstall(): PythonInstall {
-      const install = recordedPythonInstall();
-      rmSync(home, { recursive: true, force: true });
-      materialize(install.store, install.snapshot, home);
-      const statePath = join(home, ".codex/keel-codex-state.json");
-      const state = readJsonFile(statePath);
-      for (const owned of Object.keys(state["owned"])) state["owned"][owned] = fingerprint(owned);
-      writeFileSync(statePath, JSON.stringify(state));
-      return install;
-    }
-
-    const HOOKS_ONLY = { actions: [] as string[], problems: [] as string[] };
     const SKILLS_ADDED_AFTER_RECORDING = ["removing-comments", "authoring-agents", "improving-agents", "deepening-prompts"];
 
     function registryWithoutSkillsAddedAfterRecording(registryText: string): string {
@@ -554,30 +538,6 @@ describe("installation", () => {
       for (const name of SKILLS_ADDED_AFTER_RECORDING) delete registry.skills[name];
       return JSON.stringify(registry, null, 2) + "\n";
     }
-
-    it("lets TypeScript verify and refresh a Python install, rewriting only the hook command", () => {
-      restoredPythonInstall();
-      const hooks = join(home, ".codex/hooks.json");
-      const pythonHooks = read(hooks);
-      const check = runLink("--check");
-      assert.equal(check.status, 1, check.stderr);
-      const addedSkills = SKILLS_ADDED_AFTER_RECORDING.toSorted().map((name) => join(home, ".agents/skills", name));
-      assert.deepEqual(JSON.parse(check.stdout), { ...HOOKS_ONLY, actions: [hooks, ...addedSkills, "update shared skill references"] });
-      assert.equal(runLink("--write").status, 0);
-      assert.notEqual(read(hooks), pythonHooks);
-      assert.match(read(hooks), /pre-tool-use\.ts"/);
-      const back = runLink("--check");
-      assert.equal(back.status, 0, back.stderr);
-    });
-
-    it("lets TypeScript unlink a Python install", () => {
-      restoredPythonInstall();
-      const second = runLink("--unlink");
-      assert.equal(second.status, 0, second.stderr);
-      assert.equal(existsSync(join(home, ".codex/AGENTS.md")), false);
-      assert.equal(existsSync(join(home, ".codex/hooks.json")), false);
-      assert.equal(existsSync(join(home, ".codex/keel-codex-state.json")), false);
-    });
 
     it("records the same ownership digests and skill registry as the recorded Python install", () => {
       const install = recordedPythonInstall();
@@ -612,18 +572,28 @@ describe("installation", () => {
     });
   });
 
-  it("test_legacyOwnership_preservesSkillOnUnlink", () => {
+  it("test_profileOwningASkillLink_isRefused_andTheLinkStays", () => {
+    assert.equal(runLink("--write").status, 0);
+    const statePath = join(home, ".codex/keel-codex-state.json");
+    const state = readJsonFile(statePath);
+    const skill = join(home, ".agents/skills/writing-readable-code");
+    state["owned"][skill] = fingerprint(skill);
+    writeFileSync(statePath, JSON.stringify(state));
+    const refused = runLink("--unlink");
+    assert.equal(refused.status, 3, refused.stdout);
+    assert.match(refused.stderr, /profile ownership contains an unexpected path/);
+    assert.ok(lstatSync(skill).isSymbolicLink());
+  });
+
+  it("test_profileWithoutSkillsHome_checksClean_whenTheInstallIsCurrent", () => {
     assert.equal(runLink("--write").status, 0);
     const statePath = join(home, ".codex/keel-codex-state.json");
     const state = readJsonFile(statePath);
     delete state["skills_home"];
-    const skill = join(home, ".agents/skills/writing-readable-code");
-    state["owned"][skill] = fingerprint(skill);
     writeFileSync(statePath, JSON.stringify(state));
-    unlinkSync(join(home, ".agents/keel-codex-skills.json"));
-    assert.equal(runLink("--write").status, 0);
-    assert.equal(runLink("--unlink").status, 0);
-    assert.ok(lstatSync(skill).isSymbolicLink());
+    const check = runLink("--check");
+    assert.equal(check.status, 0, check.stdout);
+    assert.deepEqual(JSON.parse(check.stdout), { actions: [], problems: [] });
   });
 });
 

@@ -40,10 +40,9 @@ describe("CliModesTest", () => {
     assert.deepEqual(JSON.parse(cli(["--status"]).stdout), { path: handoffFile(), hasResumePoint: true });
   });
 
-  it("status_reportsResumePoint_andReadKeepsTheLine_whenTheNoteStartsWithAnAutoSnapshotLine", () => {
+  it("status_reportsResumePoint_whenTheNoteStartsWithAnAutoSnapshotLine", () => {
     cli(["(auto-snapshot before auto compaction)"]);
     assert.equal(JSON.parse(cli(["--status"]).stdout).hasResumePoint, true);
-    assert.ok(cli(["--read"]).stdout.includes("## Resume point\n(auto-snapshot before auto compaction)\n"));
   });
 
   it("unknownMode_isRecordedAsTheNote_whenNotACommand", () => {

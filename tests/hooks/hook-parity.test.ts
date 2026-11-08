@@ -171,7 +171,6 @@ describe("hook parity wrong-type payloads", () => {
 });
 
 const RENAMED_NATIVE_TESTS: Record<string, string> = {
-  status_reportsNoResumePoint_whenOnlyAutoSnapshot: "status_reportsNoResumePoint_whenOnlyAutoSnapshotFromAnOlderVersion",
   commit_deniedWithFSecrets_whenAddChainedBeforeIt: "commit_deniedWithTheSecret_whenSecretFileIsAddedInTheSameCall",
   commit_denied_whenAddAllChainedBeforeIt: "commit_deniedWithTheSecret_whenAddAllChainedBeforeIt",
   commit_denied_whenAllFlagClusteredWithMessage: "commit_deniedWithTheSecret_whenAllFlagCommitsATrackedEditHoldingIt",

@@ -17,17 +17,6 @@ afterEach(() => {
   sandbox.close();
 });
 
-const LEGACY_AUTO_SNAPSHOT_NOTE = [
-  "# HANDOFF — app",
-  "",
-  "## Resume point",
-  "(auto-snapshot before auto compaction · transcript: /data/projects/p/s1.jsonl)",
-  "",
-  "## Location",
-  "- Branch: `main`",
-  "",
-].join("\n");
-
 function handoffFile(mainRepo: string = repo): string {
   return join(sandbox.data, "handoff", mainRepo.replace(/[^A-Za-z0-9]/g, "-") + ".md");
 }
@@ -49,22 +38,6 @@ describe("CliModesTest", () => {
   it("status_reportsResumePoint_whenNoteWrittenByPerson", () => {
     cli(["next: start from the repro test"]);
     assert.deepEqual(JSON.parse(cli(["--status"]).stdout), { path: handoffFile(), hasResumePoint: true });
-  });
-
-  it("status_reportsNoResumePoint_whenOnlyAutoSnapshotFromAnOlderVersion", () => {
-    sandbox.write(handoffFile(), LEGACY_AUTO_SNAPSHOT_NOTE);
-    assert.equal(JSON.parse(cli(["--status"]).stdout).hasResumePoint, false);
-  });
-
-  it("status_reportsResumePoint_whenANoteStartsWithAnAutoSnapshotLineFollowedByText", () => {
-    cli(["(auto-snapshot x)\nnext: real step"]);
-    assert.equal(JSON.parse(cli(["--status"]).stdout).hasResumePoint, true);
-  });
-
-  it("status_reportsResumePoint_whenAnOlderVersionAppendedAnAutoSnapshotAfterAHandNote", () => {
-    const note = LEGACY_AUTO_SNAPSHOT_NOTE.replace("## Resume point\n", "## Resume point\nnext: real step\n");
-    sandbox.write(handoffFile(), note);
-    assert.equal(JSON.parse(cli(["--status"]).stdout).hasResumePoint, true);
   });
 
   it("unknownMode_isRecordedAsTheNote_whenNotACommand", () => {

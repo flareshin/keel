@@ -14,7 +14,6 @@ const HOOK = "handoff";
 const RULE = "C-handoff";
 const RESUME_HEADING = "## Resume point";
 const LOCATION_HEADING = "## Location";
-const LEGACY_AUTO_SNAPSHOT_PREFIX = "(auto-snapshot";
 const NOT_GIVEN_PREFIX = "(not given";
 const EMPTY_NOTE = "(not given — pass the resume point as an argument)";
 const SUBMODULE_GIT_DIR_RE = /\/\.git\/(worktrees\/[^/]+\/)?modules\//;
@@ -108,7 +107,7 @@ function resumeNote(path: string): string {
   for (const line of splitlines(readFileSync(path, "utf8"))) {
     if (line === RESUME_HEADING) inside = true;
     else if (line === LOCATION_HEADING) inside = false;
-    else if (inside && !line.startsWith(LEGACY_AUTO_SNAPSHOT_PREFIX)) noteLines.push(line);
+    else if (inside) noteLines.push(line);
   }
   return trimCharacters(noteLines.join("\n"), "\n") + "\n";
 }
@@ -116,7 +115,7 @@ function resumeNote(path: string): string {
 function hasResumePoint(path: string): boolean {
   if (!isFile(path)) return false;
   const first = splitlines(resumeNote(path)).find((line) => trimSpace(line) !== "") ?? "";
-  return first !== "" && !first.startsWith(LEGACY_AUTO_SNAPSHOT_PREFIX) && !first.startsWith(NOT_GIVEN_PREFIX);
+  return first !== "" && !first.startsWith(NOT_GIVEN_PREFIX);
 }
 
 function mainRepo(toplevel: string): string {

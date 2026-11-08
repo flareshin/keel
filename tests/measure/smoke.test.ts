@@ -55,6 +55,14 @@ describe("smoke run", () => {
     assert.deepEqual(line.failed.map((item: { check: string; scope: string }) => [item.check, item.scope]), [["fires-rule-ids", "all"]])
   })
 
+  it("smoke_summaryNamesWarnings_whenAWarnIsTheOnlyNonPass", () => {
+    harness.box.write("data/projects/p1/memory/MEMORY.md", "x".repeat(8193))
+    const completed = harness.box.runMeasure("smoke")
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.match(completed.stderr, /^smoke ok with 1 warning: /m)
+    assert.ok(!completed.stderr.includes("smoke ok: "), completed.stderr)
+  })
+
   it("smoke_runIdHasTheStampAndSixHexDigits", () => {
     const [, result] = harness.runSmoke()
     assert.match(result.run_id, /^smoke-\d{8}T\d{6}Z-[0-9a-f]{6}$/)

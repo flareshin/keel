@@ -7,7 +7,7 @@ import type { CommandSpec } from "./lib/measurekit/cli.ts"
 import { appendJsonl } from "./lib/measurekit/datafiles.ts"
 import { compactUtcSeconds, utcSeconds } from "./lib/measurekit/dates.ts"
 import { GitError, isGitRepo, repoKey, snapshotTree } from "./lib/measurekit/gitutil.ts"
-import { FAIL, PASS } from "./lib/measurekit/metrics.ts"
+import { FAIL, PASS, WARN } from "./lib/measurekit/metrics.ts"
 import { assertion, SmokeContext } from "./lib/measurekit/smoke_context.ts"
 import type { Assertion } from "./lib/measurekit/smoke_context.ts"
 import { checkBoundary, checkContractMisses, checkDangling, checkFileCaps, checkFiresRuleIds, checkIdTagging, checkLinkIntegrity } from "./lib/measurekit/smoke_files.ts"
@@ -99,7 +99,8 @@ function printSummary(result: SmokeResult): void {
   for (const item of result.assertions) {
     if (item.status !== PASS) process.stderr.write(`${item.status.padEnd(5)} ${item.check}/${item.scope}: ${item.detail}\n`)
   }
-  const verdict = result.ok ? "ok" : "FAILED"
+  const warnings = result.assertions.filter((item) => item.status === WARN).length
+  const verdict = !result.ok ? "FAILED" : warnings === 0 ? "ok" : `ok with ${warnings} ${warnings === 1 ? "warning" : "warnings"}`
   process.stderr.write(`smoke ${verdict}: ${result.count} assertions (cap ${result.cap}), run ${result.run_id}\n`)
 }
 

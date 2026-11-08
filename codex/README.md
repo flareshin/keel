@@ -28,7 +28,7 @@ ownership. Conflicting files cause a refusal before writes. Existing
 force/adopt mode. A state file tracks created paths and their hashes; hand edits
 prevent replacement and unlinking. Refresh after changing shared principles,
 PERSONAL.md or the Codex runtime instructions by running `--write` again.
-Shared skill ownership is recorded in `~/.agents/keel-codex-skills.json` under an exclusive installer lock. Each profile registers a reference; only the last unlink removes adapter-created links. Pre-existing and legacy links remain user-owned. Unlink uses recorded state even when sources have changed.
+Shared skill ownership is recorded in `~/.agents/keel-codex-skills.json` under an exclusive installer lock. Each profile registers a reference; only the last unlink removes adapter-created links. Pre-existing links remain user-owned. Unlink uses recorded state even when sources have changed.
 The installer preflights conflicts; an OS failure during writing can still leave
 a partial installation. Keep its output and reconcile affected paths before retrying.
 

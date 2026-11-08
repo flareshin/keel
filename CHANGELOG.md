@@ -504,6 +504,10 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
   0210 and 0217 with their unreferenced snapshots, the 48 `handoff` entries of the golden adversarial outcomes, and the fixtures
   `tests/hooks/fixtures/{C-handoff.bad,handoff.good}.json` (the smoke check reads a bad fixture per row in force and a good one per
   hook with such a row, and C-handoff is retired).
+- The Codex adapter's migration of a profile the Python installer wrote (`codex/lib/install.ts`): a state file without
+  `skills_home` is no longer reported as a migration, and one that owns a link under `~/.agents/skills` is now refused as an
+  unexpected path instead of being dropped from ownership. Removed with it: the adapter tests that restored a recorded Python
+  install to refresh and unlink it, and the legacy-ownership unlink test.
 
 ### Upgrading
 - Codex: run `codex/bin/link --check`. When it lists `hooks.json` or the state file, the old files hold a non-ASCII

@@ -4,7 +4,6 @@ import { once } from 'node:events';
 import { closeSync, constants, mkdtempSync, openSync, readSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
-import { setTimeout as sleep } from 'node:timers/promises';
 import * as env from './env.ts';
 import * as gitcmd from './gitcmd.ts';
 import * as registry from './registry.ts';
@@ -31,7 +30,6 @@ const COMMAND_NOT_FOUND = 2;
 const DEFAULT_EXEC_PATH = '/bin:/usr/bin';
 const MKFIFO = '/usr/bin/mkfifo';
 const KEEPS_SEARCHING_ERRORS = new Set(['ENOENT', 'ENOTDIR']);
-const OUTPUT_POLL_MS = 10;
 const OUTPUT_READ_BYTES = 64 * 1024;
 
 export async function run(argv: string[], cwd: string): Promise<number> {
@@ -124,8 +122,11 @@ function openOutputPipe(): { reader: number; writer: number } {
     const fifo = join(directory, 'output');
     const made = spawnSync(MKFIFO, ['-m', '600', fifo], { encoding: 'utf8' });
     if (made.status !== 0) throw new Error(`mkfifo failed: ${made.error?.message ?? made.stderr}`);
-    const reader = openSync(fifo, constants.O_RDONLY | constants.O_NONBLOCK);
-    return { reader, writer: openSync(fifo, constants.O_WRONLY) };
+    const openerWithoutWriter = openSync(fifo, constants.O_RDONLY | constants.O_NONBLOCK);
+    const writer = openSync(fifo, constants.O_WRONLY);
+    const blockingReader = openSync(fifo, constants.O_RDONLY);
+    closeSync(openerWithoutWriter);
+    return { reader: blockingReader, writer };
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -171,27 +172,14 @@ async function attemptSpawn(program: string, argv0: string, args: string[], cwd:
 async function relayUntilClosed(exited: Promise<number>, reader: number): Promise<[exitCode: number, output: string]> {
   const chunks: Buffer[] = [];
   for (;;) {
-    const chunk = readAvailable(reader);
-    if (chunk === 'pending') {
-      await sleep(OUTPUT_POLL_MS);
-    } else if (chunk.length === 0) {
-      break;
-    } else {
-      writeStdout(chunk);
-      chunks.push(chunk);
-    }
+    const buffer = Buffer.alloc(OUTPUT_READ_BYTES);
+    const bytesRead = readSync(reader, buffer, 0, buffer.length, null);
+    if (bytesRead === 0) break;
+    const chunk = buffer.subarray(0, bytesRead);
+    writeStdout(chunk);
+    chunks.push(chunk);
   }
   return [await exited, Buffer.concat(chunks).toString()];
-}
-
-function readAvailable(reader: number): Buffer | 'pending' {
-  const buffer = Buffer.alloc(OUTPUT_READ_BYTES);
-  try {
-    return buffer.subarray(0, readSync(reader, buffer, 0, buffer.length, null));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EAGAIN') return 'pending';
-    throw error;
-  }
 }
 
 function commandNotFound(name: string): [exitCode: number, output: string] {

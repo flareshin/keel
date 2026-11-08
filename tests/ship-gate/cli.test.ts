@@ -154,6 +154,15 @@ describe('KeelTestCommandTest', () => {
     assert.equal(run.stdout, 'x'.repeat(300000) + '\nRan 1 test\n');
   });
 
+  test('keelTest_countsTheSummary_whenTheCommandExitsSoonAfterALargeBurst', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    const burstThenExit = "process.stdout.write('x'.repeat(1000000) + '\\nRan 1 test\\n'); setTimeout(() => process.exit(0), 200);";
+    const run = sandbox.keel(['test', '--', process.execPath, '-e', burstThenExit], { cwd: repo.path });
+    assert.equal(run.rc, 0, run.stderr);
+    assert.equal(summaryOf(run).count, 1);
+  });
+
   test('keelTest_recognizesSurefireTotals_whenPerClassLinesPrecede', (t) => {
     const sandbox = new Sandbox(t);
     const repo = sandbox.clone('acme', 'app');

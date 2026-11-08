@@ -63,6 +63,14 @@ describe("smoke run", () => {
     assert.ok(!completed.stderr.includes("smoke ok: "), completed.stderr)
   })
 
+  it("smoke_summaryCountsWarningsInPlural_whenTwoWarningsPass", () => {
+    harness.box.write("data/projects/p1/memory/MEMORY.md", "x".repeat(8193))
+    fs.rmSync(harness.box.claudeStub)
+    const completed = harness.box.runMeasure("smoke")
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.match(completed.stderr, /^smoke ok with 2 warnings: /m)
+  })
+
   it("smoke_runIdHasTheStampAndSixHexDigits", () => {
     const [, result] = harness.runSmoke()
     assert.match(result.run_id, /^smoke-\d{8}T\d{6}Z-[0-9a-f]{6}$/)

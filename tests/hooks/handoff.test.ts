@@ -89,6 +89,7 @@ describe("CliModesTest", () => {
     cli(["next: check the tree"]);
     const note = read(handoffFile());
     assert.ok(note.includes("## Uncommitted (?)"), note);
+    assert.ok(note.includes("(unknown — git status failed"), note);
     assert.ok(!note.includes("working tree clean"), note);
   });
 

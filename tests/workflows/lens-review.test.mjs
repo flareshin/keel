@@ -498,6 +498,8 @@ test('lensReview_inheritsRootRunId_whenDeltaReviewsAFix', async () => {
   const target = auditChildArgs(rt).target
   assert.match(target, new RegExp(`git -C '/work/app' diff ${SHA_C} ${SHA_D}`))
   assert.match(target, /Prior merge-blocking findings:\n- a\.py:3 drops the null check/)
+  assert.match(target, /resolved only when its defect is fixed/)
+  assert.match(target, /editing the check or test that caught it, leaves it unresolved/)
   const prepareCommands = preparePromptCommands(rt.record.agents[0].prompt)
   assert.equal(prepareCommands.runId, null)
   assert.match(prepareCommands.diffs[0], new RegExp(`diff --stat '${SHA_C}' "\\$tree"`))

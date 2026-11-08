@@ -161,6 +161,13 @@ mediums, so letting them block kept chains running for many rounds. A root
 review and a delta after a PASS keep high and medium blocking. The Codex
 protocol keeps its existing blocking rule.
 
+A prior finding is resolved only when its defect is fixed. A fix that makes the
+finding stop applying by deleting, hiding, renaming or exempting the flagged
+code, or by editing the check or test that caught it, leaves it unresolved
+unless the change shows the finding was wrong; the fix-delta auditor is told so.
+Adapted from Stageshow's rehearsal rule (github.com/benjitaylor/skills at
+299140f, MIT, `stageshow/references/rehearse.md`).
+
 Reviews do not report code comments, rule-checks K5.14 signals included:
 git-guard C-comments denies new and changed comments on the write paths it
 parses. The gaps the ledger row C-comments lists are accepted misses.

@@ -113,6 +113,43 @@ describe("eval cli", () => {
     })
   }
 
+  it("fault_afterTheSuiteTimeout_whenTheSuiteToolsFileSetsIt_andNoFlagIsGiven", () => {
+    const slow = box.scenario("slow", { events: [initEvent(), resultEvent("late")], sleep: 3 })
+    box.seedSuite(box.askScenario(), slow)
+    box.write("keel/measure/evals/K4/tools.json", JSON.stringify({ allow: [], timeout_seconds: 1 }))
+    const [completed, report] = box.runEvalJson("K4", "--model", MODEL, ...RUN_ONCE, "--case", "c1")
+    assert.deepEqual([completed.status, report.written], [1, false], completed.stderr)
+    assert.ok(report.faults[0].reason.includes("timed out after 1s"), report.faults[0].reason)
+    assert.equal(readJson(path.join(report.raw_dir, "config.json")).timeout_seconds, 1)
+  })
+
+  it("dryRun_reportsTheSuiteTimeout_whenTheSuiteToolsFileSetsIt", () => {
+    box.seedSuite(box.askScenario(), box.editScenario())
+    box.write("keel/measure/evals/K4/tools.json", JSON.stringify({ allow: ["Agent"], timeout_seconds: 600 }))
+    const [completed, report] = box.runEvalJson("K4", "--model", MODEL, "--dry-run")
+    assert.deepEqual([completed.status, report.timeout_seconds], [0, 600], completed.stderr)
+  })
+
+  it("fault_afterTheFlagTimeout_whenTheFlagOverridesTheSuiteTimeout", () => {
+    const slow = box.scenario("slow", { events: [initEvent(), resultEvent("late")], sleep: 3 })
+    box.seedSuite(box.askScenario(), slow)
+    box.write("keel/measure/evals/K4/tools.json", JSON.stringify({ allow: [], timeout_seconds: 600 }))
+    const [completed, report] = box.runEvalJson("K4", "--model", MODEL, ...RUN_ONCE, "--case", "c1", "--timeout-seconds", "1")
+    assert.deepEqual([completed.status, report.written], [1, false], completed.stderr)
+    assert.ok(report.faults[0].reason.includes("timed out after 1s"), report.faults[0].reason)
+  })
+
+  for (const timeoutSeconds of [0, 2.5, "600", 3601]) {
+    it(`usageError_whenTheSuiteToolsFileSetsTimeoutSeconds_${JSON.stringify(timeoutSeconds)}`, () => {
+      box.seedSuite(box.askScenario(), box.editScenario())
+      box.write("keel/measure/evals/K4/tools.json", JSON.stringify({ allow: ["Agent"], timeout_seconds: timeoutSeconds }))
+      const completed = box.runEval("K4", "--model", MODEL, ...RUN_ONCE)
+      assert.equal(completed.status, 2, completed.stderr)
+      assert.ok(completed.stderr.includes('tools.json: "timeout_seconds" must be a whole number from 1 to 3600'), completed.stderr)
+      assert.equal(box.stubCalls().length, 0)
+    })
+  }
+
   for (const allow of [["Bash"], "Agent"]) {
     it(`usageError_whenTheSuiteToolsFileAllows_${JSON.stringify(allow)}`, () => {
       box.seedSuite(box.askScenario(), box.editScenario())

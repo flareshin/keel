@@ -35,6 +35,7 @@ const SKILL_ENFORCEMENT = "skill:"
 const RAW_DIR_PREFIX = "keel-eval-"
 const SUITE_TOOLS_FILE = "tools.json"
 const SUITE_MAX_TURNS_CEILING = 50
+const SUITE_TIMEOUT_SECONDS_CEILING = 3600
 const RUN_RECORD_KEYS = ["case", "run", "kind", "exit", "timed_out", "changed"]
 const COMMAND: CommandSpec = {
   prog: "measure/evals/eval",
@@ -47,7 +48,7 @@ const COMMAND: CommandSpec = {
     ["--split {train,holdout}", "run one split only (writes <id>-partial, never <id>)"],
     ["--case CASE", "run one case only (writes <id>-partial, never <id>)"],
     ["--repeat N", `runs per case (default ${DEFAULT_REPEAT})`],
-    ["--timeout-seconds S", `per-run limit (default ${DEFAULT_TIMEOUT_SECONDS})`],
+    ["--timeout-seconds S", `per-run limit (default: the suite ${SUITE_TOOLS_FILE} timeout_seconds, else ${DEFAULT_TIMEOUT_SECONDS})`],
     ["--dry-run", "print the plan and the command; run nothing"],
   ],
   options: {
@@ -65,7 +66,7 @@ interface EvalArgs {
   split: string | undefined
   caseId: string | undefined
   repeat: number
-  timeoutSeconds: number
+  timeoutSeconds: number | undefined
   dryRun: boolean
 }
 
@@ -128,6 +129,7 @@ function main(argv: string[]): number {
 
 function parseEvalArgs(argv: string[]): EvalArgs {
   const parsed = parseCommandLine(COMMAND, argv)
+  const timeoutText = stringOption(parsed, "timeout-seconds")
   const args: EvalArgs = {
     id: exactlyOnePositional(COMMAND, parsed, "ID"),
     regrade: stringOption(parsed, "regrade"),
@@ -135,7 +137,7 @@ function parseEvalArgs(argv: string[]): EvalArgs {
     split: choiceOption(COMMAND, "--split", stringOption(parsed, "split"), SPLITS),
     caseId: stringOption(parsed, "case"),
     repeat: positiveIntOption(COMMAND, "--repeat", stringOption(parsed, "repeat"), DEFAULT_REPEAT),
-    timeoutSeconds: positiveIntOption(COMMAND, "--timeout-seconds", stringOption(parsed, "timeout-seconds"), DEFAULT_TIMEOUT_SECONDS),
+    timeoutSeconds: timeoutText === undefined ? undefined : positiveIntOption(COMMAND, "--timeout-seconds", timeoutText, DEFAULT_TIMEOUT_SECONDS),
     dryRun: flagOption(parsed, "dry-run"),
   }
   if (args.regrade && (args.model || args.split || args.caseId || args.dryRun)) {
@@ -171,7 +173,7 @@ function buildPlan(args: EvalArgs): Plan {
   const command = claudeCommand(model, settings.unlockedTools, settings.maxTurns)
   return {
     evalId, skill, cases, fullRun, repeat: args.repeat, model, command, fixture, configDir,
-    keelLive: isKeelLive(configDir, keelHome, skill), timeoutSeconds: args.timeoutSeconds,
+    keelLive: isKeelLive(configDir, keelHome, skill), timeoutSeconds: args.timeoutSeconds ?? settings.timeoutSeconds,
   }
 }
 
@@ -182,19 +184,33 @@ function skillEnforcing(evalId: string, keelHome: string, overlayDir: string): s
   return row.enforcedAt.slice(SKILL_ENFORCEMENT.length)
 }
 
-function suiteRunSettings(keelHome: string, evalId: string): { unlockedTools: string[]; maxTurns: number } {
+interface SuiteRunSettings {
+  unlockedTools: string[]
+  maxTurns: number
+  timeoutSeconds: number
+}
+
+function suiteRunSettings(keelHome: string, evalId: string): SuiteRunSettings {
   const toolsFile = path.join(keelHome, "measure", "evals", evalId, SUITE_TOOLS_FILE)
-  if (!fs.existsSync(toolsFile)) return { unlockedTools: [], maxTurns: DEFAULT_MAX_TURNS }
+  if (!fs.existsSync(toolsFile)) return { unlockedTools: [], maxTurns: DEFAULT_MAX_TURNS, timeoutSeconds: DEFAULT_TIMEOUT_SECONDS }
   const settings = readJsonObject(toolsFile)
   const allow = settings["allow"]
   if (!Array.isArray(allow) || !allow.every((tool) => typeof tool === "string" && UNLOCKABLE_TOOLS.includes(tool))) {
     throw new PlanError(`${toolsFile}: "allow" may list only ${UNLOCKABLE_TOOLS.join(", ")}`)
   }
-  const maxTurns = settings["max_turns"] ?? DEFAULT_MAX_TURNS
-  if (typeof maxTurns !== "number" || !Number.isInteger(maxTurns) || maxTurns < 1 || maxTurns > SUITE_MAX_TURNS_CEILING) {
-    throw new PlanError(`${toolsFile}: "max_turns" must be a whole number from 1 to ${SUITE_MAX_TURNS_CEILING}`)
+  return {
+    unlockedTools: allow as string[],
+    maxTurns: suiteWholeNumber(toolsFile, settings, "max_turns", DEFAULT_MAX_TURNS, SUITE_MAX_TURNS_CEILING),
+    timeoutSeconds: suiteWholeNumber(toolsFile, settings, "timeout_seconds", DEFAULT_TIMEOUT_SECONDS, SUITE_TIMEOUT_SECONDS_CEILING),
   }
-  return { unlockedTools: allow as string[], maxTurns }
+}
+
+function suiteWholeNumber(toolsFile: string, settings: JsonObject, key: string, fallback: number, ceiling: number): number {
+  const value = settings[key] ?? fallback
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > ceiling) {
+    throw new PlanError(`${toolsFile}: "${key}" must be a whole number from 1 to ${ceiling}`)
+  }
+  return value
 }
 
 function configDirFault(configDir: string): string | null {

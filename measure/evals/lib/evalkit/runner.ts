@@ -2,7 +2,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
-import { InvalidUtf8Error, isDir, isExecutable, isSystemError, readUtf8, splitLines } from "../../../lib/measurekit/files.ts"
+import { InvalidUtf8Error, isDir, isExecutable, isSystemError, readUtf8, splitLines, walkEntries } from "../../../lib/measurekit/files.ts"
 import { runGitOrThrow } from "../../../lib/measurekit/gitutil.ts"
 import { runProcess } from "../../../lib/measurekit/subprocess.ts"
 import { TimeoutExpired } from "../../../lib/measurekit/timeout.ts"
@@ -80,8 +80,7 @@ function leftoverProjectDir(work: string, configDir: string): string | null {
 }
 
 function holdsOnlySubagentMetaFiles(projectDir: string): boolean {
-  const entries = fs.readdirSync(projectDir, { recursive: true, withFileTypes: true }).filter((entry) => !entry.isDirectory())
-  const relativePaths = entries.map((entry) => path.relative(projectDir, path.join(entry.parentPath, entry.name)))
+  const relativePaths = walkEntries(projectDir).filter((entry) => !isDir(entry)).map((entry) => path.relative(projectDir, entry))
   return relativePaths.length > 0 && relativePaths.every((relativePath) => SUBAGENT_META_FILE.test(relativePath))
 }
 

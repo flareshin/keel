@@ -584,6 +584,17 @@ describe("installation", () => {
     assert.match(refused.stderr, /profile ownership contains an unexpected path/);
     assert.ok(lstatSync(skill).isSymbolicLink());
   });
+
+  it("test_profileWithoutSkillsHome_checksClean_whenTheInstallIsCurrent", () => {
+    assert.equal(runLink("--write").status, 0);
+    const statePath = join(home, ".codex/keel-codex-state.json");
+    const state = readJsonFile(statePath);
+    delete state["skills_home"];
+    writeFileSync(statePath, JSON.stringify(state));
+    const check = runLink("--check");
+    assert.equal(check.status, 0, check.stdout);
+    assert.deepEqual(JSON.parse(check.stdout), { actions: [], problems: [] });
+  });
 });
 
 function isSymlink(path: string): boolean {

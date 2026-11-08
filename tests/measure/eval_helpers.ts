@@ -91,9 +91,9 @@ export class EvalSandbox extends MeasureSandbox {
     return this.write(relativePath, lines.join("\n") + "\n")
   }
 
-  scenario(name: string, options: { events?: StreamEvent[]; exit?: number; writes?: Record<string, string>; sleep?: number; leaveProjectDir?: boolean; rounds?: Round[] } = {}): string {
-    const { events = [], exit = 0, writes = {}, sleep = 0, leaveProjectDir = false, rounds } = options
-    const body = rounds ? { rounds } : { events, exit, writes, sleep, leave_project_dir: leaveProjectDir }
+  scenario(name: string, options: { events?: StreamEvent[]; exit?: number; writes?: Record<string, string>; sleep?: number; leaveProjectDir?: boolean; leaveSessionFiles?: string[]; rounds?: Round[] } = {}): string {
+    const { events = [], exit = 0, writes = {}, sleep = 0, leaveProjectDir = false, leaveSessionFiles = [], rounds } = options
+    const body = rounds ? { rounds } : { events, exit, writes, sleep, leave_project_dir: leaveProjectDir, leave_session_files: leaveSessionFiles }
     this.write(`scenarios/${name}.json`, JSON.stringify(body))
     return name
   }

@@ -11,7 +11,8 @@ import { projectDirFor } from "./liveconfig.ts"
 import { RunFacts, summarizeStream } from "./stream.ts"
 
 export const CLAUDE_BINARY = "claude"
-const MAX_TURNS = 8
+export const DEFAULT_MAX_TURNS = 8
+const SUBAGENT_META_FILE = /^[^/]+\/subagents\/agent-[^/]+\.meta\.json$/
 const ALLOWED_TOOLS = ["Skill", "Read", "Grep", "Glob", "Edit", "Write", "AskUserQuestion"]
 const DENIED_TOOLS = ["Bash", "NotebookEdit", "Agent", "Task", "Workflow", "WebFetch", "WebSearch"]
 const DENIED_NAMES_OF_UNLOCKABLE_TOOL: Record<string, string[]> = { Agent: ["Agent", "Task"] }
@@ -39,7 +40,7 @@ export interface ClaudeRun {
   streamText: string
 }
 
-export function claudeCommand(model: string, unlockedTools: string[] = []): string[] {
+export function claudeCommand(model: string, unlockedTools: string[] = [], maxTurns = DEFAULT_MAX_TURNS): string[] {
   const unlockedNames = unlockedTools.flatMap((tool) => DENIED_NAMES_OF_UNLOCKABLE_TOOL[tool] ?? [])
   const tools = [...ALLOWED_TOOLS, ...unlockedTools]
   const denied = DENIED_TOOLS.filter((tool) => !unlockedNames.includes(tool))
@@ -48,7 +49,7 @@ export function claudeCommand(model: string, unlockedTools: string[] = []): stri
     "--settings", '{"disableAllHooks":true}',
     "--tools", tools.join(","), "--disallowedTools", denied.join(","),
     "--permission-mode", "acceptEdits", "--strict-mcp-config",
-    "--max-turns", String(MAX_TURNS), "--no-session-persistence", "--append-system-prompt", QUESTION_PROTOCOL,
+    "--max-turns", String(maxTurns), "--no-session-persistence", "--append-system-prompt", QUESTION_PROTOCOL,
   ]
 }
 
@@ -60,15 +61,28 @@ export function runOnce(prompt: string, fixture: string, command: string[], conf
     prepareFixtureRepo(fixture, work, project)
     const claudeRun = runClaude(command, prompt, work, timeoutSeconds)
     const changed = runGitOrThrow(work, ["status", "--porcelain", "--", ...OUTSIDE_FIXTURE]).trim() !== ""
-    const leftover = projectDirFor(work, configDir)
     const facts = new RunFacts({
       stream: summarizeStream(splitLines(claudeRun.streamText)), exitCode: claudeRun.exitCode, timedOut: claudeRun.timedOut,
-      changed, leftoverProjectDir: isDir(leftover) ? leftover : null,
+      changed, leftoverProjectDir: leftoverProjectDir(work, configDir),
     })
     return { facts, streamText: claudeRun.streamText, diff: diffOfChanges(work) }
   } finally {
     fs.rmSync(parent, { recursive: true, force: true })
   }
+}
+
+function leftoverProjectDir(work: string, configDir: string): string | null {
+  const projectDir = projectDirFor(work, configDir)
+  if (!isDir(projectDir)) return null
+  if (!holdsOnlySubagentMetaFiles(projectDir)) return projectDir
+  fs.rmSync(projectDir, { recursive: true, force: true })
+  return null
+}
+
+function holdsOnlySubagentMetaFiles(projectDir: string): boolean {
+  const entries = fs.readdirSync(projectDir, { recursive: true, withFileTypes: true }).filter((entry) => !entry.isDirectory())
+  const relativePaths = entries.map((entry) => path.relative(projectDir, path.join(entry.parentPath, entry.name)))
+  return relativePaths.length > 0 && relativePaths.every((relativePath) => SUBAGENT_META_FILE.test(relativePath))
 }
 
 export function findOnPath(command: string): string | null {

@@ -8,6 +8,7 @@ interface Scenario {
   writes?: Record<string, string>
   sleep?: number
   leave_project_dir?: boolean
+  leave_session_files?: string[]
   rounds?: Scenario[]
 }
 
@@ -45,6 +46,12 @@ function main(): number {
   if (scenario.leave_project_dir) {
     const slug = fs.realpathSync(process.cwd()).replace(/[^A-Za-z0-9]/g, "-")
     fs.mkdirSync(path.join(process.env["CLAUDE_CONFIG_DIR"] as string, "projects", slug), { recursive: true })
+  }
+  for (const relativePath of scenario.leave_session_files ?? []) {
+    const slug = fs.realpathSync(process.cwd()).replace(/[^A-Za-z0-9]/g, "-")
+    const target = path.join(process.env["CLAUDE_CONFIG_DIR"] as string, "projects", slug, relativePath)
+    fs.mkdirSync(path.dirname(target), { recursive: true })
+    fs.writeFileSync(target, "{}")
   }
   sleep(scenario.sleep ?? 0)
   for (const event of scenario.events ?? []) fs.writeSync(1, JSON.stringify(event) + "\n")

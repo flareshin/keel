@@ -93,6 +93,26 @@ describe("eval cli", () => {
     assert.ok(readJson(path.join(report.raw_dir, "config.json")).command.join(" ").includes(unlocked))
   })
 
+  it("fullRun_passesTheSuiteMaxTurns_whenTheSuiteToolsFileSetsIt", () => {
+    box.seedSuite(box.askScenario(), box.editScenario())
+    box.write("keel/measure/evals/K4/tools.json", JSON.stringify({ allow: ["Agent"], max_turns: 20 }))
+    const [completed, report] = box.runEvalJson("K4", "--model", MODEL, ...RUN_ONCE)
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.ok(box.stubCalls()[0].argv.join(" ").includes("--max-turns 20 --no-session-persistence"), box.stubCalls()[0].argv.join(" "))
+    assert.ok(readJson(path.join(report.raw_dir, "config.json")).command.join(" ").includes("--max-turns 20 "))
+  })
+
+  for (const maxTurns of [0, 2.5, "20", 51]) {
+    it(`usageError_whenTheSuiteToolsFileSetsMaxTurns_${JSON.stringify(maxTurns)}`, () => {
+      box.seedSuite(box.askScenario(), box.editScenario())
+      box.write("keel/measure/evals/K4/tools.json", JSON.stringify({ allow: ["Agent"], max_turns: maxTurns }))
+      const completed = box.runEval("K4", "--model", MODEL, ...RUN_ONCE)
+      assert.equal(completed.status, 2, completed.stderr)
+      assert.ok(completed.stderr.includes('tools.json: "max_turns" must be a whole number from 1 to 50'), completed.stderr)
+      assert.equal(box.stubCalls().length, 0)
+    })
+  }
+
   for (const allow of [["Bash"], "Agent"]) {
     it(`usageError_whenTheSuiteToolsFileAllows_${JSON.stringify(allow)}`, () => {
       box.seedSuite(box.askScenario(), box.editScenario())
@@ -284,6 +304,30 @@ describe("eval cli", () => {
     assert.ok(reason.includes("project directory"))
     assert.ok(reason.includes(path.join(box.data, "projects", "-")), "the slug of an absolute realpath starts with '-'")
   })
+
+  it("noFault_andTheProjectDirIsRemoved_whenTheSessionLeavesOnlySubagentMetaFiles", () => {
+    const metaOnly = box.scenario("meta-only", {
+      events: [initEvent(), ASK_EVENT, resultEvent(ASK_TEXT)],
+      leaveSessionFiles: ["s1/subagents/agent-a1.meta.json", "s1/subagents/agent-a2.meta.json"],
+    })
+    box.seedSuite(metaOnly, box.editScenario())
+    const [completed, report] = box.runEvalJson("K4", "--model", MODEL, ...RUN_ONCE, "--case", "a1")
+    assert.deepEqual([completed.status, report.faults], [0, []], completed.stderr)
+    assert.deepEqual(fs.readdirSync(path.join(box.data, "projects")), [])
+  })
+
+  for (const transcript of ["s1.jsonl", "s1/subagents/agent-a1.jsonl"]) {
+    it(`fault_whenTheSessionLeaves_${transcript}_besideSubagentMetaFiles`, () => {
+      const leaves = box.scenario("transcript", {
+        events: [initEvent(), ASK_EVENT, resultEvent(ASK_TEXT)],
+        leaveSessionFiles: ["s1/subagents/agent-a1.meta.json", transcript],
+      })
+      box.seedSuite(leaves, box.editScenario())
+      const [completed, report] = box.runEvalJson("K4", "--model", MODEL, ...RUN_ONCE, "--case", "a1")
+      assert.equal(completed.status, 1, completed.stderr)
+      assert.ok((report.faults[0].reason as string).startsWith("session left a project directory behind: "), report.faults[0].reason)
+    })
+  }
 
   it("fault_whenAToolOutsideTheGradedSetIsDenied", () => {
     const bashDenied = box.scenario("bash-denied", { events: [initEvent(), ASK_EVENT, resultEvent(ASK_TEXT, { denials: ["Bash"] })] })

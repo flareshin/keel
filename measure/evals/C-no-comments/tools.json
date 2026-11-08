@@ -1,1 +1,1 @@
-{ "allow": ["Agent"] }
+{ "allow": ["Agent"], "max_turns": 20 }

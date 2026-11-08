@@ -497,9 +497,9 @@ Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node 
 - The `--auto` mode of the `handoff` hook (the PreCompact snapshot, `hooks/handoff/handoff.ts`), dead since its registration went
   with the retired ledger row C-handoff. `handoff --auto` is now an unknown mode like any other: the CLI records its words as the
   note, so a stale PreCompact entry for it in a settings file would overwrite the handoff note with `--auto` (the CLI modes
-  `--path`, `--status`, `--read` and `--clear` and the note mode are unchanged). `--status` still reads a note written by an older
-  version whose resume point is only an `(auto-snapshot` line as no resume point. Removed with it: the `AutoSnapshotTest` tests in
-  `tests/hooks/handoff.test.ts` (a test of the legacy note replaces the CLI one), the `handoff` payload families of
+  `--path`, `--status`, `--read` and `--clear` and the note mode are unchanged). `--status` no longer special-cases an
+  `(auto-snapshot` line: a resume point is any first line that does not start with `(not given`. Removed with it: the
+  `AutoSnapshotTest` tests in `tests/hooks/handoff.test.ts`, its legacy-note tests, the golden run 0218, the `handoff` payload families of
   `tests/hooks/hook-parity-{adversarial,json-limits,wrong-types}.ts` and `tests/hooks/wrong-types.test.ts`, the golden runs 0202 to
   0210 and 0217 with their unreferenced snapshots, the 48 `handoff` entries of the golden adversarial outcomes, and the fixtures
   `tests/hooks/fixtures/{C-handoff.bad,handoff.good}.json` (the smoke check reads a bad fixture per row in force and a good one per

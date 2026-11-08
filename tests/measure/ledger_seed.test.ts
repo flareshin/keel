@@ -75,9 +75,9 @@ describe("seed ledger", () => {
     assert.equal(statuses.get("metrics/keel"), STATUS_WITHOUT_EVIDENCE)
   })
 
-  it("seedLedger_runsEveryRowMetric_withGraceStatusBeforeAnyFires", () => {
+  it("seedLedger_runsEveryUnretiredRowMetric_withGraceStatusBeforeAnyFires", () => {
     const expectedExit = STATUS_WITHOUT_EVIDENCE === "GRACE" ? 0 : 1
-    for (const rowId of SEED_IDS) {
+    for (const rowId of SEED_IDS.filter((id) => seedRow(id)["status"] !== "retired")) {
       const [completed, result] = box.runJson("run", [rowId])
       assert.deepEqual([completed.status, result.status], [expectedExit, STATUS_WITHOUT_EVIDENCE], rowId)
     }

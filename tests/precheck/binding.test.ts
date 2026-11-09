@@ -106,7 +106,7 @@ describe("bindPrecheck", () => {
 
     const printed = JSON.parse(execFileSync(KEEL, ["precheck", "bind", "--repo", root, "--base", base, "--end", end, "--tree", base], { encoding: "utf8" }))
 
-    assert.deepEqual(printed, { blobs: { "lib/a.ts": git(root, "rev-parse", `${end}:lib/a.ts`) }, test_change: { lines_removed: false, lines_added: false } })
+    assert.deepEqual(printed, { blobs: { "lib/a.ts": git(root, "rev-parse", `${end}:lib/a.ts`) }, end_tree: end, test_change: { lines_removed: false, lines_added: false } })
     assert.throws(() => execFileSync(KEEL, ["precheck", "bind", "--repo", root, "--base", base, "--end", end], { stdio: "pipe" }), (error: { status: number }) => error.status === 2)
   })
 })

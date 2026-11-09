@@ -14,6 +14,7 @@ export interface TestChange {
 }
 
 export interface PrecheckBinding {
+  end_tree: string;
   blobs: Record<string, string>;
   test_change: TestChange | null;
 }
@@ -30,6 +31,7 @@ export function precheckTreeOf(precheck: string): string | null {
 export function bindPrecheck(repo: string, base: string, end: string, precheckTree: string): PrecheckBinding {
   return {
     blobs: nonTestBlobs(repo, base, end),
+    end_tree: textOrThrow(repo, ['rev-parse', `${end}^{tree}`]).trim(),
     test_change: objectType(repo, precheckTree) === 'tree' ? describeTestChange(repo, precheckTree, end) : null,
   };
 }

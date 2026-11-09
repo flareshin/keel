@@ -258,7 +258,8 @@ function precheckRepo(box) {
   const precheckTree = box.bash(`cd "${box.env.KEEL_DATA_DIR}" && bin/keel snapshot '${repo}' | jq -r .tree`)
   const blob = box.git(repo, 'rev-parse', `${precheckTree}:src/cart.ts`)
   writeFileSync(join(repo, 'tests', 'cart.test.ts'), 'one\ntwo\n')
-  const precheck = `precheck tree ${precheckTree} · base main · 2 paths (1 source, 1 test) · census (all candidates ran)\nblobs     src/cart.ts ${blob}\nrerun: survivors · 1 killed · 0 survived`
+  const reviewedTree = box.bash(`cd "${box.env.KEEL_DATA_DIR}" && bin/keel snapshot '${repo}' | jq -r .tree`)
+  const precheck = `precheck tree ${precheckTree} · base main · 2 paths (1 source, 1 test) · census (all candidates ran)\nblobs     src/cart.ts ${blob}\nrerun: survivors · 1 killed · 0 survived · tree ${reviewedTree}`
   return { repo, precheckTree, precheck }
 }
 
@@ -270,10 +271,10 @@ test('lensReview_bindsAPrecheckThroughThePrepareCommand_whenOnlyTestsGrewAfterIt
   const result = await rt.run('lens-review', { auditMode: 'split', diffs: [{ repo, base: 'main' }], precheck })
 
   assert.equal(result.verdict, 'PASS')
-  assert.deepEqual(result.precheck, { status: 'bound', tree: precheckTree, reason: null, survivorsOpen: false, rerunStale: false })
+  assert.deepEqual(result.precheck, { status: 'bound', tree: precheckTree, reason: null, survivors: 'as-listed', rerunNotRun: 0 })
   writeFileSync(join(repo, 'src', 'cart.ts'), 'export const a = 3\n')
   const moved = await createRuntime({ respond: shellResponder(box) }).run('lens-review', { auditMode: 'split', diffs: [{ repo, base: 'main' }], precheck })
-  assert.deepEqual(moved.precheck, { status: 'stale', tree: precheckTree, reason: 'src/cart.ts changed after the precheck', survivorsOpen: false, rerunStale: false })
+  assert.deepEqual(moved.precheck, { status: 'stale', tree: precheckTree, reason: 'src/cart.ts changed after the precheck', survivors: null, rerunNotRun: 0 })
 })
 
 test('lensReview_bindsAPrecheckFromCliPreparedMetadata_whenTheDiffEndsAtAHeadCommit', async () => {
@@ -321,7 +322,7 @@ test('lensReview_bindsTheCensusThatKeelPrecheckRunPrinted_andKeepsItsSurvivorsOp
   assert.match(census, /\nsurvived|\nno test reaches/)
   assert.equal(result.verdict, 'PASS')
   assert.equal(result.precheck.status, 'bound', result.precheck.reason)
-  assert.equal(result.precheck.survivorsOpen, true)
+  assert.equal(result.precheck.survivors, 'no-rerun')
 })
 
 test('lensReview_dropsTheCensusAsStale_whenKeelPrecheckRunStoppedAtARedBaseline', NEEDS_TYPESCRIPT, async () => {
@@ -347,5 +348,5 @@ test('lensReview_bindsAPrecheckFromCliPreparedMetadata_withoutAPrepareAgent', as
   const result = await rt.run('lens-review', { ...request, auditMode: 'split', prepared })
 
   assert.ok(!rt.record.agents.some(({ opts }) => opts.label === 'prepare'))
-  assert.deepEqual(result.precheck, { status: 'bound', tree: precheckTree, reason: null, survivorsOpen: false, rerunStale: false })
+  assert.deepEqual(result.precheck, { status: 'bound', tree: precheckTree, reason: null, survivors: 'as-listed', rerunNotRun: 0 })
 })

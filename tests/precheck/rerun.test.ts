@@ -14,6 +14,7 @@ const BASE_PICK = "export function pick(flag: boolean): number {\n  return 0\n}\
 const PICK = "export function pick(flag: boolean): number {\n  if (flag) return 1\n  return 2\n}\n"
 const testOf = (flag: boolean, expected: number): string => `import assert from 'node:assert/strict'\nimport { it } from 'node:test'\nimport { pick } from '../lib/a.ts'\nit('picks', () => assert.equal(pick(${flag}), ${expected}))\n`
 const RERUN_LINE = /^rerun: survivors · \d+ killed/mu
+const RERUN_COUNTS = /^rerun: survivors · (.*?) · tree /mu
 
 describe("censusBeforeRerun", () => {
   it("censusBeforeRerun_dropsAnEarlierRerunBlock_soASecondRerunReplacesIt", () => {
@@ -43,11 +44,11 @@ describe("keel precheck rerun", () => {
   const scratch = mkdtempSync(join(tmpdir(), "keel-rerun-data-"))
   directories.push(scratch)
   const keel = (subcommand: string, root: string, ...rest: string[]) => spawnSync(KEEL, ["precheck", subcommand, "--repo", root, "--base", "trunk", ...rest], { encoding: "utf8", maxBuffer: Infinity, env: { ...process.env, KEEL_DATA_DIR: scratch } })
-  const censusedRepo = (firstTest = testOf(true, 1)): { root: string; censusFile: string; census: string } => {
+  const censusedRepo = (firstTest = testOf(true, 1), source = PICK): { root: string; censusFile: string; census: string } => {
     const root = committedRepo({ "lib/a.ts": BASE_PICK, "tests/a.test.ts": testOf(true, 0) })
     directories.push(root)
     execFileSync("git", ["-C", root, "branch", "-q", "trunk"])
-    writeFiles(root, { "lib/a.ts": PICK, "tests/a.test.ts": firstTest })
+    writeFiles(root, { "lib/a.ts": source, "tests/a.test.ts": firstTest })
     execFileSync("git", ["-C", root, "add", "-A"])
     execFileSync("git", ["-C", root, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "topic"])
     const run = keel("run", root)
@@ -71,6 +72,30 @@ describe("keel precheck rerun", () => {
     assert.match(rerun.stdout, /ran tests\/b\.test\.ts$/mu)
     assert.doesNotMatch(rerun.stdout, /^still /mu)
   })
+
+  const LONG_TERM = "aConditionNameThatIsLongerThanFortyCharactersLong"
+  const TEST_HEADER = "import assert from 'node:assert/strict'\nimport { it } from 'node:test'\nimport { pick } from '../lib/a.ts'\n"
+  const chainedTerms: Array<{ name: string; parameters: string; terms: string; first: string[]; added: string }> = [
+    { name: "IdentifierTerms", parameters: "b: boolean, c: boolean", terms: "b && c", first: ["pick(true, true, true), 1", "pick(true, false, true), 2"], added: "pick(true, true, false), 2" },
+    { name: "TermsThatDifferOnlyInsideAStringLiteral", parameters: "s: string", terms: "s.includes('b') && s.includes('c')", first: ["pick(true, 'bc'), 1", "pick(true, 'c'), 2"], added: "pick(true, 'b'), 2" },
+    { name: "ARepeatedTerm", parameters: "b: boolean", terms: "b && b", first: ["pick(true, true), 1"], added: "pick(true, false), 2" },
+  ]
+  for (const { name, parameters, terms, first, added } of chainedTerms) {
+    it(`rerun_runsEachOpenMutantOnce_withChainedLogicTermsOf${name}`, () => {
+      const source = `export function pick(${LONG_TERM}: boolean, ${parameters}): number {\n  if (${LONG_TERM} && ${terms}) return 1\n  return 2\n}\n`
+      const firstTest = `${TEST_HEADER}it('picks', () => { ${first.map((call) => `assert.equal(${call})`).join("; ")} })\n`
+      const { root, censusFile, census } = censusedRepo(firstTest, source)
+      const open = openMutantLines(census)
+      writeFiles(root, { "tests/b.test.ts": `${TEST_HEADER}it('adds', () => assert.equal(${added}))\n` })
+
+      const rerun = keel("rerun", root, "--census", censusFile)
+
+      assert.equal(rerun.status, 0, rerun.stderr)
+      assert.equal(new Set(open).size, open.length, open.join("\n"))
+      const counts = [...(RERUN_COUNTS.exec(rerun.stdout)?.[1] ?? "").matchAll(/\d+/gu)].map(([count]) => Number(count))
+      assert.equal(counts.reduce((sum, count) => sum + count, 0), open.length, rerun.stdout)
+    })
+  }
 
   it("rerun_killsASurvivedMutantWithTheAddedTest", () => {
     const loose = testOf(true, 1).replace("assert.equal(pick(true), 1)", "assert.ok(pick(true) > 0)")

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 import type { Census, CensusResult, MutationCensus } from "../../lib/precheck/census.ts"
-import { renderCensus, renderRerun, summarizeCensus } from "../../lib/precheck/render.ts"
+import { renderCensus, renderRerun, summarizeCensus, summarizeRerun } from "../../lib/precheck/render.ts"
 
 const TREE = "4f1c9e2a7b3d58e60c1f9a2b7d4e3c5a6b8d9e0f"
 const BLOB_A = "9a1e".padEnd(40, "0")
@@ -248,5 +248,25 @@ describe("renderRerun", () => {
     const text = renderRerun({ tree: "t", tests: ["tests/b.test.ts"], baselineNotRun: [], results: [{ ...mutant, coverage: "known", verdict: { outcome: "killed", test: "tests/b.test.ts" } }], notRun: [] })
 
     assert.equal(text, "rerun: survivors · 1 killed · 0 survived · 0 no test reaches · 0 invalid · 0 timeout · tree t · ran tests/b.test.ts")
+  })
+
+  it("summarizeRerun_countsEachVerdictAndWhatDidNotRun", () => {
+    const summary = summarizeRerun({ tree: "t", tests: ["tests/b.test.ts"], baselineNotRun: ["tests/c.test.ts"], notRun: [mutant, mutant], results: [
+      { ...mutant, coverage: "known", verdict: { outcome: "killed", test: "tests/b.test.ts" } },
+      { ...mutant, coverage: "known", verdict: { outcome: "survived", ran: ["tests/b.test.ts"] } },
+      { ...mutant, coverage: "known", verdict: { outcome: "survived", ran: ["tests/b.test.ts"] } },
+      { ...mutant, coverage: "known", verdict: { outcome: "no test reaches" } },
+      { ...mutant, coverage: "known", verdict: { outcome: "invalid", reason: "no tests ran", tests: [] } },
+      { ...mutant, coverage: "known", verdict: { outcome: "timeout", test: "tests/b.test.ts" } },
+    ] }, "trunk")
+
+    assert.deepEqual(summary, {
+      tree: "t",
+      base: "trunk",
+      outcome: "rerun",
+      tests: ["tests/b.test.ts"],
+      mutants: { killed: 1, survived: 2, "no test reaches": 1, invalid: 1, timeout: 1, not_run: 2 },
+      baseline_not_run: ["tests/c.test.ts"],
+    })
   })
 })

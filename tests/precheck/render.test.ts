@@ -17,6 +17,7 @@ const ran = (overrides: Partial<Extract<MutationCensus, { outcome: "ran" }>> = {
   baselineFiles: 4,
   baselinePasses: 118,
   withoutPasses: 0,
+  baselineNotRun: [],
   results: [
     result(10, { outcome: "killed", test: "tests/a.test.ts" }),
     result(71, { outcome: "survived", ran: ["tests/a.test.ts", "tests/b.test.ts"] }),
@@ -64,6 +65,15 @@ describe("renderCensus", () => {
     assert.match(text, /\nsurvived\n  lib\/a\.ts:71  logic-term  a \|\| b → a  ran: tests\/a\.test\.ts, tests\/b\.test\.ts\n  lib\/a\.ts:72  logic-term  a \|\| b → a  ran: tests\/a\.test\.ts  coverage unknown\nno test reaches\n  lib\/a\.ts:141  logic-term  a \|\| b → a\n/)
   })
 
+  it("renderCensus_marksANoTestReachesLineCoverageNeverSaw", () => {
+    const text = renderCensus(census(ran({ results: [
+      result(141, { outcome: "no test reaches" }),
+      result(142, { outcome: "no test reaches" }, "unknown"),
+    ] })))
+
+    assert.match(text, /\nno test reaches\n  lib\/a\.ts:141  logic-term  a \|\| b → a\n  lib\/a\.ts:142  logic-term  a \|\| b → a  coverage unknown\n/u)
+  })
+
   it("renderCensus_writesNoneForEmptyBlobs_andLeavesOutEmptySections", () => {
     const text = renderCensus(census(ran({ results: [result(10, { outcome: "killed", test: "tests/a.test.ts" })] }), { blobs: {} }))
 
@@ -95,6 +105,41 @@ describe("renderCensus", () => {
 
     assert.match(text, /\nbaseline  4 test files · 118 pass · coverage collected · 2 without passes · timeout 600s per file\n/)
     assert.match(text, / · timeout 1 · 59s\n/)
+  })
+
+  it("renderCensus_callsARunPartial_andNamesTheFiles_whenTheBaselineBudgetCutItShort", () => {
+    const lines = renderCensus(census(ran({ baselineNotRun: ["tests/x.test.ts", "tests/y.test.ts"] }))).split("\n")
+
+    assert.match(lines[0]!, / · partial check: 5 of 5 candidates ran · baseline budget left 2 test files not run$/)
+    assert.ok(lines.some((line) => line.startsWith("baseline ") && line.includes(" · not run 2 · ")), lines.join("\n"))
+    assert.deepEqual(lines.slice(lines.indexOf("baseline not run"), lines.indexOf("baseline not run") + 3), ["baseline not run", "  tests/x.test.ts", "  tests/y.test.ts"])
+  })
+
+  it("renderCensus_printsTheEndOfARedFilesOutput_soTheReasonIsVisible", () => {
+    const output = Array.from({ length: 30 }, (_, index) => `line ${index}`).join("\n")
+
+    const lines = renderCensus(census({ outcome: "stopped", baseline: { outcome: "red", test: "tests/a.test.ts", output } })).split("\n")
+
+    assert.ok(lines.includes("  line 29"), lines.join("\n"))
+    assert.ok(lines.includes("  line 10"), lines.join("\n"))
+    assert.ok(!lines.includes("  line 9"), lines.join("\n"))
+  })
+
+  it("renderCensus_addsNoOutputLine_whenARedFilePrintedNothing", () => {
+    const lines = renderCensus(census({ outcome: "stopped", baseline: { outcome: "red", test: "tests/a.test.ts", output: "" } })).split("\n")
+
+    assert.match(lines[2]!, /^consumers /)
+  })
+
+  it("renderCensus_namesTheBudget_andListsTheFiles_whenItRanOutBeforeAnyFilePassed", () => {
+    const lines = renderCensus(census({ outcome: "stopped", baseline: { outcome: "budget", notRun: ["tests/x.test.ts", "tests/y.test.ts"] } })).split("\n")
+
+    assert.deepEqual(lines.slice(1, 5), [
+      "baseline  budget spent before any file passed · 2 test files not run · precheck stopped",
+      "baseline not run",
+      "  tests/x.test.ts",
+      "  tests/y.test.ts",
+    ])
   })
 
   it("renderCensus_dropsTheBlobsLine_whenTheBaselineStopsThePrecheck", () => {
@@ -129,8 +174,16 @@ describe("summarizeCensus", () => {
       paths: { source: 2, test: 1 },
       outcome: "partial",
       mutants: { candidates: 6, killed: 1, survived: 1, "no test reaches": 1, invalid: 1, timeout: 1, not_run: 1 },
+      baseline_not_run: 0,
       elapsed_ms: 372_400,
     })
+  })
+
+  it("summarizeCensus_isPartial_whenOnlyTheBaselineWasCutShort", () => {
+    const summary = summarizeCensus(census(ran({ baselineNotRun: ["tests/x.test.ts"] })))
+
+    assert.equal(summary["outcome"], "partial")
+    assert.equal(summary["baseline_not_run"], 1)
   })
 
   it("summarizeCensus_recordsWhichBaselineOutcomeStoppedThePrecheck", () => {
@@ -138,5 +191,20 @@ describe("summarizeCensus", () => {
 
     assert.equal(summary["outcome"], "stopped")
     assert.equal(summary["baseline"], "red")
+    assert.equal(summary["baseline_test"], "tests/a.test.ts")
+  })
+
+  it("summarizeCensus_countsTheFilesNotRun_whenTheBudgetStoppedThePrecheck", () => {
+    const summary = summarizeCensus(census({ outcome: "stopped", baseline: { outcome: "budget", notRun: ["tests/x.test.ts"] } }))
+
+    assert.equal(summary["baseline"], "budget")
+    assert.equal(summary["baseline_not_run"], 1)
+  })
+
+  it("summarizeCensus_namesNoTest_whenTheBaselineWasEmpty", () => {
+    const summary = summarizeCensus(census({ outcome: "stopped", baseline: { outcome: "empty" } }))
+
+    assert.equal(summary["baseline"], "empty")
+    assert.equal("baseline_test" in summary, false)
   })
 })

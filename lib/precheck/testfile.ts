@@ -21,7 +21,7 @@ export async function runTestFile(directory: string, test: string, timeoutSecond
     const passed = Number(TAP_PASS_COUNT.exec(stdout)?.[1] ?? 0);
     return { outcome: 'completed', returncode: completed.returncode, passed, durationMs: performance.now() - started, output: stdout + completed.stderr.toString() };
   } catch (error) {
-    if (error instanceof TimeoutExpired) return { outcome: 'timeout', output: error.message };
+    if (error instanceof TimeoutExpired) return { outcome: 'timeout', output: [error.partialStdout, error.partialStderr, error.message].filter(Boolean).join('\n') };
     throw error;
   }
 }

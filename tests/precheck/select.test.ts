@@ -98,6 +98,25 @@ describe("candidateTests", () => {
     assert.deepEqual(candidateTests(root, ["lib/a.ts"]), ["tests/path.test.ts", "tests/smoke.test.ts"])
   })
 
+  it("candidateTests_ordersNearestFirst_andAMentionWithoutTheExtensionLast", () => {
+    const root = repo({
+      "lib/run.ts": "export const run = 1",
+      "lib/middle.ts": "import { run } from './run.ts'\nexport const middle = run",
+      "lib/outer.ts": "import { middle } from './middle.ts'\nexport const outer = middle",
+      "tests/a-far.test.ts": "import '../lib/outer.ts'",
+      "tests/b-word.test.ts": "it('should run', () => {})",
+      "tests/c-middle.test.ts": "import '../lib/middle.ts'",
+      "tests/d-direct.test.ts": "import '../lib/run.ts'",
+    })
+
+    assert.deepEqual(candidateTests(root, ["lib/run.ts"]), [
+      "tests/d-direct.test.ts",
+      "tests/c-middle.test.ts",
+      "tests/a-far.test.ts",
+      "tests/b-word.test.ts",
+    ])
+  })
+
   it("candidateTests_skipsADanglingLinkOutsideTheTestDirectories", () => {
     const root = repo({
       "lib/a.ts": "export const a = 1",

@@ -72,14 +72,14 @@ export function runProcessGroup(command: string[], options: Omit<RunOptions, 'in
     });
     child.on('close', (status, signal) => {
       clearTimeout(timer);
-      if (timedOut) reject(timeoutExpired(command, options.timeoutSeconds ?? 0));
+      if (timedOut) reject(timeoutExpired(command, options.timeoutSeconds ?? 0, Buffer.concat(stdout).toString(), Buffer.concat(stderr).toString()));
       else resolve({ returncode: returnCode(status, signal), stdout: Buffer.concat(stdout), stderr: Buffer.concat(stderr) });
     });
   });
 }
 
-function timeoutExpired(command: string[], timeoutSeconds: number): TimeoutExpired {
-  return new TimeoutExpired(`Command ${JSON.stringify(command)} timed out after ${timeoutSeconds} seconds`, timeoutSeconds);
+function timeoutExpired(command: string[], timeoutSeconds: number, partialStdout = '', partialStderr = ''): TimeoutExpired {
+  return new TimeoutExpired(`Command ${JSON.stringify(command)} timed out after ${timeoutSeconds} seconds`, timeoutSeconds, partialStdout, partialStderr);
 }
 
 function killGroup(leader: number): void {

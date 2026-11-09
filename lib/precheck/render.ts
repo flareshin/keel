@@ -9,21 +9,22 @@ const SEPARATOR = ' · ';
 const NO_BLOBS = 'none';
 const INDENT = '  ';
 const COLUMN_GAP = '  ';
+const STOPPED_OUTPUT_LINES = 20;
 const SECONDS_PER_MINUTE = 60;
 const MS_PER_SECOND = 1000;
 const VERDICT_ORDER = ['killed', 'survived', 'no test reaches', 'invalid', 'timeout'] as const;
 
 export function renderCensus(census: Census): string {
   const mutation = census.mutation;
-  const body = mutation.outcome === 'ran' ? ranLines(census.blobs, mutation) : [labelled('baseline', stoppedReason(mutation))];
+  const body = mutation.outcome === 'ran' ? ranLines(census.blobs, mutation) : [labelled('baseline', stoppedReason(mutation)), ...stoppedOutputLines(mutation)];
   return [headerLine(census), ...body, ...consumerLines(census.consumers)].join('\n');
 }
 
 export function summarizeCensus(census: Census): Record<string, unknown> {
   const mutation = census.mutation;
   const summary = { tree: census.tree, base: census.base, paths: census.paths };
-  if (mutation.outcome === 'stopped') return { ...summary, outcome: 'stopped', baseline: mutation.baseline.outcome };
-  return { ...summary, outcome: scopeOf(mutation), mutants: { candidates: candidateCount(mutation), ...verdictCounts(mutation.results), not_run: mutation.notRun.length }, elapsed_ms: Math.round(mutation.elapsedMs) };
+  if (mutation.outcome === 'stopped') return { ...summary, outcome: 'stopped', baseline: mutation.baseline.outcome, ...('test' in mutation.baseline ? { baseline_test: mutation.baseline.test } : {}), ...('notRun' in mutation.baseline ? { baseline_not_run: mutation.baseline.notRun.length } : {}) };
+  return { ...summary, outcome: scopeOf(mutation), mutants: { candidates: candidateCount(mutation), ...verdictCounts(mutation.results), not_run: mutation.notRun.length }, baseline_not_run: mutation.baselineNotRun.length, elapsed_ms: Math.round(mutation.elapsedMs) };
 }
 
 function headerLine(census: Census): string {
@@ -34,32 +35,42 @@ function headerLine(census: Census): string {
 
 function scopeText(mutation: Ran): string {
   if (scopeOf(mutation) === 'census') return 'census (all candidates ran)';
-  return `partial check: ${mutation.results.length} of ${candidateCount(mutation)} candidates ran`;
+  const check = `partial check: ${mutation.results.length} of ${candidateCount(mutation)} candidates ran`;
+  return mutation.baselineNotRun.length > 0 ? check + SEPARATOR + `baseline budget left ${mutation.baselineNotRun.length} test files not run` : check;
 }
 
 function scopeOf(mutation: Ran): 'census' | 'partial' {
-  return mutation.notRun.length === 0 ? 'census' : 'partial';
+  return mutation.notRun.length === 0 && mutation.baselineNotRun.length === 0 ? 'census' : 'partial';
 }
 
 function stoppedReason({ baseline }: Stopped): string {
+  if (baseline.outcome === 'budget') return `budget spent before any file passed · ${baseline.notRun.length} test files not run · precheck stopped`;
   if (baseline.outcome === 'empty') return 'no candidate file ran a test · precheck stopped';
   if (baseline.outcome === 'timeout') return `timeout after ${baseline.timeoutSeconds}s in ${baseline.test} · precheck stopped`;
   return `red in ${baseline.test} · precheck stopped`;
+}
+
+function stoppedOutputLines({ baseline }: Stopped): string[] {
+  if (baseline.outcome === 'budget') return section('baseline not run', baseline.notRun.map((test) => INDENT + test));
+  if (baseline.outcome === 'empty' || baseline.output === '') return [];
+  return baseline.output.trimEnd().split('\n').slice(-STOPPED_OUTPUT_LINES).map((line) => INDENT + line);
 }
 
 function ranLines(blobs: Record<string, string>, mutation: Ran): string[] {
   const entries = Object.entries(blobs).map(([path, blob]) => `${path} ${blob}`);
   const counts = verdictCounts(mutation.results);
   const withoutPasses = mutation.withoutPasses > 0 ? [`${mutation.withoutPasses} without passes`] : [];
+  const baselineNotRun = mutation.baselineNotRun.length > 0 ? [`not run ${mutation.baselineNotRun.length}`] : [];
   const notRun = mutation.notRun.length > 0 ? [`not run ${mutation.notRun.length}`] : [];
   return [
     labelled('blobs', entries.length > 0 ? entries.join(SEPARATOR) : NO_BLOBS),
-    labelled('baseline', [`${mutation.baselineFiles} test files`, `${mutation.baselinePasses} pass`, 'coverage collected', ...withoutPasses, `timeout ${mutation.timeoutSeconds}s per file`].join(SEPARATOR)),
+    labelled('baseline', [`${mutation.baselineFiles} test files`, `${mutation.baselinePasses} pass`, 'coverage collected', ...withoutPasses, ...baselineNotRun, `timeout ${mutation.timeoutSeconds}s per file`].join(SEPARATOR)),
     labelled('mutants', [`candidates ${candidateCount(mutation)}`, ...VERDICT_ORDER.map((verdict) => `${verdict} ${counts[verdict]}`), ...notRun, duration(mutation.elapsedMs)].join(SEPARATOR)),
     ...section('survived', mutation.results.filter((result) => result.verdict.outcome === 'survived').map(survivedLine)),
     ...section('timeout', mutation.results.filter((result) => result.verdict.outcome === 'timeout').map(timedOutLine)),
-    ...section('no test reaches', mutation.results.filter((result) => result.verdict.outcome === 'no test reaches').map(mutantLine)),
+    ...section('no test reaches', mutation.results.filter((result) => result.verdict.outcome === 'no test reaches').map(unreachedLine)),
     ...section('not run', mutation.notRun.map(mutantLine)),
+    ...section('baseline not run', mutation.baselineNotRun.map((test) => INDENT + test)),
   ];
 }
 
@@ -75,8 +86,15 @@ function verdictCounts(results: CensusResult[]): Record<(typeof VERDICT_ORDER)[n
 
 function survivedLine(result: CensusResult): string {
   const ran = result.verdict.outcome === 'survived' ? result.verdict.ran : [];
-  const coverage = result.coverage === 'unknown' ? [COLUMN_GAP + 'coverage unknown'] : [];
-  return [mutantLine(result), `${COLUMN_GAP}ran: ${ran.join(', ')}`, ...coverage].join('');
+  return [mutantLine(result), `${COLUMN_GAP}ran: ${ran.join(', ')}`, coverageColumn(result)].join('');
+}
+
+function unreachedLine(result: CensusResult): string {
+  return mutantLine(result) + coverageColumn(result);
+}
+
+function coverageColumn(result: CensusResult): string {
+  return result.coverage === 'unknown' ? COLUMN_GAP + 'coverage unknown' : '';
 }
 
 function timedOutLine(result: CensusResult): string {

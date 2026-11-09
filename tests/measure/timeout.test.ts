@@ -44,6 +44,13 @@ describe("TimeoutExpired", () => {
     })
   }
 
+  it("runProcessGroup_keepsEachStreamsOutput_whenItTimesOut", async () => {
+    const error = await rejectedBy(() => runProcessGroup(["sh", "-c", "echo out; echo err >&2; sleep 5"], { timeoutSeconds: 0.5 })) as TimeoutExpired
+
+    assert.equal(error.partialStdout, "out\n")
+    assert.equal(error.partialStderr, "err\n")
+  })
+
   it("asyncTimeoutsFromEvidenceAndMeasurekit_areTheSharedClass", async () => {
     const errors = [
       await rejectedBy(() => runProcessGroup(SLEEP, { timeoutSeconds: SHORT_DEADLINE_SECONDS })),

@@ -88,6 +88,15 @@ describe("read trace", () => {
     assert.equal(output, "ELOOP")
   })
 
+  it("preload_leavesABadFileUrlErrorToTheRealRead", () => {
+    const root = repo("bad-url", { "a.js": "" })
+    const script = "require('node:fs').promises.readFile(new URL('file:///a%2Fb')).then(() => {}, (error) => process.stdout.write(error.code))\n"
+
+    const output = execFileSync(process.execPath, ["-e", script], { cwd: root, encoding: "utf8", env: { ...process.env, ...readTraceEnv(join(scratch, "bad-url.log")) } })
+
+    assert.equal(output, "ERR_INVALID_FILE_URL_PATH")
+  })
+
   it("preload_leavesReadsWorking_whenTheLogSettingIsGone", () => {
     const root = repo("nolog", { "a.js": "hello" })
     const script = "process.stdout.write(require('node:fs').readFileSync('a.js', 'utf8'))\n"

@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { currentLoadFactor } from './baseline.ts';
+import { busierBy, currentLoadFactor } from './baseline.ts';
 import type { BaselineFile } from './baseline.ts';
 import { applyMutant, parsesCleanly } from './mutants.ts';
 import type { Mutant } from './mutants.ts';
@@ -83,6 +83,5 @@ async function firstFailure(directory: string, selected: BaselineFile[], sampleL
 }
 
 export function mutantTimeoutSeconds(baselineDurationMs: number, baselineLoadFactor: number, currentLoadFactor: number): number {
-  const busier = Math.max(currentLoadFactor / baselineLoadFactor, 1);
-  return (baselineDurationMs * TIMEOUT_FACTOR * busier + TIMEOUT_SLACK_MS) / 1000;
+  return (baselineDurationMs * TIMEOUT_FACTOR * busierBy(currentLoadFactor, baselineLoadFactor) + TIMEOUT_SLACK_MS) / 1000;
 }

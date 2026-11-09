@@ -270,10 +270,10 @@ test('lensReview_bindsAPrecheckThroughThePrepareCommand_whenOnlyTestsGrewAfterIt
   const result = await rt.run('lens-review', { auditMode: 'split', diffs: [{ repo, base: 'main' }], precheck })
 
   assert.equal(result.verdict, 'PASS')
-  assert.deepEqual(result.precheck, { status: 'bound', tree: precheckTree, reason: null, survivorsOpen: false })
+  assert.deepEqual(result.precheck, { status: 'bound', tree: precheckTree, reason: null, survivorsOpen: false, rerunStale: false })
   writeFileSync(join(repo, 'src', 'cart.ts'), 'export const a = 3\n')
   const moved = await createRuntime({ respond: shellResponder(box) }).run('lens-review', { auditMode: 'split', diffs: [{ repo, base: 'main' }], precheck })
-  assert.deepEqual(moved.precheck, { status: 'stale', tree: precheckTree, reason: 'src/cart.ts changed after the precheck', survivorsOpen: false })
+  assert.deepEqual(moved.precheck, { status: 'stale', tree: precheckTree, reason: 'src/cart.ts changed after the precheck', survivorsOpen: false, rerunStale: false })
 })
 
 test('lensReview_bindsAPrecheckFromCliPreparedMetadata_whenTheDiffEndsAtAHeadCommit', async () => {
@@ -347,5 +347,5 @@ test('lensReview_bindsAPrecheckFromCliPreparedMetadata_withoutAPrepareAgent', as
   const result = await rt.run('lens-review', { ...request, auditMode: 'split', prepared })
 
   assert.ok(!rt.record.agents.some(({ opts }) => opts.label === 'prepare'))
-  assert.deepEqual(result.precheck, { status: 'bound', tree: precheckTree, reason: null, survivorsOpen: false })
+  assert.deepEqual(result.precheck, { status: 'bound', tree: precheckTree, reason: null, survivorsOpen: false, rerunStale: false })
 })

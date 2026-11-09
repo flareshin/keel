@@ -987,7 +987,7 @@ test('lensReview_attachesThePrecheckAsAnAuthorCensus_whenItsNonTestBlobsMatchThe
   const { result, target } = await runWithPrecheck(precheck, boundPrepared(binding()))
   assert.equal(result.verdict, 'PASS')
   assert.ok(target.endsWith(`\nAuthor's precheck census (claims to check against the code, not evidence):\n${precheck}`), target)
-  assert.deepEqual(result.precheck, { status: 'bound', tree: PRECHECK_TREE, reason: null, survivorsOpen: false })
+  assert.deepEqual(result.precheck, { status: 'bound', tree: PRECHECK_TREE, reason: null, survivorsOpen: false, rerunStale: false })
   assert.deepEqual(linesStartingWith(result.report, 'Precheck'), [`Precheck: bound to tree ${PRECHECK_TREE}`])
   assert.equal(result.report.split('\n\n')[2], `Precheck: bound to tree ${PRECHECK_TREE}`)
 })
@@ -1131,3 +1131,28 @@ for (const [name, scriptArgs, expected] of INVALID_PRECHECK_ARGS) {
     assert.equal(rt.record.agents.length, 0)
   })
 }
+
+test('lensReview_keepsMutantsTheRerunDidNotRunOpen', async () => {
+  const added = binding({ testChange: { lines_removed: false, lines_added: true } })
+  const partial = await runWithPrecheck(precheckText({ tail: '\nrerun: survivors · 0 killed · 0 survived · 0 no test reaches · 0 invalid · 0 timeout · 2 not run · tree t · ran tests/b.test.ts' }), boundPrepared(added))
+  const complete = await runWithPrecheck(precheckText({ tail: '\nrerun: survivors · 2 killed · 0 survived · 0 no test reaches · 0 invalid · 0 timeout · tree t · ran tests/b.test.ts' }), boundPrepared(added))
+  assert.match(partial.target, /\nThe "rerun: survivors" result left 2 mutants not run: treat each line of its "not run" section as open\.$/)
+  assert.deepEqual(linesStartingWith(partial.result.report, 'Precheck'), [`Precheck: bound to tree ${PRECHECK_TREE}; its rerun left 2 mutants not run, and those stay open`])
+  assert.doesNotMatch(complete.target, /not run: treat/)
+  assert.deepEqual(linesStartingWith(complete.result.report, 'Precheck'), [`Precheck: bound to tree ${PRECHECK_TREE}`])
+})
+
+test('lensReview_keepsSurvivorsOpen_whenTheRerunResultIsForAnotherTreeThanTheReviewedOne', async () => {
+  const rerunTree = 'c'.repeat(40)
+  const reviewed = (endTree, testChange) => boundPrepared({ ...binding({ testChange }), end_tree: endTree })
+  const rerunLine = { tail: `\nrerun: survivors · 1 killed · 0 survived · 0 no test reaches · 0 invalid · 0 timeout · tree ${rerunTree} · ran tests/b.test.ts` }
+  const later = await runWithPrecheck(precheckText(rerunLine), reviewed('d'.repeat(40), { lines_removed: false, lines_added: true }))
+  const removed = await runWithPrecheck(precheckText(rerunLine), reviewed(PRECHECK_TREE, { lines_removed: false, lines_added: false }))
+  const same = await runWithPrecheck(precheckText(rerunLine), reviewed(rerunTree, { lines_removed: false, lines_added: true }))
+  assert.equal(later.result.precheck.survivorsOpen, true)
+  assert.match(later.target, /\nThe "rerun: survivors" result is for another tree than the reviewed one: treat each survived and no-test-reaches line above as open\.$/)
+  assert.deepEqual(linesStartingWith(later.result.report, 'Precheck'), [`Precheck: bound to tree ${PRECHECK_TREE}; its "rerun: survivors" result is for another tree than the reviewed one, so its survived and no-test-reaches lines stay open`])
+  assert.equal(removed.result.precheck.survivorsOpen, true)
+  assert.equal(same.result.precheck.survivorsOpen, false)
+  assert.equal(same.result.precheck.rerunStale, false)
+})

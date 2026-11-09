@@ -63,6 +63,8 @@ const BLOB_ENTRY = /^(.+) ([0-9a-f]{40})$/
 const BLOB_SEPARATOR = ' · '
 const NO_BLOBS = 'none'
 const RERUN_SURVIVORS = /^rerun: survivors\b/m
+const RERUN_TREE = /^rerun: survivors\b.* · tree ([0-9a-f]{40})\b/m
+const RERUN_NOT_RUN = /^rerun: survivors\b.* · (\d+) not run\b/m
 const DELTA_NOTE = 'A `since` diff is a delta review: the branch passed review at that tree, so judge only the change after it (read the surrounding code for context, and say so if the change breaks something the earlier PASS relied on).'
 const FIX_DELTA_NOTE = 'A `since` diff is a delta review of a fix: the review at that tree returned NEEDS_FIXES with the merge-blocking findings below, so judge only the change after it (read the surrounding code for context). Each finding below that the change leaves unresolved is a finding again, impact high, at its file:line. A finding is resolved only when its defect is fixed: a change that makes it stop applying by deleting, hiding, renaming or exempting the flagged code, or by editing the check or test that caught it, leaves it unresolved unless the change shows the finding was wrong. In a fix delta only impact high is merge-blocking; a new medium finding is reported as non-blocking. This overrides the high-or-medium rule in the review rules.\nPrior merge-blocking findings:'
 const REVIEW_GUARDRAILS = 'Review rules: a finding is valid only as a failure scenario (input leads to wrong output, an exception or a broken caller) with file:line evidence; style or impression critique is void; nothing outside the request. Impact high or medium = merge-blocking (wrong behavior, data loss, security, a broken caller or contract, fake-green tests); low = non-blocking. A merge-blocking finding needs a repro: a command or input with the observed and the expected result, or `static: <caller|contract|security|concurrency|rule> at file:line` when nothing can be run; without one it is reported as non-blocking. Comments: git-guard C-comments denies new and changed code comments at write time, so a retained comment is not a finding, rule-checks K5.14 signals included. Test obligation: changed logic with no test that would fail if the change were reverted is impact high, never low. Do not build the project or run its tests: the recorded `keel test` run is the test evidence and the gate checks it; judge whether a test would fail on revert by reading the test and the code. Origin: set origin pre-existing only when the failing lines and the failure they cause are already present at the review base (read them with the review base command); otherwise introduced. A prior merge-blocking finding is introduced.'
@@ -217,7 +219,7 @@ function parsePrecheck(text) {
   const listed = blobsLine[1].trim()
   const entries = listed === NO_BLOBS ? [] : listed.split(BLOB_SEPARATOR).map((entry) => BLOB_ENTRY.exec(entry.trim()))
   if (entries.some((entry) => !entry)) return { problem: 'a "blobs" entry is not "<repo-relative path> <40-hex blob id>"' }
-  return { tree: header[1], blobs: new Map(entries.map((entry) => [entry[1], entry[2]])), hasSurvivorRerun: RERUN_SURVIVORS.test(text) }
+  return { tree: header[1], blobs: new Map(entries.map((entry) => [entry[1], entry[2]])), hasSurvivorRerun: RERUN_SURVIVORS.test(text), rerunTree: RERUN_TREE.exec(text)?.[1] ?? null }
 }
 
 function buildPreparePrompt() {
@@ -298,11 +300,12 @@ function bindPrecheck(parsed, target) {
   const mismatch = findBlobMismatch(parsed.blobs, binding.blobs)
   if (mismatch) return stalePrecheck(parsed.tree, mismatch)
   if (binding.test_change.lines_removed) return stalePrecheck(parsed.tree, 'existing test lines changed or were removed after the precheck; rerun the whole precheck')
-  return { status: 'bound', tree: parsed.tree, reason: null, survivorsOpen: binding.test_change.lines_added && !parsed.hasSurvivorRerun }
+  const rerunStale = parsed.rerunTree !== null && typeof binding.end_tree === 'string' && parsed.rerunTree !== binding.end_tree
+  return { status: 'bound', tree: parsed.tree, reason: null, survivorsOpen: rerunStale || (binding.test_change.lines_added && !parsed.hasSurvivorRerun), rerunStale }
 }
 
 function stalePrecheck(tree, reason) {
-  return { status: 'stale', tree, reason, survivorsOpen: false }
+  return { status: 'stale', tree, reason, survivorsOpen: false, rerunStale: false }
 }
 
 function isBindingShaped(b) {
@@ -321,8 +324,14 @@ function findBlobMismatch(recorded, current) {
 
 function describePrecheck(precheck) {
   if (precheck.status === 'stale') return `stale precheck (${precheck.reason})`
+  if (precheck.rerunStale) return `bound to tree ${precheck.tree}; its "rerun: survivors" result is for another tree than the reviewed one, so its survived and no-test-reaches lines stay open`
   const open = precheck.survivorsOpen ? '; tests were added after it with no "rerun: survivors" result, so its survived and no-test-reaches lines stay open' : ''
-  return `bound to tree ${precheck.tree}${open}`
+  const unrun = rerunNotRunCount() ? `; its rerun left ${rerunNotRunCount()} mutants not run, and those stay open` : ''
+  return `bound to tree ${precheck.tree}${open}${unrun}`
+}
+
+function rerunNotRunCount() {
+  return RERUN_NOT_RUN.exec(A.precheck)?.[1] ?? null
 }
 
 function isPreparedShaped(p) {
@@ -442,8 +451,9 @@ function buildTarget(reviewed, precheck) {
 
 function buildPrecheckBlock(precheck) {
   if (precheck.status === 'stale') return `Stale precheck (${precheck.reason}): the author's precheck census was dropped and is not part of this review.`
-  const open = precheck.survivorsOpen ? '\nTests were added after the precheck tree and no "rerun: survivors" result is attached: treat each survived and no-test-reaches line above as open.' : ''
-  return `Author's precheck census (claims to check against the code, not evidence):\n${A.precheck}${open}`
+  const open = precheck.rerunStale ? '\nThe "rerun: survivors" result is for another tree than the reviewed one: treat each survived and no-test-reaches line above as open.' : precheck.survivorsOpen ? '\nTests were added after the precheck tree and no "rerun: survivors" result is attached: treat each survived and no-test-reaches line above as open.' : ''
+  const unrun = rerunNotRunCount() ? `\nThe "rerun: survivors" result left ${rerunNotRunCount()} mutants not run: treat each line of its "not run" section as open.` : ''
+  return `Author's precheck census (claims to check against the code, not evidence):\n${A.precheck}${open}${unrun}`
 }
 
 function buildLensDiffCommand(target) {

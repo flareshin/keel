@@ -12,7 +12,7 @@ import type { ChangedName } from './consumers.ts';
 import { generateMutants } from './mutants.ts';
 import type { Operator } from './mutants.ts';
 import { runMutants } from './run.ts';
-import type { MutantTarget, MutantVerdict } from './run.ts';
+import type { MutantTarget, MutantVerdict, MutationRun } from './run.ts';
 import { candidateTests } from './select.ts';
 
 export interface CensusTarget {
@@ -29,6 +29,7 @@ export interface HostLoad {
 export interface CensusMutant {
   path: string;
   line: number;
+  column: number;
   operator: Operator;
   change: string;
 }
@@ -76,9 +77,8 @@ const TRIVIA_TOKENS = new Set([
 export async function runCensus(repo: string, target: CensusTarget, host: HostLoad = currentHostLoad(), baselineBudgetMs = DEFAULT_BASELINE_BUDGET_MS): Promise<Census> {
   const blobs = bindPrecheck(repo, target.reviewBase, target.tree, target.tree).blobs;
   const entries = diffEntries(repo, target.reviewBase, target.tree);
-  const regularFiles = new Set(entries.filter((entry) => REGULAR_FILE_MODES.includes(entry.mode)).map((entry) => entry.path));
   const sourcePaths = Object.keys(blobs);
-  const scriptFiles = sourcePaths.filter((path) => regularFiles.has(path) && SCRIPT_FILE.test(path));
+  const scriptFiles = changedScripts(repo, target.reviewBase, target.tree, blobs);
   return {
     tree: target.tree,
     base: target.base,
@@ -89,7 +89,20 @@ export async function runCensus(repo: string, target: CensusTarget, host: HostLo
   };
 }
 
-function currentHostLoad(): HostLoad {
+export function changedScripts(repo: string, reviewBase: string, tree: string, blobs: Record<string, string>): string[] {
+  const regularFiles = new Set(diffEntries(repo, reviewBase, tree).filter((entry) => REGULAR_FILE_MODES.includes(entry.mode)).map((entry) => entry.path));
+  return Object.keys(blobs).filter((path) => regularFiles.has(path) && SCRIPT_FILE.test(path));
+}
+
+export function settledVerdicts(run: MutationRun, baselineNotRun: string[], describe: (each: MutantTarget) => CensusMutant): { results: CensusResult[]; notRun: CensusMutant[] } {
+  const unreachedOnlyByRunFiles = (each: { verdict: MutantVerdict }): boolean => baselineNotRun.length > 0 && each.verdict.outcome === 'no test reaches';
+  return {
+    results: run.results.filter((result) => !unreachedOnlyByRunFiles(result)).map((result) => ({ ...describe(result), coverage: result.coverage, verdict: result.verdict })),
+    notRun: [...run.results.filter(unreachedOnlyByRunFiles), ...run.notRun].map(describe),
+  };
+}
+
+export function currentHostLoad(): HostLoad {
   return { load: loadavg()[0]!, cpus: availableParallelism() };
 }
 
@@ -105,7 +118,7 @@ async function runMutation(repo: string, target: CensusTarget, sourcePaths: stri
     const started = performance.now();
     const run = await runMutants(directory, baseline.files, runnable);
     const describe = (each: MutantTarget): CensusMutant => describeMutant(sources.get(each.path) ?? '', each);
-    const unreachedOnlyByRunFiles = (each: { verdict: MutantVerdict }): boolean => baseline.notRun.length > 0 && each.verdict.outcome === 'no test reaches';
+    const settled = settledVerdicts(run, baseline.notRun, describe);
     return {
       outcome: 'ran',
       timeoutSeconds: baseline.timeoutSeconds,
@@ -113,8 +126,8 @@ async function runMutation(repo: string, target: CensusTarget, sourcePaths: stri
       baselinePasses: baseline.files.reduce((sum, file) => sum + file.passed, 0),
       withoutPasses: baseline.withoutPasses.length,
       baselineNotRun: baseline.notRun,
-      results: run.results.filter((result) => !unreachedOnlyByRunFiles(result)).map((result) => ({ ...describe(result), coverage: result.coverage, verdict: result.verdict })),
-      notRun: [...run.results.filter(unreachedOnlyByRunFiles), ...run.notRun, ...targets.filter((each) => !runnable.includes(each))].map(describe),
+      results: settled.results,
+      notRun: [...settled.notRun, ...targets.filter((each) => !runnable.includes(each)).map(describe)],
       elapsedMs: performance.now() - started,
     };
   } finally {
@@ -122,14 +135,14 @@ async function runMutation(repo: string, target: CensusTarget, sourcePaths: stri
   }
 }
 
-function mutantTargets(sources: Map<string, string>, addedLines: Map<string, Set<number>>): MutantTarget[] {
+export function mutantTargets(sources: Map<string, string>, addedLines: Map<string, Set<number>>): MutantTarget[] {
   return [...sources]
     .flatMap(([path, source]) => generateMutants(path, source, addedLines.get(path) ?? new Set()).map((mutant) => ({ path, mutant })))
     .sort((a, b) => a.mutant.priority - b.mutant.priority);
 }
 
-function describeMutant(source: string, { path, mutant }: MutantTarget): CensusMutant {
-  return { path, line: mutant.line, operator: mutant.operator, change: changeText(source.slice(mutant.start, mutant.end), mutant.operator, mutant.replacement) };
+export function describeMutant(source: string, { path, mutant }: MutantTarget): CensusMutant {
+  return { path, line: mutant.line, column: mutant.start - source.lastIndexOf('\n', mutant.start - 1), operator: mutant.operator, change: changeText(source.slice(mutant.start, mutant.end), mutant.operator, mutant.replacement) };
 }
 
 function changeText(original: string, operator: Operator, replacement: string): string {

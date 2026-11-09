@@ -6,6 +6,8 @@ All notable changes to keel are recorded here. The format follows
 
 ## [Unreleased]
 
+`keel precheck rerun --repo <path> --base <ref> --census <file>` reruns a saved census's survived and no-test-reaches mutants against only the test files changed since its tree, and prints the census followed by the `rerun: survivors` result lens-review already recognizes. It refuses and asks for the full `keel precheck run` when a source changed, an existing test line changed or was removed, or no runnable test changed; it also refuses when the census lists no open mutant, since nothing is left to rerun. Each successful rerun is logged as a precheck of its tree, so a review after it counts as prechecked.
+
 `measure`, `bin/link`, `lib/evidence` (the `keel` command, the evidence store and the verdict the ship-gate reads) and the
 Codex adapter (`codex/`) drop their Python-emulation modules and use plain Node behavior: `JSON.parse` and `JSON.stringify`,
 `node:path`, `node:fs`, `RegExp`, a fatal `TextDecoder` and `node:util` `parseArgs`. The hooks' shared kit (`hooks/lib/hookkit`) loses its Python runtime modules too (see Removed). Some Python semantics stay on purpose: the `splitlines` and `strip` character sets (`hooks/lib/hookkit/text.ts`, `apply_patch` text and guard output), CPython's recursion limit in the Codex TOML reader (`codex/lib/toml.ts`), the hooks' JSON spacing and error class names, and the exception names `rule-checks.ts` prints.

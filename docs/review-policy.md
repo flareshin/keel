@@ -65,8 +65,13 @@ which are signals to fix or explain before review, not findings.
 It is an author claim for the
 tests and contract lenses to check, not evidence: it adds no evidence kind, and
 "all killed" is not a pass claim. The review reports the precheck as stale when a
-non-test path changed after it or an existing test line changed; rerun it then,
-and rerun it after adding tests so its survivors are not left open.
+non-test path changed after it or an existing test line changed; rerun it then.
+After adding tests, `keel precheck rerun --repo <path> --base <ref> --census <file>`
+runs only the census's survived and no-test-reaches mutants against the tests changed
+since its tree, and prints the census with a `rerun: survivors` result; pass that
+output as the `precheck` argument, or the review keeps those lines open. The result
+holds only for its tree: any later change to the tree keeps those lines open until
+you rerun it.
 
 [C-no-comments] For every candidate that changes a code file, run `/removing-comments`
 after the tests are green and before `keel review prepare`: a

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 import type { Census, CensusResult, MutationCensus } from "../../lib/precheck/census.ts"
-import { renderCensus, summarizeCensus } from "../../lib/precheck/render.ts"
+import { renderCensus, renderRerun, summarizeCensus } from "../../lib/precheck/render.ts"
 
 const TREE = "4f1c9e2a7b3d58e60c1f9a2b7d4e3c5a6b8d9e0f"
 const BLOB_A = "9a1e".padEnd(40, "0")
@@ -9,7 +9,7 @@ const BLOB_B = "2c7b".padEnd(40, "1")
 const DELETED = "0".repeat(40)
 
 const result = (line: number, verdict: CensusResult["verdict"], coverage: CensusResult["coverage"] = "known"): CensusResult =>
-  ({ path: "lib/a.ts", line, operator: "logic-term", change: "a || b → a", coverage, verdict })
+  ({ path: "lib/a.ts", line, column: 7, operator: "logic-term", change: "a || b → a", coverage, verdict })
 
 const ran = (overrides: Partial<Extract<MutationCensus, { outcome: "ran" }>> = {}): MutationCensus => ({
   outcome: "ran",
@@ -62,7 +62,7 @@ describe("renderCensus", () => {
       result(141, { outcome: "no test reaches" }),
     ] })))
 
-    assert.match(text, /\nsurvived\n  lib\/a\.ts:71  logic-term  a \|\| b → a  ran: tests\/a\.test\.ts, tests\/b\.test\.ts\n  lib\/a\.ts:72  logic-term  a \|\| b → a  ran: tests\/a\.test\.ts  coverage unknown\nno test reaches\n  lib\/a\.ts:141  logic-term  a \|\| b → a\n/)
+    assert.match(text, /\nsurvived\n  lib\/a\.ts:71:7  logic-term  a \|\| b → a  ran: tests\/a\.test\.ts, tests\/b\.test\.ts\n  lib\/a\.ts:72:7  logic-term  a \|\| b → a  ran: tests\/a\.test\.ts  coverage unknown\nno test reaches\n  lib\/a\.ts:141:7  logic-term  a \|\| b → a\n/)
   })
 
   it("renderCensus_marksANoTestReachesLineCoverageNeverSaw", () => {
@@ -71,7 +71,7 @@ describe("renderCensus", () => {
       result(142, { outcome: "no test reaches" }, "unknown"),
     ] })))
 
-    assert.match(text, /\nno test reaches\n  lib\/a\.ts:141  logic-term  a \|\| b → a\n  lib\/a\.ts:142  logic-term  a \|\| b → a  coverage unknown\n/u)
+    assert.match(text, /\nno test reaches\n  lib\/a\.ts:141:7  logic-term  a \|\| b → a\n  lib\/a\.ts:142:7  logic-term  a \|\| b → a  coverage unknown\n/u)
   })
 
   it("renderCensus_writesNoneForEmptyBlobs_andLeavesOutEmptySections", () => {
@@ -88,16 +88,16 @@ describe("renderCensus", () => {
       result(141, { outcome: "no test reaches" }),
     ] })))
 
-    assert.match(text, /\nsurvived\n  lib\/a\.ts:71  logic-term  a \|\| b → a  ran: tests\/a\.test\.ts\ntimeout\n  lib\/a\.ts:13  logic-term  a \|\| b → a  test: tests\/b\.test\.ts\nno test reaches\n  lib\/a\.ts:141  logic-term  a \|\| b → a\n/)
+    assert.match(text, /\nsurvived\n  lib\/a\.ts:71:7  logic-term  a \|\| b → a  ran: tests\/a\.test\.ts\ntimeout\n  lib\/a\.ts:13:7  logic-term  a \|\| b → a  test: tests\/b\.test\.ts\nno test reaches\n  lib\/a\.ts:141:7  logic-term  a \|\| b → a\n/)
   })
 
   it("renderCensus_namesAPartialCheck_andListsTheMutantsThatDidNotRun", () => {
-    const notRun = [{ path: "hooks/x.ts", line: 9, operator: "boundary" as const, change: "> → >=" }]
+    const notRun = [{ path: "hooks/x.ts", line: 9, column: 7, operator: "boundary" as const, change: "> → >=" }]
     const text = renderCensus(census(ran({ notRun })))
 
     assert.match(text.split("\n")[0]!, / · partial check: 5 of 6 candidates ran$/)
     assert.match(text, /\nmutants   candidates 6 · killed 1 · survived 1 · no test reaches 1 · invalid 1 · timeout 1 · not run 1 · 6m12s\n/)
-    assert.match(text, /\nnot run\n  hooks\/x\.ts:9  boundary  > → >=\n/)
+    assert.match(text, /\nnot run\n  hooks\/x\.ts:9:7  boundary  > → >=\n/)
   })
 
   it("renderCensus_countsBaselineFilesWithoutPasses_andWritesSecondsUnderAMinute", () => {
@@ -166,7 +166,7 @@ describe("renderCensus", () => {
 
 describe("summarizeCensus", () => {
   it("summarizeCensus_countsEachVerdictAndTheMutantsNotRun", () => {
-    const notRun = [{ path: "hooks/x.ts", line: 9, operator: "boundary" as const, change: "> → >=" }]
+    const notRun = [{ path: "hooks/x.ts", line: 9, column: 7, operator: "boundary" as const, change: "> → >=" }]
 
     assert.deepEqual(summarizeCensus(census(ran({ notRun }), { blobs: { "lib/a.ts": BLOB_B } })), {
       tree: TREE,
@@ -206,5 +206,47 @@ describe("summarizeCensus", () => {
 
     assert.equal(summary["baseline"], "empty")
     assert.equal("baseline_test" in summary, false)
+  })
+})
+
+describe("renderRerun", () => {
+  const mutant = { path: "lib/a.ts", line: 3, column: 7, operator: "boundary" as const, change: "> → >=" }
+
+  it("renderRerun_countsAndListsMutantsTheBudgetLeft", () => {
+    const text = renderRerun({ tree: "t", tests: ["tests/b.test.ts"], baselineNotRun: ["tests/c.test.ts"], results: [], notRun: [mutant] })
+
+    assert.deepEqual(text.split("\n"), [
+      "rerun: survivors · 0 killed · 0 survived · 0 no test reaches · 0 invalid · 0 timeout · 1 not run · tree t · ran tests/b.test.ts",
+      "not run",
+      "  lib/a.ts:3:7  boundary  > → >=",
+      "baseline not run",
+      "  tests/c.test.ts",
+    ])
+  })
+
+  it("renderRerun_namesEveryMutantThatStaysOpen", () => {
+    const text = renderRerun({ tree: "t", tests: ["tests/b.test.ts"], baselineNotRun: [], notRun: [], results: [
+      { ...mutant, line: 1, coverage: "known", verdict: { outcome: "survived", ran: ["tests/b.test.ts"] } },
+      { ...mutant, line: 2, coverage: "known", verdict: { outcome: "no test reaches" } },
+      { ...mutant, line: 3, coverage: "known", verdict: { outcome: "invalid", reason: "no tests ran", tests: [] } },
+      { ...mutant, line: 4, coverage: "known", verdict: { outcome: "timeout", test: "tests/b.test.ts" } },
+    ] })
+
+    assert.deepEqual(text.split("\n").slice(1), [
+      "still survived",
+      "  lib/a.ts:1:7  boundary  > → >=  ran: tests/b.test.ts",
+      "still no test reaches",
+      "  lib/a.ts:2:7  boundary  > → >=",
+      "invalid",
+      "  lib/a.ts:3:7  boundary  > → >=",
+      "timeout",
+      "  lib/a.ts:4:7  boundary  > → >=  test: tests/b.test.ts",
+    ])
+  })
+
+  it("renderRerun_leavesOutNotRun_whenEveryMutantRan", () => {
+    const text = renderRerun({ tree: "t", tests: ["tests/b.test.ts"], baselineNotRun: [], results: [{ ...mutant, coverage: "known", verdict: { outcome: "killed", test: "tests/b.test.ts" } }], notRun: [] })
+
+    assert.equal(text, "rerun: survivors · 1 killed · 0 survived · 0 no test reaches · 0 invalid · 0 timeout · tree t · ran tests/b.test.ts")
   })
 })

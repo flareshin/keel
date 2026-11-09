@@ -99,6 +99,16 @@ describe("bindPrecheck", () => {
     assert.equal(bindPrecheck(root, precheckTree, end, TREE).test_change, null)
   })
 
+  it("bindPrecheck_recordsTheTreeOfTheEnd_whenTheEndIsACommit", () => {
+    const root = repo({ "lib/a.ts": "a\n" })
+    const base = git(root, "rev-parse", "HEAD^{tree}")
+    const tree = treeOf(root, { "lib/a.ts": "b\n" })
+    git(root, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "change")
+    const commit = git(root, "rev-parse", "HEAD")
+
+    assert.equal(bindPrecheck(root, base, commit, base).end_tree, tree)
+  })
+
   it("keelPrecheckBind_printsTheBindingAsJson_andRejectsAMissingOption", () => {
     const root = repo({ "lib/a.ts": "a\n" })
     const base = git(root, "rev-parse", "HEAD^{tree}")

@@ -219,7 +219,12 @@ function parsePrecheck(text) {
   const listed = blobsLine[1].trim()
   const entries = listed === NO_BLOBS ? [] : listed.split(BLOB_SEPARATOR).map((entry) => BLOB_ENTRY.exec(entry.trim()))
   if (entries.some((entry) => !entry)) return { problem: 'a "blobs" entry is not "<repo-relative path> <40-hex blob id>"' }
-  return { tree: header[1], blobs: new Map(entries.map((entry) => [entry[1], entry[2]])), hasSurvivorRerun: RERUN_SURVIVORS.test(text), rerunTree: RERUN_TREE.exec(text)?.[1] ?? null }
+  return { tree: header[1], blobs: new Map(entries.map((entry) => [entry[1], entry[2]])), rerun: parseRerun(text) }
+}
+
+function parseRerun(text) {
+  if (!RERUN_SURVIVORS.test(text)) return null
+  return { tree: RERUN_TREE.exec(text)?.[1] ?? null, notRun: Number(RERUN_NOT_RUN.exec(text)?.[1] ?? 0) }
 }
 
 function buildPreparePrompt() {
@@ -300,12 +305,18 @@ function bindPrecheck(parsed, target) {
   const mismatch = findBlobMismatch(parsed.blobs, binding.blobs)
   if (mismatch) return stalePrecheck(parsed.tree, mismatch)
   if (binding.test_change.lines_removed) return stalePrecheck(parsed.tree, 'existing test lines changed or were removed after the precheck; rerun the whole precheck')
-  const rerunStale = parsed.rerunTree !== null && typeof binding.end_tree === 'string' && parsed.rerunTree !== binding.end_tree
-  return { status: 'bound', tree: parsed.tree, reason: null, survivorsOpen: rerunStale || (binding.test_change.lines_added && !parsed.hasSurvivorRerun), rerunStale }
+  const survivors = survivorState(parsed.rerun, binding)
+  return { status: 'bound', tree: parsed.tree, reason: null, survivors, rerunNotRun: survivors === 'partial-rerun' ? parsed.rerun.notRun : 0 }
+}
+
+function survivorState(rerun, binding) {
+  if (rerun === null) return binding.test_change.lines_added ? 'no-rerun' : 'as-listed'
+  if (rerun.tree === null || rerun.tree !== binding.end_tree) return 'stale-rerun'
+  return rerun.notRun > 0 ? 'partial-rerun' : 'as-listed'
 }
 
 function stalePrecheck(tree, reason) {
-  return { status: 'stale', tree, reason, survivorsOpen: false, rerunStale: false }
+  return { status: 'stale', tree, reason, survivors: null, rerunNotRun: 0 }
 }
 
 function isBindingShaped(b) {
@@ -324,14 +335,14 @@ function findBlobMismatch(recorded, current) {
 
 function describePrecheck(precheck) {
   if (precheck.status === 'stale') return `stale precheck (${precheck.reason})`
-  if (precheck.rerunStale) return `bound to tree ${precheck.tree}; its "rerun: survivors" result is for another tree than the reviewed one, so its survived and no-test-reaches lines stay open`
-  const open = precheck.survivorsOpen ? '; tests were added after it with no "rerun: survivors" result, so its survived and no-test-reaches lines stay open' : ''
-  const unrun = rerunNotRunCount() ? `; its rerun left ${rerunNotRunCount()} mutants not run, and those stay open` : ''
-  return `bound to tree ${precheck.tree}${open}${unrun}`
+  return `bound to tree ${precheck.tree}${describeOpenSurvivors(precheck)}`
 }
 
-function rerunNotRunCount() {
-  return RERUN_NOT_RUN.exec(A.precheck)?.[1] ?? null
+function describeOpenSurvivors({ survivors, rerunNotRun }) {
+  if (survivors === 'stale-rerun') return '; its "rerun: survivors" result does not name the reviewed tree, so its survived and no-test-reaches lines stay open'
+  if (survivors === 'no-rerun') return '; tests were added after it with no "rerun: survivors" result, so its survived and no-test-reaches lines stay open'
+  if (survivors === 'partial-rerun') return `; its rerun left ${rerunNotRun} mutants not run, and those stay open`
+  return ''
 }
 
 function isPreparedShaped(p) {
@@ -451,9 +462,14 @@ function buildTarget(reviewed, precheck) {
 
 function buildPrecheckBlock(precheck) {
   if (precheck.status === 'stale') return `Stale precheck (${precheck.reason}): the author's precheck census was dropped and is not part of this review.`
-  const open = precheck.rerunStale ? '\nThe "rerun: survivors" result is for another tree than the reviewed one: treat each survived and no-test-reaches line above as open.' : precheck.survivorsOpen ? '\nTests were added after the precheck tree and no "rerun: survivors" result is attached: treat each survived and no-test-reaches line above as open.' : ''
-  const unrun = rerunNotRunCount() ? `\nThe "rerun: survivors" result left ${rerunNotRunCount()} mutants not run: treat each line of its "not run" section as open.` : ''
-  return `Author's precheck census (claims to check against the code, not evidence):\n${A.precheck}${open}${unrun}`
+  return `Author's precheck census (claims to check against the code, not evidence):\n${A.precheck}${openSurvivorsInstruction(precheck)}`
+}
+
+function openSurvivorsInstruction({ survivors, rerunNotRun }) {
+  if (survivors === 'stale-rerun') return '\nThe "rerun: survivors" result does not name the reviewed tree: treat each survived and no-test-reaches line above as open.'
+  if (survivors === 'no-rerun') return '\nTests were added after the precheck tree and no "rerun: survivors" result is attached: treat each survived and no-test-reaches line above as open.'
+  if (survivors === 'partial-rerun') return `\nThe "rerun: survivors" result left ${rerunNotRun} mutants not run: treat each line of its "not run" section as open.`
+  return ''
 }
 
 function buildLensDiffCommand(target) {

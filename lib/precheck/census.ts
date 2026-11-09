@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync, rmSync } from 'node:fs';
 import { availableParallelism, loadavg } from 'node:os';
 import { join } from 'node:path';
@@ -56,6 +57,7 @@ const HOOK_DIRECTORY = 'hooks/';
 const HOOK_DIFF_MAX_PRIORITY = 3;
 const SNIPPET_LIMIT = 40;
 const ELLIPSIS = '…';
+const CHANGE_HASH_LENGTH = 6;
 const MASKED_TEXT = `'${ELLIPSIS}'`;
 const MASKED_PATTERN = `/${ELLIPSIS}/`;
 const REMOVALS = new Set(['', ';']);
@@ -148,7 +150,12 @@ export function describeMutant(source: string, { path, mutant }: MutantTarget): 
 function changeText(original: string, operator: Operator, replacement: string): string {
   if (operator === 'text-removal') return 'text removed';
   if (REMOVALS.has(replacement)) return `${codeSnippet(original)} removed`;
-  return `${codeSnippet(original)} → ${codeSnippet(replacement)}`;
+  const rendered = `${codeSnippet(original)} → ${codeSnippet(replacement)}`;
+  return rendered.includes(ELLIPSIS) ? `${rendered} #${changeHash(original, replacement)}` : rendered;
+}
+
+function changeHash(original: string, replacement: string): string {
+  return createHash('sha256').update(`${original}\0${replacement}`).digest('hex').slice(0, CHANGE_HASH_LENGTH);
 }
 
 function codeSnippet(code: string): string {

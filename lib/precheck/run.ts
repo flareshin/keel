@@ -47,12 +47,12 @@ export async function runMutants(directory: string, baseline: BaselineFile[], ta
 
 async function runMutant(directory: string, files: BaselineFile[], target: MutantTarget, sampleLoadFactor: () => number): Promise<MutantResult> {
   const known = files.some((file) => file.coverage.seen.has(target.path));
-  const selected = known ? files.filter((file) => reaches(file, target)) : files;
+  const selected = files.filter((file) => reaches(file, target));
   return { ...target, coverage: known ? 'known' : 'unknown', verdict: await verdictFor(directory, selected, target, sampleLoadFactor) };
 }
 
 function reaches(file: BaselineFile, { path, mutant }: MutantTarget): boolean {
-  return (file.coverage.executedSpans.get(path) ?? []).some((span) => span.start < mutant.end && mutant.start < span.end);
+  return file.reads.has(path) || (file.coverage.executedSpans.get(path) ?? []).some((span) => span.start < mutant.end && mutant.start < span.end);
 }
 
 async function verdictFor(directory: string, selected: BaselineFile[], target: MutantTarget, sampleLoadFactor: () => number): Promise<MutantVerdict> {

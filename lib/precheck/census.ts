@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import ts from 'typescript';
 import { diffEntries, REGULAR_FILE_MODES } from '../evidence/gitcmd.ts';
-import { baselineTimeoutSeconds, materializeTree, runBaseline } from './baseline.ts';
+import { baselineTimeoutSeconds, DEFAULT_BASELINE_BUDGET_MS, materializeTree, runBaseline } from './baseline.ts';
 import type { Baseline } from './baseline.ts';
 import { bindPrecheck, DELETED_BLOB } from './binding.ts';
 import { addedLinesByPath, findConsumers, SCRIPT_FILE } from './consumers.ts';
@@ -40,7 +40,7 @@ export interface CensusResult extends CensusMutant {
 
 export type MutationCensus =
   | { outcome: 'stopped'; baseline: Exclude<Baseline, { outcome: 'green' }> }
-  | { outcome: 'ran'; timeoutSeconds: number; baselineFiles: number; baselinePasses: number; withoutPasses: number; results: CensusResult[]; notRun: CensusMutant[]; elapsedMs: number };
+  | { outcome: 'ran'; timeoutSeconds: number; baselineFiles: number; baselinePasses: number; withoutPasses: number; baselineNotRun: string[]; results: CensusResult[]; notRun: CensusMutant[]; elapsedMs: number };
 
 export interface Census {
   tree: string;
@@ -73,7 +73,7 @@ const TRIVIA_TOKENS = new Set([
   ts.SyntaxKind.MultiLineCommentTrivia,
 ]);
 
-export async function runCensus(repo: string, target: CensusTarget, host: HostLoad = currentHostLoad()): Promise<Census> {
+export async function runCensus(repo: string, target: CensusTarget, host: HostLoad = currentHostLoad(), baselineBudgetMs = DEFAULT_BASELINE_BUDGET_MS): Promise<Census> {
   const blobs = bindPrecheck(repo, target.reviewBase, target.tree, target.tree).blobs;
   const entries = diffEntries(repo, target.reviewBase, target.tree);
   const regularFiles = new Set(entries.filter((entry) => REGULAR_FILE_MODES.includes(entry.mode)).map((entry) => entry.path));
@@ -84,7 +84,7 @@ export async function runCensus(repo: string, target: CensusTarget, host: HostLo
     base: target.base,
     paths: { source: sourcePaths.length, test: entries.length - sourcePaths.length },
     blobs,
-    mutation: await runMutation(repo, target, sourcePaths.filter((path) => blobs[path] !== DELETED_BLOB), scriptFiles, baselineTimeoutSeconds(host.load, host.cpus)),
+    mutation: await runMutation(repo, target, sourcePaths.filter((path) => blobs[path] !== DELETED_BLOB), scriptFiles, baselineTimeoutSeconds(host.load, host.cpus), baselineBudgetMs),
     consumers: findConsumers(repo, target.reviewBase, target.tree),
   };
 }
@@ -93,10 +93,10 @@ function currentHostLoad(): HostLoad {
   return { load: loadavg()[0]!, cpus: availableParallelism() };
 }
 
-async function runMutation(repo: string, target: CensusTarget, sourcePaths: string[], scriptFiles: string[], timeoutSeconds: number): Promise<MutationCensus> {
+async function runMutation(repo: string, target: CensusTarget, sourcePaths: string[], scriptFiles: string[], timeoutSeconds: number, baselineBudgetMs: number): Promise<MutationCensus> {
   const directory = materializeTree(repo, target.tree);
   try {
-    const baseline = await runBaseline(directory, candidateTests(directory, sourcePaths), timeoutSeconds);
+    const baseline = await runBaseline(directory, candidateTests(directory, sourcePaths), timeoutSeconds, undefined, baselineBudgetMs);
     if (baseline.outcome !== 'green') return { outcome: 'stopped', baseline };
     const sources = new Map(scriptFiles.map((path) => [path, readFileSync(join(directory, path), 'utf8')]));
     const targets = mutantTargets(sources, addedLinesByPath(repo, target.reviewBase, target.tree));
@@ -105,14 +105,16 @@ async function runMutation(repo: string, target: CensusTarget, sourcePaths: stri
     const started = performance.now();
     const run = await runMutants(directory, baseline.files, runnable);
     const describe = (each: MutantTarget): CensusMutant => describeMutant(sources.get(each.path) ?? '', each);
+    const unreachedOnlyByRunFiles = (each: { verdict: MutantVerdict }): boolean => baseline.notRun.length > 0 && each.verdict.outcome === 'no test reaches';
     return {
       outcome: 'ran',
       timeoutSeconds: baseline.timeoutSeconds,
       baselineFiles: baseline.files.length,
       baselinePasses: baseline.files.reduce((sum, file) => sum + file.passed, 0),
       withoutPasses: baseline.withoutPasses.length,
-      results: run.results.map((result) => ({ ...describe(result), coverage: result.coverage, verdict: result.verdict })),
-      notRun: [...run.notRun, ...targets.filter((each) => !runnable.includes(each))].map(describe),
+      baselineNotRun: baseline.notRun,
+      results: run.results.filter((result) => !unreachedOnlyByRunFiles(result)).map((result) => ({ ...describe(result), coverage: result.coverage, verdict: result.verdict })),
+      notRun: [...run.results.filter(unreachedOnlyByRunFiles), ...run.notRun, ...targets.filter((each) => !runnable.includes(each))].map(describe),
       elapsedMs: performance.now() - started,
     };
   } finally {

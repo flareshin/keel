@@ -6,6 +6,7 @@ import { dirname, join } from "node:path"
 import { after, describe, it } from "node:test"
 import { GitError, snapshotTree } from "../../lib/evidence/gitcmd.ts"
 import { baselineTimeoutSeconds, loadFactor, materializeTree, runBaseline } from "../../lib/precheck/baseline.ts"
+import { runTestFile } from "../../lib/precheck/testfile.ts"
 import { committedRepo, executedLineNumbers, writeFiles as write } from "./fixture.ts"
 
 const EXECUTABLE_BITS = 0o111
@@ -236,6 +237,97 @@ describe("precheck baseline", () => {
 
     assert.equal(baseline.outcome, "green")
     assert.deepEqual(baseline.files.map((file) => [file.test, file.loadFactor]), [["tests/a.test.ts", 2], ["tests/b.test.ts", 5]])
+  })
+
+  it("runBaseline_stopsStartingFilesOnceTheBudgetIsSpent_andListsTheRestAsNotRun", async () => {
+    const directory = materialized({
+      "tests/a.test.ts": passing("a"),
+      "tests/b.test.ts": passing("b", "import { writeFileSync } from 'node:fs'\nwriteFileSync('ran-after-budget', '')"),
+      "tests/c.test.ts": passing("c"),
+    })
+
+    const baseline = await runBaseline(directory, ["tests/a.test.ts", "tests/b.test.ts", "tests/c.test.ts"], TIMEOUT_SECONDS, () => 1, 0)
+
+    assert.equal(baseline.outcome, "green")
+    assert.deepEqual(baseline.files.map((file) => file.test), ["tests/a.test.ts"])
+    assert.deepEqual(baseline.notRun, ["tests/b.test.ts", "tests/c.test.ts"])
+    assert.equal(existsSync(join(directory, "ran-after-budget")), false)
+  })
+
+  it("runBaseline_listsNothingAsNotRun_whenEveryFileFitsTheBudget", async () => {
+    const directory = materialized({ "tests/a.test.ts": passing("a") })
+
+    const baseline = await runBaseline(directory, ["tests/a.test.ts"], TIMEOUT_SECONDS)
+
+    assert.equal(baseline.outcome, "green")
+    assert.deepEqual(baseline.notRun, [])
+  })
+
+  it("runBaseline_widensAFilesLimit_whenTheHostGotBusierSinceTheFirstFile", async () => {
+    const slow = "import { it } from 'node:test'\nit('waits', () => new Promise((resolve) => setTimeout(resolve, 2500)))\n"
+    const directory = materialized({ "tests/a.test.ts": passing("a"), "tests/slow.test.ts": slow })
+    const sampled = [1, 4]
+
+    const baseline = await runBaseline(directory, ["tests/a.test.ts", "tests/slow.test.ts"], 1, () => sampled.shift()!)
+
+    assert.equal(baseline.outcome, "green")
+  })
+
+  it("runBaseline_keepsAFilesLimit_whenTheHostGotQuieterSinceTheFirstFile", async () => {
+    const slow = "import { it } from 'node:test'\nit('waits', () => new Promise((resolve) => setTimeout(resolve, 700)))\n"
+    const directory = materialized({ "tests/a.test.ts": passing("a"), "tests/slow.test.ts": slow })
+    const sampled = [4, 1]
+
+    const baseline = await runBaseline(directory, ["tests/a.test.ts", "tests/slow.test.ts"], 2, () => sampled.shift()!)
+
+    assert.equal(baseline.outcome, "green")
+  })
+
+  it("runBaseline_reportsTheBudget_andListsTheRest_whenItRunsOutBeforeAnyFilePassed", async () => {
+    const directory = materialized({
+      "tests/skip.test.ts": "import { it } from 'node:test'\nit('later', { skip: true }, () => {})\n",
+      "tests/a.test.ts": passing("a"),
+    })
+
+    const baseline = await runBaseline(directory, ["tests/skip.test.ts", "tests/a.test.ts"], TIMEOUT_SECONDS, () => 1, 0)
+
+    assert.deepEqual(baseline, { outcome: "budget", notRun: ["tests/a.test.ts"] })
+  })
+
+  it("runBaseline_keepsWhatTheTestFilePrinted_whenItTimesOut", async () => {
+    const directory = materialized({
+      "tests/slow.test.ts": "import { it } from 'node:test'\nit('prints then waits', () => { console.log('CHILD-OUTPUT-MARKER'); console.error('CHILD-ERROR-MARKER'); return new Promise((resolve) => setTimeout(resolve, 30000)) })\n",
+    })
+
+    const baseline = await runBaseline(directory, ["tests/slow.test.ts"], 2)
+
+    assert.equal(baseline.outcome, "timeout")
+    assert.match(baseline.output, /CHILD-OUTPUT-MARKER/)
+    assert.match(baseline.output, /CHILD-ERROR-MARKER/)
+    assert.match(baseline.output, /timed out after 2 seconds/)
+  })
+
+  it("runTestFile_keepsTheRunnersStderr_whenItTimesOut", async () => {
+    const directory = materialized({
+      "noisy.cjs": "process.stderr.write('RUNNER-STDERR-MARKER\\n')\n",
+      "tests/slow.test.ts": "import { it } from 'node:test'\nit('waits', () => new Promise((resolve) => setTimeout(resolve, 30000)))\n",
+    })
+
+    const run = await runTestFile(directory, "tests/slow.test.ts", 2, { NODE_OPTIONS: "--require ./noisy.cjs" })
+
+    assert.equal(run.outcome, "timeout")
+    assert.match(run.output, /^RUNNER-STDERR-MARKER$/m)
+  })
+
+  it("runBaseline_reportsTheWidenedLimit_whenAFileOutrunsIt", async () => {
+    const slow = "import { it } from 'node:test'\nit('waits', () => new Promise((resolve) => setTimeout(resolve, 30000)))\n"
+    const directory = materialized({ "tests/a.test.ts": passing("a"), "tests/slow.test.ts": slow })
+    const sampled = [2, 4]
+
+    const baseline = await runBaseline(directory, ["tests/a.test.ts", "tests/slow.test.ts"], 1, () => sampled.shift()!)
+
+    assert.equal(baseline.outcome, "timeout")
+    assert.equal(baseline.timeoutSeconds, 2)
   })
 
   it("loadFactor_isLoadPerCpu_neverBelow1_andCappedAt8", () => {

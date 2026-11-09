@@ -2,6 +2,8 @@ import { globSync, readFileSync, statSync } from 'node:fs';
 import { basename, dirname, extname, join, matchesGlob, normalize } from 'node:path';
 import { SCRIPT_FILE } from './consumers.ts';
 
+type NameForm = 'path' | 'file name' | 'bare name';
+
 const TEST_GLOBS = ['tests/**/*.test.ts', 'codex/tests/*.test.ts', 'tests/workflows/*.test.mjs'];
 const SUPPORT_DIRECTORIES = ['tests/', 'codex/tests/'];
 const SUPPORT_GLOBS = SUPPORT_DIRECTORIES.map((directory) => `${directory}**/*`);
@@ -14,18 +16,27 @@ const REGEX_SPECIAL = /[.*+?^${}()|[\]\\/]/gu;
 
 export function candidateTests(root: string, changedPaths: string[]): string[] {
   const repo = scanRepo(root);
+  const reached = distancesFrom(repo, changedPaths, ['path', 'file name', 'bare name']);
+  const nearby = distancesFrom(repo, changedPaths, ['path', 'file name']);
+  const distance = (test: string): number => nearby.get(test) ?? Number.POSITIVE_INFINITY;
+  return repo.tests
+    .filter((test) => reached.has(test))
+    .sort()
+    .sort((left, right) => (distance(left) === distance(right) ? 0 : distance(left) - distance(right)));
+}
+
+function distancesFrom(repo: RepoFiles, changedPaths: string[], changedFileNames: NameForm[]): Map<string, number> {
   const changed = new Set(changedPaths);
   const reaching = new Set(changedPaths);
-  let grew = true;
-  while (grew) {
-    grew = false;
-    for (const file of repo.all) {
-      if (reaching.has(file) || !referencesAny(repo, file, reaching, changed)) continue;
+  const distances = new Map(changedPaths.map((path) => [path, 0]));
+  for (let distance = 1; ; distance++) {
+    const found = repo.all.filter((file) => !reaching.has(file) && referencesAny(repo, file, reaching, changed, changedFileNames));
+    if (found.length === 0) return distances;
+    for (const file of found) {
       reaching.add(file);
-      grew = true;
+      distances.set(file, distance);
     }
   }
-  return repo.tests.filter((test) => reaching.has(test)).sort();
 }
 
 export function isRunnableTest(path: string): boolean {
@@ -36,16 +47,19 @@ export function isTestSupport(path: string): boolean {
   return SUPPORT_DIRECTORIES.some((directory) => path.startsWith(directory));
 }
 
-function referencesAny(repo: RepoFiles, file: string, reaching: Set<string>, changed: Set<string>): boolean {
+function referencesAny(repo: RepoFiles, file: string, reaching: Set<string>, changed: Set<string>, changedFileNames: NameForm[]): boolean {
   if (repo.importsOf(file).some((imported) => reaching.has(imported))) return true;
   if (!repo.support.has(file) && !repo.wrappers.has(file)) return false;
   const text = repo.read(file);
-  return [...reaching].some((target) => mentionPatterns(repo, target, changed).some((pattern) => pattern.test(text)));
+  return [...reaching].some((target) => mentionPatterns(repo, target, changed, changedFileNames).some((pattern) => pattern.test(text)));
 }
 
-function mentionPatterns(repo: RepoFiles, target: string, changed: Set<string>): RegExp[] {
+function mentionPatterns(repo: RepoFiles, target: string, changed: Set<string>, changedFileNames: NameForm[]): RegExp[] {
   const name = basename(target);
-  if (changed.has(target)) return [target, name, name.slice(0, name.length - extname(name).length)].map(wholeWord);
+  if (changed.has(target)) {
+    const forms: Record<NameForm, string> = { path: target, 'file name': name, 'bare name': name.slice(0, name.length - extname(name).length) };
+    return changedFileNames.map((form) => wholeWord(forms[form]));
+  }
   if (repo.support.has(target) && SCRIPT_FILE.test(target)) return [];
   if (repo.wrappers.has(target)) return [wholeWord(target), quoted(name)];
   return [target, name].map(wholeWord);

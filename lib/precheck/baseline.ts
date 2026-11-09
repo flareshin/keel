@@ -45,6 +45,10 @@ export function currentLoadFactor(): number {
   return loadFactor(loadavg()[0]!, availableParallelism());
 }
 
+export function busierBy(current: number, reference: number): number {
+  return Math.max(current / reference, 1);
+}
+
 export function materializeTree(repo: string, tree: string): string {
   const directory = mkdtempSync(join(tmpdir(), 'keel-precheck-'));
   try {
@@ -73,7 +77,7 @@ export async function runBaseline(directory: string, tests: string[], timeoutSec
     if (index > 0 && performance.now() - started >= budgetMs) return finishedBaseline(files, tests.slice(index), timeoutSeconds);
     const loadFactor = sampleLoadFactor();
     firstLoadFactor ??= loadFactor;
-    const run = await runBaselineFile(directory, test, timeoutSeconds * Math.max(loadFactor / firstLoadFactor, 1), loadFactor);
+    const run = await runBaselineFile(directory, test, timeoutSeconds * busierBy(loadFactor, firstLoadFactor), loadFactor);
     if (run.outcome !== 'ran') return run;
     files.push(run.file);
   }

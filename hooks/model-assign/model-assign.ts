@@ -26,7 +26,6 @@ const OPUS = "opus";
 const SONNET = "sonnet";
 const HAIKU = "haiku";
 const ABOVE_BAND = "fable";
-const EDIT_TOOLS: ReadonlySet<string> = new Set(["edit", "multiedit", "write", "notebookedit"]);
 const PLAIN_TOOL_LIST_RE = /^[\w*:.()-]+(?:[\s,]+[\w*:.()-]+)*$/u;
 const WORKFLOW_GUIDE =
   "Set opts per agent: model 'haiku' for read-only census or probing, 'sonnet' for implementation, " +
@@ -138,7 +137,7 @@ function readAgentFile(agentType: string): AgentFile {
 
 function toolsCanEdit(tools: string | null): boolean {
   if (tools === null || !PLAIN_TOOL_LIST_RE.test(tools)) return true;
-  return tools.toLowerCase().split(/[\s,]+/u).some((tool) => EDIT_TOOLS.has(tool.split("(")[0] ?? ""));
+  return tools.toLowerCase().split(/[\s,]+/u).some((tool) => protocol.FILE_EDIT_TOOLS.has(tool.split("(")[0] ?? ""));
 }
 
 function frontmatterField(frontmatter: string, key: string): string | null {

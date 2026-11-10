@@ -9,6 +9,7 @@ export const MESSAGE_LIMIT = 2000;
 export const LIST_LIMIT = 10;
 export const RUN_YOURSELF = "Run it yourself in your terminal: ";
 export const ASK_USER = "Stop and ask the user.";
+export const FILE_EDIT_TOOLS: ReadonlySet<string> = new Set(["edit", "multiedit", "write", "notebookedit"]);
 
 const STDOUT = 1;
 const STDERR = 2;

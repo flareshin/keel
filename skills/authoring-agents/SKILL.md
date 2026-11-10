@@ -30,7 +30,7 @@ Fold an agent back into the main loop, as a skill for its procedure and a tool o
 
 An agent file is `agents/<name>.md` (keel-wide, linked through `settings/links.tsv`), `~/git/keel-overlay/agents/` (personal or company), or `.claude/agents/` in one repository.
 
-- **Frontmatter.** `name:` equals the file name; `description:` says when to dispatch it and when not, in one or two sentences; `tools:` lists only what the role needs (without it the agent inherits every tool, and keel's agent test requires it for keel agents); `effort:` or `model:` only when the role needs a pin. A reviewer or verifier leaves `model:` out so the model hook can raise it. The hook keeps a `model: haiku` pin only when `tools:` lists no Edit, MultiEdit, Write or NotebookEdit.
+- **Frontmatter.** `name:` equals the file name; `description:` says when to dispatch it and when not, in one or two sentences; `tools:` lists only what the role needs (without it the agent inherits every tool, and keel's agent test requires it for keel agents); `effort:` or `model:` only when the role needs a pin. A reviewer or verifier leaves `model:` out so the model hook can raise it. The hook reads pins only from `~/.claude/agents/<name>.md` and keeps a `model: haiku` pin only when `tools:` lists no Edit, MultiEdit, Write or NotebookEdit; it does not read a repository's `.claude/agents/`, so a dispatch of an agent defined only there gets the hook's default model, which overrides its pin.
 - **Body.** Who it is, what it receives, what it returns and in what shape, and what it does not do. It never sees the main conversation, so state the working directory rule (absolute paths; cwd resets between Bash calls) and where its output goes.
 - **Output.** A fixed first line or schema the caller can check (a `VERDICT`, a count, a JSON shape). A read-only role says it never edits.
 
@@ -47,6 +47,15 @@ The brief is all the agent knows. Include:
 - **On failure**: one bounded fallback and a stop condition; a tool error is reported with its output, not retried blindly.
 
 Leave out your hypothesis as a fact, your verdict on the work and any "this looks correct" language: an agent handed a conclusion tends to return it confirmed. A coding brief tells the agent to load `writing-readable-code` or inlines the rules the task touches.
+
+## Pick the model and effort
+
+Adapted from Addy Osmani's "Which Claude model should you build with?" (claude.dev/blog, 2026-11-09).
+
+- Start at the hook's default (`sonnet`, `medium`), and give the agent a check it can run on its own work: a test, a build or a script that calls the endpoint. A self-check usually costs less than more effort.
+- When the result is not good enough, change one thing at a time, in this order: give the agent that self-check, raise effort one level, then move to the next model up at a lower effort than the smaller model used. Past `high`, try the next model up before another effort level; effort does not add knowledge the model lacks.
+- When a grader or a test checks each item, run every item at `low` and rerun only the failures at `high`. On the post's SWE-bench Pro subset this passed about 97% of tasks at about $0.17 each, against 95.3% at $0.29 with every task at `high`.
+- Put `haiku` only on work where a wrong answer is cheap to spot, such as finding files, running tests and reading logs. Code edits stay on `sonnet` or above, and a review or judgment dispatch either names `opus` or leaves `model` out and puts VERDICT, NEEDS_FIXES or review-lenses in its prompt, so the hook raises it to `opus`.
 
 ## Check it
 

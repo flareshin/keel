@@ -21,18 +21,23 @@ const JUDGMENT_RE = new RegExp(`${WORD_START}(?:VERDICT|NEEDS_FIXES|review-lense
 const REQUIRED_SCRIPT_OPTIONS: ReadonlyArray<readonly [string, RegExp]> = ["model", "effort"].map((key) => [
   key, new RegExp(`${WORD_START}${key}${WORD_END}["']?[${SPACE_CHARS}]*:`, "u"),
 ]);
-const EFFORT_PIN_RE = new RegExp(`(?<![^\\n])effort[${SPACE_CHARS}]*:`);
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
 const OPUS = "opus";
 const SONNET = "sonnet";
 const HAIKU = "haiku";
 const ABOVE_BAND = "fable";
+const EDIT_TOOLS: ReadonlySet<string> = new Set(["edit", "multiedit", "write", "notebookedit"]);
+const PLAIN_TOOL_LIST_RE = /^[\w*:.()-]+(?:[\s,]+[\w*:.()-]+)*$/u;
 const WORKFLOW_GUIDE =
   "Set opts per agent: model 'haiku' for read-only census or probing, 'sonnet' for implementation, " +
   "'opus' for review or judgment, 'fable' only for long unattended orchestration; effort 'medium' " +
   "for census and implementation, 'high' for review. Any explicit value passes.";
 
 type Choice = readonly [value: string, why: string];
+
+type AgentFile = { readonly model: string; readonly pinsEffort: boolean; readonly canEdit: boolean };
+
+const NO_AGENT_FILE: AgentFile = { model: "", pinsEffort: false, canEdit: true };
 
 function main(): number {
   let payload: Payload;
@@ -60,9 +65,14 @@ function assignDispatch(payload: Payload, fires: FireLog): number {
   if (name !== "agent" && name !== "task") return protocol.EXIT_PASS;
   const agentType = textField(toolArgs, "subagent_type").toLowerCase();
   const judgment = JUDGMENT_RE.test(`${textField(toolArgs, "prompt")} ${textField(toolArgs, "description")}`);
+  const agentFile = readAgentFile(agentType);
+  const namedModel = textField(toolArgs, "model");
+  const modelChoice = namedModel === "" && agentFile.model !== ""
+    ? resolvePinnedModel(agentFile, judgment)
+    : resolveModel(namedModel, READ_ONLY_TYPES.has(agentType), judgment);
   const choices: Array<[string, Choice | null]> = agentType === FORK_TYPE ? [] : [
-    ["model", resolveModel(textField(toolArgs, "model"), agentType, judgment)],
-    ["effort", resolveEffort(textField(toolArgs, "effort"), agentType, judgment)],
+    ["model", modelChoice],
+    ["effort", agentFile.pinsEffort ? null : resolveEffort(textField(toolArgs, "effort"), judgment)],
   ];
   const assigned = choices.flatMap(([key, choice]) => (choice ? [[key, choice] as const] : []));
   if (assigned.length === 0) {
@@ -75,19 +85,26 @@ function assignDispatch(payload: Payload, fires: FireLog): number {
   return protocol.rewriteInput({ ...toolArgs, ...values }, note);
 }
 
-function resolveModel(model: string, agentType: string, judgment: boolean): Choice | null {
+function resolveModel(model: string, readOnlyType: boolean, judgment: boolean): Choice | null {
   const named = model.toLowerCase();
   const tier = [OPUS, SONNET, HAIKU, ABOVE_BAND].find((candidate) => named.includes(candidate));
   if (tier === OPUS || tier === SONNET) return null;
   if (tier === ABOVE_BAND) return [OPUS, "ceiling"];
   if (judgment) return [OPUS, "judgment marker"];
-  const readOnly = READ_ONLY_TYPES.has(agentType);
-  if (tier === HAIKU) return readOnly ? null : [SONNET, "floor"];
-  return readOnly ? [HAIKU, "read-only type"] : [SONNET, "default"];
+  if (tier === HAIKU) return readOnlyType ? null : [SONNET, "floor"];
+  return readOnlyType ? [HAIKU, "read-only type"] : [SONNET, "default"];
 }
 
-function resolveEffort(effort: string, agentType: string, judgment: boolean): Choice | null {
-  if (effort !== "" || typePinsEffort(agentType)) return null;
+function resolvePinnedModel(agentFile: AgentFile, judgment: boolean): Choice | null {
+  const pinned = agentFile.model;
+  if (pinned.includes(ABOVE_BAND)) return [OPUS, "ceiling"];
+  if (judgment) return pinned.includes(OPUS) ? null : [OPUS, "judgment marker"];
+  if (pinned.includes(HAIKU) && agentFile.canEdit) return [SONNET, "floor"];
+  return null;
+}
+
+function resolveEffort(effort: string, judgment: boolean): Choice | null {
+  if (effort !== "") return null;
   return judgment ? ["high", "judgment marker"] : ["medium", "default"];
 }
 
@@ -107,11 +124,26 @@ function checkWorkflowScript(toolArgs: Payload, fires: FireLog): number {
   return protocol.deny(protocol.formatMessage(HOOK, "workflow agents need a model and an effort", [[RULE, text]]));
 }
 
-function typePinsEffort(agentType: string): boolean {
+function readAgentFile(agentType: string): AgentFile {
   const path = joinPath(dataDir(), "agents", `${agentType}.md`);
-  if (!agentType || !isFile(path)) return false;
-  const frontmatter = FRONTMATTER_RE.exec(readFileSync(path, "utf8"));
-  return frontmatter !== null && EFFORT_PIN_RE.test(frontmatter[1] ?? "");
+  if (!agentType || !isFile(path)) return NO_AGENT_FILE;
+  const frontmatter = FRONTMATTER_RE.exec(readFileSync(path, "utf8"))?.[1];
+  if (frontmatter === undefined) return NO_AGENT_FILE;
+  return {
+    model: (frontmatterField(frontmatter, "model") ?? "").toLowerCase(),
+    pinsEffort: frontmatterField(frontmatter, "effort") !== null,
+    canEdit: toolsCanEdit(frontmatterField(frontmatter, "tools")),
+  };
+}
+
+function toolsCanEdit(tools: string | null): boolean {
+  if (tools === null || !PLAIN_TOOL_LIST_RE.test(tools)) return true;
+  return tools.toLowerCase().split(/[\s,]+/u).some((tool) => EDIT_TOOLS.has(tool.split("(")[0] ?? ""));
+}
+
+function frontmatterField(frontmatter: string, key: string): string | null {
+  const line = new RegExp(`(?<![^\\n])${key}[${SPACE_CHARS}]*:(.*)`, "u").exec(frontmatter);
+  return line ? (line[1] ?? "").trim() : null;
 }
 
 function workflowScript(toolArgs: Payload): string | null {

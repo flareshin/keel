@@ -30,7 +30,7 @@ Fold an agent back into the main loop, as a skill for its procedure and a tool o
 
 An agent file is `agents/<name>.md` (keel-wide, linked through `settings/links.tsv`), `~/git/keel-overlay/agents/` (personal or company), or `.claude/agents/` in one repository.
 
-- **Frontmatter.** `name:` equals the file name; `description:` says when to dispatch it and when not, in one or two sentences; `tools:` lists only what the role needs (without it the agent inherits every tool, and keel's agent test requires it for keel agents); `effort:` or `model:` only when the role needs a pin. A reviewer or verifier leaves `model:` out so the model hook can raise it.
+- **Frontmatter.** `name:` equals the file name; `description:` says when to dispatch it and when not, in one or two sentences; `tools:` lists only what the role needs (without it the agent inherits every tool, and keel's agent test requires it for keel agents); `effort:` or `model:` only when the role needs a pin. A reviewer or verifier leaves `model:` out so the model hook can raise it. The hook keeps a `model: haiku` pin only when `tools:` lists no Edit, MultiEdit, Write or NotebookEdit.
 - **Body.** Who it is, what it receives, what it returns and in what shape, and what it does not do. It never sees the main conversation, so state the working directory rule (absolute paths; cwd resets between Bash calls) and where its output goes.
 - **Output.** A fixed first line or schema the caller can check (a `VERDICT`, a count, a JSON shape). A read-only role says it never edits.
 

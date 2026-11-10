@@ -210,6 +210,7 @@ Relied-on Claude Code behaviors; a change is contract drift, logged by report-ga
 - Payload fields as in (g); `agent_id` only inside a subagent; `SubagentHandback` carrying the full subagent report in auto mode.
 - `"onFailure":"block"` (Claude Code 2.1.295, 2.1.296): a crash or timeout blocks the call; Stop, SubagentStop, TaskCompleted, TeammateIdle ignore it.
 - A missing registered script makes `node` exit 1, which does not block: the fail-open hooks (report-gate, model-assign, env-preflight) fail open, and ship-gate and git-guard still block through `"onFailure":"block"`; `link --check` and smoke `dangling` catch it.
+- Mod tool calls (Claude Code 2.1.321): a mod's own `$.tool.call` and `$.mcp.call` raise no permission prompt, so `permissions.ask` gates only Claude's calls; `permissions.deny` and organization policy still apply to a mod. What a mod may call is therefore decided by deny rules and smoke `mod-trust` (`reviewed-mods.txt`), not by ask rules.
 
 ## 10. Removed and deferred (2026-10-11 audit)
 

@@ -84,6 +84,69 @@ describe("AgentDispatchTest", () => {
     sandbox.write(join(sandbox.data, "agents", "worker-plain.md"), "---\nname: worker-plain\n---\neffort: in body only\n");
     assert.equal(updated(dispatch({ subagent_type: "worker-plain", model: "sonnet" }))["effort"], "medium");
   });
+
+  it("dispatch_keepsModelUnset_whenReadOnlyAgentFilePinsHaiku", () => {
+    sandbox.write(join(sandbox.data, "agents", "log-reader.md"), "---\nname: log-reader\ntools: Read, Grep, Glob, Bash\nmodel: haiku\n---\nBody\n");
+    const result = updated(dispatch({ subagent_type: "log-reader" }));
+    assert.deepEqual([result["model"], result["effort"]], [undefined, "medium"]);
+  });
+
+  it("dispatch_keepsModelUnset_whenAgentFilePinsSonnet", () => {
+    sandbox.write(join(sandbox.data, "agents", "worker-sonnet.md"), "---\nname: worker-sonnet\nmodel: sonnet\neffort: low\n---\nBody\n");
+    assert.equal(dispatch({ subagent_type: "worker-sonnet" }).stdout, "");
+  });
+
+  for (const tools of ["Read, Edit, Bash", "Read, MultiEdit", "Write", "Bash, NotebookEdit", "Read, Edit(*)", "Read Edit", "\"Read, Edit\"", "[Read, Edit]", ""]) {
+    it(`dispatch_raisesPinnedHaikuToSonnet_whenAgentFileToolsAre_${tools || "empty"}`, () => {
+      sandbox.write(join(sandbox.data, "agents", "fixer.md"), `---\nname: fixer\ntools: ${tools}\nmodel: haiku\n---\nBody\n`);
+      assert.equal(updated(dispatch({ subagent_type: "fixer" }))["model"], "sonnet");
+    });
+  }
+
+  it("dispatch_keepsModelUnset_whenAgentFilePinsHaikuAndScopesBashOnly", () => {
+    sandbox.write(join(sandbox.data, "agents", "git-reader.md"), "---\nname: git-reader\ntools: Read, Bash(git log:*)\nmodel: haiku\n---\nBody\n");
+    assert.equal(updated(dispatch({ subagent_type: "git-reader" }))["model"], undefined);
+  });
+
+  it("dispatch_getsOpus_whenAgentFilePinsSonnetButBriefAsksForVerdict", () => {
+    sandbox.write(join(sandbox.data, "agents", "reader.md"), "---\nname: reader\ntools: Read, Grep\nmodel: sonnet\n---\nBody\n");
+    assert.equal(updated(dispatch({ subagent_type: "reader", prompt: "Return a VERDICT line." }))["model"], "opus");
+  });
+
+  it("dispatch_keepsModelUnset_whenAgentFilePinsOpusAndBriefAsksForVerdict", () => {
+    sandbox.write(join(sandbox.data, "agents", "judge.md"), "---\nname: judge\nmodel: opus\n---\nBody\n");
+    assert.equal(updated(dispatch({ subagent_type: "judge", prompt: "Return a VERDICT line." }))["model"], undefined);
+  });
+
+  it("dispatch_keepsModelUnset_whenAgentFilePinsAModelWithNoTier", () => {
+    sandbox.write(join(sandbox.data, "agents", "inheritor.md"), "---\nname: inheritor\ntools: Read, Grep\nmodel: inherit\n---\nBody\n");
+    assert.equal(updated(dispatch({ subagent_type: "inheritor" }))["model"], undefined);
+  });
+
+  it("dispatch_getsSonnet_whenUnpinnedAgentFileListsOnlyReadTools", () => {
+    sandbox.write(join(sandbox.data, "agents", "auditor.md"), "---\nname: auditor\ntools: Bash, Read, Skill\n---\nBody\n");
+    assert.equal(updated(dispatch({ subagent_type: "auditor" }))["model"], "sonnet");
+  });
+
+  it("dispatch_raisesNamedHaikuToSonnet_whenReadOnlyAgentFilePinsAModel", () => {
+    sandbox.write(join(sandbox.data, "agents", "reader.md"), "---\nname: reader\ntools: Read, Grep\nmodel: sonnet\n---\nBody\n");
+    assert.equal(updated(dispatch({ subagent_type: "reader", model: "haiku", effort: "low" }))["model"], "sonnet");
+  });
+
+  it("dispatch_raisesPinnedHaikuToSonnet_whenAgentFileListsNoTools", () => {
+    sandbox.write(join(sandbox.data, "agents", "fixer.md"), "---\nname: fixer\nmodel: haiku\n---\nBody\n");
+    assert.equal(updated(dispatch({ subagent_type: "fixer" }))["model"], "sonnet");
+  });
+
+  it("dispatch_getsOpus_whenReadOnlyAgentFilePinsHaikuButBriefAsksForVerdict", () => {
+    sandbox.write(join(sandbox.data, "agents", "log-reader.md"), "---\nname: log-reader\ntools: Read, Bash\nmodel: haiku\n---\nBody\n");
+    assert.equal(updated(dispatch({ subagent_type: "log-reader", prompt: "Return a VERDICT line." }))["model"], "opus");
+  });
+
+  it("dispatch_capsPinnedFableToOpus_whenAgentFilePinsFable", () => {
+    sandbox.write(join(sandbox.data, "agents", "lead.md"), "---\nname: lead\nmodel: fable\n---\nBody\n");
+    assert.equal(updated(dispatch({ subagent_type: "lead" }))["model"], "opus");
+  });
 });
 
 describe("WorkflowScriptTest", () => {

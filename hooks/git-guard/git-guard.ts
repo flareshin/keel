@@ -51,7 +51,6 @@ const LOOSE_SPACES = /[\u00A0\u2002-\u200A\u202F\u205F\u3000]/gu;
 const TEE_SHORT_APPEND = /^-[^-]*a/u;
 export const DROP_COMMENTS = "Remove the listed comment lines and resubmit the edit; put the reasoning in the reading guide.";
 export const WRITE_MESSAGE_FILE = "Write the message to a file in a separate call, then pass it with a plain -F <path> (gh: --body-file <path>).";
-const EDIT_TOOLS: ReadonlySet<string> = new Set(["edit", "write", "notebookedit", "multiedit"]);
 const REPO_RULES_HEADER = ["origin_glob", "action", "pattern", "rule_id", "message"] as const;
 const GATED_REPOS_HEADER = ["origin", "gate", "integration_base", "risk_rules", "tests"] as const;
 const GATED_REPOS_OPTIONAL = ["push_approval", "auto_merge"] as const;
@@ -211,7 +210,7 @@ function findViolations(payload: Payload): Violation[] {
   const name = protocol.toolName(payload);
   const toolArgs = protocol.toolInput(payload);
   const cwd = protocol.cwdOrProcessDirectory(payload);
-  const isEdit = EDIT_TOOLS.has(name);
+  const isEdit = protocol.FILE_EDIT_TOOLS.has(name);
   if (!isEdit && name !== "bash") return [];
   const found = isEdit ? checkEdit(toolArgs, cwd) : checkBash(commandOf(toolArgs), cwd);
   if (found.length === 0) refuseNonTextCwd(payload);

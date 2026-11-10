@@ -52,7 +52,6 @@ const SCOPE_RE = /\[SCOPE\][ \t]*([^\n]+)/g;
 const SCOPE_SEPARATOR_RE = new RegExp(`[,${SPACE_CHARS}]+`);
 const SCOPE_EXEMPT_PREFIXES: readonly string[] = ["/tmp/", "/private/tmp/", "/var/folders/"];
 const SCRATCH_PREFIXES: readonly string[] = [...SCOPE_EXEMPT_PREFIXES, ...(process.env["TMPDIR"] ? [process.env["TMPDIR"]] : [])];
-const PATH_EDIT_TOOLS: ReadonlySet<string> = new Set(["edit", "write", "notebookedit", "multiedit"]);
 const EVIDENCE_MARKER = "[EVIDENCE]";
 const NO_TRANSCRIPT = "review evidence skipped: no subagent transcript";
 const STATE_NAME_UNSAFE = new RegExp(`[^${WORD_CHARS}.-]`, "gu");
@@ -164,7 +163,7 @@ class AgentTranscript {
     const toolArgs: Payload = isRecord(input) ? input : {};
     if (name === "structuredoutput") this.usedStructuredOutput = true;
     const command = name === "bash" ? textField(toolArgs, "command") : "";
-    const edits = PATH_EDIT_TOOLS.has(name);
+    const edits = protocol.FILE_EDIT_TOOLS.has(name);
     if (edits || commandWritesFiles(command)) this.needsEvidence = true;
     if (edits || commandWritesFiles(command, SCRATCH_PREFIXES)) this.editedFiles = true;
     const target = edits ? editedPath(toolArgs) : "";

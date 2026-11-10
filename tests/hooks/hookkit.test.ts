@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, unlinkSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { join } from "node:path";
 import * as contract from "../../hooks/lib/hookkit/contract.ts";
@@ -553,6 +553,20 @@ describe("WriteTargetsTest", () => {
     assert.equal(commandWritesFiles("echo x > /tmp/a && echo y > notes.txt", ["/tmp/"]), true);
     assert.equal(commandWritesFiles("git apply p.diff", ["/tmp/"]), true);
     assert.equal(commandWritesFiles("python3 - <<'EOF'\nopen('x', 'w')\nEOF", ["/tmp/"]), true);
+  });
+});
+
+describe("FileEditToolsTest", () => {
+  it("fileEditTools_namesEveryClaudeCodeFileEditTool_lowercased", () => {
+    assert.deepEqual([...protocol.FILE_EDIT_TOOLS].sort(), ["edit", "multiedit", "notebookedit", "write"]);
+  });
+
+  it("hookSources_spellNoOtherEditToolList", () => {
+    const hooksRoot = join(import.meta.dirname, "..", "..", "hooks");
+    const copies = (readdirSync(hooksRoot, { recursive: true }) as string[])
+      .filter((file) => file.endsWith(".ts") && !file.endsWith(join("hookkit", "protocol.ts")))
+      .filter((file) => /["'](?:multiedit|notebookedit)["']/u.test(readFileSync(join(hooksRoot, file), "utf8")));
+    assert.deepEqual(copies, []);
   });
 });
 

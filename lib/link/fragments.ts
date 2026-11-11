@@ -6,14 +6,15 @@ import { isJsonObject, parseJsonKeepingIntegers } from "../../measure/lib/measur
 import type { JsonObject, JsonValue } from "../../measure/lib/measurekit/json.ts"
 import { activeStackNames, StackNameError } from "../../measure/lib/measurekit/ledger.ts"
 import { canonicalJson, expandPlaceholders, Refused } from "./config.ts"
-import type { KeelPaths } from "./config.ts"
+import type { KeelPaths, LinkMode } from "./config.ts"
 import { childList, childObject, member, objectMember, setMember } from "./members.ts"
 
 export const OWNED_KEYS = ["hooks", "permissions", "env"]
 export const LIST_PERMISSION_KEYS = ["allow", "deny", "ask"]
 
-export function loadMergedFragments(paths: KeelPaths): [JsonObject, string[]] {
+export function loadMergedFragments(paths: KeelPaths, mode: LinkMode): [JsonObject, string[]] {
   const fragments = fragmentPaths(paths).map((path): [string, JsonObject] => [path, loadFragment(path, paths)])
+  if (mode === "plugin") fragments[0] = [fragments[0]![0], withoutHooks(fragments[0]![1])]
   const merged: JsonObject = {}
   const conflicts: string[] = []
   for (const [source, fragment] of fragments) {
@@ -30,6 +31,18 @@ export function loadMergedFragments(paths: KeelPaths): [JsonObject, string[]] {
     }
   }
   return [merged, conflicts]
+}
+
+export function pluginHooksPath(paths: KeelPaths): string {
+  return path.join(paths.keelHome, "hooks", "hooks.json")
+}
+
+export function loadPluginHooks(paths: KeelPaths): JsonObject {
+  const file = pluginHooksPath(paths)
+  if (!isFile(file)) throw new Refused(`${file} is missing; plugin mode has no core hooks to check`)
+  const parsed = readJsonOrRefuse(file)
+  if (!isJsonObject(parsed) || !isJsonObject(member(parsed, "hooks"))) throw new Refused(`${file}: must be an object with a hooks object`)
+  return member(parsed, "hooks") as JsonObject
 }
 
 export function fragmentPaths(paths: KeelPaths): string[] {
@@ -55,15 +68,18 @@ export function activeStacks(paths: KeelPaths): string[] {
 }
 
 function loadFragment(fragmentPath: string, paths: KeelPaths): JsonObject {
-  let fragment: JsonValue
-  try {
-    fragment = parseJsonKeepingIntegers(readUtf8(fragmentPath))
-  } catch (error) {
-    if (error instanceof SyntaxError || error instanceof InvalidUtf8Error) throw new Refused(`${fragmentPath}: invalid JSON (${error.message})`)
-    throw error
-  }
+  const fragment = readJsonOrRefuse(fragmentPath)
   validateFragmentShape(fragmentPath, fragment)
   return expandStrings(fragment, paths, fragmentPath) as JsonObject
+}
+
+function readJsonOrRefuse(file: string): JsonValue {
+  try {
+    return parseJsonKeepingIntegers(readUtf8(file))
+  } catch (error) {
+    if (error instanceof SyntaxError || error instanceof InvalidUtf8Error) throw new Refused(`${file}: invalid JSON (${error.message})`)
+    throw error
+  }
 }
 
 function validateFragmentShape(fragmentPath: string, fragment: JsonValue): asserts fragment is JsonObject {
@@ -95,6 +111,10 @@ function expandStrings(value: JsonValue, paths: KeelPaths, where: string): JsonV
     return expanded
   }
   return value
+}
+
+function withoutHooks(fragment: JsonObject): JsonObject {
+  return Object.fromEntries(Object.entries(fragment).filter(([key]) => key !== "hooks")) as JsonObject
 }
 
 function extendKeepingFirst(target: JsonValue[], additions: JsonValue[]): void {

@@ -1,0 +1,233 @@
+import assert from "node:assert/strict"
+import { afterEach, beforeEach, describe, it } from "node:test"
+import fs from "node:fs"
+
+import { entryExists } from "../../measure/lib/measurekit/files.ts"
+import { LinkSandbox, assertExit, problemKinds, readFile } from "./helpers.ts"
+
+const LEDGER_HEADER =
+  "id\tscope\ttype\tstatement\tlayer\tenforced_at\twhy_not_stronger\tjustification\t" +
+  "incidents\tmetric\treview_by\tgrace_until\tstatus"
+const DEMO_ROW = ["F-demo", "core", "floor", "A demo rule.", "hook", "hook:demo", "-", "-", "-", "fires:F-demo", "-", "-", "active"].join("\t")
+const PLUGIN_HOOKS = {
+  hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/demo.py" }] }] },
+}
+const KEEL_PLUGIN_ID = "keel@keel"
+
+function liveSettings(box: LinkSandbox): Record<string, any> {
+  return JSON.parse(box.readData("settings.json"))
+}
+
+function enablePlugin(box: LinkSandbox, enabled: boolean = true): void {
+  const settings = liveSettings(box)
+  settings["enabledPlugins"] = { [KEEL_PLUGIN_ID]: enabled }
+  box.writeData("settings.json", JSON.stringify(settings, null, 2) + "\n")
+}
+
+function hookCommands(box: LinkSandbox): string[] {
+  const hooks = liveSettings(box)["hooks"] ?? {}
+  return Object.values(hooks).flat().flatMap((group: any) => group.hooks.map((hook: any) => hook.command))
+}
+
+describe("link plugin mode", () => {
+  let box: LinkSandbox
+
+  beforeEach(() => {
+    box = new LinkSandbox()
+    box.writeKeel("ledger.tsv", LEDGER_HEADER + "\n" + DEMO_ROW + "\n")
+    box.writeKeel("hooks/hooks.json", JSON.stringify(PLUGIN_HOOKS))
+    assertExit(box.runLink("--write"), 0)
+  })
+  afterEach(() => box.remove())
+
+  it("pluginWrite_removesWhatThePluginProvides_andKeepsTheCliLinkOverlayLinksAndCorePermissions", () => {
+    enablePlugin(box)
+    assertExit(box.runLink("--write", "--plugin"), 0)
+    assert.equal(entryExists(box.dataPath("skills/demo")), false)
+    assert.equal(entryExists(box.dataPath("CLAUDE.md")), false)
+    assert.equal(fs.readlinkSync(box.dataPath("bin/keel")), `${box.keel}/bin/keel`)
+    assert.ok(entryExists(box.dataPath("commands/hello.md")))
+    assert.deepEqual(hookCommands(box), [])
+    assert.ok(liveSettings(box)["permissions"]["deny"].includes("Bash(git push --force:*)"))
+    assert.deepEqual(liveSettings(box)["enabledPlugins"], { [KEEL_PLUGIN_ID]: true })
+  })
+
+  it("pluginWrite_refusesAndWritesNothing_whenTheKeelPluginIsNotEnabled", () => {
+    for (const enabled of [null, false]) {
+      if (enabled !== null) enablePlugin(box, enabled)
+      const before = box.readData("settings.json")
+      const result = box.runLink("--write", "--plugin")
+      assertExit(result, 3)
+      assert.ok(problemKinds(result).includes("plugin-not-enabled"), result.stdout)
+      assert.ok(entryExists(box.dataPath("skills/demo")))
+      assert.ok(entryExists(box.dataPath("CLAUDE.md")))
+      assert.equal(box.readData("settings.json"), before)
+    }
+  })
+
+  it("pluginWrite_isRecorded_soCheckIsCleanAndAPlainWriteChangesNothing", () => {
+    enablePlugin(box)
+    assertExit(box.runLink("--write", "--plugin"), 0)
+    assertExit(box.runLink("--check"), 0)
+    const again = box.runLink("--write")
+    assertExit(again, 0)
+    assert.deepEqual(again.json.actions, [])
+    assert.equal(entryExists(box.dataPath("skills/demo")), false)
+    assert.deepEqual(box.runLink("--write", "--plugin").json.actions, [])
+  })
+
+  it("check_reportsPluginNotEnabled_whenThePluginIsDisabledAfterPluginMode", () => {
+    enablePlugin(box)
+    assertExit(box.runLink("--write", "--plugin"), 0)
+    enablePlugin(box, false)
+    const result = box.runLink("--check")
+    assertExit(result, 1)
+    assert.ok(problemKinds(result).includes("plugin-not-enabled"))
+  })
+
+  it("fullWrite_restoresTheLinksClaudeMdAndCoreHooks_afterPluginMode", () => {
+    enablePlugin(box)
+    assertExit(box.runLink("--write", "--plugin"), 0)
+    assertExit(box.runLink("--write", "--full"), 0)
+    assert.equal(fs.readlinkSync(box.dataPath("skills/demo")), `${box.keel}/skills/demo`)
+    assert.ok(readFile(box.dataPath("CLAUDE.md")).includes("[K1]"))
+    assert.deepEqual(hookCommands(box), [`python3 ${box.keel}/hooks/demo.py`])
+    assertExit(box.runLink("--check"), 0)
+  })
+
+  it("pluginWrite_leavesAForeignLinkAndARealDirectory_whereThePluginProvidesTheComponent", () => {
+    enablePlugin(box)
+    box.writeKeel("settings/links.tsv", "source\ttarget\n{{KEEL}}/skills/demo\tskills/demo\n{{KEEL}}/skills/other\tskills/other\n{{KEEL}}/bin/keel\tbin/keel\n")
+    box.writeKeel("skills/other/SKILL.md", "# other\n")
+    fs.unlinkSync(box.dataPath("skills/demo"))
+    fs.symlinkSync("/usr/bin/true", box.dataPath("skills/demo"))
+    box.writeData("skills/other/SKILL.md", "mine\n")
+    assertExit(box.runLink("--write", "--plugin"), 0)
+    assert.equal(fs.readlinkSync(box.dataPath("skills/demo")), "/usr/bin/true")
+    assert.equal(box.readData("skills/other/SKILL.md"), "mine\n")
+  })
+
+  it("pluginDryRun_namesEachRemovalAsProvidedByThePlugin", () => {
+    enablePlugin(box)
+    const result = box.runLink("--plugin")
+    assertExit(result, 0)
+    const provided = result.json.problems.filter((problem: any) => problem.kind === "provided-by-plugin").map((problem: any) => problem.path).sort()
+    assert.deepEqual(provided, [box.dataPath("CLAUDE.md"), box.dataPath("skills/demo")])
+  })
+
+  it("pluginWrite_keepsAnOverlayLinkUnderAPluginComponentDirectory", () => {
+    enablePlugin(box)
+    box.writeOverlay("skills/mine/SKILL.md", "# mine\n")
+    box.writeOverlay("links.tsv", "source\ttarget\n{{OVERLAY}}/commands/hello.md\tcommands/hello.md\n{{OVERLAY}}/skills/mine\tskills/mine\n")
+    assertExit(box.runLink("--write", "--plugin"), 0)
+    assert.equal(fs.readlinkSync(box.dataPath("skills/mine")), `${box.overlay}/skills/mine`)
+  })
+
+  it("pluginWrite_refuses_whenThePluginHooksFileIsNotAnObjectWithAHooksObject", () => {
+    enablePlugin(box)
+    for (const text of ["null", "[]", JSON.stringify({ hooks: [] })]) {
+      box.writeKeel("hooks/hooks.json", text)
+      const result = box.runLink("--write", "--plugin")
+      assertExit(result, 3)
+      assert.ok(result.stderr.includes("must be an object with a hooks object"), result.stderr)
+    }
+  })
+
+  it("pluginWrite_refuses_whenThePluginHooksFileIsMissingOrNotJson", () => {
+    enablePlugin(box)
+    box.writeKeel("hooks/hooks.json", "{oops")
+    const invalid = box.runLink("--write", "--plugin")
+    assertExit(invalid, 3)
+    assert.ok(invalid.stderr.includes("hooks.json: invalid JSON"), invalid.stderr)
+    fs.writeFileSync(`${box.keel}/hooks/hooks.json`, Buffer.from([0x7b, 0xff, 0x7d]))
+    const notUtf8 = box.runLink("--write", "--plugin")
+    assertExit(notUtf8, 3)
+    assert.ok(notUtf8.stderr.includes("hooks.json: invalid JSON"), notUtf8.stderr)
+    fs.unlinkSync(`${box.keel}/hooks/hooks.json`)
+    const missing = box.runLink("--write", "--plugin")
+    assertExit(missing, 3)
+    assert.ok(missing.stderr.includes("hooks.json is missing"), missing.stderr)
+  })
+
+  it("pluginWrite_removesWorkflowScriptsAndAgents_butKeepsTheReviewLensesFileLinked", () => {
+    box.writeKeel("settings/links.tsv", "source\ttarget\n{{KEEL}}/skills/demo\tskills/demo\n{{KEEL}}/bin/keel\tbin/keel\n" +
+      "{{KEEL}}/workflows/lens-review.js\tworkflows/lens-review.js\n{{KEEL}}/workflows/review-lenses.json\tworkflows/review-lenses.json\n" +
+      "{{KEEL}}/agents/keel-auditor.md\tagents/keel-auditor.md\n")
+    box.writeKeel("workflows/lens-review.js", "export {}\n")
+    box.writeKeel("workflows/review-lenses.json", "{}\n")
+    box.writeKeel("agents/keel-auditor.md", "# auditor\n")
+    assertExit(box.runLink("--write"), 0)
+    enablePlugin(box)
+    assertExit(box.runLink("--write", "--plugin"), 0)
+    assert.equal(entryExists(box.dataPath("workflows/lens-review.js")), false)
+    assert.equal(entryExists(box.dataPath("agents/keel-auditor.md")), false)
+    assert.equal(fs.readlinkSync(box.dataPath("workflows/review-lenses.json")), `${box.keel}/workflows/review-lenses.json`)
+  })
+
+  it("refusedWrite_namesTheModeFlagItWasGiven_inTheCommandToRunOnceReviewed", () => {
+    enablePlugin(box)
+    fs.unlinkSync(box.dataPath("commands/hello.md"))
+    fs.symlinkSync("/usr/bin/true", box.dataPath("commands/hello.md"))
+    const toPlugin = box.runLink("--write", "--plugin")
+    assertExit(toPlugin, 3)
+    assert.ok(toPlugin.stderr.includes("run: bin/link --write --plugin --force"), toPlugin.stderr)
+    assertExit(box.runLink("--write", "--plugin", "--force"), 0)
+    fs.unlinkSync(box.dataPath("commands/hello.md"))
+    fs.symlinkSync("/usr/bin/true", box.dataPath("commands/hello.md"))
+    const toFull = box.runLink("--write", "--full")
+    assertExit(toFull, 3)
+    assert.ok(toFull.stderr.includes("run: bin/link --write --full --force"), toFull.stderr)
+    assertExit(box.runLink("--write", "--full", "--force"), 0)
+    assert.equal(fs.readlinkSync(box.dataPath("skills/demo")), `${box.keel}/skills/demo`)
+  })
+
+  it("pluginCheck_reportsAGateFromAnOverlayFragment_asTheLinkInstallDoes_notAgainstThePluginHooksFile", () => {
+    enablePlugin(box)
+    box.writeKeel("ledger.tsv", LEDGER_HEADER + "\n")
+    box.writeOverlay("settings/gate.json", JSON.stringify({
+      hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "python3 /x/git-guard.py" }] }] },
+    }))
+    assertExit(box.runLink("--write", "--plugin"), 0)
+    const gates = box.runLink("--check").json.problems.filter((problem: any) => problem.kind === "gate-onfailure-missing")
+    assert.deepEqual(gates.map((problem: any) => problem.path), [`${box.keel}/settings/core.json`])
+  })
+
+  it("pluginCheck_reportsAGateWithoutOnFailure_againstThePluginHooksFile", () => {
+    enablePlugin(box)
+    box.writeKeel("ledger.tsv", LEDGER_HEADER + "\n")
+    box.writeKeel("hooks/hooks.json", JSON.stringify({
+      hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/git-guard.py" }] }] },
+    }))
+    assertExit(box.runLink("--write", "--plugin"), 0)
+    const gates = box.runLink("--check").json.problems.filter((problem: any) => problem.kind === "gate-onfailure-missing")
+    assert.deepEqual(gates.map((problem: any) => problem.path), [`${box.keel}/hooks/hooks.json`])
+  })
+
+  it("pluginCheck_reportsHookUnregistered_whenALedgerHookIsInNeitherSettingsNorThePluginHooks", () => {
+    enablePlugin(box)
+    assertExit(box.runLink("--write", "--plugin"), 0)
+    box.writeKeel("hooks/hooks.json", JSON.stringify({ hooks: {} }))
+    assert.ok(problemKinds(box.runLink("--check")).includes("hook-unregistered"))
+  })
+
+  it("check_readsAnExplicitFullMode_asTheLinkInstall", () => {
+    const statePath = box.dataPath("state/keel/link-state.json")
+    fs.writeFileSync(statePath, JSON.stringify({ ...JSON.parse(readFile(statePath)), mode: "full" }))
+    assertExit(box.runLink("--check"), 0)
+    assert.deepEqual(box.runLink("--write").json.actions, [])
+  })
+
+  it("check_failsNamingTheMode_whenTheRecordedModeIsUnknown", () => {
+    const statePath = box.dataPath("state/keel/link-state.json")
+    fs.writeFileSync(statePath, JSON.stringify({ ...JSON.parse(readFile(statePath)), mode: "partial" }))
+    const result = box.runLink("--check")
+    assertExit(result, 70)
+    assert.ok(result.stderr.includes('mode must be "full" or "plugin", got "partial"'), result.stderr)
+  })
+
+  it("modeFlags_areUsageErrors_withCheckUnlinkOrEachOther", () => {
+    for (const args of [["--check", "--plugin"], ["--unlink", "--full"], ["--write", "--plugin", "--full"]]) {
+      assertExit(box.runLink(...args), 2)
+    }
+  })
+})

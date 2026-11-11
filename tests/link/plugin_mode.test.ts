@@ -125,7 +125,7 @@ describe("link plugin mode", () => {
 
   it("pluginWrite_refuses_whenThePluginHooksFileIsNotAnObjectWithAHooksObject", () => {
     enablePlugin(box)
-    for (const text of ["[]", JSON.stringify({ hooks: [] })]) {
+    for (const text of ["null", "[]", JSON.stringify({ hooks: [] })]) {
       box.writeKeel("hooks/hooks.json", text)
       const result = box.runLink("--write", "--plugin")
       assertExit(result, 3)

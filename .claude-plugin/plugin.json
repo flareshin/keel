@@ -1,0 +1,5 @@
+{
+  "name": "keel",
+  "version": "1.0.0",
+  "description": "A small, measured harness for Claude Code: five principles enforced by hooks, skills, review workflows and a rule ledger."
+}

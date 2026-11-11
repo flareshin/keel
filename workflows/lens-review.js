@@ -44,6 +44,7 @@ const DERIVED_RUN_ID = /^rv-\d{8}T\d{6}Z-[0-9a-f]{6}$/
 const SAFE_REF = /^[A-Za-z0-9._\/~^@{}-]+$/
 const CONTROL_CHARS = /[\x00-\x1f\x7f\x85\u2028\u2029]/
 const KEEL_HOME = '"$(keel home)"'
+const KEEL_ON_PATH_CHECK = '{ command -v keel >/dev/null || { echo "keel is not on PATH" >&2; false; }; }'
 const RULE_CHECKS = `${KEEL_HOME}/skills/writing-readable-code/scripts/rule-checks.ts`
 const DEFAULT_LENSES_FILE = `${KEEL_HOME}/workflows/review-lenses.json`
 const DERIVE_RUN_ID_COMMAND = `printf 'rv-%s-%s\\n' "$(date -u +%Y%m%dT%H%M%SZ)" "$(od -An -N3 -tx1 /dev/urandom | tr -d ' \\n')"`
@@ -241,7 +242,7 @@ ${lensesStep}`
 }
 
 function buildPrepareCommand(d) {
-  const root = `root=$(git -C '${d.repo}' rev-parse --show-toplevel)`
+  const root = `${KEEL_ON_PATH_CHECK} && root=$(git -C '${d.repo}' rev-parse --show-toplevel)`
   if (d.head) {
     return `${root} && head=$(git -C "$root" rev-parse --verify '${d.head}^{commit}') && base=$(git -C "$root" merge-base '${d.base}' "$head") && stat=$(git -C "$root" diff --stat "$base" "$head" | tail -n 1) && ${precheckProbe('"$head"').step}jq -cn --arg r "$root" --arg b "$base" --arg h "$head" --arg s "$stat"${precheckProbe().arg} '{repo_root:$r, review_base:$b, head:$h, snapshot_tree:null, diff_stat:$s${precheckProbe().field}}'`
   }

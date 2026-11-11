@@ -16,9 +16,9 @@ const DEMO_HOOK_LINES = [
   "process.exit(2)",
 ]
 
-function shippedHooks(): Record<string, unknown[]> {
+function shippedHooks(fragments: string[] = SHIPPED_FRAGMENTS): Record<string, unknown[]> {
   const merged: Record<string, unknown[]> = {}
-  for (const fragment of SHIPPED_FRAGMENTS) {
+  for (const fragment of fragments) {
     const text = readText(path.join(CHECKOUT, fragment)).replaceAll("{{KEEL}}", CHECKOUT)
     for (const [event, groups] of Object.entries(JSON.parse(text).hooks as Record<string, unknown[]>)) (merged[event] ??= []).push(...groups)
   }
@@ -212,6 +212,63 @@ describe("wired-fires", () => {
     harness.box.env["KEEL_HOME"] = CHECKOUT
     harness.box.write("overlay/stacks.txt", "spring-maven\n")
     harness.box.registerHooks(shippedHooks())
+    const item = wiredFires()
+    assert.equal(item.status, "PASS", JSON.stringify(item))
+    assert.ok(item.detail.includes("13 rows fired on bad fixtures, 5 hooks quiet"), item.detail)
+  })
+
+  function enterPluginMode(): void {
+    harness.box.write("data/state/keel/link-state.json", JSON.stringify({ schema: 1, mode: "plugin" }))
+  }
+
+  function movePluginHooksIntoThePluginFile(): void {
+    harness.box.registerHooks({})
+    const command = "node ${CLAUDE_PLUGIN_ROOT}/hooks/demo/demo.js"
+    harness.box.write("keel/hooks/hooks.json", JSON.stringify({ hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command }] }] } }))
+  }
+
+  it("wiredFires_inPluginMode_runsTheHooksThePluginHooksFileRegisters_fromTheKeelCheckout", () => {
+    movePluginHooksIntoThePluginFile()
+    enterPluginMode()
+    const item = wiredFires()
+    assert.equal(item.status, "PASS", JSON.stringify(item))
+    assert.ok(item.detail.includes("2 rows"), item.detail)
+  })
+
+  it("wiredFires_inFullMode_ignoresThePluginHooksFile", () => {
+    movePluginHooksIntoThePluginFile()
+    const item = wiredFires()
+    assert.equal(item.status, "FAIL")
+    assert.ok(item.detail.includes("C-demo: no PreToolUse[Bash] registration of hook demo in settings.json"), item.detail)
+  })
+
+  it("wiredFires_inPluginMode_namesBothPlaces_whenNeitherRegistersTheHook", () => {
+    movePluginHooksIntoThePluginFile()
+    harness.box.write("keel/hooks/hooks.json", JSON.stringify({ hooks: {} }))
+    enterPluginMode()
+    const pluginHooks = path.join(harness.box.keel, "hooks", "hooks.json")
+    assert.ok(wiredFires().detail.includes(`no PreToolUse[Bash] registration of hook demo in settings.json or ${pluginHooks}`))
+  })
+
+  it("wiredFires_inPluginMode_fails_whenThePluginHooksFileIsMissing", () => {
+    enterPluginMode()
+    const item = wiredFires()
+    assert.equal(item.status, "FAIL")
+    assert.ok(item.detail.includes(`${path.join(harness.box.keel, "hooks", "hooks.json")} is missing`), item.detail)
+  })
+
+  it("wiredFires_fails_whenTheLinkStateRecordsAnUnknownMode", () => {
+    harness.box.write("data/state/keel/link-state.json", JSON.stringify({ schema: 1, mode: "half" }))
+    const item = wiredFires()
+    assert.equal(item.status, "FAIL")
+    assert.ok(item.detail.includes('mode must be "full" or "plugin"'), item.detail)
+  })
+
+  it("wiredFires_passesForEveryShippedHookRow_inPluginMode_withTheShippedPluginHooksFile", () => {
+    harness.box.env["KEEL_HOME"] = CHECKOUT
+    harness.box.write("overlay/stacks.txt", "spring-maven\n")
+    harness.box.registerHooks(shippedHooks(["stacks/spring-maven/settings.json"]))
+    enterPluginMode()
     const item = wiredFires()
     assert.equal(item.status, "PASS", JSON.stringify(item))
     assert.ok(item.detail.includes("13 rows fired on bad fixtures, 5 hooks quiet"), item.detail)

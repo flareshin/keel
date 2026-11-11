@@ -119,6 +119,13 @@ describe("link gate on failure", () => {
     assert.ok(problemKinds(result).includes("gate-onfailure-missing"))
   })
 
+  it("check_reportsGateOnFailureMissing_againstTheFragmentThatRegistersTheGate", () => {
+    writeCoreHook("Bash|Edit|Write|NotebookEdit", without(GATE_HOOK, "onFailure"))
+    box.writeOverlay("settings/gate.json", JSON.stringify({ hooks: { PreToolUse: [{ matcher: "Edit", hooks: [without(GATE_HOOK, "timeout")] }] } }))
+    const gates = box.runLink("--check").json.problems.filter((problem: any) => problem.kind === "gate-onfailure-missing")
+    assert.deepEqual(gates.map((problem: any) => problem.path), [`${box.keel}/settings/core.json`, `${box.overlay}/settings/gate.json`])
+  })
+
   it("check_reportsGateOnFailureMissing_whenAGateRegistrationHasNoTimeout", () => {
     writeCoreHook("Edit", without(GATE_HOOK, "timeout"))
     assert.ok(problemKinds(box.runLink("--check")).includes("gate-onfailure-missing"))

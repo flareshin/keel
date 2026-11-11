@@ -12,7 +12,8 @@ import { copyFileAtomic, moveAside, replaceWithSymlink, writeTextAtomic } from "
 import * as claudeMd from "./claude_md.ts"
 import { runGit } from "./config.ts"
 import type { KeelPaths, LinkMode } from "./config.ts"
-import { OWNED_KEYS, activeStacks, loadMergedFragments, loadPluginHooks, pluginHooksPath } from "./fragments.ts"
+import { OWNED_KEYS, activeStacks, loadFragments, loadPluginHooks, mergeFragments, pluginHooksPath } from "./fragments.ts"
+import type { SourcedFragment } from "./fragments.ts"
 import * as links from "./links.ts"
 import { member, objectMember } from "./members.ts"
 import * as settingsJson from "./settings_json.ts"
@@ -198,10 +199,11 @@ function afterMovingAside(file: string, backupPath: string, then: () => void): (
 }
 
 function planSettings(plan: Plan, paths: KeelPaths, backupRoot: string): void {
-  const [mergedSettings, conflicts] = loadMergedFragments(paths, plan.mode)
+  const fragments = loadFragments(paths, plan.mode)
+  const [mergedSettings, conflicts] = mergeFragments(fragments)
   plan.mergedSettings = mergedSettings
   plan.conflicts = conflicts
-  checkHookWiring(plan, paths)
+  checkHookWiring(plan, paths, fragments)
   const live = settingsJson.readLiveSettings(settingsJson.settingsPath(paths))
   if (plan.mode === "plugin") checkPluginEnabled(plan, live)
   const drift = settingsJson.driftedOwnedKeys(live, plan.mergedSettings)
@@ -228,11 +230,11 @@ function checkPluginEnabled(plan: Plan, live: settingsJson.LiveSettings): void {
   addProblem(plan, "plugin-not-enabled", live.path, detail, BLOCKS_ALWAYS)
 }
 
-function checkHookWiring(plan: Plan, paths: KeelPaths): void {
+function checkHookWiring(plan: Plan, paths: KeelPaths, fragments: SourcedFragment[]): void {
   const stacks = activeStacks(paths)
-  const corePath = path.join(paths.keelHome, "settings", "core.json")
   const pluginHooks = plan.mode === "plugin" ? sourcedFrom(pluginHooksPath(paths), iterRegistrations(loadPluginHooks(paths))) : []
-  const registrations = [...sourcedFrom(corePath, iterRegistrations(member(plan.mergedSettings, "hooks"))), ...pluginHooks]
+  const fragmentHooks = fragments.flatMap(([source, fragment]) => sourcedFrom(source, iterRegistrations(member(fragment, "hooks"))))
+  const registrations = [...fragmentHooks, ...pluginHooks]
   const registered = new Set(registrations.map(([registration]) => registration.hookName))
   const registeredIn = plan.mode === "plugin" ? "the merged settings or the plugin hooks file" : "the merged settings"
   const ledgerPath = path.join(paths.keelHome, "ledger.tsv")

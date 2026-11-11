@@ -12,9 +12,15 @@ import { childList, childObject, member, objectMember, setMember } from "./membe
 export const OWNED_KEYS = ["hooks", "permissions", "env"]
 export const LIST_PERMISSION_KEYS = ["allow", "deny", "ask"]
 
-export function loadMergedFragments(paths: KeelPaths, mode: LinkMode): [JsonObject, string[]] {
-  const fragments = fragmentPaths(paths).map((path): [string, JsonObject] => [path, loadFragment(path, paths)])
+export type SourcedFragment = [source: string, fragment: JsonObject]
+
+export function loadFragments(paths: KeelPaths, mode: LinkMode): SourcedFragment[] {
+  const fragments = fragmentPaths(paths).map((path): SourcedFragment => [path, loadFragment(path, paths)])
   if (mode === "plugin") fragments[0] = [fragments[0]![0], withoutHooks(fragments[0]![1])]
+  return fragments
+}
+
+export function mergeFragments(fragments: SourcedFragment[]): [JsonObject, string[]] {
   const merged: JsonObject = {}
   const conflicts: string[] = []
   for (const [source, fragment] of fragments) {

@@ -360,6 +360,15 @@ describe("HandbackReviewEvidenceTest", () => {
     handback(PASS_REPORT, { toolUses: uses });
     assert.equal(sandbox.stubCalls("keel").length, 1);
   });
+
+  it("handback_writesEvidence_whenReviewerReadKeelFilesThroughKeelHome", () => {
+    const uses: ToolUse[] = [
+      ["Bash", { command: `node "$(keel home)"/skills/writing-readable-code/scripts/rule-checks.ts --repo ${scope} --base main --head HEAD` }],
+      ["Bash", { command: `jq -c '{lenses, guardrails}' "$(keel home)"/workflows/review-lenses.json` }],
+    ];
+    handback(PASS_REPORT, { toolUses: uses });
+    assert.equal(sandbox.stubCalls("keel").length, 1);
+  });
 });
 
 describe("ReportMarkersTest", () => {

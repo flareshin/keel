@@ -211,10 +211,10 @@ test('lensReview_diffsLensesAgainstSnapshotTree_whenWorkingTreeIsReviewed', asyn
   assert.match(childArgs.target, new RegExp(`git -C '/work/app' diff ${SHA_A} ${SHA_B}`))
   const ruleChecks = childArgs.lenses.find((lens) => lens.key === 'rule-checks')
   assert.match(ruleChecks.prompt, new RegExp(`--repo '/work/app' --base ${SHA_A} --head ${SHA_B}`))
-  assert.match(ruleChecks.prompt, /"\$\{KEEL_DATA_DIR:-\$HOME\/\.claude\}"\/skills\/writing-readable-code\/scripts\/rule-checks\.ts/)
+  assert.match(ruleChecks.prompt, /node "\$\(keel home\)"\/skills\/writing-readable-code\/scripts\/rule-checks\.ts/)
   assert.match(childArgs.lenses.find((lens) => lens.key === 'writing-readable-code').prompt, /Entry point : a\.py/)
   const prepareCommands = preparePromptCommands(rt.record.agents[0].prompt)
-  assert.match(prepareCommands.diffs[0], /tree=\$\(cd "\$\{KEEL_DATA_DIR:-\$HOME\/\.claude\}" && bin\/keel snapshot "\$root" \|/)
+  assert.match(prepareCommands.diffs[0], /tree=\$\(keel snapshot "\$root" \|/)
   assert.match(prepareCommands.runId, /date -u/)
   assert.equal(prepareCommands.lenses, null)
 })
@@ -533,7 +533,7 @@ test('lensReview_writesOneEvidenceLinePerRepoWithOneRunId_whenTwoReposAreReviewe
 test('lensReview_loadsDefaultLensesAndGuardrails_whenCallerGivesNoLenses', async () => {
   const fileLenses = { lenses: [{ key: 'reuse', prompt: 'Lens: reuse.' }], guardrails: 'Not defects here: style.' }
   const prepare = (prompt) => {
-    assert.match(preparePromptCommands(prompt).lenses, /jq -c '\{lenses, guardrails\}' "\$\{KEEL_DATA_DIR:-\$HOME\/\.claude\}"\/workflows\/review-lenses\.json/)
+    assert.match(preparePromptCommands(prompt).lenses, /jq -c '\{lenses, guardrails\}' "\$\(keel home\)"\/workflows\/review-lenses\.json/)
     assert.match(prompt, /Copy the stdout of each diff and run id command verbatim/)
     assert.doesNotMatch(prompt, /copy its stdout verbatim/)
     return { diff_outputs: [preparedLine()], run_id_output: DERIVED_RUN_ID, lenses_output: fileLenses }
@@ -1057,7 +1057,7 @@ test('lensReview_asksThePrepareStepForTheBinding_onlyWhenAPrecheckTreeIsReadable
   const none = await runWithPrecheck(undefined)
   const rt = createRuntime({ respond: responder() })
   await rt.run('lens-review', { auditMode: 'split', diffs: [{ ...ROOT_DIFF, head: 'feature/x' }], lenses: CALLER_LENSES, precheck: precheckText() })
-  const bindStep = `binding=$( (cd "\${KEEL_DATA_DIR:-$HOME/.claude}" && bin/keel precheck bind --repo "$root" --base "$base" --end `
+  const bindStep = `binding=$( (keel precheck bind --repo "$root" --base "$base" --end `
   const snapshotCommand = preparePromptCommands(snapshot.rt.record.agents[0].prompt).diffs[0]
   assert.ok(snapshotCommand.includes(`${bindStep}"$tree" --tree ${PRECHECK_TREE}) 2>/dev/null || echo null) && jq -cn `), snapshotCommand)
   assert.ok(snapshotCommand.endsWith(`--argjson p "$binding" '{repo_root:$r, review_base:$b, head:null, snapshot_tree:$t, diff_stat:$s, precheck_binding:$p}'`), snapshotCommand)
@@ -1101,7 +1101,7 @@ test('lensReview_asksThePrepareStepForTheRequirement_onlyForASingleRootDiffWitho
   await twoRepos.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF, { repo: '/work/lib', base: 'main' }], lenses: CALLER_LENSES })
   const delta = createRuntime({ respond: responder() })
   await delta.run('lens-review', { auditMode: 'split', diffs: [{ ...ROOT_DIFF, since: SHA_C }], rootRunId: DERIVED_RUN_ID, lenses: CALLER_LENSES })
-  const requiredStep = `required=$( (cd "\${KEEL_DATA_DIR:-$HOME/.claude}" && bin/keel precheck required --repo "$root" --base "$base" --end "$tree") 2>/dev/null || echo null) && jq -cn `
+  const requiredStep = `required=$( (keel precheck required --repo "$root" --base "$base" --end "$tree") 2>/dev/null || echo null) && jq -cn `
   const rootCommand = preparePromptCommands(root.rt.record.agents[0].prompt).diffs[0]
   assert.ok(rootCommand.includes(requiredStep), rootCommand)
   assert.ok(rootCommand.endsWith(`--argjson q "$required" '{repo_root:$r, review_base:$b, head:null, snapshot_tree:$t, diff_stat:$s, precheck_required:$q}'`), rootCommand)

@@ -43,9 +43,9 @@ const RUN_ID = /^[A-Za-z0-9._-]{8,64}$/
 const DERIVED_RUN_ID = /^rv-\d{8}T\d{6}Z-[0-9a-f]{6}$/
 const SAFE_REF = /^[A-Za-z0-9._\/~^@{}-]+$/
 const CONTROL_CHARS = /[\x00-\x1f\x7f\x85\u2028\u2029]/
-const DATA_DIR = '"${KEEL_DATA_DIR:-$HOME/.claude}"'
-const RULE_CHECKS = `${DATA_DIR}/skills/writing-readable-code/scripts/rule-checks.ts`
-const DEFAULT_LENSES_FILE = `${DATA_DIR}/workflows/review-lenses.json`
+const KEEL_HOME = '"$(keel home)"'
+const RULE_CHECKS = `${KEEL_HOME}/skills/writing-readable-code/scripts/rule-checks.ts`
+const DEFAULT_LENSES_FILE = `${KEEL_HOME}/workflows/review-lenses.json`
 const DERIVE_RUN_ID_COMMAND = `printf 'rv-%s-%s\\n' "$(date -u +%Y%m%dT%H%M%SZ)" "$(od -An -N3 -tx1 /dev/urandom | tr -d ' \\n')"`
 const LOAD_LENSES_COMMAND = `jq -c '{lenses, guardrails}' ${DEFAULT_LENSES_FILE}`
 const REPORT_START = '<<<KEEL-REPORT'
@@ -247,16 +247,16 @@ function buildPrepareCommand(d) {
   }
   const from = d.since ? `'${d.since}'` : '"$base"'
   const sinceCheck = d.since ? `{ [ "$(git -C "$root" cat-file -t '${d.since}' 2>/dev/null)" = tree ] || { echo "since ${d.since} is not a tree id: pass the snapshot_tree the earlier review named (for a commit, <commit>^{tree})" >&2; false; }; } && ` : ''
-  return `${root} && ${sinceCheck}base=$(git -C "$root" merge-base '${d.base}' HEAD) && tree=$(cd ${DATA_DIR} && bin/keel snapshot "$root" | jq -r .tree) && stat=$(git -C "$root" diff --stat ${from} "$tree" | tail -n 1) && ${precheckProbe('"$tree"').step}jq -cn --arg r "$root" --arg b "$base" --arg t "$tree" --arg s "$stat"${precheckProbe().arg} '{repo_root:$r, review_base:$b, head:null, snapshot_tree:$t, diff_stat:$s${precheckProbe().field}}'`
+  return `${root} && ${sinceCheck}base=$(git -C "$root" merge-base '${d.base}' HEAD) && tree=$(keel snapshot "$root" | jq -r .tree) && stat=$(git -C "$root" diff --stat ${from} "$tree" | tail -n 1) && ${precheckProbe('"$tree"').step}jq -cn --arg r "$root" --arg b "$base" --arg t "$tree" --arg s "$stat"${precheckProbe().arg} '{repo_root:$r, review_base:$b, head:null, snapshot_tree:$t, diff_stat:$s${precheckProbe().field}}'`
 }
 
 function precheckProbe(end) {
   if (isPrecheckBindable()) {
-    const step = `binding=$( (cd ${DATA_DIR} && bin/keel precheck bind --repo "$root" --base "$base" --end ${end} --tree ${PRECHECK.tree}) 2>/dev/null || echo null) && `
+    const step = `binding=$( (keel precheck bind --repo "$root" --base "$base" --end ${end} --tree ${PRECHECK.tree}) 2>/dev/null || echo null) && `
     return { step, arg: ' --argjson p "$binding"', field: ', precheck_binding:$p' }
   }
   if (isPrecheckRequirable()) {
-    const step = `required=$( (cd ${DATA_DIR} && bin/keel precheck required --repo "$root" --base "$base" --end ${end}) 2>/dev/null || echo null) && `
+    const step = `required=$( (keel precheck required --repo "$root" --base "$base" --end ${end}) 2>/dev/null || echo null) && `
     return { step, arg: ' --argjson q "$required"', field: ', precheck_required:$q' }
   }
   return { step: '', arg: '', field: '' }

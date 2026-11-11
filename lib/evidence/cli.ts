@@ -23,6 +23,7 @@ import type { JsonObject } from './writers.ts';
 
 const USAGE = `usage:
   keel test -- <command…>
+  keel home                           (prints the keel checkout this CLI runs from)
   keel approve <root_run_id> [--read]
   keel snapshot <repo>
   keel review prepare                 (stdin: workflow args; stdout: prepared metadata)
@@ -72,11 +73,17 @@ export async function main(argv: string[]): Promise<number> {
 async function dispatch(argv: string[]): Promise<number> {
   if (argv.length === 0) throw new writers.Usage('missing command');
   const commands: Record<string, (rest: string[]) => number | Promise<number>> = {
-    test: runTest, approve, snapshot, evidence, review, precheck,
+    test: runTest, home, approve, snapshot, evidence, review, precheck,
   };
   const command = Object.hasOwn(commands, argv[0]!) ? commands[argv[0]!] : undefined;
   if (command === undefined) throw new writers.Usage('unknown command ' + argv[0]);
   return command(argv.slice(1));
+}
+
+function home(rest: string[]): number {
+  if (rest.length > 0) throw new writers.Usage('keel home takes no arguments');
+  printLine(env.keelHome());
+  return EXIT_OK;
 }
 
 function runTest(rest: string[]): Promise<number> {

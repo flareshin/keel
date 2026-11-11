@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
-import { appendFileSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { appendFileSync, mkdirSync, realpathSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { expandHome } from '../../measure/lib/measurekit/files.ts';
 import { stringifySorted } from '../../measure/lib/measurekit/json.ts';
 
@@ -14,6 +14,10 @@ export const GITLINK_MODE = '160000';
 export const DELETED_MODE = '000000';
 export const EVIDENCE_ID_RANDOM_BYTES = 4;
 export const RUN_ID_RANDOM_BYTES = 3;
+
+export function keelHome(): string {
+  return process.env['KEEL_HOME'] || resolve(dirname(realpathSync(import.meta.filename)), '..', '..');
+}
 
 export function dataDir(): string {
   return expandHome(process.env['KEEL_DATA_DIR'] || '~/.claude');

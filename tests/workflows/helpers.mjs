@@ -1,6 +1,6 @@
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, chmodSync, realpathSync, copyFileSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, dirname } from 'node:path'
+import { join, dirname, delimiter } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { execFileSync } from 'node:child_process'
 
@@ -126,7 +126,7 @@ export function createSandbox() {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'keel-workflows-')))
   const dataDir = join(root, 'data')
   const env = {
-    PATH: process.env.PATH,
+    PATH: `${join(dataDir, 'bin')}${delimiter}${process.env.PATH}`,
     KEEL_DATA_DIR: dataDir,
     HOME: join(root, 'home'),
     GIT_CONFIG_GLOBAL: join(root, 'gitconfig'),
@@ -137,7 +137,7 @@ export function createSandbox() {
   mkdirSync(join(dataDir, 'bin'), { recursive: true })
   mkdirSync(join(dataDir, 'workflows'), { recursive: true })
   writeFileSync(env.GIT_CONFIG_GLOBAL, '[user]\n\tname = Test\n\temail = test@example.invalid\n[init]\n\tdefaultBranch = main\n')
-  writeKeelSnapshotStub(join(dataDir, 'bin', 'keel'))
+  writeKeelSnapshotStub(join(dataDir, 'bin', 'keel'), dataDir)
   copyFileSync(join(WORKFLOWS_DIR, 'review-lenses.json'), join(dataDir, 'workflows', 'review-lenses.json'))
   mkdirSync(join(dataDir, 'skills'), { recursive: true })
   symlinkSync(join(KEEL_HOME, 'skills', 'writing-readable-code'), join(dataDir, 'skills', 'writing-readable-code'))
@@ -146,9 +146,10 @@ export function createSandbox() {
   return { root, env, git, bash }
 }
 
-function writeKeelSnapshotStub(path) {
+function writeKeelSnapshotStub(path, home) {
   writeFileSync(path, `#!/bin/bash
 set -e
+[ "$1" = home ] && { echo '${home}'; exit 0; }
 [ "$1" = precheck ] && exec '${join(KEEL_HOME, 'bin', 'keel')}' "$@"
 [ "$1" = snapshot ] || exit 2
 root=$(git -C "$2" rev-parse --show-toplevel)

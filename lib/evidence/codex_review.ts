@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync, lstatSync, realpathSync } from 'node:fs';
+import { readFileSync, readdirSync, lstatSync } from 'node:fs';
 import { userInfo } from 'node:os';
-import { dirname, join, resolve, sep } from 'node:path';
+import { join, sep } from 'node:path';
 import { isBlankEitherWay } from './text.ts';
 import { decodeStrict, isSystemError, resolveLinks, splitLines } from '../../measure/lib/measurekit/files.ts';
 import { compareCodePoints, parseJsonKeepingIntegers } from '../../measure/lib/measurekit/json.ts';
@@ -229,8 +229,7 @@ export function digest(content: Uint8Array): string {
 }
 
 export function runRuleChecks(repo: string, base: string, tree: string): string {
-  const keelHome = resolve(dirname(realpathSync(import.meta.filename)), '..', '..');
-  const script = join(keelHome, 'skills/writing-readable-code/scripts/rule-checks.ts');
+  const script = join(env.keelHome(), 'skills/writing-readable-code/scripts/rule-checks.ts');
   let stdout: string;
   let returncode: number;
   try {

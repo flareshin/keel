@@ -230,23 +230,28 @@ function checkPluginEnabled(plan: Plan, live: settingsJson.LiveSettings): void {
 
 function checkHookWiring(plan: Plan, paths: KeelPaths): void {
   const stacks = activeStacks(paths)
-  const corePath = plan.mode === "plugin" ? pluginHooksPath(paths) : path.join(paths.keelHome, "settings", "core.json")
-  const pluginHooks = plan.mode === "plugin" ? iterRegistrations(loadPluginHooks(paths)) : []
-  const registrations = [...iterRegistrations(member(plan.mergedSettings, "hooks")), ...pluginHooks]
-  const registered = new Set(registrations.map((registration) => registration.hookName))
+  const corePath = path.join(paths.keelHome, "settings", "core.json")
+  const pluginHooks = plan.mode === "plugin" ? sourcedFrom(pluginHooksPath(paths), iterRegistrations(loadPluginHooks(paths))) : []
+  const registrations = [...sourcedFrom(corePath, iterRegistrations(member(plan.mergedSettings, "hooks"))), ...pluginHooks]
+  const registered = new Set(registrations.map(([registration]) => registration.hookName))
+  const registeredIn = plan.mode === "plugin" ? "the merged settings or the plugin hooks file" : "the merged settings"
   const ledgerPath = path.join(paths.keelHome, "ledger.tsv")
   for (const row of hookRowsInForce(loadLedgersFrom(paths.keelHome, paths.overlayDir), stacks)) {
     if (!registered.has(row.hookName as string)) {
-      const detail = `${row.id} (${row.source} ledger): hook ${row.hookName} is not registered in the merged settings`
+      const detail = `${row.id} (${row.source} ledger): hook ${row.hookName} is not registered in ${registeredIn}`
       addProblem(plan, "hook-unregistered", ledgerPath, detail, BLOCKS_ALWAYS)
     }
   }
-  for (const registration of registrations) {
+  for (const [registration, source] of registrations) {
     if (isGate(registration) && !failsClosed(registration.hook)) {
       const detail = `PreToolUse[${registration.matcher}] ${registration.hookName}: needs "onFailure": "${FAIL_CLOSED}" and a numeric "timeout"`
-      addProblem(plan, "gate-onfailure-missing", corePath, detail)
+      addProblem(plan, "gate-onfailure-missing", source, detail)
     }
   }
+}
+
+function sourcedFrom(source: string, registrations: Registration[]): [Registration, string][] {
+  return registrations.map((registration) => [registration, source])
 }
 
 function isGate(registration: Registration): boolean {

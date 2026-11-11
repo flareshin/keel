@@ -40,13 +40,7 @@ export function pluginHooksPath(paths: KeelPaths): string {
 export function loadPluginHooks(paths: KeelPaths): JsonObject {
   const file = pluginHooksPath(paths)
   if (!isFile(file)) throw new Refused(`${file} is missing; plugin mode has no core hooks to check`)
-  let parsed: JsonValue
-  try {
-    parsed = parseJsonKeepingIntegers(readUtf8(file))
-  } catch (error) {
-    if (error instanceof SyntaxError || error instanceof InvalidUtf8Error) throw new Refused(`${file}: invalid JSON (${error.message})`)
-    throw error
-  }
+  const parsed = readJsonOrRefuse(file)
   if (!isJsonObject(parsed) || !isJsonObject(member(parsed, "hooks"))) throw new Refused(`${file}: must be an object with a hooks object`)
   return member(parsed, "hooks") as JsonObject
 }
@@ -74,15 +68,18 @@ export function activeStacks(paths: KeelPaths): string[] {
 }
 
 function loadFragment(fragmentPath: string, paths: KeelPaths): JsonObject {
-  let fragment: JsonValue
-  try {
-    fragment = parseJsonKeepingIntegers(readUtf8(fragmentPath))
-  } catch (error) {
-    if (error instanceof SyntaxError || error instanceof InvalidUtf8Error) throw new Refused(`${fragmentPath}: invalid JSON (${error.message})`)
-    throw error
-  }
+  const fragment = readJsonOrRefuse(fragmentPath)
   validateFragmentShape(fragmentPath, fragment)
   return expandStrings(fragment, paths, fragmentPath) as JsonObject
+}
+
+function readJsonOrRefuse(file: string): JsonValue {
+  try {
+    return parseJsonKeepingIntegers(readUtf8(file))
+  } catch (error) {
+    if (error instanceof SyntaxError || error instanceof InvalidUtf8Error) throw new Refused(`${file}: invalid JSON (${error.message})`)
+    throw error
+  }
 }
 
 function validateFragmentShape(fragmentPath: string, fragment: JsonValue): asserts fragment is JsonObject {

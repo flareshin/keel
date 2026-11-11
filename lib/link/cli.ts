@@ -85,11 +85,11 @@ function runWrite(plan: Plan, paths: KeelPaths, args: LinkArgs): number {
     emit([], blocking)
     say("link: refused: resolve the problems above; nothing was written")
     if (blocking.every((problem) => LIFTING_FLAGS[problem.blocksWrite] !== null)) {
-      say(`link: or, once each one is reviewed, run: ${buildWriteCommand(plan, args.allowWorktree)}`)
+      say(`link: or, once each one is reviewed, run: ${buildWriteCommand(plan, args)}`)
     }
     return EXIT_REFUSED
   }
-  if (args.adopt) requireEveryDropAccepted(plan, args.acceptDrops, args.allowWorktree)
+  if (args.adopt) requireEveryDropAccepted(plan, args)
   for (const problem of plan.problems) {
     if (args.force && LIFTING_FLAGS[problem.blocksWrite]?.includes(FORCE_FLAG)) say(`link: forced: ${problem.path}: ${problem.detail}`)
   }
@@ -165,26 +165,26 @@ function pathsLeftForV1(entries: links.LinkEntry[], claudeMdRestored: boolean, s
   return paths
 }
 
-function requireEveryDropAccepted(plan: Plan, acceptDrops: string | undefined, allowWorktree: boolean): void {
+function requireEveryDropAccepted(plan: Plan, args: LinkArgs): void {
   sayDrops(plan.droppedSettings)
-  const accepted = readAcceptedDrops(acceptDrops)
+  const accepted = readAcceptedDrops(args.acceptDrops)
   const notAccepted = plan.droppedSettings.filter((item) => !accepted.has(item))
   if (notAccepted.length > 0) {
     const listed = notAccepted.map((item) => `  not accepted: ${item}`).join("\n")
     throw new Refused(
       `${notAccepted.length} dropped items are not in --accept-drops:\n${listed}\n` +
         "Decide each one (re-declare it in an overlay fragment, or accept the drop), then list accepted lines in a file " +
-        `and run: ${buildWriteCommand(plan, allowWorktree)}`,
+        `and run: ${buildWriteCommand(plan, args)}`,
     )
   }
 }
 
-function buildWriteCommand(plan: Plan, allowWorktree: boolean): string {
+function buildWriteCommand(plan: Plan, args: LinkArgs): string {
   const levels = new Set<BlockLevel>(plan.problems.map((problem) => problem.blocksWrite))
-  const flags = plan.mode === "plugin" ? ["--write", "--plugin"] : ["--write"]
+  const flags = args.mode === undefined ? ["--write"] : ["--write", `--${args.mode}`]
   for (const [level, lifting] of Object.entries(LIFTING_FLAGS)) if (levels.has(level as BlockLevel)) flags.push(...(lifting ?? []))
   if (plan.droppedSettings.length > 0) flags.push("--accept-drops <file>")
-  if (allowWorktree) flags.push("--allow-worktree")
+  if (args.allowWorktree) flags.push("--allow-worktree")
   return "bin/link " + flags.join(" ")
 }
 

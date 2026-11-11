@@ -7,7 +7,7 @@ import type { KeelPaths } from "./config.ts"
 
 export const MANIFEST_HEADER = ["source", "target"]
 export const COPIED_TARGET_DIRS = ["scheduled-tasks"]
-export const PLUGIN_COMPONENT_DIRS = ["skills", "agents", "workflows"]
+export const PLUGIN_COMPONENTS = ["skills/*", "agents/*.md", "workflows/*.js"]
 
 export interface LinkEntry {
   readonly source: string
@@ -36,7 +36,7 @@ export function isCopied(entry: LinkEntry): boolean {
 }
 
 export function isPluginProvided(entry: LinkEntry): boolean {
-  return entry.fromCore && PLUGIN_COMPONENT_DIRS.includes(entry.target.split("/")[0] as string)
+  return entry.fromCore && PLUGIN_COMPONENTS.some((pattern) => path.matchesGlob(entry.target, pattern))
 }
 
 export function isKeelLink(link: string, paths: KeelPaths): boolean {

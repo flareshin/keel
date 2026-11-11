@@ -133,6 +133,61 @@ describe("link plugin mode", () => {
     }
   })
 
+  it("pluginWrite_refuses_whenThePluginHooksFileIsMissingOrNotJson", () => {
+    enablePlugin(box)
+    box.writeKeel("hooks/hooks.json", "{oops")
+    const invalid = box.runLink("--write", "--plugin")
+    assertExit(invalid, 3)
+    assert.ok(invalid.stderr.includes("hooks.json: invalid JSON"), invalid.stderr)
+    fs.unlinkSync(`${box.keel}/hooks/hooks.json`)
+    const missing = box.runLink("--write", "--plugin")
+    assertExit(missing, 3)
+    assert.ok(missing.stderr.includes("hooks.json is missing"), missing.stderr)
+  })
+
+  it("pluginWrite_removesWorkflowScriptsAndAgents_butKeepsTheReviewLensesFileLinked", () => {
+    box.writeKeel("settings/links.tsv", "source\ttarget\n{{KEEL}}/skills/demo\tskills/demo\n{{KEEL}}/bin/keel\tbin/keel\n" +
+      "{{KEEL}}/workflows/lens-review.js\tworkflows/lens-review.js\n{{KEEL}}/workflows/review-lenses.json\tworkflows/review-lenses.json\n" +
+      "{{KEEL}}/agents/keel-auditor.md\tagents/keel-auditor.md\n")
+    box.writeKeel("workflows/lens-review.js", "export {}\n")
+    box.writeKeel("workflows/review-lenses.json", "{}\n")
+    box.writeKeel("agents/keel-auditor.md", "# auditor\n")
+    assertExit(box.runLink("--write"), 0)
+    enablePlugin(box)
+    assertExit(box.runLink("--write", "--plugin"), 0)
+    assert.equal(entryExists(box.dataPath("workflows/lens-review.js")), false)
+    assert.equal(entryExists(box.dataPath("agents/keel-auditor.md")), false)
+    assert.equal(fs.readlinkSync(box.dataPath("workflows/review-lenses.json")), `${box.keel}/workflows/review-lenses.json`)
+  })
+
+  it("refusedWrite_namesTheModeFlagItWasGiven_inTheCommandToRunOnceReviewed", () => {
+    enablePlugin(box)
+    fs.unlinkSync(box.dataPath("commands/hello.md"))
+    fs.symlinkSync("/usr/bin/true", box.dataPath("commands/hello.md"))
+    const toPlugin = box.runLink("--write", "--plugin")
+    assertExit(toPlugin, 3)
+    assert.ok(toPlugin.stderr.includes("run: bin/link --write --plugin --force"), toPlugin.stderr)
+    assertExit(box.runLink("--write", "--plugin", "--force"), 0)
+    fs.unlinkSync(box.dataPath("commands/hello.md"))
+    fs.symlinkSync("/usr/bin/true", box.dataPath("commands/hello.md"))
+    const toFull = box.runLink("--write", "--full")
+    assertExit(toFull, 3)
+    assert.ok(toFull.stderr.includes("run: bin/link --write --full --force"), toFull.stderr)
+    assertExit(box.runLink("--write", "--full", "--force"), 0)
+    assert.equal(fs.readlinkSync(box.dataPath("skills/demo")), `${box.keel}/skills/demo`)
+  })
+
+  it("pluginCheck_reportsAGateFromAnOverlayFragment_asTheLinkInstallDoes_notAgainstThePluginHooksFile", () => {
+    enablePlugin(box)
+    box.writeKeel("ledger.tsv", LEDGER_HEADER + "\n")
+    box.writeOverlay("settings/gate.json", JSON.stringify({
+      hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "python3 /x/git-guard.py" }] }] },
+    }))
+    assertExit(box.runLink("--write", "--plugin"), 0)
+    const gates = box.runLink("--check").json.problems.filter((problem: any) => problem.kind === "gate-onfailure-missing")
+    assert.deepEqual(gates.map((problem: any) => problem.path), [`${box.keel}/settings/core.json`])
+  })
+
   it("pluginCheck_reportsAGateWithoutOnFailure_againstThePluginHooksFile", () => {
     enablePlugin(box)
     box.writeKeel("ledger.tsv", LEDGER_HEADER + "\n")

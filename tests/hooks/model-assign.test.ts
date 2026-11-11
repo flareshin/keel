@@ -74,6 +74,22 @@ describe("AgentDispatchTest", () => {
     assert.equal(result.stdout, "");
   });
 
+  it("dispatch_keepsEffortUnset_whenKeelPluginAgentFilePinsEffort", () => {
+    const pluginRoot = join(sandbox.root, "plugin");
+    sandbox.env["KEEL_HOME"] = pluginRoot;
+    sandbox.write(join(pluginRoot, "agents", "worker-pinned.md"), "---\nname: worker-pinned\neffort: low\n---\nBody\n");
+    const result = dispatch({ subagent_type: "keel:worker-pinned", model: "sonnet" });
+    assert.equal(result.stdout, "");
+  });
+
+  it("dispatch_assignsEffort_whenAnotherPluginNamesAnAgentFileOnlyKeelShips", () => {
+    const pluginRoot = join(sandbox.root, "plugin");
+    sandbox.env["KEEL_HOME"] = pluginRoot;
+    sandbox.write(join(pluginRoot, "agents", "worker-pinned.md"), "---\nname: worker-pinned\neffort: low\n---\nBody\n");
+    const result = dispatch({ subagent_type: "acme:worker-pinned", model: "sonnet" });
+    assert.equal(updated(result)["effort"], "medium");
+  });
+
   it("dispatch_keepsEffortUnset_whenAgentFileWithCrlfLineEndsPinsEffort", () => {
     sandbox.write(join(sandbox.data, "agents", "worker-pinned.md"), "---\r\nname: worker-pinned\r\neffort: low\r\n---\r\nBody\r\n");
     const result = dispatch({ subagent_type: "worker-pinned", model: "sonnet" });

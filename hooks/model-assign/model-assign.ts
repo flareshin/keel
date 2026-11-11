@@ -1,4 +1,4 @@
-import { dataDir } from "../lib/hookkit/env.ts";
+import { dataDir, keelHome } from "../lib/hookkit/env.ts";
 import { FireLog } from "../lib/hookkit/fires.ts";
 import { getField, isNonEmptyString, textField } from "../lib/hookkit/fields.ts";
 import { joinPath } from "../lib/hookkit/paths.ts";
@@ -14,6 +14,7 @@ import type { Payload } from "../lib/hookkit/protocol.ts";
 const HOOK = "model-assign";
 const RULE = "C-dispatch";
 const FORK_TYPE = "fork";
+const KEEL_PLUGIN_PREFIX = "keel:";
 const READ_ONLY_TYPES: ReadonlySet<string> = new Set(["explore"]);
 const WORD_START = `(?<![${WORD_CHARS}])`;
 const WORD_END = `(?![${WORD_CHARS}])`;
@@ -124,7 +125,7 @@ function checkWorkflowScript(toolArgs: Payload, fires: FireLog): number {
 }
 
 function readAgentFile(agentType: string): AgentFile {
-  const path = joinPath(dataDir(), "agents", `${agentType}.md`);
+  const path = agentFilePath(agentType);
   if (!agentType || !isFile(path)) return NO_AGENT_FILE;
   const frontmatter = FRONTMATTER_RE.exec(readFileSync(path, "utf8"))?.[1];
   if (frontmatter === undefined) return NO_AGENT_FILE;
@@ -133,6 +134,13 @@ function readAgentFile(agentType: string): AgentFile {
     pinsEffort: frontmatterField(frontmatter, "effort") !== null,
     canEdit: toolsCanEdit(frontmatterField(frontmatter, "tools")),
   };
+}
+
+function agentFilePath(agentType: string): string {
+  if (agentType.startsWith(KEEL_PLUGIN_PREFIX)) {
+    return joinPath(keelHome(), "agents", `${agentType.slice(KEEL_PLUGIN_PREFIX.length)}.md`);
+  }
+  return joinPath(dataDir(), "agents", `${agentType}.md`);
 }
 
 function toolsCanEdit(tools: string | null): boolean {

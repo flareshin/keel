@@ -11,7 +11,6 @@ import { childList, childObject, member, objectMember, setMember } from "./membe
 
 export const OWNED_KEYS = ["hooks", "permissions", "env"]
 export const LIST_PERMISSION_KEYS = ["allow", "deny", "ask"]
-const PLUGIN_ROOT_VARIABLE = "${CLAUDE_PLUGIN_ROOT}"
 
 export function loadMergedFragments(paths: KeelPaths, mode: LinkMode): [JsonObject, string[]] {
   const fragments = fragmentPaths(paths).map((path): [string, JsonObject] => [path, loadFragment(path, paths)])
@@ -49,7 +48,7 @@ export function loadPluginHooks(paths: KeelPaths): JsonObject {
     throw error
   }
   if (!isJsonObject(parsed) || !isJsonObject(member(parsed, "hooks"))) throw new Refused(`${file}: must be an object with a hooks object`)
-  return replacePluginRoot(member(parsed, "hooks") as JsonObject, paths.keelHome) as JsonObject
+  return member(parsed, "hooks") as JsonObject
 }
 
 export function fragmentPaths(paths: KeelPaths): string[] {
@@ -119,17 +118,6 @@ function expandStrings(value: JsonValue, paths: KeelPaths, where: string): JsonV
 
 function withoutHooks(fragment: JsonObject): JsonObject {
   return Object.fromEntries(Object.entries(fragment).filter(([key]) => key !== "hooks")) as JsonObject
-}
-
-function replacePluginRoot(value: JsonValue, keelHome: string): JsonValue {
-  if (typeof value === "string") return value.replaceAll(PLUGIN_ROOT_VARIABLE, keelHome)
-  if (Array.isArray(value)) return value.map((item) => replacePluginRoot(item, keelHome))
-  if (isJsonObject(value)) {
-    const replaced: JsonObject = {}
-    for (const [key, item] of Object.entries(value)) setMember(replaced, key, replacePluginRoot(item, keelHome))
-    return replaced
-  }
-  return value
 }
 
 function extendKeepingFirst(target: JsonValue[], additions: JsonValue[]): void {

@@ -107,6 +107,43 @@ describe("link plugin mode", () => {
     assert.equal(box.readData("skills/other/SKILL.md"), "mine\n")
   })
 
+  it("pluginDryRun_namesEachRemovalAsProvidedByThePlugin", () => {
+    enablePlugin(box)
+    const result = box.runLink("--plugin")
+    assertExit(result, 0)
+    const provided = result.json.problems.filter((problem: any) => problem.kind === "provided-by-plugin").map((problem: any) => problem.path).sort()
+    assert.deepEqual(provided, [box.dataPath("CLAUDE.md"), box.dataPath("skills/demo")])
+  })
+
+  it("pluginWrite_keepsAnOverlayLinkUnderAPluginComponentDirectory", () => {
+    enablePlugin(box)
+    box.writeOverlay("skills/mine/SKILL.md", "# mine\n")
+    box.writeOverlay("links.tsv", "source\ttarget\n{{OVERLAY}}/commands/hello.md\tcommands/hello.md\n{{OVERLAY}}/skills/mine\tskills/mine\n")
+    assertExit(box.runLink("--write", "--plugin"), 0)
+    assert.equal(fs.readlinkSync(box.dataPath("skills/mine")), `${box.overlay}/skills/mine`)
+  })
+
+  it("pluginWrite_refuses_whenThePluginHooksFileIsNotAnObjectWithAHooksObject", () => {
+    enablePlugin(box)
+    for (const text of ["[]", JSON.stringify({ hooks: [] })]) {
+      box.writeKeel("hooks/hooks.json", text)
+      const result = box.runLink("--write", "--plugin")
+      assertExit(result, 3)
+      assert.ok(result.stderr.includes("must be an object with a hooks object"), result.stderr)
+    }
+  })
+
+  it("pluginCheck_reportsAGateWithoutOnFailure_againstThePluginHooksFile", () => {
+    enablePlugin(box)
+    box.writeKeel("ledger.tsv", LEDGER_HEADER + "\n")
+    box.writeKeel("hooks/hooks.json", JSON.stringify({
+      hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/git-guard.py" }] }] },
+    }))
+    assertExit(box.runLink("--write", "--plugin"), 0)
+    const gates = box.runLink("--check").json.problems.filter((problem: any) => problem.kind === "gate-onfailure-missing")
+    assert.deepEqual(gates.map((problem: any) => problem.path), [`${box.keel}/hooks/hooks.json`])
+  })
+
   it("pluginCheck_reportsHookUnregistered_whenALedgerHookIsInNeitherSettingsNorThePluginHooks", () => {
     enablePlugin(box)
     assertExit(box.runLink("--write", "--plugin"), 0)

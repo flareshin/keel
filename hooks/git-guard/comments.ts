@@ -32,7 +32,7 @@ const ALLOWED_BODY = new RegExp("^(" + [
   "language=", "SPDX-License-Identifier:", "Copyright( \\(c\\)| ©| [0-9]{4})", "\\(c\\) [0-9]{4}", "© ?[0-9]{4}",
   "frozen_string_literal:", "rubocop:", "@jsx ", "@jsxImportSource", "@jsxRuntime", "@vitest-environment", "@jest-environment",
   "NOLINT", "NOLINTNEXTLINE", "NOLINTBEGIN", "NOLINTEND", "liquibase formatted sql", "changeset ", "webpack[A-Z][A-Za-z]*:", "swiftlint:",
-  "ruff:", "clang-format (off|on)$", "yapf:", "@flow( strict(-local)?| weak)?$", "deno-lint-ignore",
+  "ruff:", "clang-format (off|on)$", "yapf:", "@flow( strict(-local)?| weak)?$", "deno-lint-ignore", "pr-guard: ?allow(-file)?[ \\t]",
 ].map(wholeWord).join("|") + ")", "u");
 
 const GLOBAL_NAME = "[A-Za-z_$][\\w$]*(\\s*:\\s*[A-Za-z]+)?";

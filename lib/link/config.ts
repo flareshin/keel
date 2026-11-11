@@ -15,6 +15,8 @@ const PLACEHOLDER = /\{\{([^{}]*)\}\}/g
 
 export class Refused extends Error {}
 
+export type LinkMode = "full" | "plugin"
+
 export interface KeelPaths {
   readonly keelHome: string
   readonly overlayDir: string

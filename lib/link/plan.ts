@@ -11,10 +11,10 @@ import { runProcess } from "../../measure/lib/measurekit/subprocess.ts"
 import { copyFileAtomic, moveAside, replaceWithSymlink, writeTextAtomic } from "./atomic.ts"
 import * as claudeMd from "./claude_md.ts"
 import { runGit } from "./config.ts"
-import type { KeelPaths } from "./config.ts"
-import { OWNED_KEYS, activeStacks, loadMergedFragments } from "./fragments.ts"
+import type { KeelPaths, LinkMode } from "./config.ts"
+import { OWNED_KEYS, activeStacks, loadMergedFragments, loadPluginHooks, pluginHooksPath } from "./fragments.ts"
 import * as links from "./links.ts"
-import { member } from "./members.ts"
+import { member, objectMember } from "./members.ts"
 import * as settingsJson from "./settings_json.ts"
 
 export const BLOCKS_NEVER = "never"
@@ -36,6 +36,7 @@ export const LIFTING_FLAGS: Record<BlockLevel, readonly string[] | null> = {
 const CLAUDE_MD_MODE = 0o644
 const HOOKS_PATH = "githooks"
 const FAIL_CLOSED = "block"
+const KEEL_PLUGIN_ID = "keel@keel"
 const GATED_TOOLS: Record<string, string[]> = {
   "ship-gate": ["Bash"],
   "git-guard": ["Bash", "Edit", "Write", "NotebookEdit"],
@@ -57,6 +58,7 @@ export interface Change {
 }
 
 export interface Plan {
+  mode: LinkMode
   changes: Change[]
   problems: Problem[]
   mergedSettings: JsonObject
@@ -81,16 +83,18 @@ export function changeToJson(change: Change): JsonObject {
   return { op: change.op, path: change.path }
 }
 
-export function buildPlan(paths: KeelPaths): Plan {
+export function buildPlan(paths: KeelPaths, mode: LinkMode): Plan {
   const plan: Plan = {
-    changes: [], problems: [], mergedSettings: {}, settingsBackup: null, droppedSettings: [], claudeMdBytes: 0, claudeMdBackup: null, conflicts: [],
+    mode, changes: [], problems: [], mergedSettings: {}, settingsBackup: null, droppedSettings: [], claudeMdBytes: 0, claudeMdBackup: null, conflicts: [],
   }
   const backupRoot = settingsJson.newBackupDir(paths)
   for (const entry of links.readLinkManifest(paths)) {
-    if (links.isCopied(entry)) planCopy(plan, entry, paths, backupRoot)
+    if (mode === "plugin" && links.isPluginProvided(entry)) planRemoveProvidedLink(plan, entry, paths)
+    else if (links.isCopied(entry)) planCopy(plan, entry, paths, backupRoot)
     else planLink(plan, entry, paths, backupRoot)
   }
-  planClaudeMd(plan, paths, backupRoot)
+  if (mode === "plugin") planRemoveGeneratedClaudeMd(plan, paths)
+  else planClaudeMd(plan, paths, backupRoot)
   planSettings(plan, paths, backupRoot)
   planHooksPath(plan, paths)
   return plan
@@ -122,6 +126,13 @@ function planLink(plan: Plan, entry: links.LinkEntry, paths: KeelPaths, backupRo
     addProblem(plan, "link-wrong", target, detail, BLOCKS_UNLESS_FORCED)
     plan.changes.push({ op: "replace-link", path: target, apply: afterMovingAside(target, backupPath, linkNow) })
   }
+}
+
+function planRemoveProvidedLink(plan: Plan, entry: links.LinkEntry, paths: KeelPaths): void {
+  const target = path.join(paths.dataDir, entry.target)
+  if (!links.isKeelLink(target, paths)) return
+  addProblem(plan, "provided-by-plugin", target, "the keel plugin provides it; the keel link goes")
+  plan.changes.push({ op: "remove-link", path: target, apply: () => fs.unlinkSync(target) })
 }
 
 function planCopy(plan: Plan, entry: links.LinkEntry, paths: KeelPaths, backupRoot: string): void {
@@ -172,6 +183,13 @@ function planClaudeMd(plan: Plan, paths: KeelPaths, backupRoot: string): void {
   }
 }
 
+function planRemoveGeneratedClaudeMd(plan: Plan, paths: KeelPaths): void {
+  const claudeMdPath = path.join(paths.dataDir, claudeMd.FILE_NAME)
+  if (!claudeMd.isGeneratedClaudeMd(claudeMdPath)) return
+  addProblem(plan, "provided-by-plugin", claudeMdPath, "the keel plugin injects the principles; the generated CLAUDE.md goes")
+  plan.changes.push({ op: "remove-claude-md", path: claudeMdPath, apply: () => fs.unlinkSync(claudeMdPath) })
+}
+
 function afterMovingAside(file: string, backupPath: string, then: () => void): () => void {
   return () => {
     moveAside(file, backupPath)
@@ -180,11 +198,12 @@ function afterMovingAside(file: string, backupPath: string, then: () => void): (
 }
 
 function planSettings(plan: Plan, paths: KeelPaths, backupRoot: string): void {
-  const [mergedSettings, conflicts] = loadMergedFragments(paths)
+  const [mergedSettings, conflicts] = loadMergedFragments(paths, plan.mode)
   plan.mergedSettings = mergedSettings
   plan.conflicts = conflicts
   checkHookWiring(plan, paths)
   const live = settingsJson.readLiveSettings(settingsJson.settingsPath(paths))
+  if (plan.mode === "plugin") checkPluginEnabled(plan, live)
   const drift = settingsJson.driftedOwnedKeys(live, plan.mergedSettings)
   if (drift.length === 0) return
   const editedByHand = settingsJson.changedSinceLastWrite(paths, live)
@@ -202,9 +221,18 @@ function planSettings(plan: Plan, paths: KeelPaths, backupRoot: string): void {
   plan.changes.push({ op: "merge-settings", path: live.path, apply: () => settingsJson.writeSettings(live, mergedSettings, settingsBackup) })
 }
 
+function checkPluginEnabled(plan: Plan, live: settingsJson.LiveSettings): void {
+  const enabled = member(objectMember(live.values, "enabledPlugins"), KEEL_PLUGIN_ID)
+  if (enabled === true) return
+  const detail = `plugin mode needs enabledPlugins "${KEEL_PLUGIN_ID}": true; install and enable the keel plugin first, or the core hooks would run nowhere`
+  addProblem(plan, "plugin-not-enabled", live.path, detail, BLOCKS_ALWAYS)
+}
+
 function checkHookWiring(plan: Plan, paths: KeelPaths): void {
   const stacks = activeStacks(paths)
-  const registrations = iterRegistrations(member(plan.mergedSettings, "hooks"))
+  const corePath = plan.mode === "plugin" ? pluginHooksPath(paths) : path.join(paths.keelHome, "settings", "core.json")
+  const pluginHooks = plan.mode === "plugin" ? iterRegistrations(loadPluginHooks(paths)) : []
+  const registrations = [...iterRegistrations(member(plan.mergedSettings, "hooks")), ...pluginHooks]
   const registered = new Set(registrations.map((registration) => registration.hookName))
   const ledgerPath = path.join(paths.keelHome, "ledger.tsv")
   for (const row of hookRowsInForce(loadLedgersFrom(paths.keelHome, paths.overlayDir), stacks)) {
@@ -213,7 +241,6 @@ function checkHookWiring(plan: Plan, paths: KeelPaths): void {
       addProblem(plan, "hook-unregistered", ledgerPath, detail, BLOCKS_ALWAYS)
     }
   }
-  const corePath = path.join(paths.keelHome, "settings", "core.json")
   for (const registration of registrations) {
     if (isGate(registration) && !failsClosed(registration.hook)) {
       const detail = `PreToolUse[${registration.matcher}] ${registration.hookName}: needs "onFailure": "${FAIL_CLOSED}" and a numeric "timeout"`

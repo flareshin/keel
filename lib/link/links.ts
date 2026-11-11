@@ -7,18 +7,21 @@ import type { KeelPaths } from "./config.ts"
 
 export const MANIFEST_HEADER = ["source", "target"]
 export const COPIED_TARGET_DIRS = ["scheduled-tasks"]
+export const PLUGIN_COMPONENT_DIRS = ["skills", "agents", "workflows"]
 
 export interface LinkEntry {
   readonly source: string
   readonly target: string
+  readonly fromCore: boolean
 }
 
 export function readLinkManifest(paths: KeelPaths): LinkEntry[] {
   const entries: LinkEntry[] = []
   const declaredIn = new Map<string, string>()
-  for (const manifest of [path.join(paths.keelHome, "settings", "links.tsv"), path.join(paths.overlayDir, "links.tsv")]) {
+  const coreManifest = path.join(paths.keelHome, "settings", "links.tsv")
+  for (const manifest of [coreManifest, path.join(paths.overlayDir, "links.tsv")]) {
     for (const [source, target] of readTsv(manifest)) {
-      const entry = buildEntry(source, target, manifest, paths)
+      const entry = buildEntry(source, target, manifest, paths, manifest === coreManifest)
       const declaredBefore = declaredIn.get(entry.target)
       if (declaredBefore !== undefined) throw new Refused(`${manifest}: target ${entry.target} is already declared in ${declaredBefore}`)
       declaredIn.set(entry.target, manifest)
@@ -30,6 +33,10 @@ export function readLinkManifest(paths: KeelPaths): LinkEntry[] {
 
 export function isCopied(entry: LinkEntry): boolean {
   return COPIED_TARGET_DIRS.includes(entry.target.split("/")[0] as string)
+}
+
+export function isPluginProvided(entry: LinkEntry): boolean {
+  return entry.fromCore && PLUGIN_COMPONENT_DIRS.includes(entry.target.split("/")[0] as string)
 }
 
 export function isKeelLink(link: string, paths: KeelPaths): boolean {
@@ -61,13 +68,13 @@ function sameCells(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((cell, index) => cell === right[index])
 }
 
-function buildEntry(source: string, target: string, manifest: string, paths: KeelPaths): LinkEntry {
+function buildEntry(source: string, target: string, manifest: string, paths: KeelPaths, fromCore: boolean): LinkEntry {
   const expanded = expandPlaceholders(source, paths, manifest)
   if (!expanded.startsWith("/")) throw new Refused(`${manifest}: source must be absolute after expansion: ${source}`)
   if (target.startsWith("/") || target.split("/").includes("..") || ["", "-", "."].includes(target)) {
     throw new Refused(`${manifest}: target must be a relative path inside KEEL_DATA_DIR without '..': ${target}`)
   }
-  return { source: normalizedPath(expanded), target: normalizedPath(target) }
+  return { source: normalizedPath(expanded), target: normalizedPath(target), fromCore }
 }
 
 function normalizedPath(text: string): string {

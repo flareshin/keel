@@ -424,7 +424,7 @@ describe("every entry's help names its flags", () => {
     ["measure/weekly", ["usage: measure/weekly"]],
     ["measure/evals/eval", ["ID", "--regrade", "--model", "--split", "--case", "--repeat", "--timeout-seconds", "--dry-run"]],
     ["measure/evals/review-eval", ["--split", "--case", "--repeat", "--model", "--timeout-seconds", "--dry-run", "--regrade"]],
-    ["bin/link", ["--write", "--check", "--unlink", "--force", "--allow-worktree", "--adopt", "--accept-drops"]],
+    ["bin/link", ["--write", "--check", "--unlink", "--plugin", "--full", "--force", "--allow-worktree", "--adopt", "--accept-drops"]],
   ]
   for (const [entry, flags] of entries) {
     it(`${entry}_printsHelpOnStdoutAndExits0`, () => {

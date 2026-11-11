@@ -6,14 +6,16 @@ import { isJsonObject, parseJsonKeepingIntegers } from "../../measure/lib/measur
 import type { JsonObject, JsonValue } from "../../measure/lib/measurekit/json.ts"
 import { activeStackNames, StackNameError } from "../../measure/lib/measurekit/ledger.ts"
 import { canonicalJson, expandPlaceholders, Refused } from "./config.ts"
-import type { KeelPaths } from "./config.ts"
+import type { KeelPaths, LinkMode } from "./config.ts"
 import { childList, childObject, member, objectMember, setMember } from "./members.ts"
 
 export const OWNED_KEYS = ["hooks", "permissions", "env"]
 export const LIST_PERMISSION_KEYS = ["allow", "deny", "ask"]
+const PLUGIN_ROOT_VARIABLE = "${CLAUDE_PLUGIN_ROOT}"
 
-export function loadMergedFragments(paths: KeelPaths): [JsonObject, string[]] {
+export function loadMergedFragments(paths: KeelPaths, mode: LinkMode): [JsonObject, string[]] {
   const fragments = fragmentPaths(paths).map((path): [string, JsonObject] => [path, loadFragment(path, paths)])
+  if (mode === "plugin") fragments[0] = [fragments[0]![0], withoutHooks(fragments[0]![1])]
   const merged: JsonObject = {}
   const conflicts: string[] = []
   for (const [source, fragment] of fragments) {
@@ -30,6 +32,24 @@ export function loadMergedFragments(paths: KeelPaths): [JsonObject, string[]] {
     }
   }
   return [merged, conflicts]
+}
+
+export function pluginHooksPath(paths: KeelPaths): string {
+  return path.join(paths.keelHome, "hooks", "hooks.json")
+}
+
+export function loadPluginHooks(paths: KeelPaths): JsonObject {
+  const file = pluginHooksPath(paths)
+  if (!isFile(file)) throw new Refused(`${file} is missing; plugin mode has no core hooks to check`)
+  let parsed: JsonValue
+  try {
+    parsed = parseJsonKeepingIntegers(readUtf8(file))
+  } catch (error) {
+    if (error instanceof SyntaxError || error instanceof InvalidUtf8Error) throw new Refused(`${file}: invalid JSON (${error.message})`)
+    throw error
+  }
+  if (!isJsonObject(parsed) || !isJsonObject(member(parsed, "hooks"))) throw new Refused(`${file}: must be an object with a hooks object`)
+  return replacePluginRoot(member(parsed, "hooks") as JsonObject, paths.keelHome) as JsonObject
 }
 
 export function fragmentPaths(paths: KeelPaths): string[] {
@@ -93,6 +113,21 @@ function expandStrings(value: JsonValue, paths: KeelPaths, where: string): JsonV
     const expanded: JsonObject = {}
     for (const [key, item] of Object.entries(value)) setMember(expanded, key, expandStrings(item, paths, where))
     return expanded
+  }
+  return value
+}
+
+function withoutHooks(fragment: JsonObject): JsonObject {
+  return Object.fromEntries(Object.entries(fragment).filter(([key]) => key !== "hooks")) as JsonObject
+}
+
+function replacePluginRoot(value: JsonValue, keelHome: string): JsonValue {
+  if (typeof value === "string") return value.replaceAll(PLUGIN_ROOT_VARIABLE, keelHome)
+  if (Array.isArray(value)) return value.map((item) => replacePluginRoot(item, keelHome))
+  if (isJsonObject(value)) {
+    const replaced: JsonObject = {}
+    for (const [key, item] of Object.entries(value)) setMember(replaced, key, replacePluginRoot(item, keelHome))
+    return replaced
   }
   return value
 }

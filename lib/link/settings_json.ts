@@ -10,7 +10,7 @@ import { isJsonObject, JSON_INDENT, parseJson, parseJsonKeepingIntegers } from "
 import type { JsonObject, JsonValue } from "../../measure/lib/measurekit/json.ts"
 import { writeTextAtomic, makedirs } from "./atomic.ts"
 import { canonicalJson, Refused } from "./config.ts"
-import type { KeelPaths } from "./config.ts"
+import type { KeelPaths, LinkMode } from "./config.ts"
 import { OWNED_KEYS } from "./fragments.ts"
 import { skipWhitespace, valueEnd } from "./json_spans.ts"
 import { member, objectMember, recordsNoBackup, setMember } from "./members.ts"
@@ -19,6 +19,7 @@ export const FILE_NAME = "settings.json"
 export const PRE_KEEL_BACKUP = "pre_keel_settings_backup"
 export const PRE_KEEL_CLAUDE_MD = "pre_keel_claude_md_backup"
 export const RESTORE_OP = "restore-settings"
+export const MODE_KEY = "mode"
 
 const PRIVATE_FILE_MODE = 0o600
 const PRIVATE_DIR_MODE = 0o700
@@ -119,17 +120,25 @@ export function changedSinceLastWrite(paths: KeelPaths, live: LiveSettings): str
   return Object.keys(recorded).filter((key) => digest(member(live.values, key)) !== recorded[key]).sort()
 }
 
-export function recordLastWrite(paths: KeelPaths, merged: JsonObject, backupPath: string | null, claudeMdBackup: string | null): void {
+export function recordLastWrite(paths: KeelPaths, mode: LinkMode, merged: JsonObject, backupPath: string | null, claudeMdBackup: string | null): void {
   const previous = readLinkState(paths)
   const ownedDigests: JsonObject = {}
   for (const key of OWNED_KEYS) setMember(ownedDigests, key, digest(member(merged, key)))
   const state: JsonObject = {
     schema: LINK_STATE_SCHEMA,
+    ...(mode === "plugin" ? { [MODE_KEY]: mode } : {}),
     settings_owned_sha256: ownedDigests,
     [PRE_KEEL_BACKUP]: recordedOr(member(previous, PRE_KEEL_BACKUP), preKeelRecord(backupPath)),
     [PRE_KEEL_CLAUDE_MD]: recordedOr(member(previous, PRE_KEEL_CLAUDE_MD), claudeMdBackup),
   }
   writePrivate(linkStatePath(paths), JSON.stringify(state, null, JSON_INDENT) + "\n")
+}
+
+export function readRecordedMode(paths: KeelPaths): LinkMode {
+  const recorded = member(readLinkState(paths), MODE_KEY)
+  if (recorded === undefined || recorded === "full") return "full"
+  if (recorded === "plugin") return "plugin"
+  throw new LinkStateError(`${MODE_KEY} must be "full" or "plugin", got ${JSON.stringify(recorded)}`)
 }
 
 export function newBackupDir(paths: KeelPaths): string {

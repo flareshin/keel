@@ -32,6 +32,13 @@ describe("plugin manifest", () => {
     }
   })
 
+  it("pluginHooks_injectThePrinciplesOnEverySessionSource", () => {
+    const pluginHooks = readJson("hooks/hooks.json")["hooks"] as Record<string, Array<Record<string, unknown>>>
+    for (const event of PRINCIPLES_EVENTS) {
+      assert.deepEqual((pluginHooks[event] ?? []).map((group) => group["matcher"]), [undefined], event)
+    }
+  })
+
   it("pluginVersion_matchesThePackageVersion", () => {
     assert.equal(readJson(".claude-plugin/plugin.json")["version"], readJson("package.json")["version"])
   })

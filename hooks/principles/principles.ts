@@ -1,6 +1,6 @@
+import { readFileSync } from "node:fs";
 import { keelHome, overlayPath } from "../lib/hookkit/env.ts";
 import { getField } from "../lib/hookkit/fields.ts";
-import { tryReadText } from "../lib/hookkit/files.ts";
 import { parsePayload } from "../lib/hookkit/json.ts";
 import { joinPath } from "../lib/hookkit/paths.ts";
 import { readStdin } from "../lib/hookkit/stdio.ts";
@@ -29,11 +29,20 @@ function main(): number {
 
 function principlesContext(): string {
   const principlesPath = joinPath(keelHome(), "PRINCIPLES.md");
-  const principles = tryReadText(principlesPath);
+  const principles = readUnlessAbsent(principlesPath);
   if (principles === null) return notLoaded(`${principlesPath} is missing`);
-  const personal = tryReadText(overlayPath("PERSONAL.md"));
+  const personal = readUnlessAbsent(overlayPath("PERSONAL.md"));
   const sections = personal === null ? [principles] : [principles, personal];
   return sections.map(withFinalNewline).join("\n");
+}
+
+function readUnlessAbsent(path: string): string | null {
+  try {
+    return readFileSync(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
 }
 
 function notLoaded(reason: string): string {

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
+import { chmodSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { basePayload, HookSandbox, KEEL_HOME, PRINCIPLES } from "./helpers.ts";
 import type { HookResult } from "./helpers.ts";
@@ -50,6 +51,24 @@ describe("PrinciplesInjectionTest", () => {
     start("SessionStart");
     start("SubagentStart");
     assert.deepEqual(sandbox.fires(), []);
+  });
+
+  it("injection_namesTheReadError_whenPersonalIsUnreadable", () => {
+    sandbox.write(join(pluginRoot, "PRINCIPLES.md"), "# keel principles\n");
+    chmodSync(sandbox.write(join(sandbox.overlay, "PERSONAL.md"), "## Owner\n"), 0o000);
+    const context = String(injected(start("SessionStart"))["additionalContext"]);
+    assert.ok(context.startsWith("keel principles did not load: ") && context.includes("EACCES") && context.includes("PERSONAL.md"), context);
+  });
+
+  it("injection_namesTheReadError_whenPrinciplesIsADirectory", () => {
+    mkdirSync(join(pluginRoot, "PRINCIPLES.md"), { recursive: true });
+    const context = String(injected(start("SubagentStart"))["additionalContext"]);
+    assert.ok(context.includes("EISDIR") && !context.includes("is missing"), context);
+  });
+
+  it("malformedPayload_passesWithoutOutput", () => {
+    const result = sandbox.runHook(PRINCIPLES, { raw: "not json" });
+    assert.deepEqual([result.code, result.stdout], [0, ""]);
   });
 
   it("otherEvents_passWithoutOutput", () => {

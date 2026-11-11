@@ -19,7 +19,9 @@ const TRIVIAL_MAX_FILES = 2
 const TRIVIAL_MAX_LINES = 10
 const MECHANICAL_MODEL = A.mechanicalModel || 'sonnet'
 const MECHANICAL_EFFORT = 'low'
-const REPORTER_TYPE = 'keel-reporter'
+const REPORTER_AGENT = 'reporter'
+const AUDIT_WORKFLOW = 'adversarial-audit'
+const KEEL_NAMESPACE = 'keel:'
 const REVIEW_KIND = 'lens-review'
 const READABLE_KEY = 'writing-readable-code'
 const RULE_CHECKS_KEY = 'rule-checks'
@@ -437,7 +439,7 @@ function buildRuleChecksLens(reviewed) {
 
 async function runAudit(reviewed, lensSet, effort, precheck) {
   try {
-    const audit = await workflow('adversarial-audit', {
+    const audit = await callByKeelName(AUDIT_WORKFLOW, (name) => workflow(name, {
       target: buildTarget(reviewed, precheck),
       lenses: lensSet.lenses,
       guardrails: `${REVIEW_GUARDRAILS}\n${lensSet.guardrails}`,
@@ -445,11 +447,11 @@ async function runAudit(reviewed, lensSet, effort, precheck) {
       model: MODEL,
       effort,
       auditMode: A.auditMode,
-    })
+    }))
     if (!audit || audit.error) return { error: (audit && audit.error) || 'adversarial-audit returned nothing' }
     return audit
   } catch (e) {
-    return { error: 'adversarial-audit threw: ' + String((e && e.message) || e) }
+    return { error: 'adversarial-audit threw: ' + errorMessage(e) }
   }
 }
 
@@ -604,7 +606,23 @@ function handBackReport(report, rejection) {
 ${REPORT_START}
 ${report}
 ${REPORT_END}`
-  return agent(prompt, { label: 'report', phase: 'Report', model: MECHANICAL_MODEL, effort: MECHANICAL_EFFORT, agentType: REPORTER_TYPE })
+  return callByKeelName(REPORTER_AGENT, (agentType) => agent(prompt, { label: 'report', phase: 'Report', model: MECHANICAL_MODEL, effort: MECHANICAL_EFFORT, agentType }))
+}
+
+async function callByKeelName(name, call) {
+  try {
+    return await call(KEEL_NAMESPACE + name)
+  } catch (pluginError) {
+    try {
+      return await call(name)
+    } catch (linkError) {
+      throw new Error(`${KEEL_NAMESPACE}${name}: ${errorMessage(pluginError)}; ${name}: ${errorMessage(linkError)}`)
+    }
+  }
+}
+
+function errorMessage(error) {
+  return String((error && error.message) || error)
 }
 
 function withoutHarnessNotice(message) {

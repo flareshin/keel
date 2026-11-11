@@ -75,7 +75,7 @@ you rerun it.
 
 [C-no-comments] For every candidate that changes a code file, run `/removing-comments`
 after the tests are green and before `keel review prepare`: a
-`keel-comment-reviewer` agent judges every comment in the files the diff changes
+`comment-reviewer` agent judges every comment in the files the diff changes
 against K5.14, and the author deletes what it lists as a comment-only commit,
 reshapes each `MUST KILL` symbol with a test, and offers each `ENCODE` check to the
 owner. Its summary line and anything left open go in the reading guide's

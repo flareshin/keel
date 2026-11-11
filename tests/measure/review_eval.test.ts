@@ -358,6 +358,13 @@ describe("review-eval cli", () => {
     assert.deepEqual([report.faults, report.numbers.train.hits], [[], 2])
   })
 
+  it("gradesThePluginNamedLensReviewRecord_underThePluginInstall", () => {
+    play([{ records: [{ startTime: 1, workflowName: "keel:lens-review", result: result([finding("{{REPO}}/calc.ts:6")]) }] }])
+    const [completed, report] = runEval("--case", "mean-1", "--repeat", "1")
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.deepEqual([report.faults, report.numbers.train.hits], [[], 1])
+  })
+
   describe("faults", () => {
     const cases: [object, string[], string][] = [
       [{ status: "killed", result: result() }, [], 'status "killed"'],

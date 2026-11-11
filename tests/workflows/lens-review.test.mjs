@@ -132,11 +132,11 @@ test('lensReview_runsJudgmentAsTheAuditorTypeAndTheReporterAsTheReporterType_whi
 
   assert.deepEqual(rt.record.agents.map(({ opts }) => [opts.label, opts.agentType]), [
     ['prepare', undefined],
-    ['audit:contract', 'keel-auditor'],
-    ['audit:writing-readable-code', 'keel-auditor'],
-    ['audit:rule-checks', 'keel-auditor'],
-    ['verify:contract', 'keel-auditor'],
-    ['report', 'keel-reporter'],
+    ['audit:contract', 'keel:auditor'],
+    ['audit:writing-readable-code', 'keel:auditor'],
+    ['audit:rule-checks', 'keel:auditor'],
+    ['verify:contract', 'keel:auditor'],
+    ['report', 'keel:reporter'],
   ])
 })
 
@@ -669,7 +669,7 @@ test('lensReview_failsWithoutReporter_whenAdversarialAuditThrows', async () => {
   const rt = createRuntime({ respond: responder(), workflowImpl: () => { throw new Error('unknown workflow') } })
   const result = await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
   assert.equal(result.verdict, 'ERROR')
-  assert.match(result.error, /adversarial-audit threw: unknown workflow/)
+  assert.match(result.error, /adversarial-audit threw: keel:adversarial-audit: unknown workflow; adversarial-audit: workflow\('adversarial-audit'\): no workflow with that name\./)
   assert.deepEqual(labels(rt), ['prepare'])
 })
 
@@ -779,7 +779,7 @@ test('lensReview_asksTheReporterOnceMore_whenItsFirstHandBackWrapsTheReportInASt
   const calls = reportCalls(rt)
   assert.equal(calls.length, 2)
   assert.match(calls[1].prompt, /first line is "KEEL-REPORT", expected "VERDICT: PASS"/)
-  assert.equal(calls[1].opts.agentType, 'keel-reporter')
+  assert.equal(calls[1].opts.agentType, 'keel:reporter')
 })
 
 test('lensReview_acceptsTheRetriedReport_whenTheHarnessPrependsItsNoticeToTheSecondHandBack', async () => {
@@ -1191,4 +1191,23 @@ test('lensReview_reportsOnlyTheStaleRerun_whenAStaleRerunAlsoLeftMutantsNotRun',
   assert.equal(result.precheck.rerunNotRun, 0)
   assert.doesNotMatch(target, /not run: treat/)
   assert.doesNotMatch(result.report, /mutants not run/)
+})
+
+test('lensReview_callsTheAuditAndReporterByTheirBareNames_underTheLinkInstall', async () => {
+  const rt = createRuntime({ install: 'link', respond: responder() })
+
+  const result = await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
+
+  assert.equal(result.verdict, 'PASS')
+  assert.deepEqual(rt.record.workflows.map(({ name }) => name), ['adversarial-audit'])
+  assert.deepEqual(rt.record.agents.map(({ opts }) => opts.agentType).filter(Boolean), ['auditor', 'auditor', 'auditor', 'reporter'])
+})
+
+test('lensReview_callsTheAuditByItsPluginName_underThePluginInstall', async () => {
+  const rt = createRuntime({ respond: responder() })
+
+  await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
+
+  assert.deepEqual(rt.record.workflows.map(({ name }) => name), ['keel:adversarial-audit'])
+  assert.deepEqual(rt.record.unresolved, [])
 })

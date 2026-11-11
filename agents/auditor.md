@@ -1,5 +1,5 @@
 ---
-name: keel-auditor
+name: auditor
 description: lens-review auditor and verifier with no Edit or Write tool; Bash is for reading. Dispatched by the adversarial-audit workflow; not for direct use.
 tools: Bash, Read, Skill
 ---

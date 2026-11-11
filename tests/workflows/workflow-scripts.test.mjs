@@ -34,7 +34,7 @@ for (const name of SCRIPTS) {
 }
 
 test('workflowAgentTypes_shipAsLinkedAgentFilesWithTheirToolLimitAndNoPin_whenScanned', () => {
-  const named = [...new Set(SCRIPTS.flatMap((name) => [...readScript(name).matchAll(/_TYPE = '([\w-]+)'/g)].map((match) => match[1])))].sort()
+  const named = [...new Set(SCRIPTS.flatMap((name) => [...readScript(name).matchAll(/_AGENT = '([\w-]+)'/g)].map((match) => match[1])))].sort()
   const links = readFileSync(join(KEEL_HOME, 'settings', 'links.tsv'), 'utf8')
 
   const definitions = named.map((type) => {
@@ -44,8 +44,8 @@ test('workflowAgentTypes_shipAsLinkedAgentFilesWithTheirToolLimitAndNoPin_whenSc
   })
 
   assert.deepEqual(definitions, [
-    { type: 'keel-auditor', name: 'keel-auditor', tools: 'Bash, Read, Skill', model: undefined, effort: undefined, linked: true },
-    { type: 'keel-reporter', name: 'keel-reporter', tools: 'Read', model: undefined, effort: undefined, linked: true },
+    { type: 'auditor', name: 'auditor', tools: 'Bash, Read, Skill', model: undefined, effort: undefined, linked: true },
+    { type: 'reporter', name: 'reporter', tools: 'Read', model: undefined, effort: undefined, linked: true },
   ])
 })
 

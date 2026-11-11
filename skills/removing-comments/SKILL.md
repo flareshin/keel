@@ -9,7 +9,7 @@ An author defends its own comments, so a context that did not write them decides
 
 ## How it works
 
-1. **Spawn the reviewer.** Dispatch a `keel-comment-reviewer` agent (in Codex, a new reviewer context given `${KEEL_DATA_DIR:-$HOME/.claude}/agents/keel-comment-reviewer.md` as its brief) with the repository's absolute path and the review base. Do not restate its rules or pre-judge any comment in the brief.
+1. **Spawn the reviewer.** Dispatch a `keel:comment-reviewer` agent (`comment-reviewer` under the link install; in Codex, a new reviewer context given `agents/comment-reviewer.md` under KEEL_HOME as its brief) with the repository's absolute path and the review base. Do not restate its rules or pre-judge any comment in the brief.
 
 2. **Check the list, not the verdicts.** Reject a line only when it cites a file outside the scope, a file:line that holds no comment, a `KEEP` whose tool or notice does not exist, or a `MUST KILL` / `ENCODE` that names a symbol or check that is not there. Rerun the reviewer once with the rejected lines named; a second bad list is reported open in the reading guide. Disagreeing with a `DELETE` is not a ground: the comment goes.
 

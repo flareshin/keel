@@ -49,9 +49,19 @@ export function isPureLiteral(text) {
   return /^[\s{}[\],:]*$/.test(withoutValues)
 }
 
-export function createRuntime({ respond, workflowImpl } = {}) {
-  const record = { agents: [], logs: [], phases: [], workflows: [], unnamedModelOrEffort: [] }
+const PLUGIN_NAMESPACE = 'keel:'
+
+export function createRuntime({ respond, workflowImpl, install = 'plugin' } = {}) {
+  const record = { agents: [], logs: [], phases: [], workflows: [], unnamedModelOrEffort: [], unresolved: [] }
+  const installedName = (name) => {
+    const prefixed = name.startsWith(PLUGIN_NAMESPACE)
+    if (install === 'plugin' && prefixed) return name.slice(PLUGIN_NAMESPACE.length)
+    if (install === 'link' && !prefixed) return name
+    record.unresolved.push(name)
+    return null
+  }
   const agent = async (prompt, opts = {}) => {
+    if (opts.agentType !== undefined && installedName(opts.agentType) === null) throw new Error(`agent({agentType}): agent type '${opts.agentType}' not found.`)
     record.agents.push({ prompt, opts })
     if (typeof opts.model !== 'string' || !opts.model || typeof opts.effort !== 'string' || !opts.effort) record.unnamedModelOrEffort.push(opts.label)
     return respond(prompt, opts)
@@ -62,9 +72,11 @@ export function createRuntime({ respond, workflowImpl } = {}) {
   const log = (message) => { record.logs.push(message) }
   const globals = { agent, parallel, pipeline, phase, log }
   const workflow = async (name, childArgs) => {
+    const file = installedName(name)
+    if (file === null) throw new Error(`workflow('${name}'): no workflow with that name.`)
     record.workflows.push({ name, args: childArgs })
     if (workflowImpl) return workflowImpl(name, childArgs)
-    return compileScript(name)(childArgs, agent, parallel, pipeline, phase, log, rejectNestedWorkflow)
+    return compileScript(file)(childArgs, agent, parallel, pipeline, phase, log, rejectNestedWorkflow)
   }
   const run = (name, scriptArgs) => compileScript(name)(scriptArgs, agent, parallel, pipeline, phase, log, workflow)
   return { run, record, globals }

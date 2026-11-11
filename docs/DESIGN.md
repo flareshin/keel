@@ -210,6 +210,7 @@ Relied-on Claude Code behaviors; a change is contract drift, logged by report-ga
 - Payload fields as in (g); `agent_id` only inside a subagent; `SubagentHandback` carrying the full subagent report in auto mode.
 - `"onFailure":"block"` (Claude Code 2.1.295, 2.1.296): a crash or timeout blocks the call; Stop, SubagentStop, TaskCompleted, TeammateIdle ignore it.
 - A missing registered script makes `node` exit 1, which does not block: the fail-open hooks (report-gate, model-assign, env-preflight) fail open, and ship-gate and git-guard still block through `"onFailure":"block"`; `link --check` and smoke `dangling` catch it.
+- Under the plugin install (`hooks/hooks.json`), the principles hook injects `PRINCIPLES.md`, then overlay `PERSONAL.md`, as `additionalContext` at `SessionStart` (every source: startup, resume, clear, compact) and `SubagentStart`, the text `bin/link` writes into CLAUDE.md below its header. It writes no fires: no ledger row owns it. A missing or unreadable `PRINCIPLES.md` injects a line naming the cause and telling the session to tell the owner.
 - Mod tool calls (Claude Code 2.1.321): a mod's own `$.tool.call` and `$.mcp.call` raise no permission prompt, so `permissions.ask` gates only Claude's calls; `permissions.deny` and organization policy still apply to a mod. What a mod may call is therefore decided by deny rules and smoke `mod-trust` (`reviewed-mods.txt`), not by ask rules.
 
 ## 10. Removed and deferred (2026-10-11 audit)
@@ -236,7 +237,7 @@ A track writes only its own paths and `examples/<track>/` (overlay-shaped, inven
 | ledger-smoke | `ledger.tsv`; `measure/` (run, smoke, propose, boundary, weekly; `lib/measurekit/`, `metrics/<id>`, `boundary-generic.tsv`; `evals/` = `eval`, `review-eval`, `lib/evalkit/`, `<id>/{train,holdout}.tsv`, `<id>/repo/`, `<id>/tools.json`, `review/cases/<case>/`); `githooks/` (pre-commit, pre-push); `tests/measure/` (stub `claude` in `stubs/`) |
 | link | `bin/link`, `lib/link/`; `tests/link/` |
 | ship-gate | `bin/keel`, `lib/evidence/`, `hooks/ship-gate/ship-gate.ts`; `tests/ship-gate/` |
-| hooks | `hooks/<name>/<name>.ts` (report-gate, git-guard, model-assign, handoff); `hooks/lib/hookkit/`; `stacks/spring-maven/` (`hooks/env-preflight.ts`, `settings.json`); `tests/hooks/` |
+| hooks | `hooks/<name>/<name>.ts` (report-gate, git-guard, model-assign, handoff, principles); `hooks/lib/hookkit/`; `stacks/spring-maven/` (`hooks/env-preflight.ts`, `settings.json`); `tests/hooks/` |
 | skills | `PRINCIPLES.md`; `skills/` (`refining-requests/` K4, `writing-readable-code/` K5 with `scripts/rule-checks.ts`, `descending-findings/`, `improving-structure/`, `removing-comments/`); `tests/skills/` |
 | review-engine | `workflows/` (`lens-review.js`, `adversarial-audit.js`, `review-lenses.json`); `agents/` (`keel-auditor.md` for audit and verify agents, `keel-reporter.md` for the reporter, `keel-comment-reviewer.md` for the removing-comments pass: tool-limited subagent types passed as `agentType`); `tests/workflows/` |
 | integration | `settings/` (`core.json`, `links.tsv`), `README.md`, `docs/incidents/`, `tests/run-all.sh`, `tests/suite-lock.sh`; `tests/suite/` |

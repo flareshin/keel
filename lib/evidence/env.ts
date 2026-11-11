@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { expandHome } from '../../measure/lib/measurekit/files.ts';
 import { stringifySorted } from '../../measure/lib/measurekit/json.ts';
 
+export { keelHome } from '../../measure/lib/measurekit/env.ts';
+
 const RUN_ID_BODY = '[A-Za-z0-9._-]{8,64}';
 const SHA_BODY = '[0-9a-f]{40}';
 export const RUN_ID_PATTERN = `^${RUN_ID_BODY}$`;

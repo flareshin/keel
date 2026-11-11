@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import childProcess from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
 import type { TestContext } from 'node:test';
 import * as gitcmd from '../../lib/evidence/gitcmd.ts';
-import { KEEL, Sandbox, expireEvidence, readJson } from './helpers.ts';
+import { KEEL, KEEL_HOME, Sandbox, expireEvidence, readJson } from './helpers.ts';
 import type { Repo, Run } from './helpers.ts';
 
 function summaryOf(run: Run): any {
@@ -507,4 +507,30 @@ describe('EchoedNumberTest', () => {
       rmSync(file);
     });
   }
+});
+
+describe('KeelHomeCommandTest', () => {
+  test('keelHome_printsTheCheckoutTheLinkedShimResolvesTo_whenKeelHomeIsUnset', (t) => {
+    const sandbox = new Sandbox(t);
+    const linked = join(sandbox.root, 'bin', 'keel');
+    mkdirSync(join(sandbox.root, 'bin'));
+    symlinkSync(join(KEEL_HOME, 'bin', 'keel'), linked);
+    const { KEEL_HOME: _unset, ...env } = sandbox.env;
+    const run = childProcess.spawnSync(linked, ['home'], { env, encoding: 'utf8' });
+    assert.deepEqual([run.status, run.stdout], [0, realpathSync(KEEL_HOME) + '\n'], run.stderr);
+  });
+
+  test('keelHome_printsKeelHome_whenSet', (t) => {
+    const sandbox = new Sandbox(t);
+    const aliased = join(sandbox.root, 'keel-alias');
+    symlinkSync(KEEL_HOME, aliased);
+    sandbox.env['KEEL_HOME'] = aliased;
+    const run = sandbox.keel(['home']);
+    assert.deepEqual([run.rc, run.stdout], [0, aliased + '\n'], run.stderr);
+  });
+
+  test('keelHome_exits2_whenGivenArguments', (t) => {
+    const run = new Sandbox(t).keel(['home', 'extra']);
+    assert.equal(run.rc, 2);
+  });
 });

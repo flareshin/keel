@@ -130,6 +130,17 @@ describe('CodexReviewTest', () => {
     }
   });
 
+  test('ruleChecks_runsTheScriptUnderKeelHome', (t) => {
+    const f = new CodexFixture(t);
+    const keelHome = join(f.sandbox.root, 'keel-home');
+    const summary = 'summary repos=1 scanned_lines=2 signals=0 unscanned=none blocked=none';
+    const completed = { status: 0, signal: null, stdout: Buffer.from(summary + '\n'), stderr: Buffer.alloc(0), pid: 1, output: [] };
+    const spawn = t.mock.method(childProcess, 'spawnSync', () => completed);
+    f.sandbox.patchProcessEnv(t, { KEEL_HOME: keelHome });
+    assert.equal(codexReview.runRuleChecks(f.repo.path, f.base, f.tree), summary);
+    assert.equal(spawn.mock.calls[0]!.arguments[1]![0], join(keelHome, 'skills/writing-readable-code/scripts/rule-checks.ts'));
+  });
+
   test('ruleChecks_refusesTimeout', (t) => {
     const f = new CodexFixture(t);
     const timedOut = { error: Object.assign(new Error('spawnSync node ETIMEDOUT'), { code: 'ETIMEDOUT' }), status: null, signal: null };

@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { delimiter, join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import {
   WORKFLOWS_DIR, readScript, extractMetaText, isPureLiteral, createRuntime, createSandbox,
@@ -243,6 +243,16 @@ test('lensReview_failsInPrepareNamingTheTree_whenSinceIsACommit', async () => {
   assert.equal(result.verdict, 'ERROR')
   assert.match(result.error, new RegExp(`prepare failed for diffs\\[0\\] [\\s\\S]*since ${commit} is not a tree id`))
   assert.deepEqual(rt.record.agents.map((call) => call.opts.label), ['prepare'])
+})
+
+test('lensReview_failsInPrepare_whenKeelIsNotOnPath', async () => {
+  const box = createSandbox()
+  const repo = commitTwice(box)
+  box.env.PATH = process.env.PATH.split(delimiter).filter((dir) => !existsSync(join(dir, 'keel'))).join(delimiter)
+  const rt = createRuntime({ respond: shellResponder(box) })
+  const result = await rt.run('lens-review', { auditMode: 'split', diffs: [{ repo, base: 'HEAD~1', head: 'HEAD' }], runId: 'rv-fixed-0001', lenses: [{ key: 'contract', prompt: 'inspect' }] })
+  assert.equal(result.verdict, 'ERROR')
+  assert.match(result.error, /prepare failed for diffs\[0\] [\s\S]*keel is not on PATH/)
 })
 
 function precheckRepo(box) {

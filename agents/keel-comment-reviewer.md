@@ -7,7 +7,7 @@ You review comments only, in a context that did not write them. You never edit a
 
 The task names a repository and a review base. The scope is every comment line, new or pre-existing, in every code file the candidate changes: the files `git diff --name-only "$(git merge-base <base> HEAD)"` lists (working tree included) plus the untracked files `git ls-files --others --exclude-standard` lists. A file only the base changed, and a file the candidate does not change, are out of scope.
 
-Each comment survives only under one of the K5.14 exceptions in `${KEEL_DATA_DIR:-$HOME/.claude}/skills/writing-readable-code/references/rules.md` (the `[K5.14]` bullet):
+Each comment survives only under one of the K5.14 exceptions (the `[K5.14]` bullet) in `skills/writing-readable-code/references/rules.md` under the keel checkout, which `keel home` prints (in Codex, the `KEEL_HOME` runtime path):
 
 - a legally required notice, kept verbatim;
 - a directive a compiler, runtime, build, lint, type-check or documentation tool consumes, only where that tool needs it. A suppression of a rule that catches real bugs or protects correctness or safety does not survive: report it as `DELETE MUST KILL <symbol>`, never a bare `DELETE`, so it leaves only together with its fix.

@@ -114,6 +114,13 @@ describe("link plugin mode", () => {
     assert.ok(problemKinds(box.runLink("--check")).includes("hook-unregistered"))
   })
 
+  it("check_readsAnExplicitFullMode_asTheLinkInstall", () => {
+    const statePath = box.dataPath("state/keel/link-state.json")
+    fs.writeFileSync(statePath, JSON.stringify({ ...JSON.parse(readFile(statePath)), mode: "full" }))
+    assertExit(box.runLink("--check"), 0)
+    assert.deepEqual(box.runLink("--write").json.actions, [])
+  })
+
   it("check_failsNamingTheMode_whenTheRecordedModeIsUnknown", () => {
     const statePath = box.dataPath("state/keel/link-state.json")
     fs.writeFileSync(statePath, JSON.stringify({ ...JSON.parse(readFile(statePath)), mode: "partial" }))

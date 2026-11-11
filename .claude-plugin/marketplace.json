@@ -1,0 +1,11 @@
+{
+  "name": "keel",
+  "owner": { "name": "flareshin" },
+  "plugins": [
+    {
+      "name": "keel",
+      "source": "./",
+      "description": "A small, measured harness for Claude Code: five principles enforced by hooks, skills, review workflows and a rule ledger."
+    }
+  ]
+}

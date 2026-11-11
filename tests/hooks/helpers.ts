@@ -58,6 +58,7 @@ export const SHIP_GATE = "hooks/ship-gate/ship-gate.ts";
 export const GIT_GUARD = "hooks/git-guard/git-guard.ts";
 export const MODEL_ASSIGN = "hooks/model-assign/model-assign.ts";
 export const HANDOFF = "hooks/handoff/handoff.ts";
+export const PRINCIPLES = "hooks/principles/principles.ts";
 export const ENV_PREFLIGHT = "stacks/spring-maven/hooks/env-preflight.ts";
 export const SESSION_ID = "11111111-2222-3333-4444-555555555555";
 export const AGENT_ID = "a1b2c3d4e5f6";

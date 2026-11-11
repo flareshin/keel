@@ -54,6 +54,28 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "NODE_COMPILE_CACHE=\"${KEEL_DATA_DIR:-$HOME/.claude}/state/keel/node-compile-cache\" node ${CLAUDE_PLUGIN_ROOT}/hooks/principles/principles.ts",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "NODE_COMPILE_CACHE=\"${KEEL_DATA_DIR:-$HOME/.claude}/state/keel/node-compile-cache\" node ${CLAUDE_PLUGIN_ROOT}/hooks/principles/principles.ts",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }

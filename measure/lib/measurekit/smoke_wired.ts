@@ -2,6 +2,9 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
+import { Refused } from "../../../lib/link/config.ts"
+import { loadPluginHooks, pluginHooksPath } from "../../../lib/link/fragments.ts"
+import { LinkStateError, readRecordedMode } from "../../../lib/link/settings_json.ts"
 import { readJsonl } from "./datafiles.ts"
 import { InvalidUtf8Error, isFile, isSystemError, readUtf8, resolveLinks } from "./files.ts"
 import { iterRegistrations } from "./hook_settings.ts"
@@ -20,8 +23,14 @@ import type { Assertion, SmokeContext } from "./smoke_context.ts"
 const FIXTURES_DIR = path.join("tests", "hooks", "fixtures")
 const TMP_PLACEHOLDER = "{{TMP}}"
 const DEFAULT_TIMEOUT_SECONDS = 60
+const PLUGIN_ROOT_PLACEHOLDER = "${CLAUDE_PLUGIN_ROOT}"
 
 class Unproven extends Error {}
+
+interface LiveHooks {
+  registrations: Registration[]
+  registeredIn: string
+}
 
 interface FixtureRun {
   fixture: JsonObject
@@ -31,10 +40,10 @@ interface FixtureRun {
 
 export function checkWiredFires(ctx: SmokeContext): Assertion[] {
   let rows: LedgerRow[]
-  let registrations: Registration[]
+  let live: LiveHooks
   try {
     rows = hookRowsInForce(ctx.ledgers, activeStackNames(ctx.overlayDir))
-    registrations = iterRegistrations(liveHooks(ctx.dataDir))
+    live = liveHooks(ctx)
   } catch (error) {
     if (isUnreadableSetup(error)) return [assertion("wired-fires", "all", FAIL, (error as Error).message)]
     throw error
@@ -42,28 +51,28 @@ export function checkWiredFires(ctx: SmokeContext): Assertion[] {
   if (rows.length === 0) return [assertion("wired-fires", "all", FAIL, "0 hook-layer rows recognized")]
   const realFires = path.join(ctx.dataDir, "logs", "keel-fires.jsonl")
   const before = fingerprint(realFires)
-  const problems = rows.map((row) => badFixtureProblem(row, ctx, registrations)).filter(isProblem)
+  const problems = rows.map((row) => badFixtureProblem(row, ctx, live)).filter(isProblem)
   const hookNames = [...new Set(rows.map((row) => row.hookName as string))].sort()
-  problems.push(...hookNames.map((hook) => goodFixtureProblem(hook, ctx, registrations)).filter(isProblem))
+  problems.push(...hookNames.map((hook) => goodFixtureProblem(hook, ctx, live)).filter(isProblem))
   if (fingerprint(realFires) !== before) problems.push("the real keel-fires.jsonl changed during the run (a hook ignores KEEL_DATA_DIR)")
   if (problems.length > 0) return [assertion("wired-fires", "all", FAIL, firstItems(problems))]
   return [assertion("wired-fires", "all", PASS, `${rows.length} rows fired on bad fixtures, ${hookNames.length} hooks quiet on good ones`)]
 }
 
 function isUnreadableSetup(error: unknown): boolean {
-  return error instanceof StackNameError || error instanceof SyntaxError || error instanceof InvalidUtf8Error || isSystemError(error)
+  return error instanceof StackNameError || error instanceof Refused || error instanceof LinkStateError || error instanceof SyntaxError || error instanceof InvalidUtf8Error || isSystemError(error)
 }
 
 function isProblem(problem: string | null): problem is string {
   return problem !== null
 }
 
-function badFixtureProblem(row: LedgerRow, ctx: SmokeContext, registrations: Registration[]): string | null {
+function badFixtureProblem(row: LedgerRow, ctx: SmokeContext, live: LiveHooks): string | null {
   const checkout = row.source === KEEL_SOURCE ? ctx.keelHome : ctx.overlayDir
   const fixturePath = path.join(checkout, FIXTURES_DIR, `${row.id}.bad.json`)
   let run: FixtureRun
   try {
-    run = runFixture(fixturePath, row.hookName as string, registrations)
+    run = runFixture(fixturePath, row.hookName as string, live)
   } catch (error) {
     if (error instanceof Unproven) return `${row.id}: ${error.message}`
     throw error
@@ -73,11 +82,11 @@ function badFixtureProblem(row: LedgerRow, ctx: SmokeContext, registrations: Reg
   return `${row.id}: bad fixture logged no ${displayText(expected)} fires line for ${row.id} (exit ${run.exitCode})`
 }
 
-function goodFixtureProblem(hook: string, ctx: SmokeContext, registrations: Registration[]): string | null {
-  const fixturePath = path.join(hookCheckout(hook, ctx, registrations), FIXTURES_DIR, `${hook}.good.json`)
+function goodFixtureProblem(hook: string, ctx: SmokeContext, live: LiveHooks): string | null {
+  const fixturePath = path.join(hookCheckout(hook, ctx, live.registrations), FIXTURES_DIR, `${hook}.good.json`)
   let run: FixtureRun
   try {
-    run = runFixture(fixturePath, hook, registrations)
+    run = runFixture(fixturePath, hook, live)
   } catch (error) {
     if (error instanceof Unproven) return `${hook}: ${error.message}`
     throw error
@@ -94,10 +103,10 @@ function hookCheckout(hook: string, ctx: SmokeContext, registrations: Registrati
   return fromOverlay ? ctx.overlayDir : ctx.keelHome
 }
 
-function runFixture(fixturePath: string, hook: string, registrations: Registration[]): FixtureRun {
+function runFixture(fixturePath: string, hook: string, live: LiveHooks): FixtureRun {
   const fixture = readFixture(fixturePath)
   const payload = fixture["payload"] as JsonObject
-  const registration = findRegistration(registrations, hook, payload)
+  const registration = findRegistration(live, hook, payload)
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "keel-wired-"))
   try {
     const env = { ...process.env, KEEL_DATA_DIR: path.join(tempDir, "data"), KEEL_OVERLAY_DIR: path.join(tempDir, "overlay") }
@@ -142,19 +151,30 @@ function readFixture(fixturePath: string): JsonObject {
   return fixture
 }
 
-function findRegistration(registrations: Registration[], hook: string, payload: JsonObject): Registration {
+function findRegistration(live: LiveHooks, hook: string, payload: JsonObject): Registration {
   const event = payload["hook_event_name"]
   const tool = payload["tool_name"]
-  for (const registration of registrations) {
+  for (const registration of live.registrations) {
     if (registration.hookName === hook && registration.event === event && (tool === undefined || tool === null || registration.coversTool(tool as string))) {
       if (!isFile(registration.script)) throw new Unproven(`script missing: ${registration.script}`)
       return registration
     }
   }
-  throw new Unproven(`no ${displayText(event)}[${tool === undefined || tool === null || tool === "" ? "*" : displayText(tool)}] registration of hook ${hook} in settings.json`)
+  throw new Unproven(`no ${displayText(event)}[${tool === undefined || tool === null || tool === "" ? "*" : displayText(tool)}] registration of hook ${hook} in ${live.registeredIn}`)
 }
 
-function liveHooks(dataDir: string): JsonValue | undefined {
+function liveHooks(ctx: SmokeContext): LiveHooks {
+  const fromSettings = iterRegistrations(settingsHooks(ctx.dataDir))
+  if (readRecordedMode(ctx) !== "plugin") return { registrations: fromSettings, registeredIn: "settings.json" }
+  const fromPlugin = iterRegistrations(withPluginRoot(loadPluginHooks(ctx), ctx.keelHome))
+  return { registrations: [...fromSettings, ...fromPlugin], registeredIn: `settings.json or ${pluginHooksPath(ctx)}` }
+}
+
+function withPluginRoot(hooks: JsonObject, pluginRoot: string): JsonValue {
+  return parseJson(JSON.stringify(hooks).replaceAll(PLUGIN_ROOT_PLACEHOLDER, JSON.stringify(pluginRoot).slice(1, -1)))
+}
+
+function settingsHooks(dataDir: string): JsonValue | undefined {
   const settingsPath = path.join(dataDir, "settings.json")
   if (!isFile(settingsPath)) return {}
   const settings = parseJson(readUtf8(settingsPath))

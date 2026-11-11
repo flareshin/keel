@@ -181,7 +181,7 @@ describe("link plugin mode", () => {
     assert.equal(fs.readlinkSync(box.dataPath("skills/demo")), `${box.keel}/skills/demo`)
   })
 
-  it("pluginCheck_reportsAGateFromAnOverlayFragment_asTheLinkInstallDoes_notAgainstThePluginHooksFile", () => {
+  it("pluginCheck_reportsAGateFromAnOverlayFragment_againstThatFragment", () => {
     enablePlugin(box)
     box.writeKeel("ledger.tsv", LEDGER_HEADER + "\n")
     box.writeOverlay("settings/gate.json", JSON.stringify({
@@ -189,7 +189,7 @@ describe("link plugin mode", () => {
     }))
     assertExit(box.runLink("--write", "--plugin"), 0)
     const gates = box.runLink("--check").json.problems.filter((problem: any) => problem.kind === "gate-onfailure-missing")
-    assert.deepEqual(gates.map((problem: any) => problem.path), [`${box.keel}/settings/core.json`])
+    assert.deepEqual(gates.map((problem: any) => problem.path), [`${box.overlay}/settings/gate.json`])
   })
 
   it("pluginCheck_reportsAGateWithoutOnFailure_againstThePluginHooksFile", () => {

@@ -5,7 +5,7 @@ import path from "node:path"
 import { InvalidUtf8Error, isDir, isSystemError, readUtf8, resolveLinks, splitLines } from "../../../lib/measurekit/files.ts"
 import { GitError, runGitOrThrow } from "../../../lib/measurekit/gitutil.ts"
 import { displayText, isJsonObject, parseJson } from "../../../lib/measurekit/json.ts"
-import type { JsonObject } from "../../../lib/measurekit/json.ts"
+import type { JsonObject, JsonValue } from "../../../lib/measurekit/json.ts"
 import { projectDirFor } from "./liveconfig.ts"
 import { describeLocation } from "./reviewcases.ts"
 import type { ReviewCase } from "./reviewcases.ts"
@@ -13,6 +13,7 @@ import { CLAUDE_BINARY, NEUTRAL_PROJECT_NAME, projectIdentity, runClaude, UNSIGN
 import { summarizeStream } from "./stream.ts"
 
 export const WORKFLOW = "lens-review"
+const WORKFLOW_NAMES = [`keel:${WORKFLOW}`, WORKFLOW]
 const COMPLETED = "completed"
 const ERROR_VERDICT = "ERROR"
 const MAX_TURNS = 20
@@ -116,12 +117,16 @@ export function findWorkflowRecord(projectDir: string, sessionId: string | null)
   for (const name of names.filter((candidate) => candidate.endsWith(".json") && !candidate.startsWith(".")).sort()) {
     try {
       const record = parseJson(readUtf8(path.join(directory, name)))
-      if (isJsonObject(record) && record["workflowName"] === WORKFLOW) records.push(record)
+      if (isJsonObject(record) && isLensReviewName(record["workflowName"])) records.push(record)
     } catch (error) {
       if (!(error instanceof SyntaxError) && !(error instanceof InvalidUtf8Error) && !isSystemError(error)) throw error
     }
   }
   return records.reduce<JsonObject | null>((latest, record) => (latest === null || startTime(record) > startTime(latest) ? record : latest), null)
+}
+
+function isLensReviewName(name: JsonValue | undefined): boolean {
+  return typeof name === "string" && WORKFLOW_NAMES.includes(name)
 }
 
 function startTime(record: JsonObject): number {

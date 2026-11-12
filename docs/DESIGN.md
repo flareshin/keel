@@ -239,7 +239,7 @@ A track writes only its own paths and `examples/<track>/` (overlay-shaped, inven
 | ship-gate | `bin/keel`, `lib/evidence/`, `hooks/ship-gate/ship-gate.ts`; `tests/ship-gate/` |
 | hooks | `hooks/<name>/<name>.ts` (report-gate, git-guard, model-assign, handoff, principles); `hooks/lib/hookkit/`; `stacks/spring-maven/` (`hooks/env-preflight.ts`, `settings.json`); `tests/hooks/` |
 | skills | `PRINCIPLES.md`; `skills/` (`refining-requests/` K4, `writing-readable-code/` K5 with `scripts/rule-checks.ts`, `descending-findings/`, `improving-structure/`, `removing-comments/`); `tests/skills/` |
-| review-engine | `workflows/` (`lens-review.js`, `adversarial-audit.js`, `review-lenses.json`); `agents/` (`keel-auditor.md` for audit and verify agents, `keel-reporter.md` for the reporter, `keel-comment-reviewer.md` for the removing-comments pass: tool-limited subagent types passed as `agentType`); `tests/workflows/` |
+| review-engine | `workflows/` (`lens-review.js`, `adversarial-audit.js`, `review-lenses.json`); `agents/` (`auditor.md` for audit and verify agents, `reporter.md` for the reporter, `comment-reviewer.md` for the removing-comments pass: tool-limited subagent types passed as `agentType`, each tried as `keel:<name>` first and as the bare name under the link install; when both fail, the error names both); `tests/workflows/` |
 | integration | `settings/` (`core.json`, `links.tsv`), `README.md`, `docs/incidents/`, `tests/run-all.sh`, `tests/suite-lock.sh`; `tests/suite/` |
 | spec | `docs/DESIGN.md` |
 

@@ -1,5 +1,5 @@
 ---
-name: keel-comment-reviewer
+name: comment-reviewer
 description: Comment reviewer with no Edit or Write tool for the removing-comments pass before lens-review. Judges every comment in the files a diff changes against K5.14 and returns a kill list; it never edits. Dispatched by the removing-comments skill; not for direct use.
 tools: Bash, Read
 ---

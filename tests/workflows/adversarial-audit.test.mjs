@@ -158,7 +158,7 @@ test('adversarialAudit_keepsFindingAsUnverified_whenVerifierThrows', async () =>
   const result = await rt.run('adversarial-audit', { auditMode: 'split', target: '/work/app', lenses: LENSES })
 
   assert.equal(result.unverified.length, 1)
-  assert.equal(result.unverified[0].verifyError, 'api down')
+  assert.equal(result.unverified[0].verifyError, "keel:auditor: api down; auditor: agent({agentType}): agent type 'auditor' not found.")
 })
 
 test('adversarialAudit_keepsLowFindingsNotVerified_whenVerifierThrows', async () => {
@@ -169,7 +169,7 @@ test('adversarialAudit_keepsLowFindingsNotVerified_whenVerifierThrows', async ()
   const result = await rt.run('adversarial-audit', { auditMode: 'split', target: '/work/app', lenses: LENSES })
 
   assert.deepEqual(result.confirmed.map((f) => [f.id, f.verdict.verdict]), [['c1', 'UNVERIFIED_LOW']])
-  assert.deepEqual(result.unverified.map((f) => [f.id, f.verifyError]), [['c2', 'api down']])
+  assert.deepEqual(result.unverified.map((f) => [f.id, f.verifyError]), [['c2', "keel:auditor: api down; auditor: agent({agentType}): agent type 'auditor' not found."]])
 })
 
 test('adversarialAudit_namesModelAndEffortOnEveryAgent_whenDefaultsApply', async () => {
@@ -377,14 +377,14 @@ test('adversarialAudit_runsCombinedAuditAndVerifyAsTheAuditorType_inBothModes', 
   await split.run('adversarial-audit', { auditMode: 'split', target: '/work/app', lenses: LENSES })
 
   assert.deepEqual(combined.record.agents.map(({ opts }) => [opts.label, opts.agentType]), [
-    ['audit:combined', 'keel-auditor'],
-    ['verify:combined', 'keel-auditor'],
+    ['audit:combined', 'keel:auditor'],
+    ['verify:combined', 'keel:auditor'],
   ])
   assert.deepEqual(split.record.agents.map(({ opts }) => [opts.label, opts.agentType]).sort(), [
-    ['audit:contract', 'keel-auditor'],
-    ['audit:tests', 'keel-auditor'],
-    ['verify:contract', 'keel-auditor'],
-    ['verify:tests', 'keel-auditor'],
+    ['audit:contract', 'keel:auditor'],
+    ['audit:tests', 'keel:auditor'],
+    ['verify:contract', 'keel:auditor'],
+    ['verify:tests', 'keel:auditor'],
   ])
 })
 
@@ -416,4 +416,25 @@ test('adversarialAudit_assignsCombinedFindingsToExactLens_whenKeysSharePrefix', 
   ] })
 
   assert.deepEqual(result.confirmed.map((item) => [item.lens, item.id]), [['contract', 'A1'], ['contract:api', 'A1']])
+})
+
+test('adversarialAudit_runsTheAuditorByItsBareName_underTheLinkInstall', async () => {
+  const rt = createRuntime({ install: 'link', respond: respondWith({ audits: { contract: { findings: [finding('c1')] } }, verdicts: { c1: { verdict: 'CONFIRMED', evidence: 'reran' } } }) })
+
+  const result = await rt.run('adversarial-audit', { auditMode: 'split', target: '/work/app', lenses: LENSES.slice(0, 1) })
+
+  assert.deepEqual(result.confirmed.map((f) => f.id), ['c1'])
+  assert.deepEqual(rt.record.agents.map(({ opts }) => [opts.label, opts.agentType]), [
+    ['audit:contract', 'auditor'],
+    ['verify:contract', 'auditor'],
+  ])
+})
+
+test('adversarialAudit_failsTheLens_whenNeitherAuditorNameResolves', async () => {
+  const rt = createRuntime({ install: 'neither', respond: () => { throw new Error('no agent expected') } })
+
+  const result = await rt.run('adversarial-audit', { auditMode: 'split', target: '/work/app', lenses: LENSES.slice(0, 1) })
+
+  assert.deepEqual(result.failedLenses, ['contract'])
+  assert.deepEqual(rt.record.unresolved, ['keel:auditor', 'auditor'])
 })

@@ -1,5 +1,5 @@
 ---
-name: keel-reporter
+name: reporter
 description: lens-review reporter that hands back a finished report verbatim. Dispatched by the lens-review workflow; not for direct use.
 tools: Read
 ---

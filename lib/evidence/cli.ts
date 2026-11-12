@@ -109,7 +109,7 @@ async function runAffectedTests(rest: string[]): Promise<number> {
   printErrorLine(`keel test --affected: ${counted(tests.length, 'test file')} ${verb} ${counted(changed.length, 'changed path')}\n${tests.join('\n')}`);
   const hookCode = affected.fullSuitePaths(changed);
   if (hookCode.length > 0) {
-    printErrorLine(`keel test --affected: code a hook runs changed (${hookCode.join(', ')}); also run \`keel test -- npm test\` once before root review`);
+    printErrorLine(`keel test --affected: code a hook runs changed (${hookCode.join(', ')}); also run \`keel test -- npm test\` once, in the background alongside the root review`);
   }
   return testrun.run([process.execPath, '--test', '--test-reporter=tap', ...tests], repoRoot);
 }

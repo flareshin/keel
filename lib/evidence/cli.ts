@@ -52,6 +52,7 @@ const PRECHECK_RUN_OPTIONS = new Set(['--repo', '--base']);
 const PRECHECK_RERUN_OPTIONS = new Set(['--repo', '--base', '--census']);
 const TEST_AFFECTED_OPTIONS = new Set(['--base']);
 const DEFAULT_AFFECTED_BASE = 'origin/HEAD';
+const WITH_REPLAYS = '--with-replays';
 const PRECHECK_LOG = 'keel-precheck.jsonl';
 const MODULE_NOT_FOUND = 'ERR_MODULE_NOT_FOUND';
 
@@ -97,23 +98,31 @@ function runTest(rest: string[]): Promise<number> {
 }
 
 async function runAffectedTests(rest: string[]): Promise<number> {
-  const base = parseOptions(rest, TEST_AFFECTED_OPTIONS)['--base'] ?? DEFAULT_AFFECTED_BASE;
-  if (base.startsWith('-')) throw new writers.Usage('keel test --affected [--base <ref>]');
+  const withReplays = rest.includes(WITH_REPLAYS);
+  const base = parseOptions(rest.filter((arg) => arg !== WITH_REPLAYS), TEST_AFFECTED_OPTIONS)['--base'] ?? DEFAULT_AFFECTED_BASE;
+  if (base.startsWith('-')) throw new writers.Usage(`keel test --affected [${WITH_REPLAYS}] [--base <ref>]`);
   const repoRoot = gitcmd.toplevel(process.cwd());
   if (repoRoot === null) throw new writers.Usage('keel test must run inside a git repository');
   const mergeBase = gitcmd.mergeBase(repoRoot, base, 'HEAD');
   if (mergeBase === null) throw new writers.Refused(`${base} has no merge base with HEAD`);
+  const missingReplays = withReplays ? affected.missingReplayTests(repoRoot) : [];
+  if (missingReplays.length > 0) {
+    throw new writers.Refused(`${counted(missingReplays.length, 'replay test file')} ${missingReplays.length === 1 ? 'is' : 'are'} missing from this repo: ${missingReplays.join(', ')}`);
+  }
   const changed = affected.changedSince(repoRoot, mergeBase);
-  const tests = affected.affectedTests(repoRoot, changed);
-  if (tests.length === 0) {
+  const reached = affected.affectedTests(repoRoot, changed);
+  const replays = withReplays ? affected.REPLAY_TESTS.filter((test) => !reached.includes(test)) : [];
+  if (reached.length === 0 && replays.length === 0) {
     printErrorLine(`keel test --affected: no test file reaches the ${counted(changed.length, 'changed path')}; run \`keel test -- <command>\` with a test that covers it`);
     return testrun.NO_TESTS_RECOGNIZED;
   }
-  const verb = tests.length === 1 ? 'reaches' : 'reach';
-  printErrorLine(`keel test --affected: ${counted(tests.length, 'test file')} ${verb} ${counted(changed.length, 'changed path')}\n${tests.join('\n')}`);
+  const verb = reached.length === 1 ? 'reaches' : 'reach';
+  const plusReplays = withReplays ? `, plus ${counted(replays.length, 'replay test file')}` : '';
+  const tests = [...reached, ...replays];
+  printErrorLine(`keel test --affected: ${counted(reached.length, 'test file')} ${verb} ${counted(changed.length, 'changed path')}${plusReplays}\n${tests.join('\n')}`);
   const hookCode = affected.fullSuitePaths(changed);
-  if (hookCode.length > 0) {
-    printErrorLine(`keel test --affected: code a hook runs changed (${hookCode.join(', ')}); also run \`keel test -- npm test\` once, in the background alongside the root review`);
+  if (hookCode.length > 0 && !withReplays) {
+    printErrorLine(`keel test --affected: code a hook runs changed (${hookCode.join(', ')}); also run \`keel test --affected ${WITH_REPLAYS}\` once, in the background alongside the root review`);
   }
   return testrun.run([process.execPath, '--test', '--test-reporter=tap', ...tests], repoRoot);
 }

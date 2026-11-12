@@ -1,0 +1,47 @@
+keel
+Copyright 2026 flareshin
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product includes material adapted from the third-party works below.
+Each adapted file names its source; README.md "Acknowledgements" lists them.
+
+1. Harness² (https://github.com/google-research/harness2, at 1cfe254)
+   Licensed under the Apache License, Version 2.0 (same text as LICENSE).
+   Adapted, with changes, in skills/authoring-agents/SKILL.md and
+   skills/improving-agents/SKILL.md (from harness2/core/prompts.py).
+
+2. pstack in cursor/plugins (https://github.com/cursor/plugins, at 6b78e9f and 4dd1d05)
+   Copyright (c) 2026 Lauren Tan. MIT License, text below.
+   Adapted, with changes, in skills/improving-structure/, skills/removing-comments/,
+   agents/comment-reviewer.md and skills/writing-readable-code/.
+
+3. Matt Pocock's skills (https://github.com/mattpocock/skills, at 49dd158)
+   Copyright (c) 2026 Matt Pocock. MIT License, text below.
+   Adapted, with changes, in skills/improving-structure/ and
+   skills/writing-readable-code/references/implementation.md.
+
+4. Addy Osmani's agent-skills (https://github.com/addyosmani/agent-skills)
+   Copyright (c) 2025 Addy Osmani. MIT License, text below.
+   Adapted, with changes, in skills/writing-readable-code/references/implementation.md.
+
+MIT License text that applies to works 2, 3 and 4, each under its own copyright line above:
+
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

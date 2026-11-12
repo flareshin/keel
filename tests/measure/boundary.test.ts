@@ -285,6 +285,24 @@ describe("boundary", () => {
       assert.deepEqual(added, [`${edited}:LICENSE 3`])
     })
 
+    it("boundaryStaged_skipsTheText_ofThisRepositorysLICENSE", () => {
+      box.write("overlay/boundary/lexicon.txt", "annotations\n")
+      fs.copyFileSync(path.join(CHECKOUT, "LICENSE"), path.join(repo, "LICENSE"))
+      box.git(repo, "add", "LICENSE")
+      const [completed, result] = scan("--staged")
+      assert.equal(completed.status, 0)
+      assert.deepEqual(result.hits, [])
+    })
+
+    it("boundaryStaged_scansThisRepositorysLICENSE_whenOneByteIsAdded", () => {
+      box.write("overlay/boundary/lexicon.txt", "annotations\n")
+      fs.writeFileSync(path.join(repo, "LICENSE"), fs.readFileSync(path.join(CHECKOUT, "LICENSE"), "utf8") + "x")
+      box.git(repo, "add", "LICENSE")
+      const [completed, result] = scan("--staged")
+      assert.equal(completed.status, 1)
+      assert.deepEqual(result.hits.map((hit: { file: string }) => hit.file), ["LICENSE"])
+    })
+
     it("boundaryStaged_scansALICENSEThatIsNotTheApacheText", () => {
       box.writeLexicon()
       box.write("work/LICENSE", "licensed to acmecorp\n")

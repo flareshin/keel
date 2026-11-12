@@ -128,6 +128,22 @@ describe("wired-fires", () => {
     assert.equal(wiredFires().status, "PASS")
   })
 
+  it("wiredFires_givesHooksTheTempDirAsWritten_whenItsPathHoldsReplacementPatterns", () => {
+    const tempRoot = path.join(harness.box.root, "t$&x$'y")
+    fs.mkdirSync(tempRoot)
+    harness.box.env["TMPDIR"] = tempRoot
+    for (const ruleId of ["K1", "C-demo"]) {
+      const fixture = JSON.parse(harness.box.bashFixture("bad " + ruleId, "deny"))
+      fixture.setup = ["mkdir repo"]
+      harness.box.write(`keel/tests/hooks/fixtures/${ruleId}.bad.json`, JSON.stringify(fixture))
+    }
+    registerBash(harness.box.write("keel/hooks/demo/demo.js", hookSource([
+      "if (!fs.existsSync(path.join(payload.cwd, 'repo'))) process.exit(0)",
+    ])))
+    const item = wiredFires()
+    assert.equal(item.status, "PASS", JSON.stringify(item))
+  })
+
   it("wiredFires_givesHooksTheOverlayTheFixtureSetupBuilds_notTheLiveOverlay", () => {
     for (const ruleId of ["K1", "C-demo"]) {
       const fixture = JSON.parse(harness.box.bashFixture("bad " + ruleId, "deny"))

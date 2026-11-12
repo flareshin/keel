@@ -13,6 +13,8 @@ const DIFF_ARGS = ["-c", "core.quotePath=false", "diff", "-U0", "--no-color", "-
 const CHANGED_NAMES_ARGS = ["diff", "--name-only", "-z", "--no-renames", "--diff-filter=d"]
 const PATH_NAME_LINE = 0
 const IGNORE_CASE_PREFIX = "(?i)"
+const VERBATIM_LICENSE_PATH = "LICENSE"
+const APACHE_2_0_BLOB = "d645695673349e3947e8e5ae42332d0ac3164cd7"
 
 export type ScanLine = [string, number, string]
 
@@ -84,14 +86,15 @@ export function scan(lines: Iterable<ScanLine>, rules: Rule[]): { scanned: numbe
   return { scanned, hits }
 }
 
-export function* fileLines(root: string, relativePaths: Iterable<string>): Generator<ScanLine> {
+export function* fileLines(root: string, relativePaths: Iterable<string>, licenseBlob: string = APACHE_2_0_BLOB): Generator<ScanLine> {
   for (const relativePath of relativePaths) {
     const fullPath = path.resolve(root, relativePath)
     if (isDir(fullPath) && !isSymlink(fullPath)) {
-      yield* fileLines(root, directoryFiles(root, fullPath))
+      yield* fileLines(root, directoryFiles(root, fullPath), licenseBlob)
       continue
     }
     yield [relativePath, PATH_NAME_LINE, relativePath]
+    if (isVerbatimLicense(relativePath, licenseBlob, () => runGitOrThrow(root, ["hash-object", "--", fullPath]))) continue
     yield* splitlinesOfFile(relativePath, fullPath)
   }
 }
@@ -125,25 +128,31 @@ function* splitlinesOfFile(label: string, fullPath: string): Generator<ScanLine>
   for (const line of splitLines(content.toString("utf8"))) yield [label, number++, line]
 }
 
-export function* stagedLines(repo: string): Generator<ScanLine> {
-  yield* diffLines(repo, ["--cached"], "")
+export function* stagedLines(repo: string, licenseBlob: string = APACHE_2_0_BLOB): Generator<ScanLine> {
+  yield* diffLines(repo, ["--cached"], "", ":", licenseBlob)
 }
 
-export function* rangeLines(repo: string, commitRange: string): Generator<ScanLine> {
+export function* rangeLines(repo: string, commitRange: string, licenseBlob: string = APACHE_2_0_BLOB): Generator<ScanLine> {
   for (const commit of commitsInRange(repo, commitRange)) {
     const short = commit.slice(0, 12)
     const message = runGitOrThrow(repo, ["log", "-1", "--format=%B", commit])
     let number = 1
     for (const line of splitLines(message)) yield [`${short}:message`, number++, line]
-    yield* diffLines(repo, [firstParent(repo, commit), commit], short + ":")
+    yield* diffLines(repo, [firstParent(repo, commit), commit], short + ":", `${commit}:`, licenseBlob)
   }
 }
 
-function* diffLines(repo: string, diffTarget: string[], labelPrefix: string): Generator<ScanLine> {
-  for (const name of runGitOrThrow(repo, [...CHANGED_NAMES_ARGS, ...diffTarget]).split("\0")) {
-    if (name !== "") yield [labelPrefix + name, PATH_NAME_LINE, name]
+function* diffLines(repo: string, diffTarget: string[], labelPrefix: string, blobPrefix: string, licenseBlob: string): Generator<ScanLine> {
+  const names = runGitOrThrow(repo, [...CHANGED_NAMES_ARGS, ...diffTarget]).split("\0").filter((name) => name !== "")
+  for (const name of names) yield [labelPrefix + name, PATH_NAME_LINE, name]
+  const verbatim = names.find((name) => isVerbatimLicense(name, licenseBlob, () => runGitOrThrow(repo, ["rev-parse", "--verify", `${blobPrefix}${name}`])))
+  for (const scanLine of addedLines(runGitOrThrow(repo, [...DIFF_ARGS, ...diffTarget]), labelPrefix)) {
+    if (verbatim === undefined || scanLine[0] !== labelPrefix + verbatim) yield scanLine
   }
-  yield* addedLines(runGitOrThrow(repo, [...DIFF_ARGS, ...diffTarget]), labelPrefix)
+}
+
+function isVerbatimLicense(name: string, licenseBlob: string, blobId: () => string): boolean {
+  return name === VERBATIM_LICENSE_PATH && blobId().trim() === licenseBlob
 }
 
 function commitsInRange(repo: string, commitRange: string): string[] {

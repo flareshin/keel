@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, it } from "node:test"
 import fs from "node:fs"
 import path from "node:path"
 
+import { type ScanLine, fileLines, rangeLines, stagedLines } from "../../measure/lib/measurekit/boundary.ts"
 import { CHECKOUT, MeasureSandbox } from "./helpers.ts"
 
 const FAKE_AWS_KEY = "AKIA" + "ABCDEFGHIJKLMNOP"
@@ -224,6 +225,66 @@ describe("boundary", () => {
     const [completed, result] = box.runJson("boundary", ["--paths", "work"], box.root)
     assert.equal(completed.status, 1)
     assert.deepEqual(result.hits.map((hit: { file: string }) => hit.file), ["work/sub/untracked.txt"])
+  })
+
+  describe("a LICENSE pinned by its blob", () => {
+    const pinnedText = "license text\nwith annotations\n"
+    let pin: string
+
+    const textLabels = (lines: Iterable<ScanLine>) => [...lines].filter(([, number]) => number > 0).map(([label, number]) => `${label} ${number}`)
+
+    beforeEach(() => {
+      box.initRepo(repo)
+      box.write("work/base.txt", "base\n")
+      box.commitAll(repo, "Base")
+      box.write("work/pinned.txt", pinnedText)
+      pin = box.git(repo, "hash-object", "pinned.txt").trim()
+      fs.rmSync(path.join(repo, "pinned.txt"))
+    })
+
+    it("stagedLines_skipsTheText_whenLICENSEIsThePinnedBlob", () => {
+      box.write("work/LICENSE", pinnedText)
+      box.git(repo, "add", "LICENSE")
+      const lines = [...stagedLines(repo, pin)]
+      assert.deepEqual(textLabels(lines), [])
+      assert.deepEqual(lines, [["LICENSE", 0, "LICENSE"]])
+    })
+
+    it("stagedLines_scansTheText_whenLICENSEDiffersByOneByte", () => {
+      box.write("work/LICENSE", pinnedText + "x")
+      box.git(repo, "add", "LICENSE")
+      assert.deepEqual(textLabels(stagedLines(repo, pin)), ["LICENSE 1", "LICENSE 2", "LICENSE 3"])
+    })
+
+    it("stagedLines_scansTheText_whenThePinnedBlobHasAnotherName", () => {
+      box.write("work/COPYING", pinnedText)
+      box.git(repo, "add", "COPYING")
+      assert.deepEqual(textLabels(stagedLines(repo, pin)), ["COPYING 1", "COPYING 2"])
+    })
+
+    it("fileLines_skipsTheText_whenLICENSEIsThePinnedBlob", () => {
+      box.write("work/LICENSE", pinnedText)
+      assert.deepEqual([...fileLines(repo, ["LICENSE"], pin)], [["LICENSE", 0, "LICENSE"]])
+    })
+
+    it("rangeLines_skipsTheText_onlyInTheCommitWhereLICENSEIsThePinnedBlob", () => {
+      const base = box.git(repo, "rev-parse", "HEAD").trim()
+      box.write("work/LICENSE", pinnedText)
+      box.commitAll(repo, "Add the license")
+      box.write("work/LICENSE", pinnedText + "edited\n")
+      const edited = box.commitAll(repo, "Edit the license").slice(0, 12)
+      const added = textLabels(rangeLines(repo, `${base}..${edited}`, pin)).filter((label) => !label.includes(":message"))
+      assert.deepEqual(added, [`${edited}:LICENSE 3`])
+    })
+
+    it("boundaryStaged_scansALICENSEThatIsNotTheApacheText", () => {
+      box.writeLexicon()
+      box.write("work/LICENSE", "licensed to acmecorp\n")
+      box.git(repo, "add", "LICENSE")
+      const [completed, result] = scan("--staged")
+      assert.equal(completed.status, 1)
+      assert.deepEqual(sortedHits(result.hits), ["1 lexicon:1"])
+    })
   })
 
   it("boundaryRange_scansCommitMessagesAndAddedLines_perCommit", () => {

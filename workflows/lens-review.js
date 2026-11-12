@@ -86,7 +86,7 @@ const PREPARE_SCHEMA = {
       },
       required: ['lenses', 'guardrails'],
     },
-    risk_class: { type: 'string', description: 'exact stdout of the risk class command, or "ERROR: <stderr>" when it failed' },
+    risk_class: { type: 'string', description: 'exact stdout of the risk class command; empty when it printed nothing' },
   },
   required: ['diff_outputs', 'run_id_output', 'lenses_output', 'risk_class'],
 }

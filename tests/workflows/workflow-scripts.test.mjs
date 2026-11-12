@@ -259,11 +259,18 @@ test('lensReview_auditsAtHighEffort_whenThePrepareAgentFindsNoGatedRow', async (
   const box = createSandbox()
   const repo = commitTwice(box)
   box.env.KEEL_OVERLAY_DIR = join(box.root, 'no-overlay')
-  const rt = createRuntime({ respond: shellResponder(box) })
+  const respond = shellResponder(box)
+  let prepared = null
+  const rt = createRuntime({ respond: (prompt, opts) => {
+    const output = respond(prompt, opts)
+    if (opts.label === 'prepare') prepared = output
+    return output
+  } })
 
   const result = await rt.run('lens-review', { auditMode: 'split', diffs: [{ repo, base: 'HEAD~1', head: 'HEAD' }] })
 
   assert.equal(result.verdict, 'PASS')
+  assert.equal(prepared.risk_class, 'none')
   assert.equal(result.effort, 'high')
 })
 

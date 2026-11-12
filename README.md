@@ -38,7 +38,7 @@ The overlay (`~/git/keel-overlay`, or `KEEL_OVERLAY_DIR`) holds your own rules a
 
 - No repo is gated. ship-gate warns once per session and lets pushes and merges through, except one it cannot attribute to one repo and branch, such as `git subtree push` or a `GIT_DIR` override, which it still denies.
 - `git-guard`, `report-gate` and `model-assign` still run in every repo. For example, `model-assign` assigns a model and an effort to an agent dispatch that names none, and denies a Workflow script whose `agent()` calls name none.
-- The generated `CLAUDE.md` holds `PRINCIPLES.md` only.
+- Each session loads `PRINCIPLES.md` only, with no `PERSONAL.md` after it.
 - `measure/smoke` fails until the overlay has `boundary/lexicon.txt`, and while any installed Claude Code mod is missing from the overlay's `reviewed-mods.txt`.
 
 [`examples/`](examples) shows sample data for the main overlay files, grouped by component, with invented values. DESIGN.md (a) lists every overlay file.
@@ -73,7 +73,20 @@ bin/link --check
 
 Other settings keys, such as `model`, stay as they are. The `keel` CLI is linked at `~/.claude/bin/keel`; add `~/.claude/bin` to your `PATH` so that you and Claude Code can run `keel`. Start a new Claude Code session so the hooks, skills and `CLAUDE.md` load. `bin/link --unlink` restores the backed-up `settings.json` and `CLAUDE.md`; ignore the `v1-final` restore command it prints unless you used keel v1.
 
-### 4. Gate your first repo
+### 4. Switch to the plugin install
+
+keel is also a Claude Code plugin, and that is the recommended install. The plugin provides the hooks, skills, agents and workflows, and its principles hook loads `PRINCIPLES.md` and `PERSONAL.md` at session start, in place of a generated `CLAUDE.md`. `bin/link` keeps the permissions, env, overlay links and `~/.claude/bin/keel`. From the same terminal, in `~/git/keel`:
+
+```bash
+claude plugin marketplace add ~/git/keel
+claude plugin install keel@keel
+bin/link --write --plugin
+bin/link --check
+```
+
+Start a new Claude Code session. Skills, agents and workflows now carry the `keel:` prefix, for example `/keel:lens-review`. The plugin is read from `~/git/keel`, so it still moves only by merge; start new sessions after each update. [Plugin install](#plugin-install) has the rollback to the link install.
+
+### 5. Gate your first repo
 
 From your own terminal, create `~/git/keel-overlay/gated-repos.tsv`, tab-separated, with your repo's `owner/repo`. Create and edit overlay files there, not through Claude Code: git-guard treats the overlay like the keel checkout and denies Claude Code writes in it. The file looks like this:
 
@@ -84,13 +97,13 @@ you/your-repo	code	main	-	required	false
 
 `risk_rules` `-` means no rule set, so test paths are classed `light` and every other path `standard`. To class paths as `light`, `heavy` or `smoke-only`, add rows under a set name to `risk-rules.tsv` and put that set name in the repo's `risk_rules` column. DESIGN.md (h) specifies both files.
 
-### 5. Ship a first change
+### 6. Ship a first change
 
 In a Claude Code session in that repo:
 
 1. Work in a worktree, not the main checkout.
 2. Run the tests through keel, for example `keel test -- npm test`. The run must report a nonzero test count.
-3. Review with `/lens-review`. Its report starts with `VERDICT: PASS` or `VERDICT: NEEDS_FIXES` and carries a `KEEL-EVIDENCE` line that names the chain's `root_run_id`. Fixes are reviewed as deltas on the same chain.
+3. Review with `/keel:lens-review` (`/lens-review` under the link install). Its report starts with `VERDICT: PASS` or `VERDICT: NEEDS_FIXES` and carries a `KEEL-EVIDENCE` line that names the chain's `root_run_id`. Fixes are reviewed as deltas on the same chain.
 4. Approve from your own terminal: `keel approve <root_run_id>`. Agents are denied this command. `keel evidence show --repo <path>` lists the repo's chains.
 5. Push and open or merge the PR. ship-gate checks the evidence. A denial names the missing piece and, where needed, the command for your own terminal.
 

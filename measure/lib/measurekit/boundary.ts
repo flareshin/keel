@@ -94,7 +94,7 @@ export function* fileLines(root: string, relativePaths: Iterable<string>, licens
       continue
     }
     yield [relativePath, PATH_NAME_LINE, relativePath]
-    if (isVerbatimLicense(relativePath, licenseBlob, () => runGitOrThrow(root, ["hash-object", "--", fullPath]))) continue
+    if (isRegularFile(fullPath) && isVerbatimLicense(relativePath, licenseBlob, () => runGitOrThrow(root, ["hash-object", "--", fullPath]))) continue
     yield* splitlinesOfFile(relativePath, fullPath)
   }
 }
@@ -121,7 +121,7 @@ function walkWithoutGit(root: string, directory: string): string[] {
 }
 
 function* splitlinesOfFile(label: string, fullPath: string): Generator<ScanLine> {
-  if (isSymlink(fullPath) || !isFile(fullPath)) return
+  if (!isRegularFile(fullPath)) return
   const content = fs.readFileSync(fullPath)
   if (content.includes(0)) return
   let number = 1
@@ -149,6 +149,10 @@ function* diffLines(repo: string, diffTarget: string[], labelPrefix: string, blo
   for (const scanLine of addedLines(runGitOrThrow(repo, [...DIFF_ARGS, ...diffTarget]), labelPrefix)) {
     if (verbatim === undefined || scanLine[0] !== labelPrefix + verbatim) yield scanLine
   }
+}
+
+function isRegularFile(fullPath: string): boolean {
+  return isFile(fullPath) && !isSymlink(fullPath)
 }
 
 function isVerbatimLicense(name: string, licenseBlob: string, blobId: () => string): boolean {

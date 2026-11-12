@@ -267,6 +267,14 @@ describe("boundary", () => {
       assert.deepEqual([...fileLines(repo, ["LICENSE"], pin)], [["LICENSE", 0, "LICENSE"]])
     })
 
+    it("fileLines_yieldsOnlyThePathLine_whenLICENSEIsMissingOrADirectoryLink", () => {
+      fs.mkdirSync(path.join(repo, "folder"))
+      fs.symlinkSync("folder", path.join(repo, "LINKED"))
+      assert.deepEqual([...fileLines(repo, ["LICENSE"], pin)], [["LICENSE", 0, "LICENSE"]])
+      fs.renameSync(path.join(repo, "LINKED"), path.join(repo, "LICENSE"))
+      assert.deepEqual([...fileLines(repo, ["LICENSE"], pin)], [["LICENSE", 0, "LICENSE"]])
+    })
+
     it("rangeLines_skipsTheText_onlyInTheCommitWhereLICENSEIsThePinnedBlob", () => {
       const base = box.git(repo, "rev-parse", "HEAD").trim()
       box.write("work/LICENSE", pinnedText)

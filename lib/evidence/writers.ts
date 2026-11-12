@@ -21,6 +21,7 @@ const VERDICTS = ['PASS', 'NEEDS_FIXES'];
 const VIAS = ['SubagentHandback', 'SubagentStop'];
 export const FORK_AGENT_TYPE = 'fork';
 const APPROVAL_SOURCE = 'cli';
+const REPO_KEY_RE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
 
 export function isJsonRecord(value: unknown): value is JsonObject {
   return isJsonObject(value);
@@ -106,6 +107,13 @@ export function writeApproval(rootRunId: string, kind: string): JsonObject {
     root_run_id: rootRunId, heads: pinned, source: APPROVAL_SOURCE, session_id: null, commits,
   });
   return { evidence_id: evidence.evidence_id, kind, root_run_id: rootRunId, heads: pinned };
+}
+
+export function writePromoteApproval(repoKey: string, head: string): JsonObject {
+  if (!REPO_KEY_RE.test(repoKey)) throw new Usage('repo must be <owner>/<repo>');
+  if (!env.isSha(head)) throw new Usage('the promoted sha must be 40 lowercase hex characters');
+  const evidence = store.write('promote', { repo: repoKey, head, source: APPROVAL_SOURCE, session_id: null }, repoKey);
+  return { evidence_id: evidence.evidence_id, kind: 'promote', repo: repoKey, head };
 }
 
 export function chainHeads(rootRunId: string): Map<string, ReviewEvidence> {

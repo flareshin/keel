@@ -95,7 +95,7 @@ export class CodexFixture {
   outgoing(needsApproval = true): Outgoing {
     return {
       repoRoot: this.repo.path, repoKey: this.repo.key, row: registry.gatedRepos().get(this.repo.key)!,
-      head: this.repo.head(), mergeBase: this.base, needsApproval,
+      head: this.repo.head(), mergeBase: this.base, needsApproval, promote: false,
     };
   }
 }

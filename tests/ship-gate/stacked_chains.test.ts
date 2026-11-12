@@ -228,10 +228,21 @@ describe('StackedChainsTest', () => {
     assert.ok(!result.stderr.includes(STACKED_HINT), result.stderr);
   });
 
-  test('stacked_chain_reviewed_from_above_the_merge_base_denies', (t) => {
+  test('stacked_chain_reviewed_from_above_the_merge_base_passes_when_its_base_is_below_the_interval', (t) => {
     const [sandbox, repo] = stack(t);
     const first = repo.git('rev-parse', 'first');
     const narrow = reviewedBranch(sandbox, repo, 'narrow', first, [{ 'src/narrow.py': 'narrow = 1\n' }], 'rv-stack-0003');
+    repo.git('checkout', 'feature');
+    repo.git('cherry-pick', narrow);
+    sandbox.testsEvidence(repo);
+    const result = sandbox.push(repo, PUSH_FEATURE);
+    assert.equal(result.rc, 0, result.stderr);
+  });
+
+  test('stacked_chain_reviewed_from_a_base_off_the_interval_line_denies', (t) => {
+    const [sandbox, repo] = stack(t);
+    const second = repo.git('rev-parse', 'second');
+    const narrow = reviewedBranch(sandbox, repo, 'narrow', second, [{ 'src/narrow.py': 'narrow = 1\n' }], 'rv-stack-0003');
     repo.git('checkout', 'feature');
     repo.git('cherry-pick', narrow);
     sandbox.testsEvidence(repo);

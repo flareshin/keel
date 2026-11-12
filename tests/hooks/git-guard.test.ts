@@ -1000,6 +1000,47 @@ describe("KeelCommandTest", () => {
   });
 });
 
+describe("InstallCommandTest", () => {
+  it("bash_deniedWithFHookskip_whenAnAgentWritesOrRemovesTheKeelLinks", () => {
+    for (const command of [
+      "bin/link --write", "bin/link --write --plugin", "~/git/keel/bin/link --write --full", "./bin/link --unlink",
+      "node /x/keel/bin/link.ts --write", "codex/bin/link --write", "/x/keel/codex/bin/link --unlink",
+      "bash -c 'bin/link --write'", "cd ~/git/keel && bin/link --write --force",
+    ]) {
+      assertDenied(guard(command), "F-hookskip");
+    }
+    assertFired(sandbox, "F-hookskip", "deny", "git-guard");
+  });
+
+  it("bash_deniedWithFHookskip_whenAnAgentChangesTheKeelPluginInstall", () => {
+    for (const command of [
+      "claude plugin install keel@keel", "claude plugin uninstall keel", "claude plugin disable keel@keel",
+      "claude plugin enable keel@keel", "claude plugin update keel@keel", "claude plugins disable keel@keel",
+      "claude plugin marketplace add ~/git/keel", "claude plugin marketplace add /x/git/keel/",
+      "claude plugin marketplace remove keel", "claude plugin marketplace update keel",
+      "claude plugin install keel@keel --scope user",
+    ]) {
+      assertDenied(guard(command), "F-hookskip");
+    }
+  });
+
+  it("bash_passes_whenTheLinkToolOnlyReports", () => {
+    for (const command of ["bin/link", "bin/link --check", "bin/link --plugin", "codex/bin/link --check", "bin/link --help"]) {
+      assertPassed(guard(command));
+    }
+  });
+
+  it("bash_passes_whenTheCommandIsNotKeelsInstall", () => {
+    for (const command of [
+      "link a b", "ln -s a b", "claude plugin list", "claude plugin list --json", "claude plugin marketplace list",
+      "claude plugin install other@market", "claude plugin disable other@market", "claude plugin marketplace add ~/git/other",
+      "claude plugin validate .",
+    ]) {
+      assertPassed(guard(command));
+    }
+  });
+});
+
 describe("AttributionTest", () => {
   let repo: string;
 

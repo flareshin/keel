@@ -93,6 +93,13 @@ const PR_TEXT_SUBCOMMANDS: ReadonlySet<string> = new Set(["create", "edit", "mer
 const UNPUSHED = ["--not", "--remotes"];
 const STDIN_PATH = "-";
 const KEEL_CLI_NAMES: ReadonlySet<string> = new Set(["keel", "keel.ts"]);
+const LINK_TOOL_RE = /(?:^|\/)bin\/link(?:\.ts)?$/u;
+const LINK_CHANGING_FLAGS: ReadonlySet<string> = new Set(["--write", "--unlink"]);
+const CLAUDE_PLUGIN_COMMANDS: ReadonlySet<string> = new Set(["plugin", "plugins"]);
+const PLUGIN_CHANGING_SUBCOMMANDS: ReadonlySet<string> = new Set(["install", "uninstall", "enable", "disable", "update"]);
+const MARKETPLACE_CHANGING_SUBCOMMANDS: ReadonlySet<string> = new Set(["add", "remove", "update"]);
+const KEEL_PLUGIN = "keel";
+const INSTALL_CHANGE_TEXT = "changes how keel is installed, and with it the hooks every session runs; the user runs it from their own terminal outside Claude Code.";
 const COMMIT_MESSAGE_SHOWN = "commit message";
 const UNREAD_MESSAGE_TEXT = "Known values are loaded, and this commit message or PR text reaches git or gh in a form the hook does not read: " +
   "stdin, a here-string or pipe, a $ or backtick expansion, a line continuation inside quotes, an abbreviated option, a short-flag cluster, " +
@@ -366,7 +373,7 @@ function checkBash(command: string, cwd: string): Violation[] {
   const call = steps(command, cwd);
   const callHeredocs = call.flatMap((step) => step.heredocs);
   const violations = [
-    ...checkKeelCommands(call), ...checkProtectedWrites(call), ...checkLiveCheckouts(call), ...checkHookSkips(call),
+    ...checkKeelCommands(call), ...checkInstallChanges(call), ...checkProtectedWrites(call), ...checkLiveCheckouts(call), ...checkHookSkips(call),
     ...checkHookDisablingWrites(call), ...checkCommentWrites(call),
   ];
   const plainCallText = PLAIN_CALL_TEXT_RE.test(command);
@@ -440,6 +447,39 @@ function checkKeelCommands(call: readonly Step[]): Violation[] {
 function keelArguments(argv: readonly string[]): string[] {
   const index = argv.findIndex((word) => KEEL_CLI_NAMES.has(basename(word).toLowerCase()));
   return index < 0 ? [] : argv.slice(index + 1);
+}
+
+function checkInstallChanges(call: readonly Step[]): Violation[] {
+  return call.flatMap((step) => {
+    const command = linkChange(step.argv) ?? keelPluginChange(step.argv);
+    return command === null ? [] : [{ ruleId: F_HOOKSKIP, text: `\`${command}\` ${INSTALL_CHANGE_TEXT}` }];
+  });
+}
+
+function linkChange(argv: readonly string[]): string | null {
+  const index = argv.findIndex((word) => LINK_TOOL_RE.test(word));
+  if (index < 0 || !argv.slice(index + 1).some((arg) => LINK_CHANGING_FLAGS.has(arg))) return null;
+  return argv.slice(index).join(" ");
+}
+
+function keelPluginChange(argv: readonly string[]): string | null {
+  const claude = argv.findIndex((word) => basename(word) === "claude");
+  if (claude < 0) return null;
+  const words = argv.slice(claude + 1).filter((word) => !word.startsWith("-"));
+  const plugin = words.findIndex((word) => CLAUDE_PLUGIN_COMMANDS.has(word));
+  if (plugin < 0) return null;
+  const [subcommand = "", ...rest] = words.slice(plugin + 1);
+  const changesKeel = subcommand === "marketplace" ? marketplaceChangesKeel(rest) :
+    PLUGIN_CHANGING_SUBCOMMANDS.has(subcommand) && rest.some(isKeelPlugin);
+  return changesKeel ? argv.slice(claude).join(" ") : null;
+}
+
+function marketplaceChangesKeel([subcommand = "", ...rest]: readonly string[]): boolean {
+  return MARKETPLACE_CHANGING_SUBCOMMANDS.has(subcommand) && rest.some((word) => basename(word.replace(/\/+$/u, "")) === KEEL_PLUGIN);
+}
+
+function isKeelPlugin(word: string): boolean {
+  return word === KEEL_PLUGIN || word.startsWith(`${KEEL_PLUGIN}@`);
 }
 
 function checkProtectedWrites(call: readonly Step[]): Violation[] {

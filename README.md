@@ -45,7 +45,7 @@ The overlay (`~/git/keel-overlay`, or `KEEL_OVERLAY_DIR`) holds your own rules a
 
 ### 3. Link it into `~/.claude`
 
-Run these from a terminal outside Claude Code:
+Run these from a terminal outside Claude Code (git-guard denies an agent `bin/link --write`, `--unlink` and the `claude plugin` commands that change the keel install):
 
 ```bash
 cd ~/git/keel

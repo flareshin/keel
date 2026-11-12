@@ -478,7 +478,9 @@ function pluginChange(argv: readonly string[]): string | null {
 }
 
 function asksForHelp(args: readonly string[]): boolean {
-  return args.some((arg, index) => HELP_OPTIONS.has(arg) && !(args[index - 1] ?? "").startsWith("-"));
+  const optionsEnd = args.includes("--") ? args.indexOf("--") : args.length;
+  const options = args.slice(0, optionsEnd);
+  return options.some((arg, index) => HELP_OPTIONS.has(arg) && !(options[index - 1] ?? "").startsWith("-"));
 }
 
 function checkProtectedWrites(call: readonly Step[]): Violation[] {

@@ -1024,6 +1024,7 @@ describe("InstallCommandTest", () => {
       "cd /x/keel && claude plugin marketplace add \"$PWD\"", "claude plugin marketplace add https://github.com/o/keel.GIT",
       "claude plugin install other@market", "claude plugin disable other@market", "claude plugin marketplace add ~/git/other",
       "claude plugin install keel@keel --accept-command -h", "claude plugin install other@market --registry -h",
+      "claude plugin install -- keel@keel -h", "claude -- plugin install keel@keel -h",
       "claude --model x plugin install keel@keel",
     ]) {
       assertDenied(guard(command), "F-hookskip");

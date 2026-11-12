@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { before, describe, it } from "node:test";
 import { hookCases } from "./hook-parity-corpus.ts";
 import { fineClass, HOOK_NAME, sampleCases, samplingGroup, STDIN_BYTES_GROUP, UNUSABLE_TEXT_GROUP, WRONG_TYPE_GROUP } from "./hook-parity-sample.ts";
 import type { SampleCandidate } from "./hook-parity-sample.ts";
 import type { HookCase, HookParityReport, Observation } from "./hook-parity.ts";
-import { crashLine, differences, fullCorpusRequested, inWorkers, outcomeClasses, sandboxPaths, selectedCases, summary, withSyntaxMessageMasked } from "./hook-parity.ts";
+import { crashLine, differences, fullCorpusRequested, inWorkers, observe, outcomeClasses, sandboxPaths, selectedCases, summary, withSyntaxMessageMasked } from "./hook-parity.ts";
 
 const MIN_CASES = 150;
 const MIN_SAMPLED_CASES = 400;
@@ -310,5 +311,14 @@ describe("hook parity sample over the recorded golden", () => {
     const firstOfClass = new Map<string, HookCase>();
     for (const testCase of sampledGroups(corpus)) if (!firstOfClass.has(keyOf(testCase))) firstOfClass.set(keyOf(testCase), testCase);
     assert.deepEqual(sampledGroups(sample), [...firstOfClass.values()]);
+  });
+});
+
+describe("observe", () => {
+  it("fails naming the case, instead of waiting forever, when the hook never exits", () => {
+    const sleeper = join(mkdtempSync(join(tmpdir(), "hook-sleeper-")), "sleeper.ts");
+    writeFileSync(sleeper, "setInterval(() => {}, 1000);\n");
+    const stuck: HookCase = { name: "stuck payload", stdin: "{}" };
+    assert.throws(() => observe(stuck, sandboxPaths(), sleeper, 300), /stuck payload: the hook did not exit within 300 ms/);
   });
 });

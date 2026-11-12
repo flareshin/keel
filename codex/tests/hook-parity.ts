@@ -11,6 +11,7 @@ const TYPESCRIPT_HOOK = join(ADAPTER, "hooks", "pre-tool-use.ts");
 const WORKER = join(import.meta.dirname, "hook-parity-worker.ts");
 export const GOLDEN_DOCUMENT = "codex-hook-parity";
 const MAX_WORKERS = 8;
+const HOOK_TIMEOUT_MILLISECONDS = 120_000;
 const NORMAL_CONFIG = "[features]\nhooks = true\n";
 const MAX_MISMATCHES_SHOWN = 6;
 const FLOAT_DIRECTORIES = ["1", "1.0", "100.0", "-0.0", "1e+16", "1e+22", "0.5", "2.5"];
@@ -145,11 +146,17 @@ function sandboxFiles(paths: Paths): Record<string, string> {
   return Object.fromEntries(Object.entries(snapshot(paths.root)).map(([key, content]): [string, string] => [key, withSyntaxMessageMasked(content)]));
 }
 
-function observe(testCase: HookCase, paths: Paths): Observation {
+export function observe(testCase: HookCase, paths: Paths, hook: string = TYPESCRIPT_HOOK, timeoutMilliseconds: number = HOOK_TIMEOUT_MILLISECONDS): Observation {
   buildSandbox(paths, configOf(testCase));
-  const result = spawnSync(process.execPath, [TYPESCRIPT_HOOK], { input: testCase.stdin, env: environmentFor(paths, testCase.env), cwd: paths.repo, maxBuffer: 1 << 26 });
+  const result = spawnSync(process.execPath, [hook], { input: testCase.stdin, env: environmentFor(paths, testCase.env), cwd: paths.repo, maxBuffer: 1 << 26, timeout: timeoutMilliseconds });
+  if (result.error) throw new Error(hookFailure(testCase, result.error, timeoutMilliseconds));
   const stderr = result.stderr.toString("utf8");
   return { status: result.status, stdout: withSyntaxMessageMasked(result.stdout.toString("utf8")), stderr: testCase.crash ? crashLine(stderr) : stderr, files: sandboxFiles(paths) };
+}
+
+function hookFailure(testCase: HookCase, error: NodeJS.ErrnoException, timeoutMilliseconds: number): string {
+  if (error.code === "ETIMEDOUT") return `${testCase.name}: the hook did not exit within ${timeoutMilliseconds} ms`;
+  return `${testCase.name}: the hook could not run (${error.message})`;
 }
 
 export function withSyntaxMessageMasked(text: string): string {

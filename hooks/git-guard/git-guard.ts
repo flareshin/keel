@@ -84,6 +84,8 @@ const COMMIT_SHORT_ATTACHED_VALUE_FLAGS: ReadonlySet<string> = new Set(["S", "u"
 const COMMIT_NO_VERIFY_SHORT_FLAG = "n";
 const STAGING_SUBCOMMANDS: ReadonlySet<string> = new Set(["add", "stage"]);
 const PLAIN_CALL_TEXT_RE = /^(?:[A-Za-z0-9 \t\n'"_.,:;=@%+\-\/]|&&)*$/;
+const INERT_HEREDOC_SUBSTITUTION_START_RE = /\$\(cat <<'([^'\n]*)'\n/gu;
+const INERT_HEREDOC_SUBSTITUTION_SHOWN = "heredoc";
 const PR_BODY_FILE_LONG_OPTION = "--body-file";
 const PR_BODY_FILE_OPTIONS: ReadonlySet<string> = new Set(["-F", PR_BODY_FILE_LONG_OPTION]);
 const PR_BODY_FILE_SHORT_FLAG = "F";
@@ -1112,6 +1114,34 @@ function withLfLineEnds(text: string): string {
   return text.replace(/\r\n?/g, "\n");
 }
 
+function withoutInertHeredocSubstitutions(text: string): string {
+  let result = "";
+  let cursor = 0;
+  for (const match of text.matchAll(INERT_HEREDOC_SUBSTITUTION_START_RE)) {
+    if (match.index < cursor) continue;
+    const end = inertHeredocSubstitutionEnd(text, match.index + match[0].length, match[1] ?? "");
+    if (end === null) continue;
+    result += text.slice(cursor, match.index) + INERT_HEREDOC_SUBSTITUTION_SHOWN;
+    cursor = end;
+  }
+  return result + text.slice(cursor);
+}
+
+function inertHeredocSubstitutionEnd(text: string, bodyStart: number, delimiter: string): number | null {
+  let lineStart = bodyStart;
+  for (let lineEnd = text.indexOf("\n", lineStart); lineEnd >= 0; lineEnd = text.indexOf("\n", lineStart)) {
+    const line = text.slice(lineStart, lineEnd);
+    if (line === delimiter) return text[lineEnd + 1] === ")" ? lineEnd + 2 : null;
+    if (line.includes(")") || line.startsWith(delimiter)) return null;
+    lineStart = lineEnd + 1;
+  }
+  return null;
+}
+
+function isReadWord(word: string): boolean {
+  return !UNREAD_WORD_RE.test(withoutInertHeredocSubstitutions(word));
+}
+
 function commitMessageSource(args: readonly string[]): MessageSource {
   const source: MessageSource = { words: [], files: [], plain: true };
   let index = 0;
@@ -1132,7 +1162,7 @@ function addCommitMessageValue(source: MessageSource, arg: string, optionName: s
   else if (COMMIT_FILE_OPTIONS.has(optionName)) source.files.push(value);
   else return;
   const spelledPlainly = arg === optionName || arg.startsWith("--");
-  if (!spelledPlainly || UNREAD_WORD_RE.test(value)) source.plain = false;
+  if (!spelledPlainly || !isReadWord(value)) source.plain = false;
 }
 
 function abbreviatesMessageOption(arg: string): boolean {
@@ -1150,7 +1180,7 @@ function prTextArgs(ghArgv: readonly string[]): string[] | null {
 }
 
 function prMessageSource(args: readonly string[]): MessageSource {
-  const source: MessageSource = { words: [...args], files: [], plain: !args.some((arg) => UNREAD_WORD_RE.test(arg)) };
+  const source: MessageSource = { words: [...args], files: [], plain: args.every(isReadWord) };
   for (const [index, arg] of args.entries()) {
     if (PR_BODY_FILE_OPTIONS.has(arg) && index + 1 < args.length) source.files.push(args[index + 1] ?? "");
     else if (arg.startsWith(PR_BODY_FILE_LONG_OPTION + "=")) source.files.push(partition(arg, "=")[2]);

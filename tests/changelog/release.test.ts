@@ -27,6 +27,23 @@ describe("assembleRelease", () => {
     )
   })
 
+  it("assembleRelease_withEveryCategoryInReverse_ordersAddedChangedFixedRemovedUpgradingThenOthers", () => {
+    const text = ["Other", "Upgrading", "Removed", "Fixed", "Changed", "Added"].map((category) => `### ${category}\n- ${category} entry\n`).join("\n")
+
+    const { section } = assembleRelease(CHANGELOG, [{ name: "x.md", text }], "1.1.0", "2026-11-12")
+
+    const headings = section.split("\n").filter((line) => line.startsWith("### "))
+    assert.deepEqual(headings, ["### Added", "### Changed", "### Fixed", "### Removed", "### Upgrading", "### Other"])
+  })
+
+  it("assembleRelease_whenTheChangelogStartsWithTheUnreleasedHeading_stillFindsIt", () => {
+    const changelog = `## [Unreleased]\n\n${UNRELEASED_POINTER}\n\n${OLDER_RELEASE}`
+
+    const { changelog: released } = assembleRelease(changelog, [{ name: "x.md", text: "### Added\n- x\n" }], "1.1.0", "2026-11-12")
+
+    assert.equal(released, `## [Unreleased]\n\n${UNRELEASED_POINTER}\n\n## [1.1.0] - 2026-11-12\n\n### Added\n\n- x\n\n${OLDER_RELEASE}`)
+  })
+
   it("assembleRelease_keepsThePointerAndPlacesTheNewSectionAboveTheOlderRelease", () => {
     const { changelog } = assembleRelease(CHANGELOG, [{ name: "x.md", text: "### Added\n- x\n" }], "1.1.0", "2026-11-12")
 
@@ -63,6 +80,7 @@ describe("bin/changelog", () => {
     fs.writeFileSync(path.join(root, "CHANGELOG.md"), CHANGELOG)
     fs.writeFileSync(path.join(root, "changelog.d", "README.md"), "# guide, never folded\n")
     fs.writeFileSync(path.join(root, "changelog.d", "x.md"), "### Added\n- x\n")
+    fs.writeFileSync(path.join(root, "changelog.d", "notes.txt"), "### Added\n- not a fragment\n")
     fs.cpSync(path.join(KEEL, "bin", "changelog.ts"), path.join(root, "bin", "changelog.ts"))
     fs.symlinkSync(path.join(KEEL, "lib"), path.join(root, "lib"))
     fs.symlinkSync(path.join(KEEL, "measure"), path.join(root, "measure"))
@@ -81,7 +99,7 @@ describe("bin/changelog", () => {
       assert.equal(completed.status, 0, completed.stderr)
       assert.equal(completed.stdout, "## [1.1.0] - 2026-11-12\n\n### Added\n\n- x\n")
       assert.equal(fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8"), CHANGELOG)
-      assert.deepEqual(fs.readdirSync(path.join(root, "changelog.d")).sort(), ["README.md", "x.md"])
+      assert.deepEqual(fs.readdirSync(path.join(root, "changelog.d")).sort(), ["README.md", "notes.txt", "x.md"])
     } finally {
       fs.rmSync(root, { recursive: true, force: true })
     }
@@ -93,8 +111,43 @@ describe("bin/changelog", () => {
       const completed = run(root, "--write", "1.1.0", "2026-11-12")
 
       assert.equal(completed.status, 0, completed.stderr)
+      assert.equal(completed.stdout, "changelog: wrote 1.1.0 from 1 fragment(s)\n")
       assert.match(fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8"), /## \[1\.1\.0\] - 2026-11-12\n\n### Added\n\n- x\n\n## \[1\.0\.0\]/)
-      assert.deepEqual(fs.readdirSync(path.join(root, "changelog.d")), ["README.md"])
+      assert.deepEqual(fs.readdirSync(path.join(root, "changelog.d")).sort(), ["README.md", "notes.txt"])
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  const usageCases: [name: string, args: string[], stderr: RegExp][] = [
+    ["NoDate", ["1.1.0"], /VERSION and DATE are required/],
+    ["NoVersion", [], /VERSION and DATE are required/],
+    ["AThirdArgument", ["1.1.0", "2026-11-12", "extra"], /unrecognized arguments: extra/],
+  ]
+  for (const [name, args, stderr] of usageCases) {
+    it(`changelog_with${name}_exitsTwoWithUsage`, () => {
+      const root = scratchRepo()
+      try {
+        const completed = run(root, ...args)
+
+        assert.equal(completed.status, 2)
+        assert.match(completed.stderr, /^usage: changelog \[-h\] \[--write\] VERSION DATE\n/)
+        assert.match(completed.stderr, stderr)
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true })
+      }
+    })
+  }
+
+  it("changelog_withHelp_namesBothArgumentsAndTheWriteFlag", () => {
+    const root = scratchRepo()
+    try {
+      const completed = run(root, "--help")
+
+      assert.equal(completed.status, 0)
+      for (const text of ["changelog [-h] [--write] VERSION DATE", "Fold the changelog.d/ fragments", "the release version", "the release date, YYYY-MM-DD", "delete the folded fragments"]) {
+        assert.ok(completed.stdout.includes(text), `help lacks ${JSON.stringify(text)}:\n${completed.stdout}`)
+      }
     } finally {
       fs.rmSync(root, { recursive: true, force: true })
     }

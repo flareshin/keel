@@ -1023,6 +1023,7 @@ describe("InstallCommandTest", () => {
       "claude plugin disable --all", "claude plugin disable -as user", "claude plugin update", "Claude plugin disable keel@keel",
       "cd /x/keel && claude plugin marketplace add \"$PWD\"", "claude plugin marketplace add https://github.com/o/keel.GIT",
       "claude plugin install other@market", "claude plugin disable other@market", "claude plugin marketplace add ~/git/other",
+      "claude plugin install keel@keel --accept-command -h", "claude plugin install other@market --registry -h",
       "claude --model x plugin install keel@keel",
     ]) {
       assertDenied(guard(command), "F-hookskip");
@@ -1040,6 +1041,7 @@ describe("InstallCommandTest", () => {
       "link a b", "ln -s a b", "cat bin/link", "claude plugin", "claude plugin list", "claude plugin list --json",
       "claude plugin marketplace", "claude plugin marketplace list", "claude plugin validate .", "claude plugin help",
       "claude plugin details keel@keel", "claude plugin install --help", "claude plugin marketplace add -h",
+      "claude plugin eval keel", "claude plugin test .", "claude plugin marketplace help", "claude plugin install keel@keel -h",
     ]) {
       assertPassed(guard(command));
     }

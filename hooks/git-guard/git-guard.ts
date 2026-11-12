@@ -96,7 +96,7 @@ const KEEL_CLI_NAMES: ReadonlySet<string> = new Set(["keel", "keel.ts"]);
 const LINK_TOOL_RE = /\/bin\/link(?:\.ts)?$/iu;
 const LINK_CHANGING_FLAGS: ReadonlySet<string> = new Set(["--write", "--unlink"]);
 const CLAUDE_PLUGIN_COMMANDS: ReadonlySet<string> = new Set(["plugin", "plugins"]);
-const READ_ONLY_PLUGIN_SUBCOMMANDS: ReadonlySet<string> = new Set(["", "list", "validate", "help", "details", "eval"]);
+const READ_ONLY_PLUGIN_SUBCOMMANDS: ReadonlySet<string> = new Set(["", "list", "validate", "help", "details", "eval", "test"]);
 const READ_ONLY_MARKETPLACE_SUBCOMMANDS: ReadonlySet<string> = new Set(["", "list", "help"]);
 const MARKETPLACE_SUBCOMMAND = "marketplace";
 const HELP_OPTIONS: ReadonlySet<string> = new Set(["--help", "-h"]);
@@ -470,11 +470,15 @@ function pluginChange(argv: readonly string[]): string | null {
   const args = argv.slice(claude + 1);
   const words = args.filter((word) => !word.startsWith("-"));
   const plugin = words.findIndex((word) => CLAUDE_PLUGIN_COMMANDS.has(word));
-  if (plugin < 0 || args.some((arg) => HELP_OPTIONS.has(arg))) return null;
+  if (plugin < 0 || asksForHelp(args)) return null;
   const [subcommand = "", action = ""] = words.slice(plugin + 1);
   const readOnly = subcommand === MARKETPLACE_SUBCOMMAND ? READ_ONLY_MARKETPLACE_SUBCOMMANDS.has(action) :
     READ_ONLY_PLUGIN_SUBCOMMANDS.has(subcommand);
   return readOnly ? null : argv.slice(claude).join(" ");
+}
+
+function asksForHelp(args: readonly string[]): boolean {
+  return args.some((arg, index) => HELP_OPTIONS.has(arg) && !(args[index - 1] ?? "").startsWith("-"));
 }
 
 function checkProtectedWrites(call: readonly Step[]): Violation[] {

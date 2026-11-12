@@ -755,7 +755,7 @@ function judgePush(push: Push, repoRoot: string, repoKey: string | null, row: Ga
       continue;
     }
     const baseRef = resolveBase(repoRoot, gatedRow);
-    const outgoing = outgoingOf(repoRoot, gatedKey, gatedRow, head, baseRef, registry.pushNeedsApproval(gatedRow));
+    const outgoing = outgoingOf(repoRoot, gatedKey, gatedRow, head, baseRef, registry.pushNeedsApproval(gatedRow), false);
     report.decide(verify.judge(outgoing), `push of ${spec.source} in ${gatedKey} denied`, hint, gatedKey, head);
   }
 }
@@ -796,7 +796,8 @@ function judgeMerge(merge: Merge, repoRoot: string, repoKey: string | null, row:
   }
   const head = fetchedCommit(repoRoot, merge.matchHead);
   const baseRef = fetchedRemoteBranch(repoRoot, pullRequest["baseRefName"]);
-  const outgoing = outgoingOf(repoRoot, gatedKey, gatedRow, head, baseRef, true);
+  const promote = pullRequest["baseRefName"] !== gatedRow.integrationBase;
+  const outgoing = outgoingOf(repoRoot, gatedKey, gatedRow, head, baseRef, true, promote);
   report.decide(verify.judge(outgoing), summary, hint, gatedKey, head);
 }
 
@@ -881,11 +882,11 @@ function resolveBase(repoRoot: string, row: GatedRepo): string {
 }
 
 function outgoingOf(
-  repoRoot: string, repoKey: string, row: GatedRepo, head: string, baseRef: string, needsApproval: boolean,
+  repoRoot: string, repoKey: string, row: GatedRepo, head: string, baseRef: string, needsApproval: boolean, promote: boolean,
 ): verify.Outgoing {
   const mergeBase = gitcmd.mergeBase(repoRoot, baseRef, head);
   if (mergeBase === null) throw new GateError(`no merge base between ${baseRef} and ${Array.from(head).slice(0, 10).join("")}`);
-  return { repoRoot, repoKey, row, head, mergeBase, needsApproval };
+  return { repoRoot, repoKey, row, head, mergeBase, needsApproval, promote };
 }
 
 function fetchedCommit(repoRoot: string, sha: string): string {
@@ -910,7 +911,7 @@ function earlyWarning(repoRoot: string, repoKey: string | null, row: GatedRepo |
   if (head === null) return;
   const branch = gitcmd.currentBranch(repoRoot);
   const baseRef = resolveBase(repoRoot, row!);
-  const decision = verify.judge(outgoingOf(repoRoot, repoKey!, row!, head, baseRef, true));
+  const decision = verify.judge(outgoingOf(repoRoot, repoKey!, row!, head, baseRef, true, false));
   const label = `${branch || Array.from(head).slice(0, 10).join("")} of ${repoKey} (risk ${decision.riskClass || "none"})`;
   const where = { repo: repoKey, head, risk: decision.riskClass, root_run_id: decision.rootRunId };
   if (decision.ok) {

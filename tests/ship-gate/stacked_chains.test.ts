@@ -228,14 +228,40 @@ describe('StackedChainsTest', () => {
     assert.ok(!result.stderr.includes(STACKED_HINT), result.stderr);
   });
 
-  test('stacked_chain_reviewed_from_above_the_merge_base_denies', (t) => {
+  test('stacked_chain_reviewed_from_above_the_merge_base_passes_when_its_base_is_below_the_interval', (t) => {
     const [sandbox, repo] = stack(t);
     const first = repo.git('rev-parse', 'first');
     const narrow = reviewedBranch(sandbox, repo, 'narrow', first, [{ 'src/narrow.py': 'narrow = 1\n' }], 'rv-stack-0003');
     repo.git('checkout', 'feature');
     repo.git('cherry-pick', narrow);
     sandbox.testsEvidence(repo);
+    const result = sandbox.push(repo, PUSH_FEATURE);
+    assert.equal(result.rc, 0, result.stderr);
+  });
+
+  test('stacked_chain_reviewed_from_a_base_off_the_interval_line_denies', (t) => {
+    const [sandbox, repo] = stack(t);
+    const second = repo.git('rev-parse', 'second');
+    const narrow = reviewedBranch(sandbox, repo, 'narrow', second, [{ 'src/narrow.py': 'narrow = 1\n' }], 'rv-stack-0003');
+    repo.git('checkout', 'feature');
+    repo.git('cherry-pick', narrow);
+    sandbox.testsEvidence(repo);
     assert.equal(sandbox.push(repo, PUSH_FEATURE).rc, 2);
+  });
+
+  test('chain_reviewed_from_a_commit_on_the_line_does_not_credit_the_unreviewed_commit_below_its_base', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app', undefined, SEED);
+    repo.branch('feature');
+    repo.commit({ 'src/gap.py': 'unreviewed = 1\n' });
+    const below = repo.head();
+    repo.commit({ ...LOGIC_WITH_TEST, 'src/gap.py': 'reviewed = 2\n' });
+    sandbox.review(repo, { runId: 'rv-line-0001', reviewBase: below });
+    sandbox.approve('rv-line-0001');
+    sandbox.testsEvidence(repo);
+    const result = sandbox.push(repo, PUSH_FEATURE);
+    assert.equal(result.rc, 2, result.stderr);
+    assert.ok(result.stderr.includes('reviewed from'), result.stderr);
   });
 
   test('long_stack_among_many_live_chains_passes_well_inside_the_hook_timeout', (t) => {

@@ -25,6 +25,7 @@ const USAGE = `usage:
   keel test -- <command…>
   keel home                           (prints the keel checkout this CLI runs from)
   keel approve <root_run_id> [--read]
+  keel approve --promote <owner/repo> <sha>
   keel snapshot <repo>
   keel review prepare                 (stdin: workflow args; stdout: prepared metadata)
   keel evidence write-review          (stdin: {"keel_evidence":{…},"verdict":…,"source":{…}})
@@ -32,16 +33,19 @@ const USAGE = `usage:
   keel evidence show [--repo <path>] [--root <root_run_id>]
   keel evidence compatibility         (read-only retirement inventory across repos)
   keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]
+  keel evidence promote-plan --repo <path> --base <ref> --head <sha>
   keel evidence gc
   keel precheck run --repo <path> --base <ref>
   keel precheck rerun --repo <path> --base <ref> --census <file>
   keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>
   keel precheck required --repo <path> --base <sha> --end <sha>`;
+const PROMOTE_USAGE = 'keel approve --promote <owner/repo> <sha>';
 const EXIT_OK = 0;
 const EXIT_USAGE = 2;
 const EXIT_REFUSED = 3;
 const EXIT_INTERNAL = 70;
-const EVIDENCE_OPTIONS = new Set(['--repo', '--run', '--root', '--audits', '--verifiers']);
+const EVIDENCE_OPTIONS = new Set(['--repo', '--run', '--root', '--audits', '--verifiers', '--base', '--head']);
+const PROMOTE_PLAN_OPTIONS = ['--repo', '--base', '--head'];
 const PRECHECK_BIND_OPTIONS = new Set(['--repo', '--base', '--end', '--tree']);
 const PRECHECK_REQUIRED_OPTIONS = new Set(['--repo', '--base', '--end']);
 const PRECHECK_RUN_OPTIONS = new Set(['--repo', '--base']);
@@ -225,6 +229,11 @@ function typescriptResolves(): boolean {
 }
 
 function approve(rest: string[]): number {
+  if (rest[0] === '--promote') {
+    if (rest.length !== 3) throw new writers.Usage(PROMOTE_USAGE);
+    seams.print(writers.writePromoteApproval(rest[1]!, rest[2]!));
+    return EXIT_OK;
+  }
   const flags = rest.filter((arg) => arg.startsWith('--'));
   const positional = rest.filter((arg) => !arg.startsWith('--'));
   if (positional.length !== 1 || flags.some((flag) => flag !== '--read')) throw new writers.Usage('keel approve <root_run_id> [--read]');
@@ -262,6 +271,11 @@ function evidence(rest: string[]): number {
   } else if (subcommand === 'compatibility') {
     if (optionNames.length > 0) throw new writers.Usage('compatibility inventories all repositories; it takes no options');
     seams.print(compatibility());
+  } else if (subcommand === 'promote-plan') {
+    if (optionNames.length !== PROMOTE_PLAN_OPTIONS.length || !PROMOTE_PLAN_OPTIONS.every((name) => name in options)) {
+      throw new writers.Usage('promote-plan requires --repo, --base and --head');
+    }
+    seams.print(promotePlan(options['--repo']!, options['--base']!, options['--head']!));
   } else if (subcommand === 'gc') {
     seams.print({ deleted: gc.collect() });
   } else {
@@ -290,6 +304,18 @@ export function show(repoPath: string, rootRunId: string | null): JsonObject {
     tests: store.load('tests', repoKey).map((item) => item.evidence_id),
     smoke: store.load('smoke', repoKey).map((item) => item.evidence_id),
   };
+}
+
+export function promotePlan(repoPath: string, base: string, head: string): JsonObject {
+  const repoRoot = gitcmd.toplevel(repoPath);
+  const repoKey = repoRoot ? registry.originKey(repoRoot) : null;
+  const row = registry.lookup(repoKey);
+  if (repoRoot === null || repoKey === null || !registry.isGated(row)) throw new writers.Usage(`${repoPath} is not a clone of a gated repo`);
+  const headSha = gitcmd.commitSha(repoRoot, head);
+  const mergeBase = headSha === null ? null : gitcmd.mergeBase(repoRoot, base, headSha);
+  if (headSha === null || mergeBase === null) throw new writers.Usage(`no merge base between ${base} and ${head}`);
+  const plan = verify.promotePlan({ repoRoot, repoKey, row: row!, head: headSha, mergeBase, needsApproval: true, promote: true });
+  return { repo: repoKey, merge_base: mergeBase, head: headSha, steps: plan.steps, uncovered: plan.uncovered };
 }
 
 export function compatibility(): JsonObject {

@@ -116,7 +116,7 @@ function runFixture(fixturePath: string, hook: string, live: LiveHooks): Fixture
         throw new Unproven(`setup command failed in ${path.basename(fixturePath)}: ${displayText(command)}`)
       }
     }
-    const stdin = JSON.stringify(payload).replaceAll(TMP_PLACEHOLDER, JSON.stringify(tempDir).slice(1, -1))
+    const stdin = jsonTextWith(payload, TMP_PLACEHOLDER, tempDir)
     let completed
     try {
       completed = runProcess(registration.command, { shell: true, input: stdin, cwd: tempDir, env, timeoutSeconds: hookTimeout(registration) })
@@ -170,8 +170,13 @@ function liveHooks(ctx: SmokeContext): LiveHooks {
   return { registrations: [...fromSettings, ...fromPlugin], registeredIn: `settings.json or ${pluginHooksPath(ctx)}` }
 }
 
-function withPluginRoot(hooks: JsonObject, pluginRoot: string): JsonValue {
-  return parseJson(JSON.stringify(hooks).replaceAll(PLUGIN_ROOT_PLACEHOLDER, JSON.stringify(pluginRoot).slice(1, -1)))
+export function withPluginRoot(hooks: JsonObject, pluginRoot: string): JsonValue {
+  return parseJson(jsonTextWith(hooks, PLUGIN_ROOT_PLACEHOLDER, pluginRoot))
+}
+
+function jsonTextWith(value: JsonValue, placeholder: string, text: string): string {
+  const escaped = JSON.stringify(text).slice(1, -1)
+  return JSON.stringify(value).replaceAll(placeholder, () => escaped)
 }
 
 function settingsHooks(dataDir: string): JsonValue | undefined {

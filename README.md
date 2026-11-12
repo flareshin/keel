@@ -4,7 +4,7 @@ A small, measured harness for Claude Code. It has five principles. Each one is e
 
 keel is written almost entirely by AI agents. Every change is reviewed by a separate agent context that did not write it (`lens-review`), and keel ships through its own ship-gate, which merges only with the owner's approval.
 
-keel is public, at release 1.0.0 (see [`CHANGELOG.md`](CHANGELOG.md)); no license has been chosen, so all rights remain reserved. The binding spec is [`docs/DESIGN.md`](docs/DESIGN.md); where this README and the spec disagree, the spec wins.
+keel is public, at release 1.0.0 (see [`CHANGELOG.md`](CHANGELOG.md)); it is licensed under the Apache License 2.0 ([`LICENSE`](LICENSE)); [`NOTICE`](NOTICE) carries the notices of the third-party material it adapts. The binding spec is [`docs/DESIGN.md`](docs/DESIGN.md); where this README and the spec disagree, the spec wins.
 
 ## Why keel exists
 
@@ -367,6 +367,7 @@ These published skills shaped keel's own skills:
 | `removing-comments` and the `comment-reviewer` agent | pstack `no-comments` and Comment Sicko in [cursor/plugins](https://github.com/cursor/plugins) (at 4dd1d05, MIT) | A comment pass by a context that did not write the comments, with reshape flags for surprises in our own code and an encoding offer for claimed constraints; keel keeps its narrower K5.14 exceptions |
 | `writing-readable-code` (rules K5.7, K5.8, K5.10 and `references/typescript-types.md`) and `improving-structure` (friction questions) | pstack `typescript-best-practices`, `principle-type-system-discipline`, `principle-model-the-domain`, `principle-minimize-reader-load` and `architect/references/design-red-flags.md` in [cursor/plugins](https://github.com/cursor/plugins) (at 4dd1d05, MIT) | The TypeScript type-design reference, lifecycle state as one value, domain-grouped modules, hand-synced lists and the 30-second reader test |
 | `writing-readable-code` (implementation guide) | Matt Pocock's `codebase-design`, Addy Osmani's [`incremental-implementation`](https://github.com/addyosmani/agent-skills/blob/main/skills/incremental-implementation/SKILL.md) and [pstack `architect`](https://github.com/cursor/plugins/blob/main/pstack/skills/architect/SKILL.md) (read on 2026-10-19) | Caller-first design and small behavior slices |
+| `authoring-agents` and `improving-agents` | [Harness²](https://github.com/google-research/harness2) (at 1cfe254, Apache-2.0, `harness2/core/prompts.py`) | The form order and "large input, small answer" test; the diagnosis split, verdict labels and cue/lesson/evidence entry |
 | `deepening-prompts` | Felix Rieseberg's ["How to be more ambitious: a tutorial for humans with models"](https://felixrieseberg.com/how-to-be-more-ambitious-a-tutorial-for-humans-with-models/) (read on 2026-11-04) | The deeper-not-bigger rewrite: the outcome behind the task, the rawest source, expert methods, an outside judge, the doubt that attacks the result, verbs over nouns and a crew of roles asked for their work, not their voice |
 
 The skill files name their sources too: `skills/improving-structure/SKILL.md`, `skills/removing-comments/SKILL.md`, `skills/writing-readable-code/references/implementation.md`, `skills/writing-readable-code/references/typescript-types.md` and `skills/deepening-prompts/SKILL.md`.

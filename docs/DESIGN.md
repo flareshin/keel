@@ -202,7 +202,7 @@ v1 runs until the swap; the dangling-link check gates it.
 
 ## 8. What keel does not do
 
-Bulk-copy v1 rules; adopt a harness-generating plugin; delete the v1 repo; generate all of settings.json; keep a hashed lexicon; publish company data; make the owner's use depend on a plugin load path; wire live hooks to a development tree; leave any path where an author writes its own evidence; admit a plan-gate hook (deny code edits until a `Plan:` line): it showed no measured effect, and K4's approved brief covers the spec.
+Bulk-copy v1 rules; adopt a harness-generating plugin; delete the v1 repo; generate all of settings.json; keep a hashed lexicon; publish company data; run the owner's plugin from anything but the merged checkout (the plugin install adds `~/git/keel` as a directory marketplace, read in place at session start, so it moves only by merge); wire live hooks to a development tree; leave any path where an author writes its own evidence; admit a plan-gate hook (deny code edits until a `Plan:` line): it showed no measured effect, and K4's approved brief covers the spec.
 
 ## 9. Compatibility
 

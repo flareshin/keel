@@ -10,7 +10,7 @@ import { CaseError } from "../../measure/evals/lib/evalkit/cases.ts"
 import { loadReviewCases } from "../../measure/evals/lib/evalkit/reviewcases.ts"
 import type { ReviewCase } from "../../measure/evals/lib/evalkit/reviewcases.ts"
 import { gradeResult, roundToFourDecimals, suiteNumbers } from "../../measure/evals/lib/evalkit/reviewgrade.ts"
-import { BuildError, buildCaseRepo } from "../../measure/evals/lib/evalkit/reviewrun.ts"
+import { BuildError, buildCaseRepo, reviewPrompt } from "../../measure/evals/lib/evalkit/reviewrun.ts"
 import { runGitOrThrow } from "../../measure/lib/measurekit/gitutil.ts"
 import type { JsonObject } from "../../measure/lib/measurekit/json.ts"
 import { CHECKOUT, MeasureSandbox, readText } from "./helpers.ts"
@@ -116,6 +116,13 @@ describe("build", () => {
     keel = path.join(root, "keel")
   })
   afterEach(() => fs.rmSync(root, { recursive: true, force: true }))
+
+  it("reviewPrompt_namesThePluginWorkflowFirst_andTheLinkNameAsFallback", () => {
+    writeCase(keel, "mean-1")
+    const reviewCase = loadReviewCases([keel])[0] as ReviewCase
+    const firstLine = reviewPrompt(reviewCase, "/r", "b", "h").split("\n")[0]
+    assert.equal(firstLine, "Run the saved workflow named keel:lens-review (lens-review under the link install) with these args (JSON):")
+  })
 
   it("build_commitsTheBaseThenTheChange", () => {
     writeCase(keel, "mean-1")

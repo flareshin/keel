@@ -232,7 +232,8 @@ JSON
 ```
 
 Read both JSON files through the agent's file tool and call
-`Workflow({name:'lens-review', args:{...request, prepared}})` with their parsed
+`Workflow({name:'keel:lens-review', args:{...request, prepared}})` (name
+`'lens-review'` under the link install) with their parsed
 objects. Keep all request fields, including custom lenses and delta identifiers.
 The CLI pins the candidate without an agent; review reads the pinned Git objects.
 

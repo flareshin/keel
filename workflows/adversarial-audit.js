@@ -193,7 +193,7 @@ async function verifyLensFindings(audit, lens) {
     })
     return { lens: lens.key, verified: [...lows, ...verified], notes }
   } catch (e) {
-    return { lens: lens.key, verified: [...lows, ...findings.map((finding) => ({ ...finding, lens: lens.key, verdict: null, verifyError: String(e?.message || e) }))], notes }
+    return { lens: lens.key, verified: [...lows, ...findings.map((finding) => ({ ...finding, lens: lens.key, verdict: null, verifyError: errorMessage(e) }))], notes }
   }
 }
 

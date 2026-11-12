@@ -20,6 +20,7 @@ export const REPLAY_TESTS = [
   'tests/hooks/hook-parity.test.ts',
   'tests/hooks/shell-parity.test.ts',
   'tests/link/cross_impl.test.ts',
+  'tests/skills/rule-checks-parity.test.ts',
 ];
 export const FULL_SUITE_PATTERNS = [
   'hooks/**', 'lib/**', 'measure/lib/**', 'measure/boundary*', 'codex/hooks/**',

@@ -67,12 +67,11 @@ describe("affectedTests", () => {
 })
 
 describe("REPLAY_TESTS", () => {
-  const replayShaped = (directory: string): string[] =>
-    readdirSync(join(KEEL_ROOT, directory)).filter((name) => /(parity|cross_impl).*\.test\.ts$/.test(name)).map((name) => `${directory}/${name}`)
-
-  it("replayTests_nameEveryParityAndCrossImplementationTestInThisRepo_andOnlyFilesThatExist", () => {
-    const onDisk = ["tests/ship-gate", "tests/hooks", "tests/link", "codex/tests"].flatMap(replayShaped).sort()
-    assert.deepEqual([...REPLAY_TESTS].sort(), onDisk)
+  it("replayTests_nameEveryRunnableParityAndCrossImplementationTestInThisRepo_andOnlyFilesThatExist", () => {
+    const runnable = git(KEEL_ROOT, "ls-files", "--", ":(glob)tests/**/*.test.ts", ":(glob)codex/tests/*.test.ts", ":(glob)tests/workflows/*.test.mjs").split("\n")
+    const replayShaped = runnable.filter((test) => /(parity|cross_impl)[^/]*\.test\.(ts|mjs)$/.test(test)).sort()
+    assert.ok(replayShaped.includes("tests/skills/rule-checks-parity.test.ts"))
+    assert.deepEqual([...REPLAY_TESTS].sort(), replayShaped)
     for (const test of CORPUS_TESTS) assert.ok(REPLAY_TESTS.includes(test), `${test} is not a replay test`)
   })
 })
@@ -156,6 +155,19 @@ describe("keel test --affected", () => {
     for (const test of REPLAY_TESTS) assert.ok(completed.stderr.includes(`\n${test}\n`), `${test} was not listed`)
     assert.doesNotMatch(completed.stderr, /also run/)
     assert.match(completed.stderr, new RegExp(`^KEEL-TEST \\{"run_id":"[^"]+","count":${REPLAY_TESTS.length + 1},"exit":0,`, "m"))
+  })
+
+  it("keelTestAffected_withReplays_listsAndRunsAReplayTheChangeReachesOnce", () => {
+    const reachedReplay = "tests/hooks/shell-parity.test.ts"
+    const root = remoteRepo(Object.fromEntries(REPLAY_TESTS.map((test) => [test, PASSING_TEST("node:path")])))
+    writeFiles(root, { [reachedReplay]: PASSING_TEST("node:os") })
+
+    const completed = keel(root, ["--with-replays", "--base", "trunk"], scratchDir("keel-data-"))
+
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.match(completed.stderr, new RegExp(`^keel test --affected: 1 test file reaches 1 changed path, plus ${REPLAY_TESTS.length - 1} replay test files\n${reachedReplay}\n`))
+    assert.equal(completed.stderr.split(`\n${reachedReplay}\n`).length, 2)
+    assert.match(completed.stderr, new RegExp(`^KEEL-TEST \\{"run_id":"[^"]+","count":${REPLAY_TESTS.length},"exit":0,`, "m"))
   })
 
   it("keelTestAffected_withReplays_refusesWithoutRunning_whenAReplayTestIsMissing", () => {

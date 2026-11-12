@@ -130,7 +130,7 @@ describe("keel test --affected", () => {
 
     const completed = keel(root, ["--base", "trunk"], scratchDir("keel-data-"))
 
-    assert.match(completed.stderr, /^keel test --affected: code a hook runs changed \(lib\/a\.ts\); also run `keel test -- npm test` once before root review$/m)
+    assert.match(completed.stderr, /^keel test --affected: code a hook runs changed \(lib\/a\.ts\); also run `keel test -- npm test` once, in the background alongside the root review$/m)
   })
 
   it("keelTestAffected_exitsFourWithoutRunning_whenNoTestReachesTheChangedPaths", () => {

@@ -212,6 +212,67 @@ describe("full suite lock", { timeout: 60_000 }, () => {
     assert.equal(holderPid(), String(process.pid))
   })
 
+  const checkoutWith = (testFiles: Record<string, string>): string => {
+    delete env.NODE_TEST_CONTEXT
+    const checkout = path.join(dataDir, "checkout")
+    fs.mkdirSync(path.join(checkout, "tests"), { recursive: true })
+    for (const script of ["run-all.sh", "suite-lock.sh"]) fs.copyFileSync(path.join(CHECKOUT, "tests", script), path.join(checkout, "tests", script))
+    for (const [file, body] of Object.entries(testFiles)) {
+      fs.mkdirSync(path.dirname(path.join(checkout, file)), { recursive: true })
+      fs.writeFileSync(path.join(checkout, file), body)
+    }
+    return checkout
+  }
+
+  const PASSING = 'import { it } from "node:test"\nit("passes", () => {})\n'
+  const FAILING = 'import { it } from "node:test"\nit("fails", () => { throw new Error("red") })\n'
+  const HANGING = 'import fs from "node:fs"\nfs.writeFileSync(process.env.HANG_PID_FILE as string, String(process.pid))\nsetInterval(() => {}, 1000)\n'
+
+  const isAlive = (pid: number): boolean => {
+    try { process.kill(pid, 0); return true } catch { return false }
+  }
+
+  const hangingRunAll = (limitSeconds: string): { run: Run; hangPidFile: string } => {
+    const hangPidFile = path.join(dataDir, "hang.pid")
+    const checkout = checkoutWith({ "tests/hang.test.ts": HANGING })
+    env = { ...env, HANG_PID_FILE: hangPidFile, KEEL_SUITE_TIMEOUT_SECONDS: limitSeconds }
+    return { run: spawnRun([path.join(checkout, "tests", "run-all.sh")]), hangPidFile }
+  }
+
+  it("runAll_aSuitePastTheLimit_isStoppedWithEachProcessStackSaved_andReleasesTheLock", async () => {
+    const { run, hangPidFile } = hangingRunAll("1")
+    assert.equal((await run.done).code, 124)
+    const hangsDir = path.join(dataDir, "state", "keel", "suite-hangs")
+    const [hang] = fs.readdirSync(hangsDir)
+    const savedTo = path.join(hangsDir, hang as string)
+    assert.ok(run.stderr().includes(`run-all: the full suite ran past 1 seconds; saved its process stacks to ${savedTo} and stopped it`), run.stderr())
+    const hangPid = Number(fs.readFileSync(hangPidFile, "utf8"))
+    assert.match(fs.readFileSync(path.join(savedTo, "processes.txt"), "utf8"), /hang\.test\.ts/)
+    if (process.platform === "darwin") assert.match(fs.readFileSync(path.join(savedTo, `${hangPid}.txt`), "utf8"), /Call graph/)
+    assert.equal(isAlive(hangPid), false)
+    assert.equal(fs.existsSync(lockDir), false)
+  })
+
+  it("runAll_stoppedByTermBeforeTheLimit_stopsTheSuiteItStarted_andReleasesTheLock", async () => {
+    const { run, hangPidFile } = hangingRunAll("600")
+    await until(() => fs.existsSync(hangPidFile) && fs.readFileSync(hangPidFile, "utf8") !== "")
+    assert.equal(holderPid(), String(run.child.pid))
+    run.child.kill("SIGTERM")
+    assert.equal((await run.done).code, 143)
+    assert.equal(isAlive(Number(fs.readFileSync(hangPidFile, "utf8"))), false)
+    assert.equal(fs.existsSync(lockDir), false)
+  })
+
+  it("runAll_aSuiteWithinTheLimit_keepsItsExitStatus", async () => {
+    env = { ...env, KEEL_SUITE_TIMEOUT_SECONDS: "600" }
+    const passing = spawnRun([path.join(checkoutWith({ "tests/a.test.ts": PASSING, "codex/tests/b.test.ts": PASSING, "tests/workflows/c.test.mjs": PASSING }), "tests", "run-all.sh")])
+    assert.equal((await passing.done).code, 0)
+    fs.rmSync(path.join(dataDir, "checkout"), { recursive: true, force: true })
+    const failing = spawnRun([path.join(checkoutWith({ "tests/a.test.ts": PASSING, "tests/workflows/c.test.mjs": FAILING }), "tests", "run-all.sh")])
+    assert.equal((await failing.done).code, 1)
+    assert.equal(fs.existsSync(lockDir), false)
+  })
+
   it("runAll_waitsForTheLockBeforeStartingAnySuite", async () => {
     givenLockHeldBy(String(process.pid))
     const runAll = spawnRun(["tests/run-all.sh"])

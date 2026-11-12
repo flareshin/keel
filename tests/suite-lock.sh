@@ -69,5 +69,63 @@ older_than_the_grace() {
 }
 
 release_suite_lock() {
+  stop_the_suite
   if [ "$(suite_lock_holder)" = "$$" ]; then rm -rf "$suite_lock_dir"; fi
+}
+
+suite_pid=""
+
+run_within_the_suite_limit() {
+  local limit="${KEEL_SUITE_TIMEOUT_SECONDS:-1800}"
+  local deadline=$((SECONDS + limit))
+  "$@" &
+  suite_pid=$!
+  while kill -0 "$suite_pid" 2>/dev/null; do
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      save_the_suite_stacks "$limit"
+      stop_the_suite
+      return 124
+    fi
+    sleep 1
+  done
+  local status=0
+  wait "$suite_pid" || status=$?
+  suite_pid=""
+  return "$status"
+}
+
+suite_tree() {
+  echo "$1"
+  local child
+  for child in $(pgrep -P "$1"); do suite_tree "$child"; done
+}
+
+save_the_suite_stacks() {
+  local limit="$1"
+  local saved_to
+  saved_to="${KEEL_DATA_DIR:-$HOME/.claude}/state/keel/suite-hangs/$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  mkdir -p "$saved_to" || true
+  local pids
+  pids=$(suite_tree "$suite_pid")
+  ps -o pid=,ppid=,etime=,command= -p "$(echo $pids | tr ' ' ',')" > "$saved_to/processes.txt" 2>&1 || true
+  local samplers="" pid
+  for pid in $pids; do
+    sample "$pid" 1 -file "$saved_to/$pid.txt" > /dev/null 2>&1 &
+    samplers="$samplers $!"
+  done
+  for pid in $samplers; do wait "$pid" || true; done
+  echo "run-all: the full suite ran past $limit seconds; saved its process stacks to $saved_to and stopped it" >&2
+}
+
+stop_the_suite() {
+  [ -n "$suite_pid" ] || return 0
+  local frozen="" found
+  found=$(suite_tree "$suite_pid")
+  while [ "$found" != "$frozen" ]; do
+    frozen="$found"
+    kill -STOP $frozen 2>/dev/null || true
+    found=$(suite_tree "$suite_pid")
+  done
+  kill -KILL $frozen 2>/dev/null || true
+  suite_pid=""
 }

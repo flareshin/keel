@@ -140,6 +140,14 @@ describe('PromoteTest', () => {
     assert.equal(sandbox.keel(['approve', '--promote', 'not-a-repo', 'a'.repeat(40)]).rc, 2);
   });
 
+  test('approve_promote_refuses_a_repo_that_names_no_repository_after_git_is_stripped', (t) => {
+    const sandbox = new Sandbox(t);
+    const run = sandbox.keel(['approve', '--promote', 'acme/.git', 'a'.repeat(40)]);
+    assert.equal(run.rc, 2, run.stderr);
+    assert.match(run.stderr, /repo must be <owner>\/<repo>/);
+    assert.deepEqual(sandbox.evidenceFiles('promote'), []);
+  });
+
   test('review_and_approval_evidence_live_thirty_days_and_tests_fourteen', (t) => {
     const develop = developAheadOfProduction(t);
     const lifetime = (path: string) => {

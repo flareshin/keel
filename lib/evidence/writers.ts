@@ -110,9 +110,9 @@ export function writeApproval(rootRunId: string, kind: string): JsonObject {
 }
 
 export function writePromoteApproval(repoKey: string, head: string): JsonObject {
-  if (!REPO_KEY_RE.test(repoKey)) throw new Usage('repo must be <owner>/<repo>');
+  const key = REPO_KEY_RE.test(repoKey) ? registry.normalizeRepoKey(repoKey) : null;
+  if (!key) throw new Usage('repo must be <owner>/<repo>');
   if (!env.isSha(head)) throw new Usage('the promoted sha must be 40 lowercase hex characters');
-  const key = registry.normalizeRepoKey(repoKey)!;
   const evidence = store.write('promote', { repo: key, head, source: APPROVAL_SOURCE, session_id: null }, key);
   return { evidence_id: evidence.evidence_id, kind: 'promote', repo: key, head };
 }

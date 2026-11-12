@@ -51,6 +51,7 @@ const RULE_CHECKS = `${KEEL_HOME}/skills/writing-readable-code/scripts/rule-chec
 const DEFAULT_LENSES_FILE = `${KEEL_HOME}/workflows/review-lenses.json`
 const DERIVE_RUN_ID_COMMAND = `printf 'rv-%s-%s\\n' "$(date -u +%Y%m%dT%H%M%SZ)" "$(od -An -N3 -tx1 /dev/urandom | tr -d ' \\n')"`
 const LOAD_LENSES_COMMAND = `jq -c '{lenses, guardrails}' ${DEFAULT_LENSES_FILE}`
+const NO_RISK_CLASS = 'none'
 const REPORT_START = '<<<KEEL-REPORT'
 const REPORT_END = 'KEEL-REPORT>>>'
 const HARNESS_NOTICE = /^\[harness: [^\n]*\]\n\s*\n/
@@ -85,8 +86,9 @@ const PREPARE_SCHEMA = {
       },
       required: ['lenses', 'guardrails'],
     },
+    risk_class: { type: 'string', description: 'exact stdout of the risk class command, or "ERROR: <stderr>" when it failed' },
   },
-  required: ['diff_outputs', 'run_id_output', 'lenses_output'],
+  required: ['diff_outputs', 'run_id_output', 'lenses_output', 'risk_class'],
 }
 
 const argsProblem = findArgsProblem()
@@ -234,13 +236,21 @@ function buildPreparePrompt() {
   const steps = DIFFS.map((d, i) => `diff ${i}:\n${buildPrepareCommand(d)}`)
   const runIdStep = A.runId === undefined ? `run id:\n${DERIVE_RUN_ID_COMMAND}` : 'run id: none, return ""'
   const lensesStep = CALLER_LENSES === undefined ? `lenses:\n${LOAD_LENSES_COMMAND}` : 'lenses: none, return lenses [] and guardrails ""'
-  return `Mechanical step; do not modify any file and do not judge anything. Run each bash command below exactly as written, once. Copy the stdout of each diff and run id command verbatim (one line, no edits) into the matching field. The lenses command prints a JSON object: copy its lenses and guardrails values into the lenses_output fields, not as text. When a diff command exits non-zero, return "ERROR: " followed by its stderr for that diff instead.
+  return `Mechanical step; do not modify any file and do not judge anything. Run each bash command below exactly as written, once. Copy the stdout of each diff, run id and risk class command verbatim (one line, no edits) into the matching field. The lenses command prints a JSON object: copy its lenses and guardrails values into the lenses_output fields, not as text. When a diff command exits non-zero, return "ERROR: " followed by its stderr for that diff instead.
 
 ${steps.join('\n\n')}
 
 ${runIdStep}
 
-${lensesStep}`
+${lensesStep}
+
+risk class:
+${buildRiskClassCommand()}`
+}
+
+function buildRiskClassCommand() {
+  const targets = JSON.stringify(DIFFS.map(({ repo, base, head, since }) => ({ repo, base, head, since })))
+  return `${KEEL_ON_PATH_CHECK} && jq -cn --argjson d '${targets}' '{diffs: $d, lenses: []}' | keel review prepare | jq -r '.risk_class // "${NO_RISK_CLASS}"'`
 }
 
 function buildPrepareCommand(d) {

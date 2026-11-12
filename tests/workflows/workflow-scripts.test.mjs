@@ -169,6 +169,7 @@ function shellResponder(box) {
         diff_outputs: commands.diffs.map((command) => runOrReportError(box, command)),
         run_id_output: commands.runId ? box.bash(commands.runId) : '',
         lenses_output: commands.lenses ? JSON.parse(box.bash(commands.lenses)) : { lenses: [], guardrails: '' },
+        risk_class: commands.riskClass ? runOrReportError(box, commands.riskClass) : '',
       }
     }
     if (opts.label === 'report') return reportBetweenMarkers(prompt)
@@ -232,6 +233,38 @@ test('lensReview_prepareCommandDiffsFromSinceTree_whenSinceIsATree', async () =>
   assert.equal(result.verdict, 'PASS')
   assert.equal(parseEvidenceLine(evidenceLines(result.report)[0]).since, sinceTree)
   assert.match(result.report, /1 file changed/)
+})
+
+function gateRepo(box, repo) {
+  const overlay = join(box.root, 'overlay')
+  mkdirSync(overlay, { recursive: true })
+  writeFileSync(join(overlay, 'gated-repos.tsv'), 'origin\tgate\tintegration_base\trisk_rules\ttests\nacme/app\tcode\tmain\t-\trequired\n')
+  box.env.KEEL_OVERLAY_DIR = overlay
+  box.git(repo, 'remote', 'add', 'origin', 'https://github.com/acme/app.git')
+}
+
+test('lensReview_auditsATrivialDiffAtLowEffort_whenThePrepareAgentRunsTheCommands', async () => {
+  const box = createSandbox()
+  const repo = commitTwice(box)
+  gateRepo(box, repo)
+  const rt = createRuntime({ respond: shellResponder(box) })
+
+  const result = await rt.run('lens-review', { auditMode: 'split', diffs: [{ repo, base: 'HEAD~1', head: 'HEAD' }] })
+
+  assert.equal(result.verdict, 'PASS')
+  assert.equal(result.effort, 'low')
+})
+
+test('lensReview_auditsAtHighEffort_whenThePrepareAgentFindsNoGatedRow', async () => {
+  const box = createSandbox()
+  const repo = commitTwice(box)
+  box.env.KEEL_OVERLAY_DIR = join(box.root, 'no-overlay')
+  const rt = createRuntime({ respond: shellResponder(box) })
+
+  const result = await rt.run('lens-review', { auditMode: 'split', diffs: [{ repo, base: 'HEAD~1', head: 'HEAD' }] })
+
+  assert.equal(result.verdict, 'PASS')
+  assert.equal(result.effort, 'high')
 })
 
 test('lensReview_failsInPrepareNamingTheTree_whenSinceIsACommit', async () => {

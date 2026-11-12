@@ -217,8 +217,9 @@ actual usage before claiming a reduction in tokens or elapsed time.
 
 For Claude, run `keel review prepare` with the workflow args as JSON on stdin and
 pass its output as `prepared` to lens-review. This pins Git metadata without a
-prepare agent. Existing callers without prepared metadata retain the same fallback;
-new calls should use the CLI. The reporter remains a low-effort transport required
+prepare agent. Existing callers without prepared metadata retain the same fallback,
+whose agent also runs `keel review prepare` for the risk tier; new calls should use
+the CLI. The reporter remains a low-effort transport required
 by the current transcript-backed provenance contract; it performs no judgment.
 Do not remove it without replacing that trusted registration path.
 

@@ -22,7 +22,7 @@ worktree ──► change + tests ──► keel test ──► lens-review ─�
                               tests evidence  review evidence  approval evidence  ship-gate checks all
 ```
 
-1. **Work in a worktree.** A session edits only its own worktree, never the checkout keel or a gated repo runs from.
+1. **Work in a worktree.** A session edits only in its own worktree; keel's own checkout, which the plugin reads, moves only by merge.
 2. **Run tests through keel.** `keel test -- <cmd>` runs the command, reads the runner's summary and writes tests evidence for the exact tree. A non-zero exit, a count of 0 or a tree that changed during the run writes none.
 3. **Review in a separate context.** `/keel:lens-review` runs independent auditors over a snapshot of the tree. A verifier checks each finding, and a reporter emits `VERDICT: PASS` or `VERDICT: NEEDS_FIXES` with a `KEEL-EVIDENCE` line. A hook, not the reviewer, writes the review evidence. Fixes are reviewed as deltas on the same chain.
 4. **The owner approves.** The owner runs `keel approve <root_run_id>` in their own terminal; agents are denied it. The approval pins the chain's current head.
@@ -75,9 +75,9 @@ Then, in a Claude Code session in that repo: work in a worktree, run `keel test 
 | Hook | Runs on | Enforces |
 |---|---|---|
 | `ship-gate` | Bash | Review, tests and approval evidence for `git push` and `gh pr merge` |
-| `git-guard` | Bash, Edit, Write, NotebookEdit | No secrets, AI attribution, force push to shared branches, hook skipping, or edits outside the session's worktree; keel's own evidence and install stay out of an agent's reach |
+| `git-guard` | Bash, Edit, Write, NotebookEdit | No secrets, AI attribution, force push to shared branches, hook skipping, or edits in the live keel and overlay checkouts; keel's own evidence and install stay out of an agent's reach |
 | `report-gate` | Subagent handback and stop | Done or pass claims carry evidence; writes review evidence from a reviewer's report |
-| `model-assign` | Agent, Workflow | Every agent dispatch names a model and an effort |
+| `model-assign` | Agent, Workflow | Every agent dispatch names a model and an effort: it fills them in on an Agent call that names none and denies a Workflow script whose `agent()` calls name none |
 | `principles` | Session and subagent start | Loads `PRINCIPLES.md` and the overlay's `PERSONAL.md` |
 
 `ship-gate` and `git-guard` block the call if they crash or time out; the others fail open. Every decision is logged to `~/.claude/logs/keel-fires.jsonl`, which the ledger's metrics count.
@@ -121,7 +121,7 @@ Evidence lives under `~/.claude/state/keel/evidence/` as immutable JSON files.
 
 It also states the risk rule and the floor rules the hooks hold: merge, deploy and delete need explicit approval, and no secrets, AI attribution, force push to shared branches or switched-off hooks.
 
-[`ledger.tsv`](ledger.tsv) has one row per rule, with where it is enforced, its metric and its review date. A non-charter rule needs two incidents behind it, and the counts are capped, so the rule set stays small. `measure/smoke` checks the whole harness, `measure/run <id>` evaluates one row's metric, and `measure/propose` proposes demotions for expired rows; the owner edits the ledger.
+[`ledger.tsv`](ledger.tsv) has one row per rule, with where it is enforced, its metric and its review date. A rule outside the charter and floor needs two incidents behind it, and the counts are capped, so the rule set stays small. `measure/smoke` checks the whole harness, `measure/run <id>` evaluates one row's metric, and `measure/propose` proposes demotions for expired rows; the owner edits the ledger.
 
 ## Limits
 

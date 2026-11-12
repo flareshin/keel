@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { InvalidUtf8Error } from '../../measure/lib/measurekit/files.ts';
 import { compareCodePoints, isJsonObject, parseJsonKeepingIntegers, stringifySorted } from '../../measure/lib/measurekit/json.ts';
 import type { JsonValue } from '../../measure/lib/measurekit/json.ts';
@@ -124,6 +125,7 @@ async function runAffectedTests(rest: string[]): Promise<number> {
   if (hookCode.length > 0 && !withReplays) {
     printErrorLine(`keel test --affected: code a hook runs changed (${hookCode.join(', ')}); also run \`keel test --affected ${WITH_REPLAYS}\` once, in the background alongside the root review`);
   }
+  process.env['NODE_COMPILE_CACHE'] ??= join(env.stateDir(), 'node-compile-cache');
   return testrun.run([process.execPath, '--test', '--test-reporter=tap', ...tests], repoRoot);
 }
 

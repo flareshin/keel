@@ -226,40 +226,92 @@ describe("full suite lock", { timeout: 60_000 }, () => {
 
   const PASSING = 'import { it } from "node:test"\nit("passes", () => {})\n'
   const FAILING = 'import { it } from "node:test"\nit("fails", () => { throw new Error("red") })\n'
-  const HANGING = 'import fs from "node:fs"\nfs.writeFileSync(process.env.HANG_PID_FILE as string, String(process.pid))\nsetInterval(() => {}, 1000)\n'
+  const HANGING = [
+    'import fs from "node:fs"',
+    'import { spawn } from "node:child_process"',
+    'fs.writeFileSync(process.env.HANG_PID_FILE as string, String(process.pid))',
+    'let previous: ReturnType<typeof spawn> | undefined',
+    'setInterval(() => {',
+    '  const next = spawn("sleep", ["600"])',
+    '  fs.appendFileSync(process.env.HANG_FORKS_FILE as string, `${next.pid}\\n`)',
+    '  previous?.kill("SIGKILL")',
+    '  previous = next',
+    '}, 10)',
+    '',
+  ].join("\n")
 
   const isAlive = (pid: number): boolean => {
     try { process.kill(pid, 0); return true } catch { return false }
   }
 
-  const hangingRunAll = (limitSeconds: string): { run: Run; hangPidFile: string } => {
+  const hangingRunAll = (limitSeconds: string, extraEnv: NodeJS.ProcessEnv = {}): { run: Run; hangPidFile: string; forksFile: string } => {
     const hangPidFile = path.join(dataDir, "hang.pid")
+    const forksFile = path.join(dataDir, "hang.forks")
     const checkout = checkoutWith({ "tests/hang.test.ts": HANGING })
-    env = { ...env, HANG_PID_FILE: hangPidFile, KEEL_SUITE_TIMEOUT_SECONDS: limitSeconds }
-    return { run: spawnRun([path.join(checkout, "tests", "run-all.sh")]), hangPidFile }
+    env = { ...env, ...extraEnv, HANG_PID_FILE: hangPidFile, HANG_FORKS_FILE: forksFile, KEEL_SUITE_TIMEOUT_SECONDS: limitSeconds }
+    return { run: spawnRun([path.join(checkout, "tests", "run-all.sh")]), hangPidFile, forksFile }
   }
 
-  it("runAll_aSuitePastTheLimit_isStoppedWithEachProcessStackSaved_andReleasesTheLock", async () => {
-    const { run, hangPidFile } = hangingRunAll("1")
-    assert.equal((await run.done).code, 124)
+  const theHangStarted = (hangPidFile: string): boolean => fs.existsSync(hangPidFile) && fs.readFileSync(hangPidFile, "utf8") !== ""
+
+  const aliveAfterTheStop = async (hangPidFile: string, forksFile: string): Promise<number[]> => {
+    const pids = [Number(fs.readFileSync(hangPidFile, "utf8")), ...fs.readFileSync(forksFile, "utf8").trim().split("\n").map(Number)]
+    const deadline = Date.now() + 5_000
+    while (pids.some(isAlive) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50))
+    const alive = pids.filter(isAlive)
+    for (const pid of alive) process.kill(pid, "SIGKILL")
+    return alive
+  }
+
+  const theOnlyHang = (): string => {
     const hangsDir = path.join(dataDir, "state", "keel", "suite-hangs")
     const [hang] = fs.readdirSync(hangsDir)
-    const savedTo = path.join(hangsDir, hang as string)
-    assert.ok(run.stderr().includes(`run-all: the full suite ran past 1 seconds; saved its process stacks to ${savedTo} and stopped it`), run.stderr())
+    return path.join(hangsDir, hang as string)
+  }
+
+  it("runAll_aSuitePastTheLimit_isStoppedWithEachProcessStackSaved_includingProcessesForkedMeanwhile_andReleasesTheLock", async () => {
+    const { run, hangPidFile, forksFile } = hangingRunAll("5")
+    assert.equal((await run.done).code, 124)
+    const savedTo = theOnlyHang()
     const hangPid = Number(fs.readFileSync(hangPidFile, "utf8"))
+    const message = run.stderr().match(/run-all: the full suite ran past 5 seconds; saved (\d+) of (\d+) process stacks to (.+) and stopped it/)
+    assert.ok(message, run.stderr())
+    assert.equal(message[3], savedTo)
     assert.match(fs.readFileSync(path.join(savedTo, "processes.txt"), "utf8"), /hang\.test\.ts/)
-    if (process.platform === "darwin") assert.match(fs.readFileSync(path.join(savedTo, `${hangPid}.txt`), "utf8"), /Call graph/)
-    assert.equal(isAlive(hangPid), false)
+    if (process.platform === "darwin") {
+      assert.match(fs.readFileSync(path.join(savedTo, `${hangPid}.txt`), "utf8"), /Call graph/)
+      assert.ok(Number(message[1]) >= 1, run.stderr())
+    }
+    assert.deepEqual(await aliveAfterTheStop(hangPidFile, forksFile), [])
     assert.equal(fs.existsSync(lockDir), false)
   })
 
-  it("runAll_stoppedByTermBeforeTheLimit_stopsTheSuiteItStarted_andReleasesTheLock", async () => {
-    const { run, hangPidFile } = hangingRunAll("600")
-    await until(() => fs.existsSync(hangPidFile) && fs.readFileSync(hangPidFile, "utf8") !== "")
+  it("runAll_aSuitePastTheLimitWhoseStacksCannotBeSampled_saysNoneWereSaved_andStillStopsIt", async () => {
+    const stubs = path.join(dataDir, "stubs")
+    fs.mkdirSync(stubs)
+    fs.writeFileSync(path.join(stubs, "sample"), "#!/bin/bash\nexit 1\n", { mode: 0o755 })
+    const { run, hangPidFile, forksFile } = hangingRunAll("5", { PATH: `${stubs}:${process.env.PATH}` })
+    assert.equal((await run.done).code, 124)
+    assert.match(run.stderr(), /run-all: the full suite ran past 5 seconds; saved 0 of \d+ process stacks to .+ and stopped it/)
+    assert.deepEqual(await aliveAfterTheStop(hangPidFile, forksFile), [])
+    assert.equal(fs.existsSync(lockDir), false)
+  })
+
+  it("runAll_stoppedByTermBeforeTheLimit_stopsTheSuiteItStarted_includingProcessesForkedMeanwhile_andReleasesTheLock", async () => {
+    const { run, hangPidFile, forksFile } = hangingRunAll("600")
+    await until(() => theHangStarted(hangPidFile))
     assert.equal(holderPid(), String(run.child.pid))
     run.child.kill("SIGTERM")
     assert.equal((await run.done).code, 143)
-    assert.equal(isAlive(Number(fs.readFileSync(hangPidFile, "utf8"))), false)
+    assert.deepEqual(await aliveAfterTheStop(hangPidFile, forksFile), [])
+    assert.equal(fs.existsSync(lockDir), false)
+  })
+
+  it("runAll_aLimitThatIsNotWholeSeconds_failsNamingTheVariable_beforeStartingAnySuite", async () => {
+    const { run, hangPidFile } = hangingRunAll("30m")
+    assert.equal((await run.done).code, 2)
+    assert.ok(run.stderr().includes("run-all: KEEL_SUITE_TIMEOUT_SECONDS must be whole seconds, got '30m'"), run.stderr())
+    assert.equal(fs.existsSync(hangPidFile), false)
     assert.equal(fs.existsSync(lockDir), false)
   })
 

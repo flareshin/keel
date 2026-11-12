@@ -77,6 +77,12 @@ suite_pid=""
 
 run_within_the_suite_limit() {
   local limit="${KEEL_SUITE_TIMEOUT_SECONDS:-1800}"
+  case "$limit" in
+    "" | *[!0-9]*)
+      echo "run-all: KEEL_SUITE_TIMEOUT_SECONDS must be whole seconds, got '$limit'" >&2
+      return 2
+      ;;
+  esac
   local deadline=$((SECONDS + limit))
   "$@" &
   suite_pid=$!
@@ -114,7 +120,12 @@ save_the_suite_stacks() {
     samplers="$samplers $!"
   done
   for pid in $samplers; do wait "$pid" || true; done
-  echo "run-all: the full suite ran past $limit seconds; saved its process stacks to $saved_to and stopped it" >&2
+  local total=0 saved=0
+  for pid in $pids; do
+    total=$((total + 1))
+    if [ -s "$saved_to/$pid.txt" ]; then saved=$((saved + 1)); fi
+  done
+  echo "run-all: the full suite ran past $limit seconds; saved $saved of $total process stacks to $saved_to and stopped it" >&2
 }
 
 stop_the_suite() {

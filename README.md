@@ -221,10 +221,12 @@ Each decision is logged to `$KEEL_DATA_DIR/logs/keel-fires.jsonl`: a deny or war
 | `keel snapshot <repo>` | Write the working tree to a tree object without touching the index; reviewers read this |
 | `keel home` | Print the keel checkout the CLI runs from; review prompts read keel's own files through it |
 | `keel approve <root_run_id> [--read]` | Owner-only approval (or acknowledgement) of a review chain's heads |
+| `keel approve --promote <owner/repo> <sha>` | Owner-only approval of one develop→production merge of that sha; develop chains need only their PASS |
 | `keel evidence show [--repo] [--root]` | Read-only view of chains, tests and smoke evidence |
+| `keel evidence promote-plan --repo --base --head` | Read-only: which develop chain covers each promoted step, and the runs left to review |
 | `keel evidence write-review` | Run by `report-gate` from a reviewer's report; agents are denied it |
 | `keel evidence write-smoke` | Run by the job after a passing `measure/smoke`, before a smoke-only push |
-| `keel evidence gc` | Delete expired evidence (14 days) |
+| `keel evidence gc` | Delete expired evidence (review, approval and promote after 30 days; tests, smoke and ack after 14) |
 
 Evidence lives under `$KEEL_DATA_DIR/state/keel/evidence/` as immutable JSON files (DESIGN.md (c)).
 

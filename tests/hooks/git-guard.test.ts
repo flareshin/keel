@@ -370,7 +370,7 @@ describe("LiveCheckoutTest", () => {
     const result = edit("Write", { file_path: join(live, "PRINCIPLES.md"), content: "x" });
     assertDenied(result, "C-isolation");
     assert.ok(result.stderr.includes("worktree add"), result.stderr);
-    assert.ok(result.stderr.includes("merge --ff-only"), result.stderr);
+    assert.ok(result.stderr.includes("merge --no-ff refs/heads/<branch>"), result.stderr);
     assertFired(sandbox, "C-isolation", "deny", "git-guard");
   });
 
@@ -578,7 +578,7 @@ describe("LiveCheckoutTest", () => {
     const result = guard(`touch ${paths.join(" ")}`);
     assertDenied(result, "C-isolation");
     assert.ok(result.stderr.includes(`git -C ${live} worktree add`), result.stderr);
-    assert.ok(result.stderr.includes(`git -C ${live} merge --ff-only <branch>`), result.stderr);
+    assert.ok(result.stderr.includes(`git -C ${live} merge --no-ff refs/heads/<branch>`), result.stderr);
   });
 
   it("bash_listsAPathOnce_whenOneCallWritesItTwiceIntoLiveKeel", () => {

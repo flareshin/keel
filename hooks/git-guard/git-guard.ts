@@ -493,7 +493,7 @@ function liveViolation(whats: string, root: string): Violation {
   return {
     ruleId: C_ISOLATION,
     text: `${root} is a live checkout. Work in a worktree: \`git -C ${root} worktree add ../${parent}-wt/<topic> -b <topic>\`; ` +
-      `the live checkout needs an exact-commit owner-approved, gate-verified fast-forward; otherwise the user runs \`git -C ${root} merge --ff-only <branch>\`. ` +
+      `the live checkout needs an exact-commit owner-approved, gate-verified fast-forward; otherwise the user runs \`git -C ${root} merge --no-ff refs/heads/<branch>\`. ` +
       `Inside it: ${whats}.`,
   };
 }

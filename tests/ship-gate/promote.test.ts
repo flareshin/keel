@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import type { TestContext } from 'node:test';
-import { LOGIC_WITH_TEST, Sandbox, readJson } from './helpers.ts';
+import { AUTO_MERGE_REGISTRY, LOGIC_WITH_TEST, Sandbox, readJson } from './helpers.ts';
 import type { Repo } from './helpers.ts';
 
 const PRODUCTION = 'production';
@@ -32,8 +32,8 @@ function mergeIntoDevelop(repo: Repo, name: string): void {
   repo.git('merge', '-q', '--no-ff', '-m', `Merge ${name}`, name);
 }
 
-function developAheadOfProduction(t: TestContext, extra?: (sandbox: Sandbox, repo: Repo) => void): Develop {
-  const sandbox = new Sandbox(t);
+function developAheadOfProduction(t: TestContext, extra?: (sandbox: Sandbox, repo: Repo) => void, registry?: string[]): Develop {
+  const sandbox = new Sandbox(t, registry);
   const repo = sandbox.clone('acme', 'app');
   repo.git('push', '-q', 'origin', `main:${PRODUCTION}`);
   reviewedBranch(sandbox, repo, 'first', LOGIC_WITH_TEST, 'rv-first-0001');
@@ -118,6 +118,20 @@ describe('PromoteTest', () => {
     const result = plan(develop);
     assert.deepEqual(result.uncovered, []);
     assert.equal(result.steps[0].root_run_id, 'rv-delta-0001');
+  });
+
+  test('promote_into_an_auto_merge_repo_passes_without_a_promote_approval', (t) => {
+    const develop = developAheadOfProduction(t, undefined, AUTO_MERGE_REGISTRY);
+    const run = promote(develop);
+    assert.equal(run.rc, 0, run.stderr);
+  });
+
+  test('approve_promote_stores_the_repo_key_in_lowercase_so_the_gate_finds_it', (t) => {
+    const develop = developAheadOfProduction(t);
+    const run = develop.sandbox.keel(['approve', '--promote', 'Acme/App', develop.head]);
+    assert.equal(run.rc, 0, run.stderr);
+    assert.equal(run.json.repo, 'acme/app');
+    assert.equal(promote(develop).rc, 0);
   });
 
   test('approve_promote_refuses_a_malformed_repo_or_sha', (t) => {

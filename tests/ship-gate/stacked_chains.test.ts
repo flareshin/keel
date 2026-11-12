@@ -249,6 +249,21 @@ describe('StackedChainsTest', () => {
     assert.equal(sandbox.push(repo, PUSH_FEATURE).rc, 2);
   });
 
+  test('chain_reviewed_from_a_commit_on_the_line_does_not_credit_the_unreviewed_commit_below_its_base', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app', undefined, SEED);
+    repo.branch('feature');
+    repo.commit({ 'src/gap.py': 'unreviewed = 1\n' });
+    const below = repo.head();
+    repo.commit({ ...LOGIC_WITH_TEST, 'src/gap.py': 'reviewed = 2\n' });
+    sandbox.review(repo, { runId: 'rv-line-0001', reviewBase: below });
+    sandbox.approve('rv-line-0001');
+    sandbox.testsEvidence(repo);
+    const result = sandbox.push(repo, PUSH_FEATURE);
+    assert.equal(result.rc, 2, result.stderr);
+    assert.ok(result.stderr.includes('reviewed from'), result.stderr);
+  });
+
   test('long_stack_among_many_live_chains_passes_well_inside_the_hook_timeout', (t) => {
     const sandbox = new Sandbox(t);
     const repo = sandbox.clone('acme', 'app', undefined, SEED);

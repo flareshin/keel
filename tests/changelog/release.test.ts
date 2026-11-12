@@ -176,4 +176,53 @@ describe("bin/changelog", () => {
       fs.rmSync(root, { recursive: true, force: true })
     }
   })
+
+  it("changelog_rerunAfterAWriteThatStoppedBeforeDeleting_namesTheLeftoverFragments", () => {
+    const root = scratchRepo()
+    try {
+      assert.equal(run(root, "--write", "1.1.0", "2026-11-12").status, 0)
+      fs.writeFileSync(path.join(root, "changelog.d", "x.md"), "### Added\n- x\n")
+
+      const completed = run(root, "--write", "1.1.0", "2026-11-12")
+
+      assert.equal(completed.status, 1)
+      assert.equal(
+        completed.stderr,
+        "changelog: CHANGELOG.md already has a 1.1.0 section; pick a new version, or, if an earlier --write stopped before deleting the folded fragments, delete them: changelog.d/x.md\n",
+      )
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("changelog_withoutAFragmentDirectory_exitsOneWithNothingToRelease", () => {
+    const root = scratchRepo()
+    try {
+      fs.rmSync(path.join(root, "changelog.d"), { recursive: true })
+
+      const completed = run(root, "--write", "1.1.0", "2026-11-12")
+
+      assert.equal(completed.status, 1)
+      assert.equal(completed.stderr, "changelog: changelog.d/ holds no fragment; nothing to release\n")
+      assert.equal(fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8"), CHANGELOG)
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("changelog_whenCHANGELOGIsUnreadable_exitsInternalNotAsARefusal", () => {
+    const root = scratchRepo()
+    try {
+      fs.rmSync(path.join(root, "CHANGELOG.md"))
+      fs.mkdirSync(path.join(root, "CHANGELOG.md"))
+
+      const completed = run(root, "--write", "1.1.0", "2026-11-12")
+
+      assert.equal(completed.status, 70)
+      assert.match(completed.stderr, /internal error: .*EISDIR/)
+      assert.ok(fs.existsSync(path.join(root, "changelog.d", "x.md")))
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
 })

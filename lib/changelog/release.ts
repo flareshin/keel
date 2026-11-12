@@ -28,12 +28,19 @@ export function assembleRelease(changelog: string, fragments: readonly Fragment[
   if (!VERSION.test(version)) throw new ReleaseRefused(`version must look like 1.2.3, got ${JSON.stringify(version)}`)
   if (!ISO_DATE.test(date)) throw new ReleaseRefused(`date must be YYYY-MM-DD, got ${JSON.stringify(date)}`)
   if (fragments.length === 0) throw new ReleaseRefused("changelog.d/ holds no fragment; nothing to release")
-  if (changelog.includes(`\n## [${version}]`)) throw new ReleaseRefused(`CHANGELOG.md already has a ${version} section`)
+  if (changelog.includes(`\n## [${version}]`)) throw versionAlreadyReleased(version, fragments)
 
   const { before, after } = splitAfterUnreleased(changelog)
   const ordered = [...fragments].sort((left, right) => left.name.localeCompare(right.name))
   const section = renderSection(version, date, ordered.map(parseFragment))
   return { section, changelog: `${before}\n${section}\n${after}` }
+}
+
+function versionAlreadyReleased(version: string, leftovers: readonly Fragment[]): ReleaseRefused {
+  const names = leftovers.map((fragment) => `changelog.d/${fragment.name}`).sort().join(", ")
+  return new ReleaseRefused(
+    `CHANGELOG.md already has a ${version} section; pick a new version, or, if an earlier --write stopped before deleting the folded fragments, delete them: ${names}`,
+  )
 }
 
 export function unreleasedBody(changelog: string): string {

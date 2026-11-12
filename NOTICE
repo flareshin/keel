@@ -4,7 +4,7 @@ Copyright 2026 flareshin
 Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 This product includes material adapted from the third-party works below.
-Each adapted file names its source; README.md "Acknowledgements" lists them.
+README.md "Acknowledgements" lists them with the files that adapt them.
 
 1. Harness² (https://github.com/google-research/harness2, at 1cfe254)
    Licensed under the Apache License, Version 2.0 (same text as LICENSE).

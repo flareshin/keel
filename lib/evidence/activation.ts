@@ -27,7 +27,7 @@ export function approvedFastForward(repo: string, target: unknown): boolean {
     if (head === target) {
       return chains.some((chain) => approved.has(chain.rootRunId) && verify.provenanceReasons(chain).length === 0);
     }
-    const decision = verify.judge({ repoRoot: repo, repoKey: key!, row, head: target, mergeBase: head, needsApproval: true });
+    const decision = verify.judge({ repoRoot: repo, repoKey: key!, row, head: target, mergeBase: head, needsApproval: true, promote: false });
     return decision.ok && decision.rootRunIds.some((root) => approved.has(root));
   } catch (error) {
     if (isExpectedFailure(error)) return false;

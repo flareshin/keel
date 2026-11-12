@@ -71,7 +71,7 @@ function judge(dataDir: string, sandbox: Sandbox, repo: Repo, head: string, base
   process.env['KEEL_OVERLAY_DIR'] = sandbox.overlay;
   try {
     const row = registry.gatedRepos().get(repo.key)!;
-    const decision = verify.judge({ repoRoot: repo.path, repoKey: repo.key, row, head, mergeBase: base, needsApproval });
+    const decision = verify.judge({ repoRoot: repo.path, repoKey: repo.key, row, head, mergeBase: base, needsApproval, promote: false });
     return stringifySorted({
       ok: decision.ok, reasons: decision.reasons.map((reason) => [reason.ruleId, reason.text]), risk_class: decision.riskClass,
       root_run_id: decision.rootRunId, files: decision.files, lines: decision.lines, k3_waiver: decision.k3Waiver,

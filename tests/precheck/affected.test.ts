@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { after, describe, it } from "node:test"
-import { affectedTests, changedSince, CORPUS_TESTS, FULL_SUITE_PATTERNS, fullSuitePaths } from "../../lib/precheck/affected.ts"
+import { affectedTests, changedSince, CORPUS_TESTS, FULL_SUITE_PATTERNS, fullSuitePaths, REPLAY_TESTS } from "../../lib/precheck/affected.ts"
 import { SHARD_COUNT as HOOK_SHARD_COUNT } from "../hooks/hook-parity.ts"
 import { SHARD_COUNT } from "../ship-gate/ship-gate-parity.ts"
 import { committedRepo, writeFiles } from "./fixture.ts"
@@ -66,6 +66,17 @@ describe("affectedTests", () => {
   })
 })
 
+describe("REPLAY_TESTS", () => {
+  const replayShaped = (directory: string): string[] =>
+    readdirSync(join(KEEL_ROOT, directory)).filter((name) => /(parity|cross_impl).*\.test\.ts$/.test(name)).map((name) => `${directory}/${name}`)
+
+  it("replayTests_nameEveryParityAndCrossImplementationTestInThisRepo_andOnlyFilesThatExist", () => {
+    const onDisk = ["tests/ship-gate", "tests/hooks", "tests/link", "codex/tests"].flatMap(replayShaped).sort()
+    assert.deepEqual([...REPLAY_TESTS].sort(), onDisk)
+    for (const test of CORPUS_TESTS) assert.ok(REPLAY_TESTS.includes(test), `${test} is not a replay test`)
+  })
+})
+
 describe("changedSince", () => {
   it("changedSince_listsTheBranchCommits_theWorkingTree_untrackedFiles_andBothSidesOfARename_butNotTheBaseSide", () => {
     const root = topicRepo({ "lib/old.ts": "export const old = 1\n", "lib/kept.ts": "export const kept = 1\n" })
@@ -99,8 +110,9 @@ describe("keel test --affected", () => {
   const { NODE_TEST_CONTEXT: _parentRunner, ...standaloneEnv } = process.env
   const keel = (root: string, args: string[], dataDir: string) =>
     spawnSync(KEEL, ["test", "--affected", ...args], { cwd: root, encoding: "utf8", env: { ...standaloneEnv, KEEL_DATA_DIR: dataDir } })
-  const remoteRepo = (): string => {
+  const remoteRepo = (extra: Record<string, string> = {}): string => {
     const root = topicRepo({
+      ...extra,
       "lib/a.ts": "export const a = 1\n",
       "lib/b.ts": "export const b = 1\n",
       "tests/a.test.ts": PASSING_TEST("../lib/a.ts"),
@@ -124,13 +136,37 @@ describe("keel test --affected", () => {
     assert.equal(evidenceFiles.length, 1)
   })
 
-  it("keelTestAffected_notesTheFullSuiteWhenAChangedPathIsCodeAHookRuns", () => {
+  it("keelTestAffected_namesTheReplayRunWhenAChangedPathIsCodeAHookRuns", () => {
     const root = remoteRepo()
     writeFiles(root, { "lib/a.ts": "export const a = 2\n" })
 
     const completed = keel(root, ["--base", "trunk"], scratchDir("keel-data-"))
 
-    assert.match(completed.stderr, /^keel test --affected: code a hook runs changed \(lib\/a\.ts\); also run `keel test -- npm test` once, in the background alongside the root review$/m)
+    assert.match(completed.stderr, /^keel test --affected: code a hook runs changed \(lib\/a\.ts\); also run `keel test --affected --with-replays` once, in the background alongside the root review$/m)
+  })
+
+  it("keelTestAffected_withReplays_runsTheReachedTestsAndEveryReplayTest", () => {
+    const root = remoteRepo(Object.fromEntries(REPLAY_TESTS.map((test) => [test, PASSING_TEST("node:path")])))
+    writeFiles(root, { "lib/a.ts": "export const a = 2\n" })
+
+    const completed = keel(root, ["--with-replays", "--base", "trunk"], scratchDir("keel-data-"))
+
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.match(completed.stderr, new RegExp(`^keel test --affected: 1 test file reaches 1 changed path, plus ${REPLAY_TESTS.length} replay test files\ntests/a\\.test\\.ts\n`))
+    for (const test of REPLAY_TESTS) assert.ok(completed.stderr.includes(`\n${test}\n`), `${test} was not listed`)
+    assert.doesNotMatch(completed.stderr, /also run/)
+    assert.match(completed.stderr, new RegExp(`^KEEL-TEST \\{"run_id":"[^"]+","count":${REPLAY_TESTS.length + 1},"exit":0,`, "m"))
+  })
+
+  it("keelTestAffected_withReplays_refusesWithoutRunning_whenAReplayTestIsMissing", () => {
+    const root = remoteRepo()
+    writeFiles(root, { "lib/a.ts": "export const a = 2\n" })
+
+    const completed = keel(root, ["--with-replays", "--base", "trunk"], scratchDir("keel-data-"))
+
+    assert.equal(completed.status, 3, completed.stderr)
+    assert.match(completed.stderr, new RegExp(`${REPLAY_TESTS.length} replay test files are missing from this repo: ${REPLAY_TESTS[0]}`))
+    assert.doesNotMatch(completed.stderr, /KEEL-TEST/)
   })
 
   it("keelTestAffected_exitsFourWithoutRunning_whenNoTestReachesTheChangedPaths", () => {

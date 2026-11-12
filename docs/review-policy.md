@@ -106,20 +106,25 @@ Choose each run by what changed since the last passing run:
   including skills and PRINCIPLES.md) still needs one passing run on its tree in
   a repo whose tests are required: run the tests that read the changed files, or
   the smallest test file that runs when no test reads them.
-- Run the full suite (`keel test -- npm test`) once per candidate when the
+- Run `keel test --affected --with-replays` once per candidate when the
   change touches code a hook runs: `hooks/**`, `lib/**`, `measure/lib/**`,
   `measure/boundary*`, `codex/hooks/**`, `codex/lib/**`,
   `skills/writing-readable-code/scripts/**`, `githooks/**` or
   `settings/core.json`. This list overrides the light rule for the paths it
-  names. Start it in the background when you request the root review, not
-  before: reviewers do not read it, so waiting for it first only adds its 8-15
-  minutes to the review. It must pass before you hand the owner the approve
-  command; the gate does not check it, since any covering passing run meets K3.
-  A failure is fixed like a review finding, with a fix delta.
-- After the full suite passed, a fix delta reruns only the tests the fix reaches,
-  on the new tree. Do not rerun the full suite to confirm a passing focused run,
-  or after a conflict-free merge of two passing sides; rerun the tests on the
-  overlap.
+  names. The run adds every recorded parity and cross-implementation replay
+  (`REPLAY_TESTS` in `lib/precheck/affected.ts`) to the tests the change
+  reaches; every failed full suite on record failed in one of those replays.
+  Start it in the background when you request the root review, not before:
+  reviewers do not read it, so waiting for it first only adds its minutes to
+  the review. It must pass before you hand the owner the approve command; the
+  gate does not check it, since any covering passing run meets K3. A failure is
+  fixed like a review finding, with a fix delta. The full suite
+  (`keel test -- npm test`) is not required per candidate; run it when the
+  owner asks for it.
+- After the replay run passed, a fix delta reruns only the tests the fix
+  reaches, on the new tree. Do not rerun the replays to confirm a passing
+  focused run, or after a conflict-free merge of two passing sides; rerun the
+  tests on the overlap.
 
 ## Explain before requesting approval
 

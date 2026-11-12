@@ -249,7 +249,8 @@ export function withScenarioRoot<Result>(body: (root: string) => Result): Result
 }
 
 export function scenarioTokens(root: string): Tokens {
-  return { "{{ROOT}}": root, "{{KEEL_HOME}}": dirname(ADAPTER) };
+  const keelHome = dirname(ADAPTER);
+  return { "{{ROOT}}": root, "{{KEEL_HOME}}": keelHome, "{{PRINCIPLES}}": readFileSync(join(keelHome, "PRINCIPLES.md")).toString("latin1") };
 }
 
 export function replayScenario(scenario: Scenario, root: string): Observation[] {

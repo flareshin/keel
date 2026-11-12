@@ -93,11 +93,14 @@ const PR_TEXT_SUBCOMMANDS: ReadonlySet<string> = new Set(["create", "edit", "mer
 const UNPUSHED = ["--not", "--remotes"];
 const STDIN_PATH = "-";
 const KEEL_CLI_NAMES: ReadonlySet<string> = new Set(["keel", "keel.ts"]);
-const LINK_TOOL_RE = /(?:^|\/)bin\/link(?:\.ts)?$/u;
+const LINK_TOOL_RE = /\/bin\/link(?:\.ts)?$/iu;
 const LINK_CHANGING_FLAGS: ReadonlySet<string> = new Set(["--write", "--unlink"]);
 const CLAUDE_PLUGIN_COMMANDS: ReadonlySet<string> = new Set(["plugin", "plugins"]);
-const PLUGIN_CHANGING_SUBCOMMANDS: ReadonlySet<string> = new Set(["install", "uninstall", "enable", "disable", "update"]);
-const MARKETPLACE_CHANGING_SUBCOMMANDS: ReadonlySet<string> = new Set(["add", "remove", "update"]);
+const READ_ONLY_PLUGIN_SUBCOMMANDS: ReadonlySet<string> = new Set(["", "list", "validate", "help"]);
+const MARKETPLACE_SUBCOMMAND = "marketplace";
+const ALL_PLUGINS_OPTIONS: ReadonlySet<string> = new Set(["--all", "-a"]);
+const RELATIVE_PATH_RE = /^\.\.?(?:\/|$)/u;
+const GIT_SUFFIX_RE = /(?:\.git)?\/*$/iu;
 const KEEL_PLUGIN = "keel";
 const INSTALL_CHANGE_TEXT = "changes how keel is installed, and with it the hooks every session runs; the user runs it from their own terminal outside Claude Code.";
 const COMMIT_MESSAGE_SHOWN = "commit message";
@@ -451,31 +454,40 @@ function keelArguments(argv: readonly string[]): string[] {
 
 function checkInstallChanges(call: readonly Step[]): Violation[] {
   return call.flatMap((step) => {
-    const command = linkChange(step.argv) ?? keelPluginChange(step.argv);
+    const command = linkChange(step) ?? keelPluginChange(step);
     return command === null ? [] : [{ ruleId: F_HOOKSKIP, text: `\`${command}\` ${INSTALL_CHANGE_TEXT}` }];
   });
 }
 
-function linkChange(argv: readonly string[]): string | null {
-  const index = argv.findIndex((word) => LINK_TOOL_RE.test(word));
-  if (index < 0 || !argv.slice(index + 1).some((arg) => LINK_CHANGING_FLAGS.has(arg))) return null;
-  return argv.slice(index).join(" ");
+function linkChange(step: Step): string | null {
+  const index = step.argv.findIndex((word) => LINK_TOOL_RE.test(programPath(step, word)));
+  if (index < 0 || !step.argv.slice(index + 1).some((arg) => LINK_CHANGING_FLAGS.has(arg))) return null;
+  return step.argv.slice(index).join(" ");
 }
 
-function keelPluginChange(argv: readonly string[]): string | null {
-  const claude = argv.findIndex((word) => basename(word) === "claude");
+function programPath(step: Step, word: string): string {
+  return word.includes("/") || word.endsWith(".ts") ? resolveDirectory(step.directory, word, step.expansion) : word;
+}
+
+function keelPluginChange(step: Step): string | null {
+  const claude = step.argv.findIndex((word) => basename(word).toLowerCase() === "claude");
   if (claude < 0) return null;
-  const words = argv.slice(claude + 1).filter((word) => !word.startsWith("-"));
+  const args = step.argv.slice(claude + 1);
+  const words = args.filter((word) => !word.startsWith("-"));
   const plugin = words.findIndex((word) => CLAUDE_PLUGIN_COMMANDS.has(word));
   if (plugin < 0) return null;
   const [subcommand = "", ...rest] = words.slice(plugin + 1);
-  const changesKeel = subcommand === "marketplace" ? marketplaceChangesKeel(rest) :
-    PLUGIN_CHANGING_SUBCOMMANDS.has(subcommand) && rest.some(isKeelPlugin);
-  return changesKeel ? argv.slice(claude).join(" ") : null;
+  const isMarketplace = subcommand === MARKETPLACE_SUBCOMMAND;
+  const [action = "", ...targets] = isMarketplace ? rest : [subcommand, ...rest];
+  if (READ_ONLY_PLUGIN_SUBCOMMANDS.has(action)) return null;
+  const namesKeel = isMarketplace ? targets.some((target) => marketplaceSourceIsKeel(step, target)) : targets.some(isKeelPlugin);
+  const touchesAll = targets.length === 0 || args.some((arg) => ALL_PLUGINS_OPTIONS.has(arg));
+  return namesKeel || touchesAll ? step.argv.slice(claude).join(" ") : null;
 }
 
-function marketplaceChangesKeel([subcommand = "", ...rest]: readonly string[]): boolean {
-  return MARKETPLACE_CHANGING_SUBCOMMANDS.has(subcommand) && rest.some((word) => basename(word.replace(/\/+$/u, "")) === KEEL_PLUGIN);
+function marketplaceSourceIsKeel(step: Step, source: string): boolean {
+  const path = RELATIVE_PATH_RE.test(source) ? resolveDirectory(step.directory, source, step.expansion) : source;
+  return basename(path.replace(GIT_SUFFIX_RE, "")).toLowerCase() === KEEL_PLUGIN;
 }
 
 function isKeelPlugin(word: string): boolean {

@@ -1006,6 +1006,7 @@ describe("InstallCommandTest", () => {
       "bin/link --write", "bin/link --write --plugin", "~/git/keel/bin/link --write --full", "./bin/link --unlink",
       "node /x/keel/bin/link.ts --write", "codex/bin/link --write", "/x/keel/codex/bin/link --unlink",
       "bash -c 'bin/link --write'", "cd ~/git/keel && bin/link --write --force",
+      "cd /x/keel/bin && ./link --write", "cd /x/keel/bin && node link.ts --unlink", "/x/keel/BIN/Link --write",
     ]) {
       assertDenied(guard(command), "F-hookskip");
     }
@@ -1019,6 +1020,10 @@ describe("InstallCommandTest", () => {
       "claude plugin marketplace add ~/git/keel", "claude plugin marketplace add /x/git/keel/",
       "claude plugin marketplace remove keel", "claude plugin marketplace update keel",
       "claude plugin install keel@keel --scope user",
+      "claude plugin i keel@keel", "claude plugin remove keel@keel", "claude plugin marketplace rm keel",
+      "claude plugin disable --all", "claude plugin disable -a", "claude plugin disable --all --scope user",
+      "claude plugin marketplace update", "claude plugin update", "Claude plugin disable keel@keel",
+      "cd /x/keel && claude plugin marketplace add .", "claude plugin marketplace add https://github.com/o/keel.git",
     ]) {
       assertDenied(guard(command), "F-hookskip");
     }
@@ -1034,7 +1039,8 @@ describe("InstallCommandTest", () => {
     for (const command of [
       "link a b", "ln -s a b", "claude plugin list", "claude plugin list --json", "claude plugin marketplace list",
       "claude plugin install other@market", "claude plugin disable other@market", "claude plugin marketplace add ~/git/other",
-      "claude plugin validate .",
+      "claude plugin validate .", "claude plugin install other@market --scope user", "claude plugin help",
+      "claude plugin marketplace add o/other.git", "cd /x/other && claude plugin marketplace add .",
     ]) {
       assertPassed(guard(command));
     }

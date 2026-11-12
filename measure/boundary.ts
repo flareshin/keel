@@ -13,7 +13,7 @@ const COMMAND: CommandSpec = {
     ["--staged", "lines added in the index of the current repo"],
     ["--range A..B", "commits A..B (A all zeros: commits of B not on any remote)"],
     ["--paths PATH [PATH ...]", "whole files, or directories (their tracked files inside a work tree)"],
-    ["--generic-only", "only keel's generic secret / private-IP rules"],
+    ["--generic-only", "only keel's generic secret / private-IP rules, minus the address rules the overlay's boundary/generic-off.txt switches off"],
   ],
   options: { staged: { type: "boolean" }, range: { type: "string" }, paths: { type: "string" }, "generic-only": { type: "boolean" } },
 }
@@ -26,7 +26,8 @@ function main(argv: string[]): number {
   const source = selectedSource(parsed)
   let result
   try {
-    const rules = loadRules(env.overlayDir(), flagOption(parsed, "generic-only"))
+    const genericOnly = flagOption(parsed, "generic-only")
+    const rules = loadRules(env.overlayDir(), genericOnly, genericOnly)
     result = scan(linesOf(source), rules)
   } catch (error) {
     if (!(error instanceof BoundaryUsageError)) throw error

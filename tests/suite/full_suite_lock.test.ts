@@ -255,10 +255,14 @@ describe("full suite lock", { timeout: 60_000 }, () => {
   const theHangStarted = (hangPidFile: string): boolean => fs.existsSync(hangPidFile) && fs.readFileSync(hangPidFile, "utf8") !== ""
 
   const aliveAfterTheStop = async (hangPidFile: string, forksFile: string): Promise<number[]> => {
-    const pids = [Number(fs.readFileSync(hangPidFile, "utf8")), ...fs.readFileSync(forksFile, "utf8").trim().split("\n").map(Number)]
+    const hangPid = Number(fs.readFileSync(hangPidFile, "utf8"))
+    const forks = fs.readFileSync(forksFile, "utf8").trim().split("\n").map(Number)
+    const commandOf = (pid: number): string => spawnSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8" }).stdout.trim()
+    const stillOurs = (pid: number): boolean => isAlive(pid) && (pid === hangPid ? commandOf(pid).includes("hang.test.ts") : commandOf(pid) === "sleep 600")
+    const pids = [hangPid, ...forks]
     const deadline = Date.now() + 5_000
-    while (pids.some(isAlive) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50))
-    const alive = pids.filter(isAlive)
+    while (pids.some(stillOurs) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50))
+    const alive = pids.filter(stillOurs)
     for (const pid of alive) process.kill(pid, "SIGKILL")
     return alive
   }
@@ -307,13 +311,15 @@ describe("full suite lock", { timeout: 60_000 }, () => {
     assert.equal(fs.existsSync(lockDir), false)
   })
 
-  it("runAll_aLimitThatIsNotWholeSeconds_failsNamingTheVariable_beforeStartingAnySuite", async () => {
-    const { run, hangPidFile } = hangingRunAll("30m")
-    assert.equal((await run.done).code, 2)
-    assert.ok(run.stderr().includes("run-all: KEEL_SUITE_TIMEOUT_SECONDS must be whole seconds, got '30m'"), run.stderr())
-    assert.equal(fs.existsSync(hangPidFile), false)
-    assert.equal(fs.existsSync(lockDir), false)
-  })
+  for (const limit of ["30m", "08"]) {
+    it(`runAll_aLimitThatIsNotWholeSecondsWrittenPlainly_${limit}_failsNamingTheVariable_beforeStartingAnySuite`, async () => {
+      const { run, hangPidFile } = hangingRunAll(limit)
+      assert.equal((await run.done).code, 2)
+      assert.ok(run.stderr().includes(`run-all: KEEL_SUITE_TIMEOUT_SECONDS must be whole seconds without leading zeros, got '${limit}'`), run.stderr())
+      assert.equal(fs.existsSync(hangPidFile), false)
+      assert.equal(fs.existsSync(lockDir), false)
+    })
+  }
 
   it("runAll_aSuiteWithinTheLimit_keepsItsExitStatus", async () => {
     env = { ...env, KEEL_SUITE_TIMEOUT_SECONDS: "600" }

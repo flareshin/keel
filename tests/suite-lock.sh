@@ -78,8 +78,8 @@ suite_pid=""
 run_within_the_suite_limit() {
   local limit="${KEEL_SUITE_TIMEOUT_SECONDS:-1800}"
   case "$limit" in
-    "" | *[!0-9]*)
-      echo "run-all: KEEL_SUITE_TIMEOUT_SECONDS must be whole seconds, got '$limit'" >&2
+    "" | *[!0-9]* | 0?*)
+      echo "run-all: KEEL_SUITE_TIMEOUT_SECONDS must be whole seconds without leading zeros, got '$limit'" >&2
       return 2
       ;;
   esac

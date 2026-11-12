@@ -139,15 +139,25 @@ describe("bin/changelog", () => {
     })
   }
 
-  it("changelog_withHelp_namesBothArgumentsAndTheWriteFlag", () => {
+  it("changelog_withHelp_printsTheWholeHelpText", () => {
     const root = scratchRepo()
     try {
       const completed = run(root, "--help")
 
       assert.equal(completed.status, 0)
-      for (const text of ["changelog [-h] [--write] VERSION DATE", "Fold the changelog.d/ fragments", "the release version", "the release date, YYYY-MM-DD", "delete the folded fragments"]) {
-        assert.ok(completed.stdout.includes(text), `help lacks ${JSON.stringify(text)}:\n${completed.stdout}`)
-      }
+      assert.equal(
+        completed.stdout,
+        [
+          "usage: changelog [-h] [--write] VERSION DATE",
+          "",
+          "Fold the changelog.d/ fragments into a CHANGELOG.md release section. No flag = print the section only.",
+          "",
+          "  VERSION  the release version, such as 1.1.0",
+          "  DATE     the release date, YYYY-MM-DD",
+          "  --write  write CHANGELOG.md and delete the folded fragments",
+          "",
+        ].join("\n"),
+      )
     } finally {
       fs.rmSync(root, { recursive: true, force: true })
     }

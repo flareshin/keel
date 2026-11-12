@@ -264,21 +264,21 @@ describe("precheck baseline", () => {
   })
 
   it("runBaseline_widensAFilesLimit_whenTheHostGotBusierSinceTheFirstFile", async () => {
-    const slow = "import { it } from 'node:test'\nit('waits', () => new Promise((resolve) => setTimeout(resolve, 2500)))\n"
+    const slow = "import { it } from 'node:test'\nit('waits', () => new Promise((resolve) => setTimeout(resolve, 6000)))\n"
     const directory = materialized({ "tests/a.test.ts": passing("a"), "tests/slow.test.ts": slow })
     const sampled = [1, 4]
 
-    const baseline = await runBaseline(directory, ["tests/a.test.ts", "tests/slow.test.ts"], 1, () => sampled.shift()!)
+    const baseline = await runBaseline(directory, ["tests/a.test.ts", "tests/slow.test.ts"], 4, () => sampled.shift()!)
 
     assert.equal(baseline.outcome, "green")
   })
 
   it("runBaseline_keepsAFilesLimit_whenTheHostGotQuieterSinceTheFirstFile", async () => {
-    const slow = "import { it } from 'node:test'\nit('waits', () => new Promise((resolve) => setTimeout(resolve, 700)))\n"
+    const slow = "import { it } from 'node:test'\nit('waits', () => new Promise((resolve) => setTimeout(resolve, 1500)))\n"
     const directory = materialized({ "tests/a.test.ts": passing("a"), "tests/slow.test.ts": slow })
     const sampled = [4, 1]
 
-    const baseline = await runBaseline(directory, ["tests/a.test.ts", "tests/slow.test.ts"], 2, () => sampled.shift()!)
+    const baseline = await runBaseline(directory, ["tests/a.test.ts", "tests/slow.test.ts"], 4, () => sampled.shift()!)
 
     assert.equal(baseline.outcome, "green")
   })
@@ -322,12 +322,12 @@ describe("precheck baseline", () => {
   it("runBaseline_reportsTheWidenedLimit_whenAFileOutrunsIt", async () => {
     const slow = "import { it } from 'node:test'\nit('waits', () => new Promise((resolve) => setTimeout(resolve, 30000)))\n"
     const directory = materialized({ "tests/a.test.ts": passing("a"), "tests/slow.test.ts": slow })
-    const sampled = [2, 4]
+    const sampled = [1, 2]
 
-    const baseline = await runBaseline(directory, ["tests/a.test.ts", "tests/slow.test.ts"], 1, () => sampled.shift()!)
+    const baseline = await runBaseline(directory, ["tests/a.test.ts", "tests/slow.test.ts"], 4, () => sampled.shift()!)
 
     assert.equal(baseline.outcome, "timeout")
-    assert.equal(baseline.timeoutSeconds, 2)
+    assert.equal(baseline.timeoutSeconds, 8)
   })
 
   it("loadFactor_isLoadPerCpu_neverBelow1_andCappedAt8", () => {

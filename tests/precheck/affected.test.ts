@@ -106,7 +106,7 @@ describe("fullSuitePaths", () => {
 })
 
 describe("keel test --affected", () => {
-  const { NODE_TEST_CONTEXT: _parentRunner, ...standaloneEnv } = process.env
+  const { NODE_TEST_CONTEXT: _parentRunner, NODE_COMPILE_CACHE: _parentCache, ...standaloneEnv } = process.env
   const keel = (root: string, args: string[], dataDir: string) =>
     spawnSync(KEEL, ["test", "--affected", ...args], { cwd: root, encoding: "utf8", env: { ...standaloneEnv, KEEL_DATA_DIR: dataDir } })
   const remoteRepo = (extra: Record<string, string> = {}): string => {
@@ -179,6 +179,18 @@ describe("keel test --affected", () => {
     assert.equal(completed.status, 3, completed.stderr)
     assert.match(completed.stderr, new RegExp(`${REPLAY_TESTS.length} replay test files are missing from this repo: ${REPLAY_TESTS[0]}`))
     assert.doesNotMatch(completed.stderr, /KEEL-TEST/)
+  })
+
+  it("keelTestAffected_runsTheTestsWithACompileCacheUnderTheDataDir", () => {
+    const dataDir = scratchDir("keel-data-")
+    const recorded = join(dataDir, "recorded")
+    const root = remoteRepo()
+    writeFiles(root, { "tests/a.test.ts": `import fs from 'node:fs'\nimport { it } from 'node:test'\nimport '../lib/a.ts'\nit('records', () => fs.writeFileSync(${JSON.stringify(recorded)}, process.env.NODE_COMPILE_CACHE ?? 'unset'))\n` })
+
+    const completed = keel(root, ["--base", "trunk"], dataDir)
+
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.equal(readFileSync(recorded, "utf8"), join(dataDir, "state", "keel", "node-compile-cache"))
   })
 
   it("keelTestAffected_exitsFourWithoutRunning_whenNoTestReachesTheChangedPaths", () => {

@@ -331,6 +331,27 @@ describe("full suite lock", { timeout: 60_000 }, () => {
     assert.equal(fs.existsSync(lockDir), false)
   })
 
+  const RECORDS_COMPILE_CACHE = (file: string) => `import fs from "node:fs"\nimport { it } from "node:test"\nit("records", () => fs.writeFileSync(${JSON.stringify(file)}, process.env.NODE_COMPILE_CACHE ?? "unset"))\n`
+
+  it("runAll_givesEveryTestProcessACompileCacheUnderTheDataDir", async () => {
+    delete env.NODE_COMPILE_CACHE
+    const recorded = path.join(dataDir, "recorded")
+    const run = spawnRun([path.join(checkoutWith({ "tests/a.test.ts": RECORDS_COMPILE_CACHE(recorded) }), "tests", "run-all.sh")])
+    assert.equal((await run.done).code, 0, run.stderr())
+    const cache = path.join(dataDir, "state", "keel", "node-compile-cache")
+    assert.equal(fs.readFileSync(recorded, "utf8"), cache)
+    assert.ok(fs.readdirSync(cache).length > 0, "node wrote nothing to the compile cache")
+  })
+
+  it("runAll_keepsACompileCacheTheCallerChose", async () => {
+    const chosen = path.join(dataDir, "chosen-cache")
+    env = { ...env, NODE_COMPILE_CACHE: chosen }
+    const recorded = path.join(dataDir, "recorded")
+    const run = spawnRun([path.join(checkoutWith({ "tests/a.test.ts": RECORDS_COMPILE_CACHE(recorded) }), "tests", "run-all.sh")])
+    assert.equal((await run.done).code, 0, run.stderr())
+    assert.equal(fs.readFileSync(recorded, "utf8"), chosen)
+  })
+
   it("runAll_waitsForTheLockBeforeStartingAnySuite", async () => {
     givenLockHeldBy(String(process.pid))
     const runAll = spawnRun(["tests/run-all.sh"])

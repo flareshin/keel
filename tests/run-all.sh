@@ -2,6 +2,7 @@
 set -e
 cd "$(dirname "$0")/.."
 source tests/suite-lock.sh
+export NODE_COMPILE_CACHE="${NODE_COMPILE_CACHE:-${KEEL_DATA_DIR:-$HOME/.claude}/state/keel/node-compile-cache}"
 hold_suite_lock
 run_the_suites() {
   local status=0

@@ -430,6 +430,21 @@ test('adversarialAudit_runsTheAuditorByItsBareName_underTheLinkInstall', async (
   ])
 })
 
+test('adversarialAudit_runsTheCombinedAuditorByItsBareName_underTheLinkInstall', async () => {
+  const rt = createRuntime({ install: 'link', respond: (prompt, opts) => {
+    if (opts.label === 'audit:combined') return { audits: [{ lens: 'contract', findings: [finding('c1')] }] }
+    return { decisions: [{ id: 'contract:c1', verdict: 'CONFIRMED', evidence: 'reran' }] }
+  } })
+
+  const result = await rt.run('adversarial-audit', { auditMode: 'combined', target: '/work/app', lenses: LENSES.slice(0, 1) })
+
+  assert.deepEqual(result.confirmed.map((f) => f.id), ['c1'])
+  assert.deepEqual(rt.record.agents.map(({ opts }) => [opts.label, opts.agentType]), [
+    ['audit:combined', 'auditor'],
+    ['verify:combined', 'auditor'],
+  ])
+})
+
 test('adversarialAudit_failsTheLens_whenNeitherAuditorNameResolves', async () => {
   const rt = createRuntime({ install: 'neither', respond: () => { throw new Error('no agent expected') } })
 

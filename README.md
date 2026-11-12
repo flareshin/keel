@@ -256,6 +256,25 @@ Environment variables (DESIGN.md (i)):
 | `KEEL_OVERLAY_DIR` | `~/git/keel-overlay` | overlay checkout; missing means no overlay data |
 | `KEEL_DATA_DIR` | `~/.claude` | logs, state, evidence, link targets, settings |
 
+### Plugin install
+
+keel is also a Claude Code plugin (`.claude-plugin/`). Under it the hooks come from `hooks/hooks.json`, the principles hook injects `PRINCIPLES.md` and `PERSONAL.md` at session start instead of a generated `CLAUDE.md`, and skills, agents and workflows carry the `keel:` prefix (`keel:lens-review`, `keel:auditor`). `bin/link` still writes the permissions, env, overlay links and `~/.claude/bin/keel`. Switch after a working link install, from a terminal outside Claude Code, in the merged checkout (never a worktree):
+
+```bash
+claude plugin marketplace add ~/git/keel
+claude plugin install keel@keel
+cd ~/git/keel && bin/link --write --plugin
+bin/link --check
+```
+
+Then start new sessions. The plugin is read from `~/git/keel` at session start, so it moves only by merge, as the link install does; start new sessions after a merge. To go back to the link install:
+
+```bash
+claude plugin disable keel@keel
+cd ~/git/keel && bin/link --write --full
+bin/link --check
+```
+
 ### Upgrading from a release with Python hooks
 
 1. Fast-forward the dedicated keel checkout (`~/git/keel`) to the 1.0.0 commit.

@@ -47,7 +47,7 @@ export function reviewCommand(model: string): string[] {
 export function reviewPrompt(reviewCase: ReviewCase, repo: string, base: string, head: string): string {
   const workflowArgs: JsonObject = { diffs: [{ repo, base, head }] }
   if (reviewCase.requirement) workflowArgs["requirement"] = reviewCase.requirement
-  const lines = [`Run the saved workflow named ${WORKFLOW} with these args (JSON):`, JSON.stringify(workflowArgs)]
+  const lines = [`Run the saved workflow named keel:${WORKFLOW} (${WORKFLOW} under the link install) with these args (JSON):`, JSON.stringify(workflowArgs)]
   if (reviewCase.callerSkill) {
     lines.push(`Before running it, load the skill ${reviewCase.callerSkill} and follow it for this diff: pass the lenses it says fire as args.lenses.`)
   }

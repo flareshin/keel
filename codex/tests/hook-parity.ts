@@ -149,14 +149,9 @@ function sandboxFiles(paths: Paths): Record<string, string> {
 export function observe(testCase: HookCase, paths: Paths, hook: string = TYPESCRIPT_HOOK, timeoutMilliseconds: number = HOOK_TIMEOUT_MILLISECONDS): Observation {
   buildSandbox(paths, configOf(testCase));
   const result = spawnSync(process.execPath, [hook], { input: testCase.stdin, env: environmentFor(paths, testCase.env), cwd: paths.repo, maxBuffer: 1 << 26, timeout: timeoutMilliseconds });
-  if (result.error) throw new Error(hookFailure(testCase, result.error, timeoutMilliseconds));
+  if ((result.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT") throw new Error(`${testCase.name}: the hook did not exit within ${timeoutMilliseconds} ms`);
   const stderr = result.stderr.toString("utf8");
   return { status: result.status, stdout: withSyntaxMessageMasked(result.stdout.toString("utf8")), stderr: testCase.crash ? crashLine(stderr) : stderr, files: sandboxFiles(paths) };
-}
-
-function hookFailure(testCase: HookCase, error: NodeJS.ErrnoException, timeoutMilliseconds: number): string {
-  if (error.code === "ETIMEDOUT") return `${testCase.name}: the hook did not exit within ${timeoutMilliseconds} ms`;
-  return `${testCase.name}: the hook could not run (${error.message})`;
 }
 
 export function withSyntaxMessageMasked(text: string): string {

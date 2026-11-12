@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { before, describe, it } from "node:test";
@@ -316,9 +316,16 @@ describe("hook parity sample over the recorded golden", () => {
 
 describe("observe", () => {
   it("fails naming the case, instead of waiting forever, when the hook never exits", () => {
-    const sleeper = join(mkdtempSync(join(tmpdir(), "hook-sleeper-")), "sleeper.ts");
+    const sleeperDirectory = mkdtempSync(join(tmpdir(), "hook-sleeper-"));
+    const sleeper = join(sleeperDirectory, "sleeper.ts");
     writeFileSync(sleeper, "setInterval(() => {}, 1000);\n");
     const stuck: HookCase = { name: "stuck payload", stdin: "{}" };
-    assert.throws(() => observe(stuck, sandboxPaths(), sleeper, 300), /stuck payload: the hook did not exit within 300 ms/);
+    const paths = sandboxPaths();
+    try {
+      assert.throws(() => observe(stuck, paths, sleeper, 300), /^Error: stuck payload: the hook did not exit within 300 ms$/);
+    } finally {
+      rmSync(sleeperDirectory, { recursive: true, force: true });
+      rmSync(paths.root, { recursive: true, force: true });
+    }
   });
 });

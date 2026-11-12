@@ -96,13 +96,12 @@ const KEEL_CLI_NAMES: ReadonlySet<string> = new Set(["keel", "keel.ts"]);
 const LINK_TOOL_RE = /\/bin\/link(?:\.ts)?$/iu;
 const LINK_CHANGING_FLAGS: ReadonlySet<string> = new Set(["--write", "--unlink"]);
 const CLAUDE_PLUGIN_COMMANDS: ReadonlySet<string> = new Set(["plugin", "plugins"]);
-const READ_ONLY_PLUGIN_SUBCOMMANDS: ReadonlySet<string> = new Set(["", "list", "validate", "help"]);
+const READ_ONLY_PLUGIN_SUBCOMMANDS: ReadonlySet<string> = new Set(["", "list", "validate", "help", "details", "eval"]);
+const READ_ONLY_MARKETPLACE_SUBCOMMANDS: ReadonlySet<string> = new Set(["", "list", "help"]);
 const MARKETPLACE_SUBCOMMAND = "marketplace";
-const ALL_PLUGINS_OPTIONS: ReadonlySet<string> = new Set(["--all", "-a"]);
-const RELATIVE_PATH_RE = /^\.\.?(?:\/|$)/u;
-const GIT_SUFFIX_RE = /(?:\.git)?\/*$/iu;
-const KEEL_PLUGIN = "keel";
-const INSTALL_CHANGE_TEXT = "changes how keel is installed, and with it the hooks every session runs; the user runs it from their own terminal outside Claude Code.";
+const HELP_OPTIONS: ReadonlySet<string> = new Set(["--help", "-h"]);
+const INSTALL_CHANGE_TEXT = "changes keel's links or the installed plugins, and with them the hooks every session runs; " +
+  "the user runs it from their own terminal outside Claude Code.";
 const COMMIT_MESSAGE_SHOWN = "commit message";
 const UNREAD_MESSAGE_TEXT = "Known values are loaded, and this commit message or PR text reaches git or gh in a form the hook does not read: " +
   "stdin, a here-string or pipe, a $ or backtick expansion, a line continuation inside quotes, an abbreviated option, a short-flag cluster, " +
@@ -454,44 +453,28 @@ function keelArguments(argv: readonly string[]): string[] {
 
 function checkInstallChanges(call: readonly Step[]): Violation[] {
   return call.flatMap((step) => {
-    const command = linkChange(step) ?? keelPluginChange(step);
+    const command = linkChange(step) ?? pluginChange(step.argv);
     return command === null ? [] : [{ ruleId: F_HOOKSKIP, text: `\`${command}\` ${INSTALL_CHANGE_TEXT}` }];
   });
 }
 
 function linkChange(step: Step): string | null {
-  const index = step.argv.findIndex((word) => LINK_TOOL_RE.test(programPath(step, word)));
+  const index = step.argv.findIndex((word) => LINK_TOOL_RE.test(resolveDirectory(step.directory, word, step.expansion)));
   if (index < 0 || !step.argv.slice(index + 1).some((arg) => LINK_CHANGING_FLAGS.has(arg))) return null;
   return step.argv.slice(index).join(" ");
 }
 
-function programPath(step: Step, word: string): string {
-  return word.includes("/") || word.endsWith(".ts") ? resolveDirectory(step.directory, word, step.expansion) : word;
-}
-
-function keelPluginChange(step: Step): string | null {
-  const claude = step.argv.findIndex((word) => basename(word).toLowerCase() === "claude");
+function pluginChange(argv: readonly string[]): string | null {
+  const claude = argv.findIndex((word) => basename(word).toLowerCase() === "claude");
   if (claude < 0) return null;
-  const args = step.argv.slice(claude + 1);
+  const args = argv.slice(claude + 1);
   const words = args.filter((word) => !word.startsWith("-"));
   const plugin = words.findIndex((word) => CLAUDE_PLUGIN_COMMANDS.has(word));
-  if (plugin < 0) return null;
-  const [subcommand = "", ...rest] = words.slice(plugin + 1);
-  const isMarketplace = subcommand === MARKETPLACE_SUBCOMMAND;
-  const [action = "", ...targets] = isMarketplace ? rest : [subcommand, ...rest];
-  if (READ_ONLY_PLUGIN_SUBCOMMANDS.has(action)) return null;
-  const namesKeel = isMarketplace ? targets.some((target) => marketplaceSourceIsKeel(step, target)) : targets.some(isKeelPlugin);
-  const touchesAll = targets.length === 0 || args.some((arg) => ALL_PLUGINS_OPTIONS.has(arg));
-  return namesKeel || touchesAll ? step.argv.slice(claude).join(" ") : null;
-}
-
-function marketplaceSourceIsKeel(step: Step, source: string): boolean {
-  const path = RELATIVE_PATH_RE.test(source) ? resolveDirectory(step.directory, source, step.expansion) : source;
-  return basename(path.replace(GIT_SUFFIX_RE, "")).toLowerCase() === KEEL_PLUGIN;
-}
-
-function isKeelPlugin(word: string): boolean {
-  return word === KEEL_PLUGIN || word.startsWith(`${KEEL_PLUGIN}@`);
+  if (plugin < 0 || args.some((arg) => HELP_OPTIONS.has(arg))) return null;
+  const [subcommand = "", action = ""] = words.slice(plugin + 1);
+  const readOnly = subcommand === MARKETPLACE_SUBCOMMAND ? READ_ONLY_MARKETPLACE_SUBCOMMANDS.has(action) :
+    READ_ONLY_PLUGIN_SUBCOMMANDS.has(subcommand);
+  return readOnly ? null : argv.slice(claude).join(" ");
 }
 
 function checkProtectedWrites(call: readonly Step[]): Violation[] {

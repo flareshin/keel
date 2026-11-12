@@ -1045,6 +1045,7 @@ describe("InstallCommandTest", () => {
       "claude plugin details keel@keel", "claude plugin install --help", "claude plugin marketplace add -h",
       "claude plugin eval keel", "claude plugin test .", "claude plugin marketplace help", "claude plugin install keel@keel -h",
       "claude plugin install keel@keel --json -h", "claude plugin uninstall keel@keel -y --help", "claude plugin install -h -- keel@keel", "claude plugin install keel@keel --scope=user -h",
+      "claude plugin prune --dry-run -h", "claude plugin tag --push -h", "claude plugin init foo -f -h", "claude plugin configure keel@keel --values-stdin -h", "claude plugin restore-set-aside keel@keel --discard -h",
     ]) {
       assertPassed(guard(command));
     }

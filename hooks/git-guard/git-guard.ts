@@ -100,7 +100,7 @@ const READ_ONLY_PLUGIN_SUBCOMMANDS: ReadonlySet<string> = new Set(["", "list", "
 const READ_ONLY_MARKETPLACE_SUBCOMMANDS: ReadonlySet<string> = new Set(["", "list", "help"]);
 const MARKETPLACE_SUBCOMMAND = "marketplace";
 const HELP_OPTIONS: ReadonlySet<string> = new Set(["--help", "-h"]);
-const PLUGIN_BOOLEAN_FLAGS: ReadonlySet<string> = new Set([...HELP_OPTIONS, "--json", "--claudeai", "--keep-data", "--prune", "-a", "--all", "-y", "--yes"]);
+const PLUGIN_BOOLEAN_FLAGS: ReadonlySet<string> = new Set([...HELP_OPTIONS, "--json", "--claudeai", "--keep-data", "--prune", "-a", "--all", "-y", "--yes", "--dry-run", "--push", "-f", "--force", "--values-stdin", "--discard"]);
 const INSTALL_CHANGE_TEXT = "changes keel's links or the installed plugins, and with them the hooks every session runs; " +
   "the user runs it from their own terminal outside Claude Code.";
 const COMMIT_MESSAGE_SHOWN = "commit message";

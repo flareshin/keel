@@ -317,18 +317,21 @@ export function show(repoPath: string, rootRunId: string | null): JsonObject {
 
 export function pushReadiness(repoPath: string): JsonObject {
   const repoRoot = gitcmd.toplevel(repoPath);
-  const repoKey = repoRoot ? registry.originKey(repoRoot) : null;
-  const row = registry.lookup(repoKey);
-  if (repoRoot === null || repoKey === null || !registry.isGated(row)) throw new writers.Usage(`${repoPath} is not a clone of a gated repo`);
-  const baseRef = 'origin/' + row!.integrationBase;
+  if (repoRoot === null) throw new writers.Usage(`${repoPath} is not in a git repository`);
   const head = gitcmd.commitSha(repoRoot, 'HEAD');
-  const mergeBase = head === null ? null : gitcmd.mergeBase(repoRoot, baseRef, head);
-  if (head === null || mergeBase === null) throw new writers.Usage(`no merge base between ${baseRef} and HEAD: run \`git fetch origin\``);
+  if (head === null) throw new writers.Usage(`${repoRoot} has no commit at HEAD`);
+  const repoKey = registry.originKey(repoRoot);
+  const row = registry.lookup(repoKey);
+  if (!registry.isGated(row)) return { repo: repoKey, head, gated: false, ok: true, risk: null, root_run_id: null, reasons: [] };
+  const baseRef = 'origin/' + row!.integrationBase;
+  if (!gitcmd.refExists(repoRoot, 'refs/remotes/' + baseRef)) throw new writers.Usage(`base ${baseRef} is missing: run \`git fetch origin\``);
+  const mergeBase = gitcmd.mergeBase(repoRoot, baseRef, head);
+  if (mergeBase === null) throw new writers.Usage(`no merge base between ${baseRef} and HEAD`);
   const decision = verify.judge({
-    repoRoot, repoKey, row: row!, head, mergeBase, needsApproval: registry.pushNeedsApproval(row!), promote: false,
+    repoRoot, repoKey: repoKey!, row: row!, head, mergeBase, needsApproval: registry.pushNeedsApproval(row!), promote: false,
   });
   return {
-    repo: repoKey, head, ok: decision.ok, risk: decision.riskClass, root_run_id: decision.rootRunId,
+    repo: repoKey, head, gated: true, ok: decision.ok, risk: decision.riskClass, root_run_id: decision.rootRunId,
     reasons: decision.reasons.map((reason) => ({ rule_id: reason.ruleId, text: reason.text })),
   };
 }

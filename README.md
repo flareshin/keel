@@ -223,6 +223,7 @@ Each decision is logged to `$KEEL_DATA_DIR/logs/keel-fires.jsonl`: a deny or war
 | `keel approve <root_run_id> [--read]` | Owner-only approval (or acknowledgement) of a review chain's heads |
 | `keel approve --promote <owner/repo> <sha>` | Owner-only approval of one develop→production merge of that sha; develop chains need only their PASS |
 | `keel evidence show [--repo] [--root]` | Read-only view of chains, tests and smoke evidence |
+| `keel evidence check --repo` | Read-only: would ship-gate let a push of HEAD through; exit 1 lists what is missing |
 | `keel evidence promote-plan --repo --base --head` | Read-only: which develop chain covers each promoted step, and the runs left to review |
 | `keel evidence write-review` | Run by `report-gate` from a reviewer's report; agents are denied it |
 | `keel evidence write-smoke` | Run by the job after a passing `measure/smoke`, before a smoke-only push |

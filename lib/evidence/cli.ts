@@ -32,6 +32,7 @@ const USAGE = `usage:
   keel evidence write-review          (stdin: {"keel_evidence":{…},"verdict":…,"source":{…}})
   keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]
   keel evidence show [--repo <path>] [--root <root_run_id>]
+  keel evidence check --repo <path>   (would ship-gate let a push of HEAD through? exit 1 = not ready)
   keel evidence compatibility         (read-only retirement inventory across repos)
   keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]
   keel evidence promote-plan --repo <path> --base <ref> --head <sha>
@@ -42,6 +43,7 @@ const USAGE = `usage:
   keel precheck required --repo <path> --base <sha> --end <sha>`;
 const PROMOTE_USAGE = 'keel approve --promote <owner/repo> <sha>';
 const EXIT_OK = 0;
+const EXIT_NOT_READY = 1;
 const EXIT_USAGE = 2;
 const EXIT_REFUSED = 3;
 const EXIT_INTERNAL = 70;
@@ -268,6 +270,11 @@ function evidence(rest: string[]): number {
     seams.print(writers.writeReview(stdinJson()));
   } else if (subcommand === 'write-smoke') {
     seams.print(writers.writeSmoke(options['--repo'] || process.cwd(), options['--run'] ?? null));
+  } else if (subcommand === 'check') {
+    if (optionNames.length !== 1 || !('--repo' in options)) throw new writers.Usage('check requires --repo and takes no other option');
+    const readiness = pushReadiness(options['--repo']!);
+    seams.print(readiness);
+    return readiness['ok'] ? EXIT_OK : EXIT_NOT_READY;
   } else if (subcommand === 'show') {
     seams.print(show(options['--repo'] || process.cwd(), options['--root'] ?? null));
   } else if (subcommand === 'compatibility') {
@@ -305,6 +312,24 @@ export function show(repoPath: string, rootRunId: string | null): JsonObject {
     repo: repoKey, chains,
     tests: store.load('tests', repoKey).map((item) => item.evidence_id),
     smoke: store.load('smoke', repoKey).map((item) => item.evidence_id),
+  };
+}
+
+export function pushReadiness(repoPath: string): JsonObject {
+  const repoRoot = gitcmd.toplevel(repoPath);
+  const repoKey = repoRoot ? registry.originKey(repoRoot) : null;
+  const row = registry.lookup(repoKey);
+  if (repoRoot === null || repoKey === null || !registry.isGated(row)) throw new writers.Usage(`${repoPath} is not a clone of a gated repo`);
+  const baseRef = 'origin/' + row!.integrationBase;
+  const head = gitcmd.commitSha(repoRoot, 'HEAD');
+  const mergeBase = head === null ? null : gitcmd.mergeBase(repoRoot, baseRef, head);
+  if (head === null || mergeBase === null) throw new writers.Usage(`no merge base between ${baseRef} and HEAD: run \`git fetch origin\``);
+  const decision = verify.judge({
+    repoRoot, repoKey, row: row!, head, mergeBase, needsApproval: registry.pushNeedsApproval(row!), promote: false,
+  });
+  return {
+    repo: repoKey, head, ok: decision.ok, risk: decision.riskClass, root_run_id: decision.rootRunId,
+    reasons: decision.reasons.map((reason) => ({ rule_id: reason.ruleId, text: reason.text })),
   };
 }
 

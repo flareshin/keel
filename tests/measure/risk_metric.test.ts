@@ -435,7 +435,7 @@ describe("risk runner", () => {
     defectsRunner(kind, `cat <<'JSON'\n${JSON.stringify({ count: items.length, items })}\nJSON`)
   }
 
-  const defect = (commit: string, offending: string[], fields: Record<string, unknown> = {}): object => ({
+  const defect = (commit: string, offending: string[], fields: Record<string, unknown> = {}): Record<string, unknown> => ({
     repo: REPO, commit, ts: daysAgo(5), kind: "revert", offending, traced_by: "revert", ...fields,
   })
 

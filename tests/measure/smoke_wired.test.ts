@@ -116,15 +116,25 @@ describe("wired-fires", () => {
     assert.ok(wiredFires().detail.includes("the real keel-fires.jsonl changed during the run"))
   })
 
-  const appendToRealLogThenFire = (session: string | null): string => {
-    const realLog = path.join(harness.box.data, "logs", "keel-fires.jsonl")
-    const line = JSON.stringify(session === null ? { rule_id: "K2", outcome: "pass" } : { rule_id: "K2", outcome: "pass", session })
-    return harness.box.write("keel/hooks/demo/demo.js", hookSource([
-      `fs.mkdirSync(${JSON.stringify(path.dirname(realLog))}, { recursive: true })`,
-      `fs.appendFileSync(${JSON.stringify(realLog)}, ${JSON.stringify(line + "\n")})`,
-      "if (!payload.tool_input.command.startsWith('bad ')) process.exit(0)",
-    ]))
+  const realFiresLog = (): string => path.join(harness.box.data, "logs", "keel-fires.jsonl")
+
+  const touchRealLogThenFire = (touch: string): string => harness.box.write("keel/hooks/demo/demo.js", hookSource([
+    `fs.mkdirSync(${JSON.stringify(path.dirname(realFiresLog()))}, { recursive: true })`,
+    touch,
+    "if (!payload.tool_input.command.startsWith('bad ')) process.exit(0)",
+  ]))
+
+  const appendRawToRealLogThenFire = (text: string): string => touchRealLogThenFire(`fs.appendFileSync(${JSON.stringify(realFiresLog())}, ${JSON.stringify(text + "\n")})`)
+
+  const appendToRealLogThenFire = (session: string | null): string =>
+    appendRawToRealLogThenFire(JSON.stringify(session === null ? { rule_id: "K2", outcome: "pass" } : { rule_id: "K2", outcome: "pass", session }))
+
+  const seedRealFiresLog = (): void => {
+    fs.mkdirSync(path.dirname(realFiresLog()), { recursive: true })
+    fs.writeFileSync(realFiresLog(), JSON.stringify({ rule_id: "K2", outcome: "pass", session: "earlier-session" }) + "\n")
   }
+
+  const leakDetail = "the real keel-fires.jsonl changed during the run"
 
   it("wiredFires_passes_whenAnotherSessionWritesTheRealFiresLogDuringTheRun", () => {
     registerBash(appendToRealLogThenFire("another-live-session"))
@@ -140,6 +150,33 @@ describe("wired-fires", () => {
     }
     registerBash(appendToRealLogThenFire("wired-fires"))
     assert.ok(wiredFires().detail.includes("the real keel-fires.jsonl changed during the run"))
+  })
+
+  it("wiredFires_fails_whenTheRealFiresLogGetsALineWithTheNoSessionMarker", () => {
+    registerBash(appendToRealLogThenFire("-"))
+    assert.ok(wiredFires().detail.includes(leakDetail))
+  })
+
+  it("wiredFires_fails_whenTheRealFiresLogGetsALineWithNoSession", () => {
+    registerBash(appendToRealLogThenFire(null))
+    assert.ok(wiredFires().detail.includes(leakDetail))
+  })
+
+  it("wiredFires_fails_whenTheRealFiresLogGetsALineThatIsNotJson", () => {
+    registerBash(appendRawToRealLogThenFire("not json"))
+    assert.ok(wiredFires().detail.includes(leakDetail))
+  })
+
+  it("wiredFires_fails_whenTheRealFiresLogShrinksDuringTheRun", () => {
+    seedRealFiresLog()
+    registerBash(touchRealLogThenFire(`fs.writeFileSync(${JSON.stringify(realFiresLog())}, "")`))
+    assert.ok(wiredFires().detail.includes(leakDetail))
+  })
+
+  it("wiredFires_fails_whenTheRealFiresLogVanishesDuringTheRun", () => {
+    seedRealFiresLog()
+    registerBash(touchRealLogThenFire(`fs.rmSync(${JSON.stringify(realFiresLog())}, { force: true })`))
+    assert.ok(wiredFires().detail.includes(leakDetail))
   })
 
   it("wiredFires_runsSetupCommandsInTheTempDir_beforeFeedingThePayload", () => {

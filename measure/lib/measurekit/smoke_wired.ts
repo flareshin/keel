@@ -7,6 +7,7 @@ import { loadPluginHooks, pluginHooksPath } from "../../../lib/link/fragments.ts
 import { LinkStateError, readRecordedMode } from "../../../lib/link/settings_json.ts"
 import { readJsonl } from "./datafiles.ts"
 import { InvalidUtf8Error, isFile, isSystemError, readUtf8, resolveLinks } from "./files.ts"
+import { NO_SESSION } from "./fireslog.ts"
 import { iterRegistrations } from "./hook_settings.ts"
 import type { Registration } from "./hook_settings.ts"
 import { displayText, isJsonObject, parseJson } from "./json.ts"
@@ -207,7 +208,7 @@ function isOtherSessionsLine(line: string, fixtureSessions: Set<string>): boolea
     throw error
   }
   const session = isJsonObject(record) ? record["session"] : undefined
-  return typeof session === "string" && session !== "" && !fixtureSessions.has(session)
+  return typeof session === "string" && session !== "" && session !== NO_SESSION && !fixtureSessions.has(session)
 }
 
 function linesAppendedSince(mark: FiresLogMark): string[] {

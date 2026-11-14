@@ -37,15 +37,15 @@ export interface MetricResult {
   error?: string
 }
 
-export type MetricItems = [number, JsonValue[]]
+export type MetricItems = [count: number, items: JsonValue[], extraKeys?: JsonObject]
 
 export type FinishedRunners = ReadonlyMap<string, RunResult | MetricError>
 
 export function evaluateMetric(row: LedgerRow, since: string, today: string, finished: FinishedRunners = new Map()): MetricResult {
   try {
-    const [count, items] = collectMetricItems(row.metric, since, finished)
+    const [count, items, extraKeys] = collectMetricItems(row.metric, since, finished)
     const status = count > 0 ? PASS : row.isInGrace(today) ? GRACE : FAIL
-    return { id: row.id, metric: row.metric, count, items, status }
+    return { ...extraKeys, id: row.id, metric: row.metric, count, items, status }
   } catch (error) {
     if (!(error instanceof MetricError)) throw error
     return { id: row.id, metric: row.metric, count: 0, items: [], status: FAIL, error: error.message }
@@ -156,7 +156,8 @@ function parseRunnerOutput(runner: string, completed: RunResult): MetricItems {
   const count = isJsonObject(payload) ? payload["count"] : undefined
   const items = isJsonObject(payload) ? payload["items"] : undefined
   if (!Number.isInteger(count) || !Array.isArray(items)) throw new MetricError(`runner ${runner} must print {"count": int, "items": [...]}`)
-  return [count as number, items]
+  const extraKeys = Object.fromEntries(Object.entries(payload as JsonObject).filter(([key]) => key !== "count" && key !== "items"))
+  return Object.keys(extraKeys).length === 0 ? [count as number, items] : [count as number, items, extraKeys]
 }
 
 export function defectRunnerNames(overlayDir: string): string[] {

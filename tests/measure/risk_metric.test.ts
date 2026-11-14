@@ -471,6 +471,15 @@ describe("risk runner", () => {
     assert.equal(itemFor(result, "light")["escaped_defects"], "no source")
   })
 
+  it("escapedDefects_withAFailingRunner_areVisibleThroughMeasureRun_notOnlyThroughTheRunnerItself", () => {
+    givenPass({ risk: "light" })
+    defectsRunner("revert", "exit 3")
+    const result = runMetric()
+    assert.match(result.defect_sources["defects-revert"].error, /exited 3/)
+    assert.deepEqual(result.untraced_defects, { count: 0, items: [] })
+    assert.deepEqual([result.id, result.status, result.count], ["risk", "PASS", 1])
+  })
+
   it("escapedDefects_withARunnerPrintingAMalformedItem_reportTheErrorAndKeepTheOtherRunnersItems", () => {
     const { bad, fix } = shippedDefectRepo()
     givenPass({ head: bad, ts: daysAgo(30), risk: "light" })

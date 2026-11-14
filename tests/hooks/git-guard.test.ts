@@ -1000,6 +1000,58 @@ describe("KeelCommandTest", () => {
   });
 });
 
+describe("InstallCommandTest", () => {
+  it("bash_deniedWithFHookskip_whenAnAgentWritesOrRemovesTheKeelLinks", () => {
+    for (const command of [
+      "bin/link --write", "bin/link --write --plugin", "~/git/keel/bin/link --write --full", "./bin/link --unlink",
+      "node /x/keel/bin/link.ts --write", "codex/bin/link --write", "/x/keel/codex/bin/link --unlink",
+      "bash -c 'bin/link --write'", "cd ~/git/keel && bin/link --write --force",
+      "cd /x/keel/bin && ./link --write", "cd /x/keel/bin && node link.ts --unlink", "/x/keel/BIN/Link --write",
+      "cd /x/keel/bin && bash link --write", "cd /x/keel/bin && zsh link --unlink",
+    ]) {
+      assertDenied(guard(command), "F-hookskip");
+    }
+    assertFired(sandbox, "F-hookskip", "deny", "git-guard");
+  });
+
+  it("bash_deniedWithFHookskip_whenAnAgentChangesAnyPluginInstall", () => {
+    for (const command of [
+      "claude plugin install keel@keel", "claude plugin uninstall keel", "claude plugin disable keel@keel",
+      "claude plugin enable keel@keel", "claude plugin update keel@keel", "claude plugins disable keel@keel",
+      "claude plugin marketplace add ~/git/keel", "claude plugin marketplace remove keel", "claude plugin marketplace update",
+      "claude plugin i keel@keel", "claude plugin remove keel@keel", "claude plugin marketplace rm keel",
+      "claude plugin disable --all", "claude plugin disable -as user", "claude plugin update", "Claude plugin disable keel@keel",
+      "cd /x/keel && claude plugin marketplace add \"$PWD\"", "claude plugin marketplace add https://github.com/o/keel.GIT",
+      "claude plugin install other@market", "claude plugin disable other@market", "claude plugin marketplace add ~/git/other",
+      "claude plugin install keel@keel --accept-command -h", "claude plugin install other@market --registry -h",
+      "claude plugin install -- keel@keel -h", "claude -- plugin install keel@keel -h",
+      "claude plugin install keel@keel --some-new-option -h",
+      "claude --model x plugin install keel@keel",
+    ]) {
+      assertDenied(guard(command), "F-hookskip");
+    }
+  });
+
+  it("bash_passes_whenTheLinkToolOnlyReports", () => {
+    for (const command of ["bin/link", "bin/link --check", "bin/link --plugin", "codex/bin/link --check", "bin/link --help"]) {
+      assertPassed(guard(command));
+    }
+  });
+
+  it("bash_passes_whenTheCommandOnlyReadsOrIsNotAnInstallTool", () => {
+    for (const command of [
+      "link a b", "ln -s a b", "cat bin/link", "claude plugin", "claude plugin list", "claude plugin list --json",
+      "claude plugin marketplace", "claude plugin marketplace list", "claude plugin validate .", "claude plugin help",
+      "claude plugin details keel@keel", "claude plugin install --help", "claude plugin marketplace add -h",
+      "claude plugin eval keel", "claude plugin test .", "claude plugin marketplace help", "claude plugin install keel@keel -h",
+      "claude plugin install keel@keel --json -h", "claude plugin uninstall keel@keel -y --help", "claude plugin install -h -- keel@keel", "claude plugin install keel@keel --scope=user -h",
+      "claude plugin prune --dry-run -h", "claude plugin tag --push -h", "claude plugin init foo -f -h", "claude plugin configure keel@keel --values-stdin -h", "claude plugin restore-set-aside keel@keel --discard -h",
+    ]) {
+      assertPassed(guard(command));
+    }
+  });
+});
+
 describe("AttributionTest", () => {
   let repo: string;
 

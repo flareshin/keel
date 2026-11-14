@@ -93,6 +93,16 @@ const PR_TEXT_SUBCOMMANDS: ReadonlySet<string> = new Set(["create", "edit", "mer
 const UNPUSHED = ["--not", "--remotes"];
 const STDIN_PATH = "-";
 const KEEL_CLI_NAMES: ReadonlySet<string> = new Set(["keel", "keel.ts"]);
+const LINK_TOOL_RE = /\/bin\/link(?:\.ts)?$/iu;
+const LINK_CHANGING_FLAGS: ReadonlySet<string> = new Set(["--write", "--unlink"]);
+const CLAUDE_PLUGIN_COMMANDS: ReadonlySet<string> = new Set(["plugin", "plugins"]);
+const READ_ONLY_PLUGIN_SUBCOMMANDS: ReadonlySet<string> = new Set(["", "list", "validate", "help", "details", "eval", "test"]);
+const READ_ONLY_MARKETPLACE_SUBCOMMANDS: ReadonlySet<string> = new Set(["", "list", "help"]);
+const MARKETPLACE_SUBCOMMAND = "marketplace";
+const HELP_OPTIONS: ReadonlySet<string> = new Set(["--help", "-h"]);
+const PLUGIN_BOOLEAN_FLAGS: ReadonlySet<string> = new Set([...HELP_OPTIONS, "--json", "--claudeai", "--keep-data", "--prune", "-a", "--all", "-y", "--yes", "--dry-run", "--push", "-f", "--force", "--values-stdin", "--discard"]);
+const INSTALL_CHANGE_TEXT = "changes keel's links or the installed plugins, and with them the hooks every session runs; " +
+  "the user runs it from their own terminal outside Claude Code.";
 const COMMIT_MESSAGE_SHOWN = "commit message";
 const UNREAD_MESSAGE_TEXT = "Known values are loaded, and this commit message or PR text reaches git or gh in a form the hook does not read: " +
   "stdin, a here-string or pipe, a $ or backtick expansion, a line continuation inside quotes, an abbreviated option, a short-flag cluster, " +
@@ -366,7 +376,7 @@ function checkBash(command: string, cwd: string): Violation[] {
   const call = steps(command, cwd);
   const callHeredocs = call.flatMap((step) => step.heredocs);
   const violations = [
-    ...checkKeelCommands(call), ...checkProtectedWrites(call), ...checkLiveCheckouts(call), ...checkHookSkips(call),
+    ...checkKeelCommands(call), ...checkInstallChanges(call), ...checkProtectedWrites(call), ...checkLiveCheckouts(call), ...checkHookSkips(call),
     ...checkHookDisablingWrites(call), ...checkCommentWrites(call),
   ];
   const plainCallText = PLAIN_CALL_TEXT_RE.test(command);
@@ -440,6 +450,42 @@ function checkKeelCommands(call: readonly Step[]): Violation[] {
 function keelArguments(argv: readonly string[]): string[] {
   const index = argv.findIndex((word) => KEEL_CLI_NAMES.has(basename(word).toLowerCase()));
   return index < 0 ? [] : argv.slice(index + 1);
+}
+
+function checkInstallChanges(call: readonly Step[]): Violation[] {
+  return call.flatMap((step) => {
+    const command = linkChange(step) ?? pluginChange(step.argv);
+    return command === null ? [] : [{ ruleId: F_HOOKSKIP, text: `\`${command}\` ${INSTALL_CHANGE_TEXT}` }];
+  });
+}
+
+function linkChange(step: Step): string | null {
+  const index = step.argv.findIndex((word) => LINK_TOOL_RE.test(resolveDirectory(step.directory, word, step.expansion)));
+  if (index < 0 || !step.argv.slice(index + 1).some((arg) => LINK_CHANGING_FLAGS.has(arg))) return null;
+  return step.argv.slice(index).join(" ");
+}
+
+function pluginChange(argv: readonly string[]): string | null {
+  const claude = argv.findIndex((word) => basename(word).toLowerCase() === "claude");
+  if (claude < 0) return null;
+  const args = argv.slice(claude + 1);
+  const words = args.filter((word) => !word.startsWith("-"));
+  const plugin = words.findIndex((word) => CLAUDE_PLUGIN_COMMANDS.has(word));
+  if (plugin < 0 || asksForHelp(args)) return null;
+  const [subcommand = "", action = ""] = words.slice(plugin + 1);
+  const readOnly = subcommand === MARKETPLACE_SUBCOMMAND ? READ_ONLY_MARKETPLACE_SUBCOMMANDS.has(action) :
+    READ_ONLY_PLUGIN_SUBCOMMANDS.has(subcommand);
+  return readOnly ? null : argv.slice(claude).join(" ");
+}
+
+function asksForHelp(args: readonly string[]): boolean {
+  const optionsEnd = args.includes("--") ? args.indexOf("--") : args.length;
+  const options = args.slice(0, optionsEnd);
+  return options.some((arg, index) => HELP_OPTIONS.has(arg) && leavesTheNextWordFree(options[index - 1] ?? ""));
+}
+
+function leavesTheNextWordFree(previous: string): boolean {
+  return !previous.startsWith("-") || previous.includes("=") || PLUGIN_BOOLEAN_FLAGS.has(previous);
 }
 
 function checkProtectedWrites(call: readonly Step[]): Violation[] {

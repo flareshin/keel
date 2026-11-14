@@ -1,0 +1,30 @@
+name: test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      KEEL_DATA_DIR: ${{ runner.temp }}/keel-data
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+      - run: brew list jq >/dev/null 2>&1 || brew install jq
+      - run: |
+          git config --global user.name ci
+          git config --global user.email ci@example.invalid
+          git config --global init.defaultBranch main
+      - run: npm ci
+      - run: npx tsc -p tsconfig.json
+      - run: bash tests/run-all.sh

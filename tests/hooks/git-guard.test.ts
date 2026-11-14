@@ -750,7 +750,11 @@ describe("KnownValuesTest", () => {
   it("commit_deniedAsAMessageForm_evenWhenTheMessageIsClean", () => {
     for (const command of [
       "git commit --allow-empty -F - <<< 'Fix parser'", "cat > m.txt <<'EOF'\nFix parser\nEOF\ngit commit --allow-empty -F m.txt",
-      "git commit --allow-empty -F missing.txt", `git commit --allow-empty -m "$(cat <<'EOF'\nFix parser\nEOF\n)"`,
+      "git commit --allow-empty -F missing.txt", `git commit --allow-empty -m "$(cat <<EOF\nFix parser\nEOF\n)"`,
+      `git commit --allow-empty -m "$(cat m.txt <<'EOF'\nFix parser\nEOF\n)"`, `git commit --allow-empty -m "$(cat <<'EOF'\nFix parser\nEOF\necho more\n)"`,
+      `git commit --allow-empty -m "$(cat <<'EOF'\nFix parser\nEOF\n) $(date)"`, `gh pr create --title t --body "$(cat <<EOF\nSummary\nEOF\n)"`,
+      `git commit --allow-empty -m "$(cat <<'EOF'\nFix parser (part)\nEOF\n)"`, `git commit --allow-empty -m "$(cat <<'EOF'\nEOF-like line\nEOF\n)"`,
+      "git commit --allow-empty -m '$(cat <<'EOF'\n'\n`true`\n'\nEOF\n)'",
       "git commit --allow-empty -m \"`echo Fix`\"", "git commit --allow-empty -sm 'Fix parser'", "git commit --allow-empty -mFix",
       'gh pr create --title t --body "$B"', "gh pr create --title t --body-file missing.md",
     ]) {
@@ -764,9 +768,19 @@ describe("KnownValuesTest", () => {
       "git commit --allow-empty -m 'Fix parser' -m Body", "git commit --allow-empty --message='Fix parser'",
       "git commit --allow-empty -F msg.txt", "git commit --allow-empty --file msg.txt", "git commit --allow-empty --file=msg.txt",
       "gh pr create --title t --body-file msg.txt", "gh pr merge 1 --squash -F msg.txt", "gh pr edit 1 --body 'Fix parser'",
+      `git commit --allow-empty -m "$(cat <<'EOF'\nFix parser\n\nBody and $HOME stay literal\nEOF\n)"`,
+      `gh pr create --title t --body "$(cat <<'EOF'\nSummary\n\nDetails and $HOME stay literal\nEOF\n)"`,
     ]) {
       assertPassed(guard(command, repo));
     }
+  });
+
+  it("commit_denied_whenTheMessageHeredocSubstitutionHoldsAKnownValue", () => {
+    const result = guard(`git commit --allow-empty -m "$(cat <<'EOF'\nRotate ${PASSWORD}\nEOF\n)"`, repo);
+    assertDenied(result, "F-secrets");
+    assert.ok(result.stderr.includes("commit message holds the value of DB_PASSWORD"), result.stderr);
+    assert.ok(!result.stderr.includes("form the hook does not read"), result.stderr);
+    assert.ok(!result.stderr.includes(PASSWORD));
   });
 
   it("commit_denied_whenGitDashCPointsTheMessageFileAtAnotherDirectory", () => {
@@ -1660,6 +1674,21 @@ describe("SameCallStagingTest", () => {
 
   it("commit_passes_whenTheCallTextUsesOnlyPlainCharacters", () => {
     assertPassed(guard("git add ./clean.txt && git commit -m \"wip: clean-up, v1.2 +docs @team 50%\"", repo));
+  });
+
+  it("commit_denied_whenTheCallStagesAndTheMessageIsACommandSubstitution_evenACatOfOneQuotedHeredoc", () => {
+    for (const message of [
+      "$(cat <<'EOF'\nwip: summary\n\nBody and $HOME stay literal\nEOF\n)", "$(cat <<EOF\nwip\nEOF\n)", "$(cat clean.txt <<'EOF'\nwip\nEOF\n)",
+      "$(cat <<'EOF'\nwip\nEOF\ncat leak.txt > t.txt\n)", "$(cat <<'EOF'\nwip\nEOF) $(cat leak.txt > t.txt)\nEOF\n)", "$(cat <<'EOF'\na) $(cat leak.txt > t.txt)\nEOF\n)",
+    ]) {
+      assertProceduralDenied(guard(`git add clean.txt && git commit -m "${message}"`, repo));
+      assertProceduralDenied(guard(`git add leak.txt && git commit -m "${message}"`, repo));
+    }
+  });
+
+  it("commit_denied_whenASingleQuotedWordSpellsTheHeredocStartAndABacktickLineFollows", () => {
+    const command = "git add clean.txt && git commit -m '$(cat <<'EOF'\n'\n`cat leak.txt > t.txt`\n'\nEOF\n)'";
+    assertProceduralDenied(guard(command, repo));
   });
 
   it("commit_denied_whenAnEarlierShellStateStepRedirectsEvenToDevNull", () => {

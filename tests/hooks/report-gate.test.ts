@@ -562,6 +562,14 @@ describe("SubagentStopTest", () => {
     assert.deepEqual(contractMisses(), []);
   });
 
+  it("stop_returnsWithoutWaitingForALateReport_whenThePayloadCarriesTheMessage", () => {
+    const started = Date.now();
+    const result = stop("Changed it.", { toolUses: [editIn(scope, "a.py")] });
+    const elapsed = Date.now() - started;
+    assert.equal(result.json().decision, "block");
+    assert.ok(elapsed < REREAD_WINDOW_MS, `took ${elapsed} ms`);
+  });
+
   it("stop_returnsWithoutWaitingForALateReport_whenTheTurnStateRecordsAHandback", () => {
     handback(PASS_REPORT);
     const started = Date.now();

@@ -187,6 +187,17 @@ describe('KeelTestCommandTest', () => {
     assert.equal(summaryOf(run).count, 3);
   });
 
+  test('keelTest_usesTheDefaultIdleLimit_whenTheConfiguredOneIsNotAPositiveTimerSizedInteger', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    for (const invalid of ['0', '-1', '1.5', 'abc', '2147483648']) {
+      sandbox.env['KEEL_TEST_OUTPUT_IDLE_MS'] = invalid;
+      const run = sandbox.keel(['test', '--', 'bash', '-c', "(sleep 1; echo 'Ran 3 tests') & exit 0"], { cwd: repo.path });
+      assert.equal(run.rc, 0, `${invalid}: ${run.stderr}`);
+      assert.equal(run.stdout, 'Ran 3 tests\n', invalid);
+    }
+  });
+
   test('keelTest_recognizesSurefireTotals_whenPerClassLinesPrecede', (t) => {
     const sandbox = new Sandbox(t);
     const repo = sandbox.clone('acme', 'app');

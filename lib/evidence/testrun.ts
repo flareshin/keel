@@ -33,6 +33,7 @@ const KEEPS_SEARCHING_ERRORS = new Set(['ENOENT', 'ENOTDIR']);
 const CAT = '/bin/cat';
 const OUTPUT_STAYED_OPEN = 5;
 const DEFAULT_OUTPUT_IDLE_MS = 60_000;
+const MAX_TIMER_MS = 2_147_483_647;
 
 export async function run(argv: string[], cwd: string): Promise<number> {
   if (argv.length === 0) throw new Usage('keel test -- <command…>');
@@ -202,7 +203,7 @@ async function relayUntilClosed(exited: Promise<number>, reader: number): Promis
 
 function outputIdleLimitMs(): number {
   const configured = Number(process.env['KEEL_TEST_OUTPUT_IDLE_MS']);
-  return Number.isInteger(configured) && configured > 0 ? configured : DEFAULT_OUTPUT_IDLE_MS;
+  return Number.isInteger(configured) && configured > 0 && configured <= MAX_TIMER_MS ? configured : DEFAULT_OUTPUT_IDLE_MS;
 }
 
 function commandNotFound(name: string): [exitCode: number, output: string] {

@@ -12,13 +12,13 @@ import { readJsonl } from "../lib/measurekit/datafiles.ts"
 import { FIRES_LOG } from "../lib/measurekit/fireslog.ts"
 import { GitError, gitSucceeds, runGitOrThrow } from "../lib/measurekit/gitutil.ts"
 import { compareCodePoints, isJsonObject, parseJson, stringifySorted } from "../lib/measurekit/json.ts"
-import type { JsonObject } from "../lib/measurekit/json.ts"
-import { isCountedFire, isWithinWindow } from "../lib/measurekit/metrics.ts"
+import type { JsonObject, JsonValue } from "../lib/measurekit/json.ts"
+import { collectMetricItems, defectRunnerNames, isCountedFire, isWithinWindow, MetricError } from "../lib/measurekit/metrics.ts"
 
 const COMMAND: CommandSpec = {
   prog: "measure/metrics/risk",
   usage: "measure/metrics/risk --since YYYY-MM-DD",
-  description: "Report the DESIGN 6.1 risk pilot inputs per class: ships, rework, review-to-approval time; name each input it cannot compute.",
+  description: "Report the DESIGN 6.1 risk pilot inputs per class: ships, escaped defects from the overlay defects-* runners, rework, review-to-approval time; name each input it cannot compute and list each defect it cannot trace to a ship.",
   argumentHelp: [["--since YYYY-MM-DD", "window start"]],
   options: { since: { type: "string" } },
 }
@@ -33,6 +33,7 @@ const ORIGIN_BRANCH_PREFIX = "refs/remotes/origin/"
 const MS_PER_MINUTE = 60_000
 const PERCENT = 100
 const ESCAPED_DEFECTS_NO_SOURCE = "no source"
+const FULL_SHA = /^[0-9a-f]{40}$/
 const BASELINE_DEFERRED = "deferred"
 const REWORK_CACHE_FILE = path.join("metrics", "risk-rework.json")
 const PRIVATE_FILE_MODE = 0o600
@@ -53,6 +54,23 @@ type Rework =
 
 type DecidedRework = Extract<Rework, { state: "decided" }>
 
+interface Defect {
+  repo: string
+  commit: string
+  ts: string
+  kind: string
+  offending: string[]
+  tracedBy: string
+}
+
+interface DefectSources {
+  statuses: Record<string, JsonObject>
+  defects: Defect[]
+  hasUsableSource: boolean
+}
+
+type DefectTrace = { defect: Defect; ship: Ship } | { defect: Defect; reason: string }
+
 interface ReviewRecord {
   evidenceId: string
   repo: string
@@ -69,19 +87,26 @@ function main(argv: string[]): number {
   const now = new Date()
   const cache = readReworkCache()
   const cachedShips = cache.size
+  const defectSources = readDefectSources(since)
+  const traces = defectSources.defects.map((defect) => traceDefect(defect, allShips, reviews))
   const items = classesPresent(ships).map((riskClass) => {
     const classShips = ships.filter((ship) => ship.riskClass === riskClass)
     return {
       class: riskClass,
       ships: classShips.length,
-      escaped_defects: ESCAPED_DEFECTS_NO_SOURCE,
+      escaped_defects: defectSources.hasUsableSource ? escapedDefectsOf(classShips, traces) : ESCAPED_DEFECTS_NO_SOURCE,
       rework: summarizeRework(classShips.map((ship) => cachedRework(ship, cache, () => reworkOf(ship, allShips, reviews, now)))),
       review_to_approval: summarizeApprovalWait(classShips, reviews, firstApprovals),
       baseline: BASELINE_DEFERRED,
     }
   })
   if (cache.size > cachedShips) writeReworkCache(cache)
-  printJson({ count: ships.filter((ship) => ship.riskClass !== UNCLASSIFIED).length, items })
+  printJson({
+    count: ships.filter((ship) => ship.riskClass !== UNCLASSIFIED).length,
+    items,
+    defect_sources: defectSources.statuses,
+    untraced_defects: untracedDefectsOf(traces),
+  })
   return EXIT_OK
 }
 
@@ -104,6 +129,73 @@ function shipsSince(since: string): Ship[] {
     })
   }
   return [...ships.values()]
+}
+
+function readDefectSources(since: string): DefectSources {
+  const statuses: Record<string, JsonObject> = {}
+  const defects = new Map<string, Defect>()
+  for (const name of defectRunnerNames(env.overlayDir())) {
+    try {
+      const [, rawItems] = collectMetricItems("run:" + name, since)
+      const parsed = rawItems.map((item) => parseDefect(name, item))
+      for (const defect of parsed) {
+        const key = shipKey(defect.repo, defect.commit)
+        if (!defects.has(key)) defects.set(key, defect)
+      }
+      statuses[name] = { count: parsed.length }
+    } catch (error) {
+      if (!(error instanceof MetricError)) throw error
+      statuses[name] = { error: error.message }
+    }
+  }
+  const hasUsableSource = Object.values(statuses).some((status) => !("error" in status))
+  return { statuses, defects: [...defects.values()], hasUsableSource }
+}
+
+function parseDefect(runner: string, item: JsonValue): Defect {
+  const offending = isJsonObject(item) ? item["offending"] : undefined
+  if (
+    !isJsonObject(item) || typeof item["repo"] !== "string" || typeof item["commit"] !== "string" || !FULL_SHA.test(item["commit"])
+    || typeof item["ts"] !== "string" || typeof item["kind"] !== "string" || typeof item["traced_by"] !== "string"
+    || !Array.isArray(offending) || !offending.every((sha) => typeof sha === "string" && FULL_SHA.test(sha))
+  ) {
+    throw new MetricError(`runner ${runner} printed an item that is not {repo, commit, ts, kind, offending, traced_by} with full shas`)
+  }
+  return { repo: item["repo"], commit: item["commit"], ts: item["ts"], kind: item["kind"], offending: offending as string[], tracedBy: item["traced_by"] }
+}
+
+function traceDefect(defect: Defect, allShips: Ship[], reviews: ReviewRecord[]): DefectTrace {
+  if (defect.offending.length === 0) return { defect, reason: "no offending commit" }
+  const repoShips = allShips
+    .filter((ship) => sameRepo(ship.repo, defect.repo) && ship.head !== null)
+    .sort((left, right) => compareCodePoints(left.shippedAt, right.shippedAt))
+  if (repoShips.length === 0) return { defect, reason: "no shipped head for the repo" }
+  const checkouts = new Set<string>()
+  for (const ship of repoShips) {
+    const checkout = checkoutHolding(ship.repo, ship.head as string, reviews)
+    if (checkout === null) continue
+    checkouts.add(checkout)
+    if (defect.offending.some((sha) => isAncestor(checkout, sha, ship.head as string))) return { defect, ship }
+  }
+  if (checkouts.size === 0) return { defect, reason: "no local checkout holds a shipped head" }
+  const known = [...checkouts].some((checkout) => defect.offending.some((sha) => gitSucceeds(checkout, ["cat-file", "-e", `${sha}^{commit}`])))
+  return { defect, reason: known ? "no shipped head contains the offending commit" : "offending commit not found in the checkout" }
+}
+
+function escapedDefectsOf(classShips: Ship[], traces: DefectTrace[]) {
+  const items = traces
+    .filter((trace): trace is { defect: Defect; ship: Ship } => "ship" in trace && classShips.includes(trace.ship))
+    .map(({ defect, ship }) => ({ repo: defect.repo, commit: defect.commit, kind: defect.kind, traced_by: defect.tracedBy, ship_head: ship.head }))
+  return { count: items.length, items }
+}
+
+function untracedDefectsOf(traces: DefectTrace[]) {
+  const items = traces
+    .filter((trace): trace is { defect: Defect; reason: string } => "reason" in trace)
+    .map(({ defect, reason }) => ({
+      repo: defect.repo, commit: defect.commit, ts: defect.ts, kind: defect.kind, offending: defect.offending, traced_by: defect.tracedBy, reason,
+    }))
+  return { count: items.length, items }
 }
 
 function shipKey(repo: string, headOrTimestamp: string): string {

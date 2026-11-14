@@ -1,3 +1,4 @@
+import fs from "node:fs"
 import path from "node:path"
 
 import * as env from "./env.ts"
@@ -5,7 +6,7 @@ import { readJsonl } from "./datafiles.ts"
 import { gitSucceeds } from "./gitutil.ts"
 import { EMPTY } from "./ledger.ts"
 import type { LedgerRow } from "./ledger.ts"
-import { expandHome, isExecutable, isFile, isSystemError } from "./files.ts"
+import { expandHome, isDir, isExecutable, isFile, isSystemError } from "./files.ts"
 import { FIRES_LOG, isSyntheticSession, PROCEDURAL_KIND } from "./fireslog.ts"
 import { isJsonObject, parseJson } from "./json.ts"
 import type { JsonObject, JsonValue } from "./json.ts"
@@ -19,6 +20,8 @@ export const GRACE = "GRACE"
 export const WARN = "WARN"
 export const DEFAULT_WINDOW_DAYS = 60
 const RUNNER_TIMEOUT_SECONDS = 120
+const DEFECT_RUNNER_PREFIX = "defects-"
+const RESULT_KEYS = new Set(["count", "items", "id", "metric", "status", "error"])
 export const MAX_CONCURRENT_RUNNERS = 6
 const ISO_DATE_LENGTH = 10
 const STDERR_EXCERPT_CHARS = 200
@@ -35,15 +38,15 @@ export interface MetricResult {
   error?: string
 }
 
-export type MetricItems = [number, JsonValue[]]
+export type MetricItems = [count: number, items: JsonValue[], extraKeys?: JsonObject]
 
 export type FinishedRunners = ReadonlyMap<string, RunResult | MetricError>
 
 export function evaluateMetric(row: LedgerRow, since: string, today: string, finished: FinishedRunners = new Map()): MetricResult {
   try {
-    const [count, items] = collectMetricItems(row.metric, since, finished)
+    const [count, items, extraKeys] = collectMetricItems(row.metric, since, finished)
     const status = count > 0 ? PASS : row.isInGrace(today) ? GRACE : FAIL
-    return { id: row.id, metric: row.metric, count, items, status }
+    return { ...extraKeys, id: row.id, metric: row.metric, count, items, status }
   } catch (error) {
     if (!(error instanceof MetricError)) throw error
     return { id: row.id, metric: row.metric, count: 0, items: [], status: FAIL, error: error.message }
@@ -154,12 +157,23 @@ function parseRunnerOutput(runner: string, completed: RunResult): MetricItems {
   const count = isJsonObject(payload) ? payload["count"] : undefined
   const items = isJsonObject(payload) ? payload["items"] : undefined
   if (!Number.isInteger(count) || !Array.isArray(items)) throw new MetricError(`runner ${runner} must print {"count": int, "items": [...]}`)
-  return [count as number, items]
+  const extraKeys = Object.fromEntries(Object.entries(payload as JsonObject).filter(([key]) => !RESULT_KEYS.has(key)))
+  return Object.keys(extraKeys).length === 0 ? [count as number, items] : [count as number, items, extraKeys]
+}
+
+export function defectRunnerNames(overlayDir: string): string[] {
+  const runnerDir = path.join(overlayDir, "measure", "metrics")
+  const names = isDir(runnerDir) ? fs.readdirSync(runnerDir).sort() : []
+  return names.filter((name) => name.startsWith(DEFECT_RUNNER_PREFIX) && isRunnerFile(path.join(runnerDir, name)))
 }
 
 export function findRunner(runner: string): string | null {
   const candidates = [env.keelHome(), env.overlayDir()].map((root) => path.join(root, "measure", "metrics", runner))
-  return candidates.find((path) => isFile(path) && isExecutable(path)) ?? null
+  return candidates.find(isRunnerFile) ?? null
+}
+
+function isRunnerFile(file: string): boolean {
+  return isFile(file) && isExecutable(file)
 }
 
 function existenceItems(argument: string): MetricItems {

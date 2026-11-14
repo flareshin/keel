@@ -7,6 +7,7 @@ import { loadPluginHooks, pluginHooksPath } from "../../../lib/link/fragments.ts
 import { LinkStateError, readRecordedMode } from "../../../lib/link/settings_json.ts"
 import { readJsonl } from "./datafiles.ts"
 import { InvalidUtf8Error, isFile, isSystemError, readUtf8, resolveLinks } from "./files.ts"
+import { NO_SESSION } from "./fireslog.ts"
 import { iterRegistrations } from "./hook_settings.ts"
 import type { Registration } from "./hook_settings.ts"
 import { displayText, isJsonObject, parseJson } from "./json.ts"
@@ -32,6 +33,11 @@ interface LiveHooks {
   registeredIn: string
 }
 
+interface FiresLogMark {
+  file: string
+  size: bigint | null
+}
+
 interface FixtureRun {
   fixture: JsonObject
   exitCode: number
@@ -49,12 +55,12 @@ export function checkWiredFires(ctx: SmokeContext): Assertion[] {
     throw error
   }
   if (rows.length === 0) return [assertion("wired-fires", "all", FAIL, "0 hook-layer rows recognized")]
-  const realFires = path.join(ctx.dataDir, "logs", "keel-fires.jsonl")
-  const before = fingerprint(realFires)
-  const problems = rows.map((row) => badFixtureProblem(row, ctx, live)).filter(isProblem)
+  const realFires = markFiresLog(path.join(ctx.dataDir, "logs", "keel-fires.jsonl"))
+  const fixtureSessions = new Set<string>()
+  const problems = rows.map((row) => badFixtureProblem(row, ctx, live, fixtureSessions)).filter(isProblem)
   const hookNames = [...new Set(rows.map((row) => row.hookName as string))].sort()
-  problems.push(...hookNames.map((hook) => goodFixtureProblem(hook, ctx, live)).filter(isProblem))
-  if (fingerprint(realFires) !== before) problems.push("the real keel-fires.jsonl changed during the run (a hook ignores KEEL_DATA_DIR)")
+  problems.push(...hookNames.map((hook) => goodFixtureProblem(hook, ctx, live, fixtureSessions)).filter(isProblem))
+  if (fixtureFiresLeaked(realFires, fixtureSessions)) problems.push("the real keel-fires.jsonl changed during the run (a hook ignores KEEL_DATA_DIR)")
   if (problems.length > 0) return [assertion("wired-fires", "all", FAIL, firstItems(problems))]
   return [assertion("wired-fires", "all", PASS, `${rows.length} rows fired on bad fixtures, ${hookNames.length} hooks quiet on good ones`)]
 }
@@ -67,12 +73,12 @@ function isProblem(problem: string | null): problem is string {
   return problem !== null
 }
 
-function badFixtureProblem(row: LedgerRow, ctx: SmokeContext, live: LiveHooks): string | null {
+function badFixtureProblem(row: LedgerRow, ctx: SmokeContext, live: LiveHooks, fixtureSessions: Set<string>): string | null {
   const checkout = row.source === KEEL_SOURCE ? ctx.keelHome : ctx.overlayDir
   const fixturePath = path.join(checkout, FIXTURES_DIR, `${row.id}.bad.json`)
   let run: FixtureRun
   try {
-    run = runFixture(fixturePath, row.hookName as string, live)
+    run = runFixture(fixturePath, row.hookName as string, live, fixtureSessions)
   } catch (error) {
     if (error instanceof Unproven) return `${row.id}: ${error.message}`
     throw error
@@ -82,11 +88,11 @@ function badFixtureProblem(row: LedgerRow, ctx: SmokeContext, live: LiveHooks): 
   return `${row.id}: bad fixture logged no ${displayText(expected)} fires line for ${row.id} (exit ${run.exitCode})`
 }
 
-function goodFixtureProblem(hook: string, ctx: SmokeContext, live: LiveHooks): string | null {
+function goodFixtureProblem(hook: string, ctx: SmokeContext, live: LiveHooks, fixtureSessions: Set<string>): string | null {
   const fixturePath = path.join(hookCheckout(hook, ctx, live.registrations), FIXTURES_DIR, `${hook}.good.json`)
   let run: FixtureRun
   try {
-    run = runFixture(fixturePath, hook, live)
+    run = runFixture(fixturePath, hook, live, fixtureSessions)
   } catch (error) {
     if (error instanceof Unproven) return `${hook}: ${error.message}`
     throw error
@@ -103,9 +109,10 @@ function hookCheckout(hook: string, ctx: SmokeContext, registrations: Registrati
   return fromOverlay ? ctx.overlayDir : ctx.keelHome
 }
 
-function runFixture(fixturePath: string, hook: string, live: LiveHooks): FixtureRun {
+function runFixture(fixturePath: string, hook: string, live: LiveHooks, fixtureSessions: Set<string>): FixtureRun {
   const fixture = readFixture(fixturePath)
   const payload = fixture["payload"] as JsonObject
+  if (typeof payload["session_id"] === "string") fixtureSessions.add(payload["session_id"])
   const registration = findRegistration(live, hook, payload)
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "keel-wired-"))
   try {
@@ -186,10 +193,37 @@ function settingsHooks(dataDir: string): JsonValue | undefined {
   return isJsonObject(settings) ? (settings["hooks"] ?? {}) : {}
 }
 
-function fingerprint(file: string): string | null {
+function markFiresLog(file: string): FiresLogMark {
+  return { file, size: sizeOf(file) }
+}
+
+function fixtureFiresLeaked(mark: FiresLogMark, fixtureSessions: Set<string>): boolean {
+  const size = sizeOf(mark.file)
+  if (size === mark.size) return false
+  if (size === null || (mark.size !== null && size < mark.size)) return true
+  return linesAppendedSince(mark).some((line) => !isOtherSessionsLine(line, fixtureSessions))
+}
+
+function isOtherSessionsLine(line: string, fixtureSessions: Set<string>): boolean {
+  let record: JsonValue
   try {
-    const stat = fs.statSync(file, { bigint: true })
-    return `${stat.size}:${stat.mtimeNs}`
+    record = parseJson(line)
+  } catch (error) {
+    if (error instanceof SyntaxError) return false
+    throw error
+  }
+  const session = isJsonObject(record) ? record["session"] : undefined
+  return typeof session === "string" && session !== "" && session !== NO_SESSION && !fixtureSessions.has(session)
+}
+
+function linesAppendedSince(mark: FiresLogMark): string[] {
+  const appended = fs.readFileSync(mark.file).subarray(Number(mark.size ?? 0n)).toString("utf8")
+  return appended.split("\n").filter((line) => line.trim() !== "")
+}
+
+function sizeOf(file: string): bigint | null {
+  try {
+    return fs.statSync(file, { bigint: true }).size
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
     throw error

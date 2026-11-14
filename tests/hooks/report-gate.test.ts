@@ -550,6 +550,11 @@ describe("SubagentStopTest", () => {
     assert.deepEqual(contractMisses(), []);
   });
 
+  it("stop_judgesThePayloadMessage_whenTheTranscriptEndsWithAHandbackTheTurnStateDoesNotRecord", () => {
+    const result = stop("Changed it.", { toolUses: [editIn(scope, "a.py"), ["SubagentHandback", { message: PROVEN_REPORT }]] });
+    assert.equal(result.json().decision, "block");
+  });
+
   it("stop_judgesTheFinalText_whenTheAgentWroteItAfterAHandback", () => {
     const path = sandbox.agentTranscript(`[SCOPE] ${scope}\nDo the task.`, [editIn(scope, "a.py"), ["SubagentHandback", { message: PROVEN_REPORT }]]);
     const result = stop(null, { agentTranscript: withFinalText(path, "Changed it.") });

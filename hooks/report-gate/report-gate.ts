@@ -262,7 +262,7 @@ function judgeStop(payload: Payload, fires: FireLog): number {
   const transcript = agentTranscript && existsSync(agentTranscript) ? whileDeciding(() => readAgentTranscript(agentTranscript)) : null;
   const payloadReport = missing.includes("last_assistant_message") ? null : textOf(getField(payload, "last_assistant_message"));
   const report = withoutReportMarkers(payloadReport ?? transcript?.finalText ?? null);
-  const reportedElsewhere = handedBack || transcript?.usedStructuredOutput === true || endsWithHandback(transcript);
+  const reportedElsewhere = handedBack || transcript?.usedStructuredOutput === true || (payloadReport === null && endsWithHandback(transcript));
   const unrecovered = report !== null || reportedElsewhere ? missing.filter((field) => field !== "last_assistant_message") : missing;
   if (unrecovered.length > 0) fires.append("K2", OUTCOME, { detail: stopMissDetail(payload, unrecovered, transcript) });
   if (transcript === null) {

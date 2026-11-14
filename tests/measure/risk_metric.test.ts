@@ -563,7 +563,7 @@ describe("risk runner", () => {
     track(repo)
     givenPass({ head: old, ts: daysAgo(90), risk: "heavy" })
     givenPass({ head: recent, ts: daysAgo(20), risk: "light" })
-    givenDefects("revert", [defect(fix, [old]), defect(fix.replace(/^./, "0"), [recent])])
+    givenDefects("revert", [defect(fix, [old]), defect("f".repeat(40), [recent])])
     const result = runAttribution(addDays(TODAY, -60))
     assert.deepEqual(result.items.map((item: { class: string }) => item.class), ["light"])
     assert.deepEqual(itemFor(result, "light")["escaped_defects"].items.map((item: { ship_head: string }) => item.ship_head), [recent])

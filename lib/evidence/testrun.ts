@@ -1,7 +1,7 @@
 import childProcess, { spawnSync } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
-import { closeSync, constants, mkdtempSync, openSync, readSync, rmSync } from 'node:fs';
+import { closeSync, constants, mkdtempSync, openSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import * as env from './env.ts';
@@ -30,7 +30,9 @@ const COMMAND_NOT_FOUND = 2;
 const DEFAULT_EXEC_PATH = '/bin:/usr/bin';
 const MKFIFO = '/usr/bin/mkfifo';
 const KEEPS_SEARCHING_ERRORS = new Set(['ENOENT', 'ENOTDIR']);
-const OUTPUT_READ_BYTES = 64 * 1024;
+const CAT = '/bin/cat';
+const OUTPUT_STAYED_OPEN = 5;
+const DEFAULT_OUTPUT_IDLE_MS = 60_000;
 
 export async function run(argv: string[], cwd: string): Promise<number> {
   if (argv.length === 0) throw new Usage('keel test -- <command…>');
@@ -170,16 +172,37 @@ async function attemptSpawn(program: string, argv0: string, args: string[], cwd:
 }
 
 async function relayUntilClosed(exited: Promise<number>, reader: number): Promise<[exitCode: number, output: string]> {
+  const relay = childProcess.spawn(CAT, [], { stdio: [reader, 'pipe', 'inherit'] });
   const chunks: Buffer[] = [];
-  for (;;) {
-    const buffer = Buffer.alloc(OUTPUT_READ_BYTES);
-    const bytesRead = readSync(reader, buffer, 0, buffer.length, null);
-    if (bytesRead === 0) break;
-    const chunk = buffer.subarray(0, bytesRead);
+  const idleLimitMs = outputIdleLimitMs();
+  let commandExited = false;
+  let idleTimer: NodeJS.Timeout | undefined;
+  const restartIdleTimer = () => {
+    clearTimeout(idleTimer);
+    if (commandExited) idleTimer = setTimeout(() => relay.kill('SIGKILL'), idleLimitMs);
+  };
+  relay.stdout!.on('data', (chunk: Buffer) => {
     writeStdout(chunk);
     chunks.push(chunk);
+    restartIdleTimer();
+  });
+  const relayClosed = once(relay, 'close');
+  const exitCode = await exited;
+  commandExited = true;
+  restartIdleTimer();
+  const [, relaySignal] = await relayClosed;
+  clearTimeout(idleTimer);
+  const output = Buffer.concat(chunks).toString();
+  if (relaySignal === 'SIGKILL') {
+    printErrorLine(`keel test: the command exited but its output stayed open and silent for ${idleLimitMs} ms; no evidence written`);
+    return [OUTPUT_STAYED_OPEN, output];
   }
-  return [await exited, Buffer.concat(chunks).toString()];
+  return [exitCode, output];
+}
+
+function outputIdleLimitMs(): number {
+  const configured = Number(process.env['KEEL_TEST_OUTPUT_IDLE_MS']);
+  return Number.isInteger(configured) && configured > 0 ? configured : DEFAULT_OUTPUT_IDLE_MS;
 }
 
 function commandNotFound(name: string): [exitCode: number, output: string] {

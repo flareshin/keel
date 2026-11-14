@@ -163,6 +163,30 @@ describe('KeelTestCommandTest', () => {
     assert.equal(summaryOf(run).count, 1);
   });
 
+  test('keelTest_failsWithoutEvidence_whenTheOutputStaysOpenAndSilentAfterTheCommandExits', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    sandbox.env['KEEL_TEST_OUTPUT_IDLE_MS'] = '500';
+    const started = Date.now();
+    const run = sandbox.keel(['test', '--', 'bash', '-c', "echo 'Ran 3 tests'; sleep 20 & exit 0"], { cwd: repo.path });
+    assert.ok(Date.now() - started < 10000, `took ${Date.now() - started} ms`);
+    assert.equal(run.rc, 5, run.stderr);
+    assert.match(run.stderr, /keel test: the command exited but its output stayed open and silent for 500 ms; no evidence written\n/);
+    assert.equal(run.stdout, 'Ran 3 tests\n');
+    assert.deepEqual(sandbox.evidenceFiles('tests'), []);
+  });
+
+  test('keelTest_keepsReading_whenABackgroundWriterSpeaksWithinTheIdleLimit', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    sandbox.env['KEEL_TEST_OUTPUT_IDLE_MS'] = '1500';
+    const script = "(for i in 1 2 3; do sleep 1; echo tick; done; echo 'Ran 3 tests') & exit 0";
+    const run = sandbox.keel(['test', '--', 'bash', '-c', script], { cwd: repo.path });
+    assert.equal(run.rc, 0, run.stderr);
+    assert.equal(run.stdout, 'tick\ntick\ntick\nRan 3 tests\n');
+    assert.equal(summaryOf(run).count, 3);
+  });
+
   test('keelTest_recognizesSurefireTotals_whenPerClassLinesPrecede', (t) => {
     const sandbox = new Sandbox(t);
     const repo = sandbox.clone('acme', 'app');

@@ -480,6 +480,47 @@ describe("risk runner", () => {
     assert.deepEqual([result.id, result.status, result.count], ["risk", "PASS", 1])
   })
 
+  it("escapedDefects_listOnlyExecutableDefectsRunners_notTheirNonExecutableSourceFiles", () => {
+    givenPass({ risk: "light" })
+    givenDefects("x", [])
+    box.write("overlay/measure/metrics/defects-x.ts", "export {}\n")
+    const result = runAttribution()
+    assert.deepEqual(result.defect_sources, { "defects-x": { count: 0 } })
+  })
+
+  const OK_SHA = "a".repeat(40)
+  const wellFormedItem = (): Record<string, unknown> => defect(OK_SHA, [OK_SHA])
+  const withoutField = (field: string): Record<string, unknown> => {
+    const { [field]: _removed, ...rest } = wellFormedItem()
+    return rest
+  }
+  const malformedItems: [string, Record<string, unknown>][] = [
+    ["missing repo", withoutField("repo")],
+    ["commit that is not a string", { ...wellFormedItem(), commit: [OK_SHA] }],
+    ["short commit", { ...wellFormedItem(), commit: "abc123" }],
+    ["short offending sha", { ...wellFormedItem(), offending: ["abc123"] }],
+    ["offending sha that is not a string", { ...wellFormedItem(), offending: [[OK_SHA]] }],
+    ["offending that is not an array", { ...wellFormedItem(), offending: OK_SHA }],
+    ["missing ts", withoutField("ts")],
+    ["missing kind", withoutField("kind")],
+    ["missing traced_by", withoutField("traced_by")],
+  ]
+
+  for (const [clause, item] of malformedItems) {
+    it(`escapedDefects_withAnItemWith_${clause.replace(/ /g, "_")}_reportTheRunnerAsAnError`, () => {
+      givenPass({ risk: "light" })
+      givenDefects("bad", [item])
+      const result = runAttribution()
+      assert.match(result.defect_sources["defects-bad"].error, /printed an item that is not/)
+    })
+  }
+
+  it("escapedDefects_withAWellFormedItem_isNotReportedAsAnError", () => {
+    givenPass({ risk: "light" })
+    givenDefects("good", [wellFormedItem()])
+    assert.deepEqual(runAttribution().defect_sources, { "defects-good": { count: 1 } })
+  })
+
   it("escapedDefects_withARunnerPrintingAMalformedItem_reportTheErrorAndKeepTheOtherRunnersItems", () => {
     const { bad, fix } = shippedDefectRepo()
     givenPass({ head: bad, ts: daysAgo(30), risk: "light" })

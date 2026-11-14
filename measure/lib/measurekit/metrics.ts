@@ -21,6 +21,7 @@ export const WARN = "WARN"
 export const DEFAULT_WINDOW_DAYS = 60
 const RUNNER_TIMEOUT_SECONDS = 120
 const DEFECT_RUNNER_PREFIX = "defects-"
+const RESULT_KEYS = new Set(["count", "items", "id", "metric", "status", "error"])
 export const MAX_CONCURRENT_RUNNERS = 6
 const ISO_DATE_LENGTH = 10
 const STDERR_EXCERPT_CHARS = 200
@@ -156,19 +157,23 @@ function parseRunnerOutput(runner: string, completed: RunResult): MetricItems {
   const count = isJsonObject(payload) ? payload["count"] : undefined
   const items = isJsonObject(payload) ? payload["items"] : undefined
   if (!Number.isInteger(count) || !Array.isArray(items)) throw new MetricError(`runner ${runner} must print {"count": int, "items": [...]}`)
-  const extraKeys = Object.fromEntries(Object.entries(payload as JsonObject).filter(([key]) => key !== "count" && key !== "items"))
+  const extraKeys = Object.fromEntries(Object.entries(payload as JsonObject).filter(([key]) => !RESULT_KEYS.has(key)))
   return Object.keys(extraKeys).length === 0 ? [count as number, items] : [count as number, items, extraKeys]
 }
 
 export function defectRunnerNames(overlayDir: string): string[] {
   const runnerDir = path.join(overlayDir, "measure", "metrics")
   const names = isDir(runnerDir) ? fs.readdirSync(runnerDir).sort() : []
-  return names.filter((name) => name.startsWith(DEFECT_RUNNER_PREFIX))
+  return names.filter((name) => name.startsWith(DEFECT_RUNNER_PREFIX) && isRunnerFile(path.join(runnerDir, name)))
 }
 
 export function findRunner(runner: string): string | null {
   const candidates = [env.keelHome(), env.overlayDir()].map((root) => path.join(root, "measure", "metrics", runner))
-  return candidates.find((path) => isFile(path) && isExecutable(path)) ?? null
+  return candidates.find(isRunnerFile) ?? null
+}
+
+function isRunnerFile(file: string): boolean {
+  return isFile(file) && isExecutable(file)
 }
 
 function existenceItems(argument: string): MetricItems {

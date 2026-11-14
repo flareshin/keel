@@ -109,6 +109,14 @@ describe("measure run", () => {
     assert.deepEqual([result.count, result.items, result.status], [2, ["a", "b"], "PASS"])
   })
 
+  it("run_carriesARunnersExtraKeys_butNeverLetsThemReplaceOrFakeTheResultFields", () => {
+    givenKeelRows(ledgerRow("C-demo", { metric: "run:extras" }))
+    box.write("overlay/measure/metrics/extras", '#!/bin/bash\necho \'{"count": 1, "items": ["a"], "id": "other", "metric": "other", "status": "FAIL", "error": "boom", "note": "kept"}\'\n', true)
+    const [completed, result] = box.runJson("run", ["C-demo"])
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.deepEqual(result, { id: "C-demo", metric: "run:extras", count: 1, items: ["a"], status: "PASS", note: "kept" })
+  })
+
   it("run_failsWithError_whenTheRunnerCountIsABoolean", () => {
     givenKeelRows(ledgerRow("C-demo", { metric: "run:odd" }))
     box.write("keel/measure/metrics/odd", "#!/bin/bash\necho '{\"count\": true, \"items\": []}'\n", true)

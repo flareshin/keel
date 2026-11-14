@@ -15,6 +15,7 @@ const FRAMED_PASS_REPORT = `<<<KEEL-REPORT\n${PASS_REPORT}\nKEEL-REPORT>>>`;
 const UNPROVEN_REPORT = "Done. All good, VERDICT: PASS";
 const PROVEN_REPORT = "Done.\nRan 12 tests in 0.4s\nOK";
 const LATE_REPORT_MS = 400;
+const REREAD_WINDOW_MS = 1500;
 const CLI_RESPONSE = '{"evidence_id":"review-20261011T090000Z-1a2b3c4d","repo":"acme/app","paths":3}';
 
 type ToolUse = readonly [string, unknown];
@@ -550,12 +551,24 @@ describe("SubagentStopTest", () => {
     const path = sandbox.agentTranscript(`[SCOPE] ${scope}\nDo the task.`, [editIn(scope, "a.py")]);
     const payload = subagentStop(sandbox.root, sandbox.mainTranscript(), path, null, false);
     payload["agent_type"] = "keel:auditor";
+    const started = Date.now();
     const hook = spawn(process.execPath, [join(KEEL_HOME, REPORT_GATE)], { env: sandbox.env, cwd: sandbox.root });
     const exited = new Promise<number | null>((resolve) => hook.on("close", resolve));
     hook.stdin.end(JSON.stringify(payload));
     await new Promise((resolve) => setTimeout(resolve, LATE_REPORT_MS));
     appendToolUse(path, ["StructuredOutput", { x: 1 }]);
     assert.equal(await exited, 0);
+    assert.ok(Date.now() - started < REREAD_WINDOW_MS, `took ${Date.now() - started} ms`);
+    assert.deepEqual(contractMisses(), []);
+  });
+
+  it("stop_returnsWithoutWaitingForALateReport_whenTheTurnStateRecordsAHandback", () => {
+    handback(PASS_REPORT);
+    const started = Date.now();
+    const result = stop(null, { toolUses: [editIn(scope, "a.py")] });
+    const elapsed = Date.now() - started;
+    assert.equal(result.code, 0);
+    assert.ok(elapsed < REREAD_WINDOW_MS, `took ${elapsed} ms`);
     assert.deepEqual(contractMisses(), []);
   });
 

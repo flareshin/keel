@@ -231,3 +231,30 @@ describe("link plugin mode", () => {
     }
   })
 })
+
+describe("link plugin mode on a fresh data dir", () => {
+  let box: LinkSandbox
+
+  beforeEach(() => {
+    box = new LinkSandbox()
+    box.writeKeel("ledger.tsv", LEDGER_HEADER + "\n" + DEMO_ROW + "\n")
+    box.writeKeel("hooks/hooks.json", JSON.stringify(PLUGIN_HOOKS))
+    box.writeData("settings.json", JSON.stringify({ enabledPlugins: { [KEEL_PLUGIN_ID]: true } }, null, 2) + "\n")
+  })
+  afterEach(() => box.remove())
+
+  it("pluginWrite_installsWithoutAPriorLinkInstall_andCheckIsClean", () => {
+    assertExit(box.runLink("--write", "--plugin"), 0)
+    assert.equal(fs.readlinkSync(box.dataPath("bin/keel")), `${box.keel}/bin/keel`)
+    assert.equal(entryExists(box.dataPath("CLAUDE.md")), false)
+    assert.equal(entryExists(box.dataPath("skills/demo")), false)
+    assert.ok(liveSettings(box)["permissions"]["deny"].includes("Bash(git push --force:*)"))
+    assertExit(box.runLink("--check"), 0)
+  })
+
+  it("pluginWrite_leavesTheUsersOwnClaudeMd", () => {
+    box.writeData("CLAUDE.md", "my rules\n")
+    assertExit(box.runLink("--write", "--plugin"), 0)
+    assert.equal(box.readData("CLAUDE.md"), "my rules\n")
+  })
+})

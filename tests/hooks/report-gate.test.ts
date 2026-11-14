@@ -543,6 +543,26 @@ describe("SubagentStopTest", () => {
     assert.deepEqual(contractMisses(), []);
   });
 
+  it("stop_logsNoWarnOrContractMiss_whenTheTranscriptEndsWithAHandbackTheTurnStateDoesNotRecord", () => {
+    const result = stop(null, { toolUses: [editIn(scope, "a.py"), ["SubagentHandback", { message: PROVEN_REPORT }]] });
+    assert.equal(result.stdout, "");
+    assert.deepEqual(sandbox.fires().filter((fire) => fire.outcome === "warn"), []);
+    assert.deepEqual(contractMisses(), []);
+  });
+
+  it("stop_judgesTheFinalText_whenTheAgentWroteItAfterAHandback", () => {
+    const path = sandbox.agentTranscript(`[SCOPE] ${scope}\nDo the task.`, [editIn(scope, "a.py"), ["SubagentHandback", { message: PROVEN_REPORT }]]);
+    const result = stop(null, { agentTranscript: withFinalText(path, "Changed it.") });
+    assert.equal(result.json().decision, "block");
+  });
+
+  it("stop_namesTheAgentAndItsLastToolInTheContractMiss_whenNoReportIsFound", () => {
+    stop(null, { toolUses: [editIn(scope, "a.py")] });
+    const detail = contractMisses()[0]?.detail ?? "";
+    assert.ok(detail.includes(`agent_id=${AGENT_ID}`), detail);
+    assert.ok(detail.includes("last_tool=Edit"), detail);
+  });
+
   it("stop_prefersThePayloadMessage_whenBothThePayloadAndTheTranscriptCarryFinalText", () => {
     const path = withFinalText(sandbox.agentTranscript(`[SCOPE] ${scope}\nDo the task.`, [editIn(scope, "a.py")]), PROVEN_REPORT);
     const result = stop("Changed it.", { agentTranscript: path });

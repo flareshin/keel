@@ -123,6 +123,7 @@ class AgentTranscript {
   needsEvidence = false;
   editedFiles = false;
   usedStructuredOutput = false;
+  lastToolName: string | null = null;
   finalText: string | null = null;
 
   constructor(path: string | null) {
@@ -136,7 +137,8 @@ class AgentTranscript {
       if (role === "assistant") {
         const blocks = toolUses(entry);
         for (const block of blocks) {
-          this.readToolUse(textOrEmpty(getField(block, "name"), "tool name").toLowerCase(), getField(block, "input"));
+          this.lastToolName = textOrEmpty(getField(block, "name"), "tool name");
+          this.readToolUse(this.lastToolName.toLowerCase(), getField(block, "input"));
         }
         if (blocks.length > 0) this.finalText = null;
         else this.appendFinalText(textOf(contentOf(entry)));
@@ -260,9 +262,9 @@ function judgeStop(payload: Payload, fires: FireLog): number {
   const transcript = agentTranscript && existsSync(agentTranscript) ? whileDeciding(() => readAgentTranscript(agentTranscript)) : null;
   const payloadReport = missing.includes("last_assistant_message") ? null : textOf(getField(payload, "last_assistant_message"));
   const report = withoutReportMarkers(payloadReport ?? transcript?.finalText ?? null);
-  const reportedElsewhere = handedBack || transcript?.usedStructuredOutput === true;
+  const reportedElsewhere = handedBack || transcript?.usedStructuredOutput === true || endsWithHandback(transcript);
   const unrecovered = report !== null || reportedElsewhere ? missing.filter((field) => field !== "last_assistant_message") : missing;
-  if (unrecovered.length > 0) fires.append("K2", OUTCOME, { detail: missDetail(payload, unrecovered) });
+  if (unrecovered.length > 0) fires.append("K2", OUTCOME, { detail: stopMissDetail(payload, unrecovered, transcript) });
   if (transcript === null) {
     if (report && verdictOf(report) && hasEvidenceLine(report)) fires.append("K1", "warn", { detail: NO_TRANSCRIPT });
     return protocol.EXIT_PASS;
@@ -278,6 +280,15 @@ function judgeStop(payload: Payload, fires: FireLog): number {
   if (lacksEvidence(report, transcript.needsEvidence, fires)) return protocol.blockStop(evidenceMessage());
   writeReviewEvidence(report, payload, agentTranscript, transcript, "SubagentStop", fires);
   return protocol.EXIT_PASS;
+}
+
+function endsWithHandback(transcript: AgentTranscript | null): boolean {
+  return transcript !== null && transcript.finalText === null && transcript.lastToolName?.toLowerCase() === "subagenthandback";
+}
+
+function stopMissDetail(payload: Payload, missing: readonly string[], transcript: AgentTranscript | null): string {
+  const lastTool = transcript === null ? "no transcript" : transcript.lastToolName ?? "none";
+  return missDetail(payload, missing, [`agent_id=${textField(payload, "agent_id") || "-"}`, `last_tool=${lastTool}`]);
 }
 
 class UncheckableReport extends Error {

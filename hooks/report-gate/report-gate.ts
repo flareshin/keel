@@ -288,7 +288,7 @@ function endsWithHandback(transcript: AgentTranscript | null): boolean {
 
 function stopMissDetail(payload: Payload, missing: readonly string[], transcript: AgentTranscript | null): string {
   const lastTool = transcript === null ? "no transcript" : transcript.lastToolName ?? "none";
-  return missDetail(payload, missing, [`agent_id=${textField(payload, "agent_id") || "-"}`, `last_tool=${lastTool}`]);
+  return missDetail(payload, missing, [`agent_id=${textField(payload, "agent_id") || "-"}`, `agent_type=${textField(payload, "agent_type") || "-"}`, `last_tool=${lastTool}`]);
 }
 
 class UncheckableReport extends Error {

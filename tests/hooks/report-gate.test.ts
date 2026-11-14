@@ -37,10 +37,11 @@ function handback(report: string, options: { toolUses?: ToolUse[]; brief?: strin
   return sandbox.runHook(REPORT_GATE, { payload });
 }
 
-function stop(message: string | null, options: { toolUses?: ToolUse[]; stopHookActive?: boolean; agentTranscript?: string; agentType?: string } = {}): HookResult {
+function stop(message: string | null, options: { toolUses?: ToolUse[]; stopHookActive?: boolean; agentTranscript?: string; agentType?: string | null } = {}): HookResult {
   const path = options.agentTranscript ?? sandbox.agentTranscript(`[SCOPE] ${scope}\nDo the task.`, options.toolUses ?? []);
   const payload = subagentStop(sandbox.root, sandbox.mainTranscript(), path, message, options.stopHookActive ?? false);
-  if (options.agentType) payload["agent_type"] = options.agentType;
+  if (options.agentType === null) delete payload["agent_type"];
+  else if (options.agentType) payload["agent_type"] = options.agentType;
   return sandbox.runHook(REPORT_GATE, { payload });
 }
 
@@ -566,6 +567,18 @@ describe("SubagentStopTest", () => {
     const detail = contractMisses()[0]?.detail ?? "";
     assert.ok(detail.includes(`agent_id=${AGENT_ID}`), detail);
     assert.ok(detail.includes("last_tool=Edit"), detail);
+  });
+
+  it("stop_namesTheAgentTypeAheadOfTheKeysInTheContractMiss_whenTheTranscriptWasNeverWritten", () => {
+    stop(null, { agentTranscript: join(sandbox.root, "missing.jsonl"), agentType: "session-recap" });
+    const detail = contractMisses()[0]?.detail ?? "";
+    assert.match(detail, /; agent_type=session-recap; last_tool=no transcript; keys=/);
+  });
+
+  it("stop_marksTheAgentTypeAbsentInTheContractMiss_whenThePayloadCarriesNone", () => {
+    stop(null, { agentTranscript: join(sandbox.root, "missing.jsonl"), agentType: null });
+    const detail = contractMisses()[0]?.detail ?? "";
+    assert.match(detail, /; agent_type=-; last_tool=no transcript; keys=/);
   });
 
   it("stop_prefersThePayloadMessage_whenBothThePayloadAndTheTranscriptCarryFinalText", () => {

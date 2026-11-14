@@ -24,9 +24,10 @@ export function missingFields(payload: Payload, ...names: string[]): string[] {
   });
 }
 
-export function missDetail(payload: Payload, missing: readonly string[]): string {
+export function missDetail(payload: Payload, missing: readonly string[], context: readonly string[] = []): string {
   const keys = Object.keys(payload).sort(compareCodePoints).join(",");
-  return `contract-miss: missing ${missing.join(",")}; keys=${keys}; cc_version=${ccVersion(getField(payload, "session_id"))}`;
+  const leading = [`missing ${missing.join(",")}`, ...context].join("; ");
+  return `contract-miss: ${leading}; keys=${keys}; cc_version=${ccVersion(getField(payload, "session_id"))}`;
 }
 
 export function ccVersion(session: unknown): string {

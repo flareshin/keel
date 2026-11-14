@@ -1023,6 +1023,9 @@ describe("InstallCommandTest", () => {
       "claude plugin disable --all", "claude plugin disable -as user", "claude plugin update", "Claude plugin disable keel@keel",
       "cd /x/keel && claude plugin marketplace add \"$PWD\"", "claude plugin marketplace add https://github.com/o/keel.GIT",
       "claude plugin install other@market", "claude plugin disable other@market", "claude plugin marketplace add ~/git/other",
+      "claude plugin install keel@keel --accept-command -h", "claude plugin install other@market --registry -h",
+      "claude plugin install -- keel@keel -h", "claude -- plugin install keel@keel -h",
+      "claude plugin install keel@keel --some-new-option -h",
       "claude --model x plugin install keel@keel",
     ]) {
       assertDenied(guard(command), "F-hookskip");
@@ -1040,6 +1043,9 @@ describe("InstallCommandTest", () => {
       "link a b", "ln -s a b", "cat bin/link", "claude plugin", "claude plugin list", "claude plugin list --json",
       "claude plugin marketplace", "claude plugin marketplace list", "claude plugin validate .", "claude plugin help",
       "claude plugin details keel@keel", "claude plugin install --help", "claude plugin marketplace add -h",
+      "claude plugin eval keel", "claude plugin test .", "claude plugin marketplace help", "claude plugin install keel@keel -h",
+      "claude plugin install keel@keel --json -h", "claude plugin uninstall keel@keel -y --help", "claude plugin install -h -- keel@keel", "claude plugin install keel@keel --scope=user -h",
+      "claude plugin prune --dry-run -h", "claude plugin tag --push -h", "claude plugin init foo -f -h", "claude plugin configure keel@keel --values-stdin -h", "claude plugin restore-set-aside keel@keel --discard -h",
     ]) {
       assertPassed(guard(command));
     }

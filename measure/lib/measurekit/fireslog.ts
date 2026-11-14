@@ -6,7 +6,7 @@ export const FIRES_LOG = "keel-fires.jsonl"
 export const SYNTHETIC_FIRES_LOG = "keel-fires-synthetic.jsonl"
 export const PROCEDURAL_KIND = "procedural"
 const REAL_DATA_DIR = "~/.claude"
-const NO_SESSION = "-"
+export const NO_SESSION = "-"
 const AGENT_SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export function firesLogName(session: string, dataDir: string): string {

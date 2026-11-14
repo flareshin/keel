@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import * as gitcmd from '../evidence/gitcmd.ts';
 import { globMatches } from '../evidence/glob.ts';
 import { candidateTests, isTestSupport } from './select.ts';
@@ -9,6 +11,16 @@ export const CORPUS_TESTS = [
   ...Array.from({ length: HOOK_PARITY_SHARDS }, (_unused, index) => `tests/hooks/hook-parity-shard-${index + 1}.test.ts`),
   'codex/tests/hook-parity.test.ts',
   'codex/tests/cli-parity.test.ts',
+];
+export const REPLAY_TESTS = [
+  ...CORPUS_TESTS,
+  'tests/ship-gate/ship-gate-parity.test.ts',
+  'tests/ship-gate/cross_impl.test.ts',
+  'tests/ship-gate/cross_impl_codex.test.ts',
+  'tests/hooks/hook-parity.test.ts',
+  'tests/hooks/shell-parity.test.ts',
+  'tests/link/cross_impl.test.ts',
+  'tests/skills/rule-checks-parity.test.ts',
 ];
 export const FULL_SUITE_PATTERNS = [
   'hooks/**', 'lib/**', 'measure/lib/**', 'measure/boundary*', 'codex/hooks/**',
@@ -28,4 +40,8 @@ export function changedSince(root: string, mergeBase: string): string[] {
 
 export function fullSuitePaths(paths: string[]): string[] {
   return paths.filter((path) => FULL_SUITE_PATTERNS.some((pattern) => globMatches(path, pattern)));
+}
+
+export function missingReplayTests(root: string): string[] {
+  return REPLAY_TESTS.filter((test) => !existsSync(join(root, test)));
 }

@@ -5,7 +5,7 @@ import { isDir, readUtf8 } from '../../measure/lib/measurekit/files.ts';
 import { compareCodePoints, isJsonObject, MAX_JSON_DEPTH, nestsPastMaxJsonDepth, parseJsonKeepingIntegers, stringifySorted } from '../../measure/lib/measurekit/json.ts';
 import * as env from './env.ts';
 
-export const REPO_SCOPED_KINDS = ['review', 'tests', 'smoke'];
+export const REPO_SCOPED_KINDS = ['review', 'tests', 'smoke', 'promote'];
 export const GLOBAL_KINDS = ['approval', 'ack'];
 const SCHEMA = 1;
 const FILE_MODE = 0o600;
@@ -64,12 +64,13 @@ export function kindDir(kind: string, repoKey: string | null = null): string {
 
 export function write(kind: string, body: { [key: string]: unknown }, repoKey: string | null = null): Evidence {
   const now = env.utcNow();
+  const lifetime = env.CONSENT_KINDS.includes(kind) ? env.CONSENT_TTL_MS : env.EVIDENCE_TTL_MS;
   const evidence: Evidence = {
     schema: SCHEMA,
     kind,
     evidence_id: env.newId(kind, now, env.EVIDENCE_ID_RANDOM_BYTES),
     created_at: env.iso(now),
-    expires_at: env.iso(new Date(now.getTime() + env.EVIDENCE_TTL_MS)),
+    expires_at: env.iso(new Date(now.getTime() + lifetime)),
     ...body,
   };
   const directory = kindDir(kind, repoKey);

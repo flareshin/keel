@@ -2,7 +2,7 @@
 
 keel is a Claude Code plugin that makes an agent prove its work before it ships. The agent that writes a change cannot declare it reviewed, tested or approved: a separate reviewer judges the diff, test runs leave evidence tied to the exact tree, and a hook refuses the push or merge until the review, the tests and the owner's approval all cover what is going out.
 
-keel is written almost entirely by AI agents and ships through its own gate. It is at release 1.0.0 ([`CHANGELOG.md`](CHANGELOG.md)). The binding spec is [`docs/DESIGN.md`](docs/DESIGN.md); where this README and the spec disagree, the spec wins.
+keel is written almost entirely by AI agents and ships through its own gate. It is at release 1.0.0 ([`CHANGELOG.md`](CHANGELOG.md)) and licensed under the Apache License 2.0 ([`LICENSE`](LICENSE)); [`NOTICE`](NOTICE) carries the notices of the third-party material it adapts. The binding spec is [`docs/DESIGN.md`](docs/DESIGN.md); where this README and the spec disagree, the spec wins.
 
 ## Why
 
@@ -102,8 +102,11 @@ Then, in a Claude Code session in that repo: work in a worktree, run `keel test 
 | `keel test -- <cmd…>` | Run tests and write tests evidence |
 | `keel snapshot <repo>` | Write the working tree to a tree object for reviewers to read |
 | `keel approve <root_run_id> [--read]` | Owner-only approval of a review chain (`--read` only acknowledges) |
+| `keel approve --promote <owner/repo> <sha>` | Owner-only approval of one develop→production merge of that sha; develop chains need only their PASS |
 | `keel evidence show [--repo] [--root]` | Read-only view of chains, tests and smoke evidence |
-| `keel evidence gc` | Delete expired evidence |
+| `keel evidence check --repo` | Read-only: would ship-gate let a push of HEAD through; exit 1 lists what is missing |
+| `keel evidence promote-plan --repo --base --head` | Read-only: which develop chain covers each promoted step, and the runs left to review |
+| `keel evidence gc` | Delete expired evidence (review, approval and promote after 30 days; tests, smoke and ack after 14) |
 
 Evidence lives under `~/.claude/state/keel/evidence/` as immutable JSON files.
 
@@ -127,6 +130,27 @@ It also states the risk rule and the floor rules the hooks hold: merge, deploy a
 
 The hooks stop an honest agent's mistakes and shortcuts, not deliberate evasion: no parser over arbitrary shell is complete. A push or merge the shell parser cannot attribute to one repo and branch is denied rather than guessed. The final guard is branch protection on your integration branches, and a person working in their own terminal is the intended escape hatch. DESIGN.md §5.7a has the threat model, and §8 lists what keel deliberately does not do.
 
+## Layout
+
+```
+PRINCIPLES.md  ledger.tsv     principles and the keel ledger
+bin/           keel, link, changelog  evidence CLI, link/merge tool, release changelog folder
+hooks/         core hooks     plus hooks/lib/hookkit (shell parser, shared helpers)
+lib/           evidence/, link/, changelog/
+measure/       run, smoke, propose, boundary, weekly, evals/
+githooks/      pre-commit, pre-push (boundary scan)
+settings/      core.json (hook registration), links.tsv (link manifest)
+stacks/        spring-maven/ (env-preflight hook, settings fragment)
+skills/        refining-requests/, writing-readable-code/, descending-findings/, improving-structure/, removing-comments/, authoring-agents/, improving-agents/, deepening-prompts/
+workflows/     lens-review.js, adversarial-audit.js, review-lenses.json
+agents/        auditor.md, reporter.md, comment-reviewer.md (tool-limited review agent types)
+codex/         Codex adapter
+docs/          DESIGN.md (binding spec), review-policy.md, codex-review.md, install.md, testing.md
+examples/      overlay-shaped sample data with invented values
+tests/         one directory per component, plus run-all.sh
+changelog.d/   one changelog fragment per branch; CHANGELOG.md [Unreleased] only points here
+```
+
 ## More
 
 - [`docs/install.md`](docs/install.md): `bin/link` in detail, running without an overlay, the link-only install and upgrades.
@@ -137,7 +161,7 @@ The hooks stop an honest agent's mistakes and shortcuts, not deliberate evasion:
 
 Contributions come only as pull requests against `main`. Only the owner (flareshin) reviews and merges them, and direct pushes to `main` are blocked for everyone else.
 
-No license has been chosen, so all rights remain reserved.
+keel is licensed under the Apache License 2.0 ([`LICENSE`](LICENSE)).
 
 ## Acknowledgements
 
@@ -150,6 +174,7 @@ These published skills shaped keel's own skills:
 | `removing-comments` and the `comment-reviewer` agent | pstack `no-comments` and Comment Sicko in [cursor/plugins](https://github.com/cursor/plugins) (at 4dd1d05, MIT) | A comment pass by a context that did not write the comments, with reshape flags for surprises in our own code and an encoding offer for claimed constraints; keel keeps its narrower K5.14 exceptions |
 | `writing-readable-code` (rules K5.7, K5.8, K5.10 and `references/typescript-types.md`) and `improving-structure` (friction questions) | pstack `typescript-best-practices`, `principle-type-system-discipline`, `principle-model-the-domain`, `principle-minimize-reader-load` and `architect/references/design-red-flags.md` in [cursor/plugins](https://github.com/cursor/plugins) (at 4dd1d05, MIT) | The TypeScript type-design reference, lifecycle state as one value, domain-grouped modules, hand-synced lists and the 30-second reader test |
 | `writing-readable-code` (implementation guide) | Matt Pocock's `codebase-design`, Addy Osmani's [`incremental-implementation`](https://github.com/addyosmani/agent-skills/blob/main/skills/incremental-implementation/SKILL.md) and [pstack `architect`](https://github.com/cursor/plugins/blob/main/pstack/skills/architect/SKILL.md) (read on 2026-10-19) | Caller-first design and small behavior slices |
+| `authoring-agents` and `improving-agents` | [Harness²](https://github.com/google-research/harness2) (at 1cfe254, Apache-2.0, `harness2/core/prompts.py`) | The form order and "large input, small answer" test; the diagnosis split, verdict labels and cue/lesson/evidence entry |
 | `deepening-prompts` | Felix Rieseberg's ["How to be more ambitious: a tutorial for humans with models"](https://felixrieseberg.com/how-to-be-more-ambitious-a-tutorial-for-humans-with-models/) (read on 2026-11-04) | The deeper-not-bigger rewrite: the outcome behind the task, the rawest source, expert methods, an outside judge, the doubt that attacks the result, verbs over nouns and a crew of roles asked for their work, not their voice |
 
 The skill files name their sources too.

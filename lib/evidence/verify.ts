@@ -36,6 +36,7 @@ export interface Outgoing {
   head: string;
   mergeBase: string;
   needsApproval: boolean;
+  promote: boolean;
 }
 
 export interface Decision {
@@ -51,6 +52,24 @@ export interface Decision {
 
 type Predecessor = [base: string, rootRunId: string];
 
+export interface PromoteStep {
+  commit: string;
+  parent: string;
+  root_run_id: string | null;
+}
+
+export interface UncoveredRun {
+  base: string;
+  head: string;
+  commits: number;
+}
+
+interface Reach {
+  uncovered: number;
+  from: string;
+  rootRunId: string | null;
+}
+
 export function judge(outgoing: Outgoing): Decision {
   const entries = gitcmd.diffEntries(outgoing.repoRoot, outgoing.mergeBase, outgoing.head);
   if (entries.length === 0) {
@@ -64,6 +83,7 @@ export function judge(outgoing: Outgoing): Decision {
   }
   const [chain, roots, resolved] = resolveReviews(outgoing, entries);
   const reasons = [...resolved, ...testReasons(outgoing, entries, risk)];
+  if (outgoing.promote) reasons.push(...promoteReasons(outgoing, resolved.length > 0));
   const waiver = noTestReason(chain);
   const unchangedLogic = new Set(entries
     .filter((entry) => !gitcmd.isDeleted(entry)
@@ -76,6 +96,56 @@ export function judge(outgoing: Outgoing): Decision {
     ok: reasons.length === 0, reasons, riskClass: risk.riskClass, rootRunId: chain ? chain.rootRunId : null,
     files: risk.files, lines: risk.lines, k3Waiver: usedWaiver, rootRunIds: roots,
   };
+}
+
+export function promotePlan(outgoing: Outgoing): { steps: PromoteStep[]; uncovered: UncoveredRun[] } {
+  const chains = buildChains(store.loadReviews(outgoing.repoKey));
+  const stackable = stackableChains(outgoing, chains);
+  const changes = new Map<string, PathEntry[]>();
+  const line = firstParentLine(outgoing);
+  const reach = new Map<string, Reach>([[outgoing.mergeBase, { uncovered: 0, from: outgoing.mergeBase, rootRunId: null }]]);
+  for (let index = 1; index < line.length; index++) {
+    const commit = line[index]!;
+    const parent = line[index - 1]!;
+    let best: Reach = { uncovered: reach.get(parent)!.uncovered + 1, from: parent, rootRunId: null };
+    for (const [base, rootRunId] of approvedPredecessors(outgoing, commit, chains, stackable, changes)) {
+      const reached = reach.get(base);
+      if (reached && reached.uncovered < best.uncovered) best = { uncovered: reached.uncovered, from: base, rootRunId };
+    }
+    reach.set(commit, best);
+  }
+  const credit = new Map<string, string | null>();
+  for (let commit = outgoing.head; commit !== outgoing.mergeBase;) {
+    const { from, rootRunId } = reach.get(commit)!;
+    for (const covered of line.slice(line.indexOf(from) + 1, line.indexOf(commit) + 1)) credit.set(covered, rootRunId);
+    commit = from;
+  }
+  const steps = line.slice(1).map((commit, index) => ({ commit, parent: line[index]!, root_run_id: credit.get(commit)! })).reverse();
+  return { steps, uncovered: uncoveredRuns(steps) };
+}
+
+function firstParentLine(outgoing: Outgoing): string[] {
+  if (outgoing.head === outgoing.mergeBase) return [outgoing.mergeBase];
+  const ancestors = gitcmd.firstParentAncestors(outgoing.repoRoot, outgoing.head, outgoing.mergeBase);
+  if (ancestors.length === 0) return [outgoing.mergeBase, outgoing.head];
+  return [...ancestors.reverse(), outgoing.head];
+}
+
+function uncoveredRuns(steps: PromoteStep[]): UncoveredRun[] {
+  const runs: UncoveredRun[] = [];
+  let open: UncoveredRun | null = null;
+  for (const step of steps) {
+    if (step.root_run_id !== null) {
+      open = null;
+    } else if (open) {
+      open.base = step.parent;
+      open.commits++;
+    } else {
+      open = { base: step.parent, head: step.commit, commits: 1 };
+      runs.push(open);
+    }
+  }
+  return runs;
 }
 
 export function covers(repoRoot: string, tree: string, entries: PathEntry[]): boolean {
@@ -157,7 +227,7 @@ function* approvedPredecessors(outgoing: Outgoing, boundary: string, chains: Cha
 
 function stackableChains(outgoing: Outgoing, chains: Chain[]): Chain[] {
   const approved = { ...outgoing, needsApproval: true };
-  return chains.filter((chain) => gitcmd.isAncestor(outgoing.repoRoot, chain.root.review_base, outgoing.mergeBase)
+  return chains.filter((chain) => gitcmd.isAncestor(outgoing.repoRoot, chain.root.review_base, outgoing.head)
     && chainLevelReasons(approved, chain).length === 0);
 }
 
@@ -180,7 +250,7 @@ function* stackedPredecessors(outgoing: Outgoing, boundary: string, stackable: C
       return entry.blob !== start[0] || entry.mode !== start[1];
     }).map(([, entry]) => entry);
     for (const chain of stackable) {
-      if (reviewsEveryPath(chain, net) && net.every((entry) => coversStacked(outgoing.repoRoot, chain, entry, atStart.get(entry.path)![0]))) {
+      if (reviewsEveryPath(chain, net) && gitcmd.isAncestor(outgoing.repoRoot, chain.root.review_base, parent) && net.every((entry) => coversStacked(outgoing.repoRoot, chain, entry, atStart.get(entry.path)![0]))) {
         yield [parent, chain.rootRunId];
       }
     }
@@ -319,9 +389,25 @@ function failureText(error: unknown): string {
 
 function approvalReasons(outgoing: Outgoing, chain: Chain): Reason[] {
   const headId = chain.head.evidence_id;
-  if (!outgoing.needsApproval || registry.mergesWithoutApproval(outgoing.row)) return [];
+  if (outgoing.promote || !outgoing.needsApproval || registry.mergesWithoutApproval(outgoing.row)) return [];
   if (boundEvidence('approval', chain.rootRunId, outgoing.repoKey, headId)) return [];
   return [{ ruleId: K1, text: `no approval bound to chain head ${headId}: run \`keel approve ${chain.rootRunId}\`` }];
+}
+
+function promoteReasons(outgoing: Outgoing, uncovered: boolean): Reason[] {
+  const reasons: Reason[] = [];
+  if (uncovered) {
+    reasons.push({
+      ruleId: K1,
+      text: 'review only the steps no PASS chain covers: `keel evidence promote-plan '
+        + `--repo ${outgoing.repoRoot} --base ${outgoing.mergeBase} --head ${outgoing.head}\` lists them`,
+    });
+  }
+  const approved = store.load('promote', outgoing.repoKey).some((evidence) => evidence['head'] === outgoing.head);
+  if (!approved && !registry.mergesWithoutApproval(outgoing.row)) {
+    reasons.push({ ruleId: K1, text: `no promote approval for ${outgoing.head}: run \`keel approve --promote ${outgoing.repoKey} ${outgoing.head}\`` });
+  }
+  return reasons;
 }
 
 function testReasons(outgoing: Outgoing, entries: PathEntry[], risk: Risk): Reason[] {

@@ -10,7 +10,7 @@ Five principles, each enforced at the strongest layer that can hold it. Rules en
 - [K5] Make only needed, readable changes. Load `/writing-readable-code` before code or agent briefs. Explain approval requests per `docs/review-policy.md`.
 
 ## Risk
-- [risk] Use `docs/review-policy.md` for ready-candidate per-lens audits, batched finding checks and snapshot deltas. smoke-only needs smoke evidence; other tiers need `/lens-review` and tests (light per registry). Merge or deploying/notifying push needs owner's `keel approve <root_run_id>` (`auto_merge=true` repos: PASS plus tests); `--read` is ack only. PRs require owner `keel approve` then explicit `/ship1`; PASS is not consent.
+- [risk] Use `docs/review-policy.md` for ready-candidate per-lens audits, batched finding checks and snapshot deltas. smoke-only needs smoke evidence; other tiers need `/lens-review` and tests (light per registry). Merge or deploying/notifying push needs owner's `keel approve <root_run_id>` (`auto_merge=true` repos: PASS plus tests); a develop→production promote takes one `keel approve --promote <owner/repo> <sha>` over PASS develop chains; `--read` is ack only. PRs require owner `keel approve` then explicit `/ship1`; PASS is not consent.
 
 ## Floor
 Hook-enforced, not principles.

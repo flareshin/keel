@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { InvalidUtf8Error } from '../../measure/lib/measurekit/files.ts';
 import { compareCodePoints, isJsonObject, parseJsonKeepingIntegers, stringifySorted } from '../../measure/lib/measurekit/json.ts';
 import type { JsonValue } from '../../measure/lib/measurekit/json.ts';
@@ -25,29 +26,36 @@ const USAGE = `usage:
   keel test -- <command…>
   keel home                           (prints the keel checkout this CLI runs from)
   keel approve <root_run_id> [--read]
+  keel approve --promote <owner/repo> <sha>
   keel snapshot <repo>
   keel review prepare                 (stdin: workflow args; stdout: prepared metadata)
   keel evidence write-review          (stdin: {"keel_evidence":{…},"verdict":…,"source":{…}})
   keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]
   keel evidence show [--repo <path>] [--root <root_run_id>]
+  keel evidence check --repo <path>   (would ship-gate let a push of HEAD through? exit 1 = not ready)
   keel evidence compatibility         (read-only retirement inventory across repos)
   keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]
+  keel evidence promote-plan --repo <path> --base <ref> --head <sha>
   keel evidence gc
   keel precheck run --repo <path> --base <ref>
   keel precheck rerun --repo <path> --base <ref> --census <file>
   keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>
   keel precheck required --repo <path> --base <sha> --end <sha>`;
+const PROMOTE_USAGE = 'keel approve --promote <owner/repo> <sha>';
 const EXIT_OK = 0;
+const EXIT_NOT_READY = 1;
 const EXIT_USAGE = 2;
 const EXIT_REFUSED = 3;
 const EXIT_INTERNAL = 70;
-const EVIDENCE_OPTIONS = new Set(['--repo', '--run', '--root', '--audits', '--verifiers']);
+const EVIDENCE_OPTIONS = new Set(['--repo', '--run', '--root', '--audits', '--verifiers', '--base', '--head']);
+const PROMOTE_PLAN_OPTIONS = ['--repo', '--base', '--head'];
 const PRECHECK_BIND_OPTIONS = new Set(['--repo', '--base', '--end', '--tree']);
 const PRECHECK_REQUIRED_OPTIONS = new Set(['--repo', '--base', '--end']);
 const PRECHECK_RUN_OPTIONS = new Set(['--repo', '--base']);
 const PRECHECK_RERUN_OPTIONS = new Set(['--repo', '--base', '--census']);
 const TEST_AFFECTED_OPTIONS = new Set(['--base']);
 const DEFAULT_AFFECTED_BASE = 'origin/HEAD';
+const WITH_REPLAYS = '--with-replays';
 const PRECHECK_LOG = 'keel-precheck.jsonl';
 const MODULE_NOT_FOUND = 'ERR_MODULE_NOT_FOUND';
 
@@ -93,24 +101,33 @@ function runTest(rest: string[]): Promise<number> {
 }
 
 async function runAffectedTests(rest: string[]): Promise<number> {
-  const base = parseOptions(rest, TEST_AFFECTED_OPTIONS)['--base'] ?? DEFAULT_AFFECTED_BASE;
-  if (base.startsWith('-')) throw new writers.Usage('keel test --affected [--base <ref>]');
+  const withReplays = rest.includes(WITH_REPLAYS);
+  const base = parseOptions(rest.filter((arg) => arg !== WITH_REPLAYS), TEST_AFFECTED_OPTIONS)['--base'] ?? DEFAULT_AFFECTED_BASE;
+  if (base.startsWith('-')) throw new writers.Usage(`keel test --affected [${WITH_REPLAYS}] [--base <ref>]`);
   const repoRoot = gitcmd.toplevel(process.cwd());
   if (repoRoot === null) throw new writers.Usage('keel test must run inside a git repository');
   const mergeBase = gitcmd.mergeBase(repoRoot, base, 'HEAD');
   if (mergeBase === null) throw new writers.Refused(`${base} has no merge base with HEAD`);
+  const missingReplays = withReplays ? affected.missingReplayTests(repoRoot) : [];
+  if (missingReplays.length > 0) {
+    throw new writers.Refused(`${counted(missingReplays.length, 'replay test file')} ${missingReplays.length === 1 ? 'is' : 'are'} missing from this repo: ${missingReplays.join(', ')}`);
+  }
   const changed = affected.changedSince(repoRoot, mergeBase);
-  const tests = affected.affectedTests(repoRoot, changed);
-  if (tests.length === 0) {
+  const reached = affected.affectedTests(repoRoot, changed);
+  const replays = withReplays ? affected.REPLAY_TESTS.filter((test) => !reached.includes(test)) : [];
+  if (reached.length === 0 && replays.length === 0) {
     printErrorLine(`keel test --affected: no test file reaches the ${counted(changed.length, 'changed path')}; run \`keel test -- <command>\` with a test that covers it`);
     return testrun.NO_TESTS_RECOGNIZED;
   }
-  const verb = tests.length === 1 ? 'reaches' : 'reach';
-  printErrorLine(`keel test --affected: ${counted(tests.length, 'test file')} ${verb} ${counted(changed.length, 'changed path')}\n${tests.join('\n')}`);
+  const verb = reached.length === 1 ? 'reaches' : 'reach';
+  const plusReplays = withReplays ? `, plus ${counted(replays.length, 'replay test file')}` : '';
+  const tests = [...reached, ...replays];
+  printErrorLine(`keel test --affected: ${counted(reached.length, 'test file')} ${verb} ${counted(changed.length, 'changed path')}${plusReplays}\n${tests.join('\n')}`);
   const hookCode = affected.fullSuitePaths(changed);
-  if (hookCode.length > 0) {
-    printErrorLine(`keel test --affected: code a hook runs changed (${hookCode.join(', ')}); also run \`keel test -- npm test\` once before root review`);
+  if (hookCode.length > 0 && !withReplays) {
+    printErrorLine(`keel test --affected: code a hook runs changed (${hookCode.join(', ')}); also run \`keel test --affected ${WITH_REPLAYS}\` once, in the background alongside the root review`);
   }
+  process.env['NODE_COMPILE_CACHE'] ||= join(env.stateDir(), 'node-compile-cache');
   return testrun.run([process.execPath, '--test', '--test-reporter=tap', ...tests], repoRoot);
 }
 
@@ -216,6 +233,11 @@ function typescriptResolves(): boolean {
 }
 
 function approve(rest: string[]): number {
+  if (rest[0] === '--promote') {
+    if (rest.length !== 3) throw new writers.Usage(PROMOTE_USAGE);
+    seams.print(writers.writePromoteApproval(rest[1]!, rest[2]!));
+    return EXIT_OK;
+  }
   const flags = rest.filter((arg) => arg.startsWith('--'));
   const positional = rest.filter((arg) => !arg.startsWith('--'));
   if (positional.length !== 1 || flags.some((flag) => flag !== '--read')) throw new writers.Usage('keel approve <root_run_id> [--read]');
@@ -248,11 +270,21 @@ function evidence(rest: string[]): number {
     seams.print(writers.writeReview(stdinJson()));
   } else if (subcommand === 'write-smoke') {
     seams.print(writers.writeSmoke(options['--repo'] || process.cwd(), options['--run'] ?? null));
+  } else if (subcommand === 'check') {
+    if (optionNames.length !== 1 || !('--repo' in options)) throw new writers.Usage('check requires --repo and takes no other option');
+    const readiness = pushReadiness(options['--repo']!);
+    seams.print(readiness);
+    return readiness['ok'] ? EXIT_OK : EXIT_NOT_READY;
   } else if (subcommand === 'show') {
     seams.print(show(options['--repo'] || process.cwd(), options['--root'] ?? null));
   } else if (subcommand === 'compatibility') {
     if (optionNames.length > 0) throw new writers.Usage('compatibility inventories all repositories; it takes no options');
     seams.print(compatibility());
+  } else if (subcommand === 'promote-plan') {
+    if (optionNames.length !== PROMOTE_PLAN_OPTIONS.length || !PROMOTE_PLAN_OPTIONS.every((name) => name in options)) {
+      throw new writers.Usage('promote-plan requires --repo, --base and --head');
+    }
+    seams.print(promotePlan(options['--repo']!, options['--base']!, options['--head']!));
   } else if (subcommand === 'gc') {
     seams.print({ deleted: gc.collect() });
   } else {
@@ -281,6 +313,39 @@ export function show(repoPath: string, rootRunId: string | null): JsonObject {
     tests: store.load('tests', repoKey).map((item) => item.evidence_id),
     smoke: store.load('smoke', repoKey).map((item) => item.evidence_id),
   };
+}
+
+export function pushReadiness(repoPath: string): JsonObject {
+  const repoRoot = gitcmd.toplevel(repoPath);
+  if (repoRoot === null) throw new writers.Usage(`${repoPath} is not in a git repository`);
+  const head = gitcmd.commitSha(repoRoot, 'HEAD');
+  if (head === null) throw new writers.Usage(`${repoRoot} has no commit at HEAD`);
+  const repoKey = registry.originKey(repoRoot);
+  const row = registry.lookup(repoKey);
+  if (!registry.isGated(row)) return { repo: repoKey, head, gated: false, ok: true, risk: null, root_run_id: null, reasons: [] };
+  const baseRef = 'origin/' + row!.integrationBase;
+  if (!gitcmd.refExists(repoRoot, 'refs/remotes/' + baseRef)) throw new writers.Usage(`base ${baseRef} is missing: run \`git fetch origin\``);
+  const mergeBase = gitcmd.mergeBase(repoRoot, baseRef, head);
+  if (mergeBase === null) throw new writers.Usage(`no merge base between ${baseRef} and HEAD`);
+  const decision = verify.judge({
+    repoRoot, repoKey: repoKey!, row: row!, head, mergeBase, needsApproval: registry.pushNeedsApproval(row!), promote: false,
+  });
+  return {
+    repo: repoKey, head, gated: true, ok: decision.ok, risk: decision.riskClass, root_run_id: decision.rootRunId,
+    reasons: decision.reasons.map((reason) => ({ rule_id: reason.ruleId, text: reason.text })),
+  };
+}
+
+export function promotePlan(repoPath: string, base: string, head: string): JsonObject {
+  const repoRoot = gitcmd.toplevel(repoPath);
+  const repoKey = repoRoot ? registry.originKey(repoRoot) : null;
+  const row = registry.lookup(repoKey);
+  if (repoRoot === null || repoKey === null || !registry.isGated(row)) throw new writers.Usage(`${repoPath} is not a clone of a gated repo`);
+  const headSha = gitcmd.commitSha(repoRoot, head);
+  const mergeBase = headSha === null ? null : gitcmd.mergeBase(repoRoot, base, headSha);
+  if (headSha === null || mergeBase === null) throw new writers.Usage(`no merge base between ${base} and ${head}`);
+  const plan = verify.promotePlan({ repoRoot, repoKey, row: row!, head: headSha, mergeBase, needsApproval: true, promote: true });
+  return { repo: repoKey, merge_base: mergeBase, head: headSha, steps: plan.steps, uncovered: plan.uncovered };
 }
 
 export function compatibility(): JsonObject {

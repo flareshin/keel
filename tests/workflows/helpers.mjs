@@ -124,12 +124,13 @@ export function preparedLine({ repoRoot = '/work/app', reviewBase = SHA_A, head 
 
 export function preparePromptCommands(prompt) {
   const lines = prompt.split('\n')
-  const commands = { diffs: [], runId: null, lenses: null }
+  const commands = { diffs: [], runId: null, lenses: null, riskClass: null }
   lines.forEach((line, i) => {
     const next = lines[i + 1]
     if (/^diff \d+:$/.test(line)) commands.diffs.push(next)
     if (line === 'run id:') commands.runId = next
     if (line === 'lenses:') commands.lenses = next
+    if (line === 'risk class:') commands.riskClass = next
   })
   return commands
 }
@@ -163,6 +164,7 @@ function writeKeelSnapshotStub(path, home) {
 set -e
 [ "$1" = home ] && { echo '${home}'; exit 0; }
 [ "$1" = precheck ] && exec '${join(KEEL_HOME, 'bin', 'keel')}' "$@"
+[ "$1" = review ] && exec '${join(KEEL_HOME, 'bin', 'keel')}' "$@"
 [ "$1" = snapshot ] || exit 2
 root=$(git -C "$2" rev-parse --show-toplevel)
 tmp=$(mktemp -d)

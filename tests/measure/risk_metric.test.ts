@@ -427,6 +427,136 @@ describe("risk runner", () => {
     assert.deepEqual([itemFor(result, "light")["rework"]["shipped_lines"], itemFor(result, "light")["rework"]["reworked_lines"]], [4, 1])
   })
 
+  const defectsRunner = (kind: string, body: string): void => {
+    box.write(`overlay/measure/metrics/defects-${kind}`, `#!/bin/sh\n${body}\n`, true)
+  }
+
+  const givenDefects = (kind: string, items: object[]): void => {
+    defectsRunner(kind, `cat <<'JSON'\n${JSON.stringify({ count: items.length, items })}\nJSON`)
+  }
+
+  const defect = (commit: string, offending: string[], fields: Record<string, unknown> = {}): object => ({
+    repo: REPO, commit, ts: daysAgo(5), kind: "revert", offending, traced_by: "revert", ...fields,
+  })
+
+  const runAttribution = (since: string = "2000-01-01") => {
+    const [completed, result] = box.runJson("metrics/risk", ["--since", since])
+    assert.equal(completed.status, 0, completed.stderr)
+    return result
+  }
+
+  const shippedDefectRepo = (): { repo: string; bad: string; later: string; fix: string } => {
+    const { repo } = newRepo()
+    const bad = commitAt(repo, daysAgo(31), "Introduce the defect", ["bad"], "bad.ts")
+    const later = commitAt(repo, daysAgo(20), "Unrelated later work", ["later"], "later.ts")
+    const fix = commitAt(repo, daysAgo(5), "Revert the defect", ["fixed"], "bad.ts")
+    track(repo)
+    return { repo, bad, later, fix }
+  }
+
+  const UNKNOWN_SHA = "9".repeat(40)
+
+  it("escapedDefects_withoutADefectsRunner_stayNoSource_andNothingIsUntraced", () => {
+    givenPass({ risk: "light" })
+    const result = runAttribution()
+    assert.equal(itemFor(result, "light")["escaped_defects"], "no source")
+    assert.deepEqual([result.defect_sources, result.untraced_defects], [{}, { count: 0, items: [] }])
+  })
+
+  it("escapedDefects_withAFailingRunner_reportTheError_notZero", () => {
+    givenPass({ risk: "light" })
+    defectsRunner("revert", "exit 3")
+    const result = runAttribution()
+    assert.match(result.defect_sources["defects-revert"].error, /exited 3/)
+    assert.equal(itemFor(result, "light")["escaped_defects"], "no source")
+  })
+
+  it("escapedDefects_withARunnerPrintingAMalformedItem_reportTheErrorAndKeepTheOtherRunnersItems", () => {
+    const { bad, fix } = shippedDefectRepo()
+    givenPass({ head: bad, ts: daysAgo(30), risk: "light" })
+    givenDefects("hotfix", [{ repo: REPO, commit: "not-a-sha" }])
+    givenDefects("revert", [defect(fix, [bad])])
+    const result = runAttribution()
+    assert.match(result.defect_sources["defects-hotfix"].error, /item/)
+    assert.deepEqual(result.defect_sources["defects-revert"], { count: 1 })
+    assert.equal(itemFor(result, "light")["escaped_defects"].count, 1)
+  })
+
+  it("escapedDefects_ofARevert_goToTheEarliestShipWhoseHeadContainsTheOffendingCommit_evenWhenALaterShipContainsItToo", () => {
+    const { bad, later, fix } = shippedDefectRepo()
+    givenPass({ head: later, ts: daysAgo(20), risk: "light" })
+    givenPass({ head: bad, ts: daysAgo(30), risk: "standard" })
+    givenDefects("revert", [defect(fix, [bad], { kind: "revert", traced_by: "revert" })])
+    const result = runAttribution()
+    assert.deepEqual(itemFor(result, "standard")["escaped_defects"], {
+      count: 1, items: [{ repo: REPO, commit: fix, kind: "revert", traced_by: "revert", ship_head: bad }],
+    })
+    assert.deepEqual(itemFor(result, "light")["escaped_defects"], { count: 0, items: [] })
+    assert.deepEqual(result.untraced_defects, { count: 0, items: [] })
+  })
+
+  it("escapedDefects_ofAnItemWithSeveralOffendingCommits_areAttributedOnceToTheEarliestShipOverAllOfThem", () => {
+    const { bad, later, fix } = shippedDefectRepo()
+    givenPass({ head: bad, ts: daysAgo(30), risk: "standard" })
+    givenPass({ head: later, ts: daysAgo(20), risk: "light" })
+    givenDefects("revert", [defect(fix, [later, bad], { kind: "hotfix", traced_by: "blame" })])
+    const result = runAttribution()
+    assert.deepEqual([itemFor(result, "standard")["escaped_defects"].count, itemFor(result, "light")["escaped_defects"].count], [1, 0])
+    assert.deepEqual(itemFor(result, "standard")["escaped_defects"].items[0], { repo: REPO, commit: fix, kind: "hotfix", traced_by: "blame", ship_head: bad })
+  })
+
+  it("escapedDefects_countInTheClassOfTheirShipOnlyWhenThatShipIsInTheWindow", () => {
+    const { repo } = newRepo()
+    const old = commitAt(repo, daysAgo(95), "Introduce the defect long ago", ["old"], "old.ts")
+    const recent = commitAt(repo, daysAgo(20), "Introduce another defect", ["recent"], "recent.ts")
+    const fix = commitAt(repo, daysAgo(5), "Hotfix", ["fixed"], "old.ts")
+    track(repo)
+    givenPass({ head: old, ts: daysAgo(90), risk: "heavy" })
+    givenPass({ head: recent, ts: daysAgo(20), risk: "light" })
+    givenDefects("revert", [defect(fix, [old]), defect(fix.replace(/^./, "0"), [recent])])
+    const result = runAttribution(addDays(TODAY, -60))
+    assert.deepEqual(result.items.map((item: { class: string }) => item.class), ["light"])
+    assert.deepEqual(itemFor(result, "light")["escaped_defects"].items.map((item: { ship_head: string }) => item.ship_head), [recent])
+    assert.deepEqual(result.untraced_defects, { count: 0, items: [] })
+  })
+
+  it("escapedDefects_thatReachNoShip_areListedUntracedWithTheirReason", () => {
+    const { repo, bad, fix } = shippedDefectRepo()
+    const unshipped = commitAt(repo, daysAgo(2), "Never shipped", ["never"], "never.ts")
+    track(repo)
+    givenPass({ head: bad, ts: daysAgo(30), risk: "light" })
+    givenPass({ head: "e".repeat(40), ts: daysAgo(10), risk: "light", repo: "other/app" })
+    const items = [
+      defect("1".repeat(40), [UNKNOWN_SHA]),
+      defect("2".repeat(40), [unshipped]),
+      defect("3".repeat(40), [bad], { repo: "nowhere/app" }),
+      defect("4".repeat(40), [bad], { repo: "other/app" }),
+      defect("5".repeat(40), []),
+    ]
+    givenDefects("revert", items)
+    const result = runAttribution()
+    assert.equal(result.untraced_defects.count, 5)
+    assert.deepEqual(result.untraced_defects.items.map((item: { commit: string; reason: string }) => [item.commit[0], item.reason]), [
+      ["1", "offending commit not found in the checkout"],
+      ["2", "no shipped head contains the offending commit"],
+      ["3", "no shipped head for the repo"],
+      ["4", "no local checkout holds a shipped head"],
+      ["5", "no offending commit"],
+    ])
+    assert.deepEqual(result.untraced_defects.items[0], { ...items[0], reason: "offending commit not found in the checkout" })
+    assert.deepEqual(itemFor(result, "light")["escaped_defects"], { count: 0, items: [] })
+  })
+
+  it("escapedDefects_foundByTwoRunnersOrSpelledWithAnotherRepoCase_areCountedOnce", () => {
+    const { bad, fix } = shippedDefectRepo()
+    givenPass({ head: bad, ts: daysAgo(30), risk: "light" })
+    givenDefects("revert", [defect(fix, [bad])])
+    givenDefects("hotfix", [defect(fix, [bad], { repo: "Example/App", kind: "hotfix", traced_by: "blame" })])
+    const result = runAttribution()
+    assert.equal(itemFor(result, "light")["escaped_defects"].count, 1)
+    assert.deepEqual(result.defect_sources, { "defects-hotfix": { count: 1 }, "defects-revert": { count: 1 } })
+  })
+
   it("noFiresOrEvidence_countsZero_insteadOfFailing", () => {
     const result = runMetric()
     assert.deepEqual([result.count, result.items, result.status, result.error], [0, [], "GRACE", undefined])

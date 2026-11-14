@@ -5,10 +5,10 @@ import path from "node:path"
 import { isTestPath } from "../lib/evidence/risk.ts"
 import { EXIT_OK, noPositionals, parseCommandLine, printJson, runMain } from "./lib/measurekit/cli.ts"
 import type { CommandSpec } from "./lib/measurekit/cli.ts"
-import { isDir, isFile } from "./lib/measurekit/files.ts"
+import { isFile } from "./lib/measurekit/files.ts"
 import { runGitOrThrow } from "./lib/measurekit/gitutil.ts"
 import type { JsonValue } from "./lib/measurekit/json.ts"
-import { collectMetricItems, MetricError } from "./lib/measurekit/metrics.ts"
+import { collectMetricItems, defectRunnerNames, MetricError } from "./lib/measurekit/metrics.ts"
 import { buildExpiryProposals } from "./lib/measurekit/propose.ts"
 import { SmokeContext } from "./lib/measurekit/smoke_context.ts"
 
@@ -19,7 +19,6 @@ const COMMAND: CommandSpec = {
   argumentHelp: [],
   options: {},
 }
-const DEFECT_RUNNER_PREFIX = "defects-"
 const EXECUTABLE_MODE = "100755"
 const CODE_EXTENSIONS = new Set([".py", ".js", ".mjs", ".sh", ".ts"])
 const NEWLINE_BYTE = 0x0a
@@ -64,10 +63,8 @@ function countLines(file: string): number {
 }
 
 function collectDefects(ctx: SmokeContext): Record<string, JsonValue> {
-  const runnerDir = path.join(ctx.overlayDir, "measure", "metrics")
-  const names = isDir(runnerDir) ? fs.readdirSync(runnerDir).sort() : []
   const defects: Record<string, JsonValue> = {}
-  for (const name of names.filter((candidate) => candidate.startsWith(DEFECT_RUNNER_PREFIX))) {
+  for (const name of defectRunnerNames(ctx.overlayDir)) {
     try {
       const [count, items] = collectMetricItems("run:" + name, ctx.metricWindowStart)
       defects[name] = { count, items }

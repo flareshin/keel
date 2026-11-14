@@ -5,6 +5,7 @@ import { isDeepStrictEqual } from "node:util";
 import { isSystemError } from "../../hooks/lib/hookkit/files.ts";
 import { compareCodePoints } from "../../measure/lib/measurekit/json.ts";
 import { OSError } from "../../hooks/lib/hookkit/subprocess.ts";
+import { sleep } from "../../hooks/lib/hookkit/sleep.ts";
 import { readJson, writeAtomic } from "./files.ts";
 import type { ManagedFile } from "./files.ts";
 import { isJsonObject } from "./json.ts";
@@ -46,10 +47,6 @@ export interface SkillFiles {
 
 export function installationLockDirectory(agentsHome: string): string {
   return childPath(agentsHome, `${LOCK_NAME}.d`);
-}
-
-function sleep(milliseconds: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
 
 const OWNER_PROCESS_ID = /^[0-9]+$/;

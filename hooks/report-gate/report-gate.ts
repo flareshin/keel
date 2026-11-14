@@ -12,6 +12,7 @@ import { compareCodePoints, MAX_JSON_DEPTH } from "../../measure/lib/measurekit/
 import { NonFiniteJsonNumber, parseFiniteJson, parseJson, parsePayload } from "../lib/hookkit/json.ts";
 import { AttributeError, describeError, errorName, pythonTypeName, RecursionError, ValueError } from "../lib/hookkit/errors.ts";
 import { readStdin } from "../lib/hookkit/stdio.ts";
+import { sleep } from "../lib/hookkit/sleep.ts";
 import { SPACE_CHARS, SPACE_CLASS, testCaseFolded, trimCharacters, trimSpace, WORD_BOUNDARY, WORD_CHARS } from "../lib/hookkit/text.ts";
 import { TimeoutExpired } from "../../measure/lib/measurekit/timeout.ts";
 import { OSError, run } from "../lib/hookkit/subprocess.ts";
@@ -21,6 +22,8 @@ import { contentOf, iterEntries, roleOf, textOf, toolUses } from "../lib/hookkit
 
 const HOOK = "report-gate";
 const CLI_TIMEOUT_SECONDS = 20;
+const TRANSCRIPT_REREADS = 15;
+const TRANSCRIPT_REREAD_MS = 100;
 const DIGIT = "\\p{Nd}";
 
 const EVIDENCE_RE = new RegExp(
@@ -259,8 +262,8 @@ function judgeStop(payload: Payload, fires: FireLog): number {
   }
   const missing = missingFields(payload, "agent_id", "agent_transcript_path", "last_assistant_message");
   const agentTranscript = textField(payload, "agent_transcript_path");
-  const transcript = agentTranscript && existsSync(agentTranscript) ? whileDeciding(() => readAgentTranscript(agentTranscript)) : null;
   const payloadReport = missing.includes("last_assistant_message") ? null : textOf(getField(payload, "last_assistant_message"));
+  const transcript = agentTranscript && existsSync(agentTranscript) ? whileDeciding(() => readSettledTranscript(agentTranscript, payloadReport === null && !handedBack)) : null;
   const report = withoutReportMarkers(payloadReport ?? transcript?.finalText ?? null);
   const reportedElsewhere = handedBack || transcript?.usedStructuredOutput === true || (payloadReport === null && endsWithHandback(transcript));
   const unrecovered = report !== null || reportedElsewhere ? missing.filter((field) => field !== "last_assistant_message") : missing;
@@ -282,6 +285,19 @@ function judgeStop(payload: Payload, fires: FireLog): number {
   if (lacksEvidence(report, transcript.needsEvidence, fires)) return protocol.blockStop(evidenceMessage());
   writeReviewEvidence(report, payload, agentTranscript, transcript, "SubagentStop", fires);
   return protocol.EXIT_PASS;
+}
+
+function readSettledTranscript(path: string, awaitsReport: boolean): AgentTranscript {
+  let transcript = readAgentTranscript(path);
+  for (let reread = 0; awaitsReport && reread < TRANSCRIPT_REREADS && !carriesReport(transcript); reread++) {
+    sleep(TRANSCRIPT_REREAD_MS);
+    transcript = readAgentTranscript(path);
+  }
+  return transcript;
+}
+
+function carriesReport(transcript: AgentTranscript): boolean {
+  return transcript.finalText !== null || transcript.usedStructuredOutput || endsWithHandback(transcript);
 }
 
 function endsWithHandback(transcript: AgentTranscript | null): boolean {

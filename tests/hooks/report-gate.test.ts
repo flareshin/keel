@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { join } from "node:path";
@@ -13,6 +14,7 @@ const PASS_REPORT = "VERDICT: PASS\nNo findings. 3 files changed, 40 insertions(
 const FRAMED_PASS_REPORT = `<<<KEEL-REPORT\n${PASS_REPORT}\nKEEL-REPORT>>>`;
 const UNPROVEN_REPORT = "Done. All good, VERDICT: PASS";
 const PROVEN_REPORT = "Done.\nRan 12 tests in 0.4s\nOK";
+const LATE_REPORT_MS = 400;
 const CLI_RESPONSE = '{"evidence_id":"review-20261011T090000Z-1a2b3c4d","repo":"acme/app","paths":3}';
 
 type ToolUse = readonly [string, unknown];
@@ -541,6 +543,19 @@ describe("SubagentStopTest", () => {
     const result = stop(null, { toolUses: [editIn(scope, "a.py"), ["StructuredOutput", { x: 1 }]] });
     assert.equal(result.stdout, "");
     assert.deepEqual(sandbox.fires().filter((fire) => fire.outcome === "warn"), []);
+    assert.deepEqual(contractMisses(), []);
+  });
+
+  it("stop_logsNoContractMiss_whenTheStructuredOutputReachesTheTranscriptAfterTheHookStarts", async () => {
+    const path = sandbox.agentTranscript(`[SCOPE] ${scope}\nDo the task.`, [editIn(scope, "a.py")]);
+    const payload = subagentStop(sandbox.root, sandbox.mainTranscript(), path, null, false);
+    payload["agent_type"] = "keel:auditor";
+    const hook = spawn(process.execPath, [join(KEEL_HOME, REPORT_GATE)], { env: sandbox.env, cwd: sandbox.root });
+    const exited = new Promise<number | null>((resolve) => hook.on("close", resolve));
+    hook.stdin.end(JSON.stringify(payload));
+    await new Promise((resolve) => setTimeout(resolve, LATE_REPORT_MS));
+    appendToolUse(path, ["StructuredOutput", { x: 1 }]);
+    assert.equal(await exited, 0);
     assert.deepEqual(contractMisses(), []);
   });
 

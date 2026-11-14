@@ -74,6 +74,42 @@ describe("boundary", () => {
     assert.deepEqual(result.hits.map((hit: { rule: string }) => hit.rule), ["generic:aws-access-key"])
   })
 
+  it("boundaryGenericOnly_skipsTheAddressRulesNamedInTheOverlayGenericOffFile", () => {
+    box.write("overlay/boundary/generic-off.txt", "private-ipv4-10\n")
+    box.write("work/notes.txt", `host ${INVENTED_PRIVATE_IP}\nkey ${FAKE_AWS_KEY}\n`)
+    const [completed, result] = scan("--generic-only", "--paths", "notes.txt")
+    assert.equal(completed.status, 1)
+    assert.deepEqual(result.hits.map((hit: { rule: string }) => hit.rule), ["generic:aws-access-key"])
+  })
+
+  it("boundaryWithTheLexicon_keepsTheAddressRules_whateverTheGenericOffFileNames", () => {
+    box.writeLexicon()
+    box.write("overlay/boundary/generic-off.txt", "private-ipv4-10\nprivate-ipv4-172\nprivate-ipv4-192\n")
+    box.write("work/notes.txt", `host ${INVENTED_PRIVATE_IP}\n`)
+    const [completed, result] = scan("--paths", "notes.txt")
+    assert.equal(completed.status, 1)
+    assert.ok(result.hits.map((hit: { rule: string }) => hit.rule).includes("generic:private-ipv4-10"), JSON.stringify(result.hits))
+  })
+
+  it("boundaryStaged_keepsTheAddressRules_asThePreCommitHookRunsIt", () => {
+    box.writeLexicon()
+    box.write("overlay/boundary/generic-off.txt", "private-ipv4-10\n")
+    box.initRepo(repo)
+    box.write("work/config.yml", `host: ${INVENTED_PRIVATE_IP}\n`)
+    box.git(repo, "add", "config.yml")
+    const [completed, result] = scan("--staged")
+    assert.equal(completed.status, 1)
+    assert.ok(result.hits.some((hit: { rule: string }) => hit.rule === "generic:private-ipv4-10"), JSON.stringify(result.hits))
+  })
+
+  it("boundary_exitsTwo_whenOverlayGenericOffFileNamesANonAddressRule", () => {
+    box.write("overlay/boundary/generic-off.txt", "private-ipv4-10\naws-access-key\n")
+    box.write("work/notes.txt", "clean\n")
+    const completed = box.runMeasure("boundary", ["--generic-only", "--paths", "notes.txt"], repo)
+    assert.equal(completed.status, 2)
+    assert.ok(completed.stderr.includes("generic-off.txt:2 names no switchable generic rule: aws-access-key"), completed.stderr)
+  })
+
   it("boundary_exitsTwo_whenOverlayRegexIsInvalid", () => {
     box.writeLexicon()
     box.write("overlay/boundary/regex.txt", "(unclosed\n")

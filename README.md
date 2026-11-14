@@ -160,7 +160,7 @@ A rule enters at the strongest layer that can hold it. A `skill` or `prose` row 
 Why the split:
 
 - **keel can be published; company data must not be.** Company rules, repository names and incident records go only in the overlay. Company rules are rows in the overlay's own ledger, and smoke checks the union of both ledgers.
-- **A scanner guards the boundary.** `measure/boundary` checks added lines and commit messages against the overlay's private lexicon and regexes and against generic secret patterns (`measure/boundary-generic.tsv`). The `pre-commit` and `pre-push` hooks in `githooks/` run it, and smoke fails if the lexicon is missing.
+- **A scanner guards the boundary.** `measure/boundary` checks added lines and commit messages against the overlay's private lexicon and regexes and against generic secret patterns (`measure/boundary-generic.tsv`; an overlay switches the private-address rules off for git-guard's scan of other repositories by naming them in `boundary/generic-off.txt`). The `pre-commit` and `pre-push` hooks in `githooks/` run it, and smoke fails if the lexicon is missing.
 - **Method and data stay separate.** keel holds the engine; the overlay decides where it applies. Anyone can pair keel with an overlay of their own. Every overlay file is optional, and a missing file means no data. [`examples/`](examples) shows the overlay's shape with invented values.
 
 ## How a change ships

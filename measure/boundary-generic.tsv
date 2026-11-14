@@ -1,4 +1,4 @@
-# Generic public-boundary rules (secrets, private IPs). Company terms live in the overlay lexicon.
+# Generic public-boundary rules (secrets, private IPs). Company terms live in the overlay lexicon; an overlay switches the private-ipv4 rules off for --generic-only scans by naming them in boundary/generic-off.txt.
 name	regex
 private-key	-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY
 aws-access-key	\b(?:AKIA|ASIA)[0-9A-Z]{16}\b

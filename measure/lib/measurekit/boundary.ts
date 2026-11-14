@@ -7,6 +7,8 @@ import { InvalidUtf8Error, isDir, isFile, isSymlink, isSystemError, splitLines, 
 import { GitError, runGitOrThrow } from "./gitutil.ts"
 
 const GENERIC_RULES_PATH = path.join(CHECKOUT_ROOT, "measure", "boundary-generic.tsv")
+const GENERIC_OFF_FILE = ["boundary", "generic-off.txt"]
+const SWITCHABLE_GENERIC_RULES: readonly string[] = ["private-ipv4-10", "private-ipv4-172", "private-ipv4-192"]
 const ZERO_SHA_PATTERN = /^0+$/
 const HUNK_HEADER = /^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/
 const DIFF_ARGS = ["-c", "core.quotePath=false", "diff", "-U0", "--no-color", "--no-ext-diff", "--no-renames"]
@@ -31,8 +33,8 @@ export interface Hit {
   rule: string
 }
 
-export function loadRules(overlayDir: string, genericOnly: boolean): Rule[] {
-  const rules = genericRules()
+export function loadRules(overlayDir: string, genericOnly: boolean, honourGenericOff: boolean): Rule[] {
+  const rules = genericRules(genericOnly && honourGenericOff ? overlayDir : null)
   if (genericOnly) return rules
   const lexiconPath = path.join(overlayDir, "boundary", "lexicon.txt")
   if (!isFile(lexiconPath)) {
@@ -48,7 +50,7 @@ export function loadRules(overlayDir: string, genericOnly: boolean): Rule[] {
   return rules
 }
 
-function genericRules(): Rule[] {
+function genericRules(switchingOverlayDir: string | null): Rule[] {
   let records: Record<string, string>[]
   try {
     records = readTsvRecords(GENERIC_RULES_PATH, ["name", "regex"])
@@ -56,7 +58,22 @@ function genericRules(): Rule[] {
     if (error instanceof TsvError || error instanceof InvalidUtf8Error || isSystemError(error)) throw new BoundaryUsageError(`generic rules unreadable: ${(error as Error).message}`)
     throw error
   }
-  return records.map((record) => regexRule("generic:" + record["name"], record["regex"] as string))
+  const off = genericRulesOff(switchingOverlayDir)
+  return records.filter((record) => !off.has(record["name"] as string)).map((record) => regexRule("generic:" + record["name"], record["regex"] as string))
+}
+
+function genericRulesOff(overlayDir: string | null): Set<string> {
+  if (overlayDir === null) return new Set()
+  const file = path.join(overlayDir, ...GENERIC_OFF_FILE)
+  if (!isFile(file)) return new Set()
+  const off = new Set<string>()
+  for (const [number, name] of dataLines(file)) {
+    if (!SWITCHABLE_GENERIC_RULES.includes(name)) {
+      throw new BoundaryUsageError(`${file}:${number} names no switchable generic rule: ${name} (only ${SWITCHABLE_GENERIC_RULES.join(", ")})`)
+    }
+    off.add(name)
+  }
+  return off
 }
 
 function lexiconRule(name: string, term: string): Rule {

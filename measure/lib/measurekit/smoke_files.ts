@@ -186,7 +186,7 @@ export function checkBoundary(ctx: SmokeContext): Assertion[] {
   let rules
   let tracked: string[]
   try {
-    rules = loadRules(ctx.overlayDir, !lexiconPresent)
+    rules = loadRules(ctx.overlayDir, !lexiconPresent, false)
     tracked = runGitOrThrow(ctx.keelHome, ["ls-files", "-z"]).split("\0").filter((trackedPath) => trackedPath !== "")
   } catch (error) {
     if (error instanceof BoundaryUsageError || error instanceof GitError) return [assertion("boundary", "keel", FAIL, error.message)]

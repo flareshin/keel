@@ -1413,6 +1413,20 @@ describe("SameCallStagingTest", () => {
     assertSecretDenied(guard("git add leak.txt && git commit -m wip", repo), "leak.txt");
   });
 
+  it("commit_deniedWithTheAddress_whenAPrivateAddressIsAddedAndTheOverlaySwitchesNothingOff", () => {
+    sandbox.write(join(repo, "config.yml"), `host: ${"10.250." + "3.4"}\n`);
+    const result = guard("git add config.yml && git commit -m wip", repo);
+    assertDenied(result, "F-secrets");
+    assert.ok(result.stderr.includes("config.yml:1 (generic:private-ipv4-10)"), result.stderr);
+  });
+
+  it("commit_passes_whenAPrivateAddressIsAddedAndTheOverlayGenericOffFileNamesTheAddressRules", () => {
+    sandbox.write(join(sandbox.overlay, "boundary", "generic-off.txt"), "private-ipv4-10\nprivate-ipv4-172\nprivate-ipv4-192\n");
+    sandbox.write(join(repo, "config.yml"), `host: ${"10.250." + "3.4"}\n`);
+    assertPassed(guard("git add config.yml && git commit -m wip", repo));
+    assertSecretDenied(guard("git add leak.txt && git commit -m wip", repo), "leak.txt");
+  });
+
   it("commit_deniedWithTheSecret_whenAddAllChainedBeforeIt", () => {
     assertSecretDenied(guard("git add -A && git commit -m wip", repo), "leak.txt");
   });

@@ -1,0 +1,6 @@
+# Private-address rules (private-ipv4-10, private-ipv4-172, private-ipv4-192) this overlay switches off in the --generic-only scan
+# git-guard runs on commits in other repositories, whose deployment configuration names hosts by private addresses.
+# keel's own pre-commit, pre-push and smoke scans keep every generic rule.
+private-ipv4-10
+private-ipv4-172
+private-ipv4-192

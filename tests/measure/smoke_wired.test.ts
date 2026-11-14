@@ -116,6 +116,32 @@ describe("wired-fires", () => {
     assert.ok(wiredFires().detail.includes("the real keel-fires.jsonl changed during the run"))
   })
 
+  const appendToRealLogThenFire = (session: string | null): string => {
+    const realLog = path.join(harness.box.data, "logs", "keel-fires.jsonl")
+    const line = JSON.stringify(session === null ? { rule_id: "K2", outcome: "pass" } : { rule_id: "K2", outcome: "pass", session })
+    return harness.box.write("keel/hooks/demo/demo.js", hookSource([
+      `fs.mkdirSync(${JSON.stringify(path.dirname(realLog))}, { recursive: true })`,
+      `fs.appendFileSync(${JSON.stringify(realLog)}, ${JSON.stringify(line + "\n")})`,
+      "if (!payload.tool_input.command.startsWith('bad ')) process.exit(0)",
+    ]))
+  }
+
+  it("wiredFires_passes_whenAnotherSessionWritesTheRealFiresLogDuringTheRun", () => {
+    registerBash(appendToRealLogThenFire("another-live-session"))
+    const item = wiredFires()
+    assert.equal(item.status, "PASS", JSON.stringify(item))
+  })
+
+  it("wiredFires_fails_whenTheRealFiresLogGetsALineWithAFixtureSession", () => {
+    for (const ruleId of ["K1", "C-demo"]) {
+      const fixture = JSON.parse(harness.box.bashFixture("bad " + ruleId, "deny"))
+      fixture.payload.session_id = "wired-fires"
+      harness.box.write(`keel/tests/hooks/fixtures/${ruleId}.bad.json`, JSON.stringify(fixture))
+    }
+    registerBash(appendToRealLogThenFire("wired-fires"))
+    assert.ok(wiredFires().detail.includes("the real keel-fires.jsonl changed during the run"))
+  })
+
   it("wiredFires_runsSetupCommandsInTheTempDir_beforeFeedingThePayload", () => {
     for (const ruleId of ["K1", "C-demo"]) {
       const fixture = JSON.parse(harness.box.bashFixture("bad " + ruleId, "deny"))

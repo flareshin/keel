@@ -163,7 +163,7 @@ async function runWithRiskClass(riskClass, extraArgs = {}, diffStat = NON_TRIVIA
 }
 
 test('lensReview_scalesAuditEffortWithThePreparedRiskClass_whenNoEffortIsGiven', async () => {
-  const cases = [['smoke-only', 'medium'], ['light', 'medium'], ['standard', 'medium'], ['heavy', 'high'],
+  const cases = [['smoke-only', 'medium'], ['standard', 'medium'], ['heavy', 'high'], ['light', 'high'],
     [undefined, 'high'], [null, 'high'], ['unknown', 'high'], ['__proto__', 'high']]
   for (const [riskClass, effort] of cases) {
     const { result, auditEfforts } = await runWithRiskClass(riskClass)
@@ -175,7 +175,7 @@ test('lensReview_scalesAuditEffortWithThePreparedRiskClass_whenNoEffortIsGiven',
 test('lensReview_auditsATrivialDiffAtLowEffort_whenTheTierIsNotHeavy', async () => {
   const cases = [
     ['standard', ' 1 file changed, 1 insertion(+), 1 deletion(-)', 'low'],
-    ['light', ' 2 files changed, 6 insertions(+), 4 deletions(-)', 'low'],
+    ['standard', ' 2 files changed, 6 insertions(+), 4 deletions(-)', 'low'],
     ['standard', ' 2 files changed, 6 insertions(+), 5 deletions(-)', 'medium'],
     ['standard', ' 3 files changed, 3 insertions(+)', 'medium'],
     ['heavy', ' 1 file changed, 1 insertion(+)', 'high'],
@@ -197,7 +197,7 @@ test('lensReview_keepsTheTierEffort_forATrivialDelta', async () => {
 })
 
 test('lensReview_keepsTheCallerEffort_whateverTheRiskClass', async () => {
-  for (const riskClass of ['light', 'heavy']) {
+  for (const riskClass of ['standard', 'heavy']) {
     const { result, auditEfforts } = await runWithRiskClass(riskClass, { effort: 'xhigh' })
     assert.equal(result.effort, 'xhigh', riskClass)
     assert.deepEqual(auditEfforts, ['xhigh', 'xhigh', 'xhigh'], riskClass)

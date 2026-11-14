@@ -9,7 +9,7 @@ const GATED_OPTIONAL = ['push_approval', 'auto_merge'];
 const RISK_HEADER = ['set', 'path_glob', 'class'];
 const GATE_OFF = 'off';
 const GATE_VALUES = ['code', 'smoke', GATE_OFF];
-const RISK_CLASSES = ['light', 'heavy', 'smoke-only'];
+const RISK_CLASSES = ['heavy', 'smoke-only'];
 const FLAG_VALUES = ['true', 'false'];
 const EMPTY = '-';
 

@@ -61,7 +61,7 @@
     "a20d4bb0828dbba4": "t#!/bin/bash\nprintf '%s\\n' \"${GH_REPO:+GH_REPO=$GH_REPO }$*\" >> \"$KEEL_TEST_GH_LOG\"\ncat \"$KEEL_TEST_GH_RESPONSE\"\n",
     "b135db80be7af271": "t[user]\n\tname = Keel Test\n\temail = keel-test@example.com\n[init]\n\tdefaultBranch = main\n[protocol \"file\"]\n\tallow = always\n",
     "edc9153670fe5ef5": "torigin\tgate\tintegration_base\trisk_rules\ttests\nacme/app\tcode\tmain\tacme\trequired\n",
-    "106795d2888474f9": "tset\tpath_glob\tclass\nacme\tsrc/*/billing/*\theavy\nacme\tdocs/*\tlight\nacme\t*.md\tlight\noverlay\tsettings/*\tsmoke-only\noverlay\tledger.tsv\tsmoke-only\n",
+    "106795d2888474f9": "tset\tpath_glob\tclass\nacme\tsrc/*/billing/*\theavy\noverlay\tsettings/*\tsmoke-only\noverlay\tledger.tsv\tsmoke-only\n",
     "ba11eba4a5c422da": "tref: refs/heads/main\n",
     "fbce0f17c38709b4": "t[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = true\n\tignorecase = true\n\tprecomposeunicode = true\n",
     "06cd43a52d544bac": "tUnnamed repository; edit this file 'description' to name the repository.\n",
@@ -948,10 +948,10 @@
   "smoke missing": "{\"files\":1,\"k3_waiver\":null,\"lines\":1,\"ok\":false,\"reasons\":[[\"risk\",\"no smoke evidence covers this exact content: run measure/smoke, then `keel evidence write-smoke`\"]],\"risk_class\":\"standard\",\"root_run_id\":null,\"root_run_ids\":[]}",
   "smoke present": "{\"files\":1,\"k3_waiver\":null,\"lines\":1,\"ok\":true,\"reasons\":[],\"risk_class\":\"standard\",\"root_run_id\":null,\"root_run_ids\":[]}",
   "tests=none standard": "{\"files\":2,\"k3_waiver\":null,\"lines\":3,\"ok\":false,\"reasons\":[[\"K3\",\"add test infrastructure first: acme/app has tests=none and the change is standard\"]],\"risk_class\":\"standard\",\"root_run_id\":\"rv-root-0001\",\"root_run_ids\":[\"rv-root-0001\"]}",
-  "tests=none light": "{\"files\":1,\"k3_waiver\":null,\"lines\":1,\"ok\":true,\"reasons\":[],\"risk_class\":\"light\",\"root_run_id\":\"rv-root-0001\",\"root_run_ids\":[\"rv-root-0001\"]}",
+  "tests=none docs": "{\"files\":1,\"k3_waiver\":null,\"lines\":1,\"ok\":false,\"reasons\":[[\"K3\",\"add test infrastructure first: acme/app has tests=none and the change is standard\"],[\"K3\",\"logic changed with no test in the same range: docs/guide.md; add a test, or have the reviewer state no_test_reason in KEEL-EVIDENCE\"]],\"risk_class\":\"standard\",\"root_run_id\":\"rv-root-0001\",\"root_run_ids\":[\"rv-root-0001\"]}",
   "K3 same range": "{\"files\":1,\"k3_waiver\":null,\"lines\":1,\"ok\":false,\"reasons\":[[\"K3\",\"logic changed with no test in the same range: src/a.py; add a test, or have the reviewer state no_test_reason in KEEL-EVIDENCE\"]],\"risk_class\":\"standard\",\"root_run_id\":\"rv-root-0001\",\"root_run_ids\":[\"rv-root-0001\"]}",
   "K3 waiver": "{\"files\":1,\"k3_waiver\":\"covered by the integration suite\",\"lines\":1,\"ok\":true,\"reasons\":[],\"risk_class\":\"standard\",\"root_run_id\":\"rv-root-0001\",\"root_run_ids\":[\"rv-root-0001\"]}",
-  "single-lens": "{\"files\":1,\"k3_waiver\":null,\"lines\":1,\"ok\":false,\"reasons\":[[\"risk\",\"every change needs a lens-review chain; chain rv-root-0001 has a single-lens link\"]],\"risk_class\":\"light\",\"root_run_id\":\"rv-root-0001\",\"root_run_ids\":[]}"
+  "single-lens": "{\"files\":1,\"k3_waiver\":null,\"lines\":1,\"ok\":false,\"reasons\":[[\"risk\",\"every change needs a lens-review chain; chain rv-root-0001 has a single-lens link\"],[\"K3\",\"add test infrastructure first: acme/app has tests=none and the change is standard\"],[\"K3\",\"logic changed with no test in the same range: docs/guide.md; add a test, or have the reviewer state no_test_reason in KEEL-EVIDENCE\"]],\"risk_class\":\"standard\",\"root_run_id\":\"rv-root-0001\",\"root_run_ids\":[]}"
  },
  "backgroundHolders": {
   "runs": [

@@ -4,10 +4,9 @@ import type { PathEntry, PathStat } from './gitcmd.ts';
 import type { RiskRule } from './registry.ts';
 
 export const SMOKE_ONLY = 'smoke-only';
-export const LIGHT = 'light';
 export const STANDARD = 'standard';
 export const HEAVY = 'heavy';
-export const CLASS_ORDER = [SMOKE_ONLY, LIGHT, STANDARD, HEAVY];
+export const CLASS_ORDER = [SMOKE_ONLY, STANDARD, HEAVY];
 const LOGIC_CLASSES = [STANDARD, HEAVY];
 export const TEST_SEGMENTS = new Set(['test', 'tests', '__tests__']);
 export const TEST_BASENAME_GLOBS = ['test_*.py', '*_test.*', '*.test.*', '*.spec.*'];
@@ -45,7 +44,7 @@ export function isTestPath(path: string): boolean {
 }
 
 export function classifyPath(entry: PathEntry, rules: RiskRule[]): PathRisk {
-  if (isTestPath(entry.path)) return { path: entry.path, riskClass: LIGHT, why: 'test', isTest: true, isGitlink: isGitlink(entry) };
+  if (isTestPath(entry.path)) return { path: entry.path, riskClass: STANDARD, why: 'test', isTest: true, isGitlink: isGitlink(entry) };
   const matching = rules.filter((rule) => globMatches(entry.path, rule.pathGlob));
   if (matching.length === 0) return { path: entry.path, riskClass: STANDARD, why: 'no rule', isTest: false, isGitlink: isGitlink(entry) };
   const heaviest = matching.reduce((best, rule) =>
@@ -62,7 +61,7 @@ export function classify(entries: PathEntry[], stats: Map<string, PathStat>, rul
 function pushClass(paths: PathRisk[]): string {
   if (paths.length === 0) return STANDARD;
   if (paths.every((item) => item.riskClass === SMOKE_ONLY)) return SMOKE_ONLY;
-  const lightRank = CLASS_ORDER.indexOf(LIGHT);
-  const ranks = paths.map((item) => Math.max(CLASS_ORDER.indexOf(item.riskClass), lightRank));
+  const standardRank = CLASS_ORDER.indexOf(STANDARD);
+  const ranks = paths.map((item) => Math.max(CLASS_ORDER.indexOf(item.riskClass), standardRank));
   return CLASS_ORDER[Math.max(...ranks)]!;
 }

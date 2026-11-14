@@ -14,7 +14,7 @@ export const PUSH_APPROVAL_REGISTRY = ['acme/app\tcode\tmain\tacme\trequired\ttr
 export const AUTO_MERGE_REGISTRY = ['acme/app\tcode\tmain\tacme\trequired\ttrue\ttrue'];
 const REGISTRY_HEADER = 'origin\tgate\tintegration_base\trisk_rules\ttests';
 const REGISTRY_OPTIONAL_COLUMNS = ['push_approval', 'auto_merge'];
-export const DEFAULT_RULES = ['acme\tsrc/*/billing/*\theavy', 'acme\tdocs/*\tlight', 'acme\t*.md\tlight',
+export const DEFAULT_RULES = ['acme\tsrc/*/billing/*\theavy',
   'overlay\tsettings/*\tsmoke-only', 'overlay\tledger.tsv\tsmoke-only'];
 export const LOGIC_WITH_TEST = { 'src/a.py': 'print(1)\n', 'tests/test_a.py': 'def test_a():\n    assert True\n' };
 const GH_STUB = `#!/bin/bash

@@ -363,13 +363,13 @@ describe('cross-implementation evidence compatibility', () => {
       judgedAsRecorded(sandbox, repo, 'smoke present', true, { ok: true });
     });
 
-    test('a tests=none row denies a standard change and passes a light one', (t) => {
+    test('a tests=none row denies a logic change and a docs-only one alike', (t) => {
       const standard = scenarioSandbox(t, NO_TESTS_REGISTRY);
       const standardRepo = featureWithEvidence(standard, LOGIC_WITH_TEST);
       judgedAsRecorded(standard, standardRepo, 'tests=none standard', true, { ok: false, reason: 'add test infrastructure first' });
-      const light = scenarioSandbox(t, NO_TESTS_REGISTRY);
-      const lightRepo = featureWithEvidence(light, { 'docs/guide.md': 'light\n' });
-      judgedAsRecorded(light, lightRepo, 'tests=none light', true, { ok: true });
+      const docs = scenarioSandbox(t, NO_TESTS_REGISTRY);
+      const docsRepo = featureWithEvidence(docs, { 'docs/guide.md': 'docs\n' });
+      judgedAsRecorded(docs, docsRepo, 'tests=none docs', true, { ok: false, reason: 'add test infrastructure first' });
     });
 
     test('a logic change without a test in the same range is denied unless the reviewer states why', (t) => {
@@ -383,9 +383,9 @@ describe('cross-implementation evidence compatibility', () => {
       judgedAsRecorded(waived, waivedRepo, 'K3 waiver', true, { ok: true, k3Waiver: 'covered by the integration suite' });
     });
 
-    test('a chain with a single-lens link is denied even for a light change', (t) => {
+    test('a chain with a single-lens link is denied even for a docs change', (t) => {
       const sandbox = scenarioSandbox(t, NO_TESTS_REGISTRY);
-      const repo = featureWithEvidence(sandbox, { 'docs/guide.md': 'light\n' }, { kind: 'single-lens' });
+      const repo = featureWithEvidence(sandbox, { 'docs/guide.md': 'docs\n' }, { kind: 'single-lens' });
       judgedAsRecorded(sandbox, repo, 'single-lens', true, { ok: false, reason: 'every change needs a lens-review chain' });
     });
   });

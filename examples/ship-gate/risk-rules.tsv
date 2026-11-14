@@ -2,8 +2,5 @@
 set	path_glob	class
 acme	src/*/billing/*	heavy
 acme	db/migration/*	heavy
-acme	*.css	light
-keel	docs/*	light
-keel	*.md	light
 overlay	settings/*	smoke-only
 overlay	ledger.tsv	smoke-only

@@ -7,7 +7,7 @@ import * as gitcmd from './gitcmd.ts';
 import type { PathEntry } from './gitcmd.ts';
 import * as registry from './registry.ts';
 import type { GatedRepo } from './registry.ts';
-import { LIGHT, SMOKE_ONLY, classify, hasTestPath, logicPaths } from './risk.ts';
+import { SMOKE_ONLY, classify, hasTestPath, logicPaths } from './risk.ts';
 import type { Risk } from './risk.ts';
 import * as store from './store.ts';
 import { isBlankEitherWay } from './text.ts';
@@ -411,7 +411,6 @@ function promoteReasons(outgoing: Outgoing, uncovered: boolean): Reason[] {
 }
 
 function testReasons(outgoing: Outgoing, entries: PathEntry[], risk: Risk): Reason[] {
-  if (risk.riskClass === LIGHT && !registry.testsRequired(outgoing.row)) return [];
   if (!registry.testsRequired(outgoing.row)) {
     return [{ ruleId: K3, text: `add test infrastructure first: ${outgoing.repoKey} has tests=none and the change is ${risk.riskClass}` }];
   }

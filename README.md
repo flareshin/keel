@@ -28,7 +28,7 @@ worktree ──► change + tests ──► keel test ──► lens-review ─�
 4. **The owner approves.** The owner runs `keel approve <root_run_id>` in their own terminal; agents are denied it. The approval pins the chain's current head.
 5. **ship-gate decides.** On `git push` and `gh pr merge`, every outgoing path must match, blob for blob, a reviewed chain with matching tests evidence and, at merge, the approval. A denial names what is missing.
 
-How much verification a change needs follows its risk class, which the gated repo's path rules decide: smoke-only data paths need smoke evidence; light, standard and heavy paths need a review, tests where required, and approval at merge. [`docs/review-policy.md`](docs/review-policy.md) has the review flow.
+How much verification a change needs follows its risk class, which the gated repo's path rules decide: smoke-only data paths need smoke evidence; standard and heavy paths need a review, tests, and approval at merge. [`docs/review-policy.md`](docs/review-policy.md) has the review flow.
 
 ## Install
 
@@ -64,7 +64,7 @@ origin	gate	integration_base	risk_rules	tests	push_approval
 you/your-repo	code	main	-	required	false
 ```
 
-`risk_rules` `-` classes test paths as `light` and everything else as `standard`. To class paths as `light`, `heavy` or `smoke-only`, add a rule set to `risk-rules.tsv` and name it in that column. [`examples/`](examples) shows the overlay's files with invented values, and DESIGN.md (h) specifies them.
+`risk_rules` `-` classes every path as `standard`. To class paths as `heavy` or `smoke-only`, add a rule set to `risk-rules.tsv` and name it in that column. [`examples/`](examples) shows the overlay's files with invented values, and DESIGN.md (h) specifies them.
 
 Then, in a Claude Code session in that repo: work in a worktree, run `keel test -- <your test command>`, review with `/keel:lens-review`, approve from your own terminal with `keel approve <root_run_id>`, and push.
 

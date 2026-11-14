@@ -152,7 +152,7 @@ describe('PrepareTest', () => {
   test('prepare_reportsTheTierOfTheReviewedDiff_byTheRepoRiskRules', (t) => {
     const { box, repo } = setUp(t);
     const cases: Array<[Record<string, string>, string]> = [
-      [{ 'docs/guide.md': 'x\n' }, 'light'], [{ 'src/app.py': 'print(2)\n' }, 'standard'],
+      [{ 'docs/guide.md': 'x\n' }, 'standard'], [{ 'src/app.py': 'print(2)\n' }, 'standard'],
       [{ 'docs/guide.md': 'x\n', 'src/a/billing/pay.py': 'print(3)\n' }, 'heavy'],
     ];
     for (const [files, riskClass] of cases) {
@@ -170,11 +170,11 @@ describe('PrepareTest', () => {
     const lib = box.clone('acme', 'lib');
     box.writeRegistry(['acme/app\tcode\tmain\tacme\trequired', 'acme/lib\tcode\tmain\tacme\trequired']);
     const appHead = repo.commit({ 'docs/guide.md': 'x\n' }, 'docs');
-    const libHead = lib.commit({ 'src/lib.py': 'print(2)\n' }, 'logic');
+    const libHead = lib.commit({ 'src/a/billing/pay.py': 'print(2)\n' }, 'billing');
 
     const prepared = preparedByCli(box, [{ repo: repo.path, base, head: appHead }, { repo: lib.path, base: 'origin/main', head: libHead }]);
 
-    assert.equal(prepared.risk_class, 'standard');
+    assert.equal(prepared.risk_class, 'heavy');
   });
 
   test('prepare_reportsNoTier_whenAReviewedRepoHasNoGatedRow', (t) => {

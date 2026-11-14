@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { describe, test } from 'node:test';
 import type { TestContext } from 'node:test';
 import { splitlines } from '../../hooks/lib/hookkit/text.ts';
-import { AUTO_MERGE_REGISTRY, LOGIC_WITH_TEST, PUSH_APPROVAL_REGISTRY, Sandbox, expireEvidence } from './helpers.ts';
+import { AUTO_MERGE_REGISTRY, DEFAULT_RULES, LOGIC_WITH_TEST, PUSH_APPROVAL_REGISTRY, Sandbox, expireEvidence } from './helpers.ts';
 import type { Repo, Run } from './helpers.ts';
 
 const TEST_FILE = 'tests/test_a.py';
@@ -210,7 +210,7 @@ describe('PushScenarioTest', () => {
     const sandbox = new Sandbox(t);
     const repo = sandbox.clone('acme', 'app');
     repo.branch('feature');
-    repo.commit({ 'README.md': null }, 'delete readme');
+    repo.commit({ 'README.md': null, 'tests/test_a.py': LOGIC_WITH_TEST['tests/test_a.py'] }, 'delete readme');
     sandbox.fullBundle(repo);
     assertPassed(sandbox, sandbox.push(repo, PUSH_FEATURE));
   });
@@ -342,19 +342,38 @@ describe('PushScenarioTest', () => {
     assertDenied(sandbox.push(repo, PUSH_FEATURE), 'K3', 'add test infrastructure first');
   });
 
-  test('push_passesWithoutTests_whenRegistryHasNoTestsAndChangeIsLight', (t) => {
-    const [sandbox, repo] = sandboxAndFeature(t, ['acme/app\tcode\tmain\tacme\tnone'], { 'docs/guide.md': 'light\n' });
+  test('push_deniesK3_whenRegistryHasNoTestsAndChangeIsDocsOnly', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t, ['acme/app\tcode\tmain\tacme\tnone'], { 'docs/guide.md': 'docs\n' });
     sandbox.review(repo);
     sandbox.approve('rv-root-0001');
-    const line = assertPassed(sandbox, sandbox.push(repo, PUSH_FEATURE));
-    assert.equal(line.risk, 'light');
+    assertDenied(sandbox.push(repo, PUSH_FEATURE), 'K3', 'add test infrastructure first: acme/app has tests=none and the change is standard');
   });
 
-  test('push_deniesRisk_whenEvenALightChangeHasOnlySingleLensReview', (t) => {
-    const [sandbox, repo] = sandboxAndFeature(t, ['acme/app\tcode\tmain\tacme\tnone'], { 'docs/guide.md': 'light\n' });
+  test('push_deniesK3_whenADocsOnlyChangeHasNoTestInTheRange', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t, undefined, { 'docs/guide.md': 'docs\n', 'README.md': 'readme\n' });
+    sandbox.pushBundle(repo);
+    assertDenied(sandbox.push(repo, PUSH_FEATURE), 'K3', 'logic changed with no test in the same range: README.md, docs/guide.md');
+    assert.equal(sandbox.fires('K3', 'deny')[0].risk, 'standard');
+  });
+
+  test('push_classesATestOnlyChangeAsStandard', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t, undefined, { 'tests/test_a.py': LOGIC_WITH_TEST['tests/test_a.py'] });
+    sandbox.fullBundle(repo);
+    assert.equal(assertPassed(sandbox, sandbox.push(repo, PUSH_FEATURE)).risk, 'standard');
+  });
+
+  test('push_failsClosed_whenARiskRuleStillNamesTheRetiredLightClass', (t) => {
+    const sandbox = new Sandbox(t, undefined, [...DEFAULT_RULES, 'acme\tdocs/*\tlight']);
+    const repo = feature(sandbox, { 'docs/guide.md': 'docs\n', 'tests/test_a.py': 'def test_a():\n    assert True\n' });
+    sandbox.fullBundle(repo);
+    assertDenied(sandbox.push(repo, PUSH_FEATURE), 'K1', 'risk-rules.tsv: unknown class "light"');
+  });
+
+  test('push_deniesRisk_whenEvenADocsChangeHasOnlySingleLensReview', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t, ['acme/app\tcode\tmain\tacme\tnone'], { 'docs/guide.md': 'docs\n' });
     sandbox.review(repo, { kind: 'single-lens' });
     assertDenied(sandbox.push(repo, PUSH_FEATURE), 'risk', 'every change needs a lens-review chain');
-    assert.equal(sandbox.fires('risk', 'deny')[0].risk, 'light');
+    assert.equal(sandbox.fires('risk', 'deny')[0].risk, 'standard');
   });
 
   test('push_passes_whenAnotherAgentPushes', (t) => {

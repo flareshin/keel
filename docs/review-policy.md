@@ -102,16 +102,16 @@ Choose each run by what changed since the last passing run:
   `keel test -- node --test <files>`.
 - A smoke-only change (paths the overlay's risk rules class smoke-only, or a repo
   whose gate is smoke) needs no test run; the gate asks for smoke evidence
-  instead. A light change (in keel: `docs/*`, `settings/*` and every `*.md`,
-  including skills and PRINCIPLES.md) still needs one passing run on its tree in
-  a repo whose tests are required: run the tests that read the changed files, or
-  the smallest test file that runs when no test reads them.
+  instead. Every other change, docs, settings and `*.md` included, is standard
+  at least: it needs one passing run on its tree, and a test path in the same
+  range or the reviewer's `no_test_reason` in KEEL-EVIDENCE. For a docs-only
+  change, run the tests that read the changed files, or the smallest test file
+  that runs when no test reads them, and ask the reviewer to state the reason.
 - Run `keel test --affected --with-replays` once per candidate when the
   change touches code a hook runs: `hooks/**`, `lib/**`, `measure/lib/**`,
   `measure/boundary*`, `codex/hooks/**`, `codex/lib/**`,
   `skills/writing-readable-code/scripts/**`, `githooks/**` or
-  `settings/core.json`. This list overrides the light rule for the paths it
-  names. The run adds every recorded parity and cross-implementation replay
+  `settings/core.json`. The run adds every recorded parity and cross-implementation replay
   (`REPLAY_TESTS` in `lib/precheck/affected.ts`) to the tests the change
   reaches; every failed full suite on record failed in one of those replays.
   Start it in the background when you request the root review, not before:
@@ -249,7 +249,7 @@ The CLI pins the candidate without an agent; review reads the pinned Git objects
 
 Claude audit and verification use `opus`. Their effort follows the change's risk
 tier, which `keel review prepare` reports as `risk_class` from the repo's gated
-row and risk rules (the heaviest across repos): `medium` for smoke-only, light
+row and risk rules (the heaviest across repos): `medium` for smoke-only
 and standard, `low` for a trivial diff (above), `high` for heavy and `high`
 when any repo has no gated row or no tier was prepared. A caller `effort`
 overrides the tier. Measured on two

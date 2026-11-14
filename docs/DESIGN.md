@@ -16,7 +16,7 @@ Few principles, each at the strongest feasible layer; every rule enters and leav
 
 - Charter rows skip the rule of two (they carry `justification`), never expire, and still need a metric (eval), enforced after `grace_until`.
 - writing-readable-code R1–R16 are not ledger rows but K5 sub-checks `[K5.1]`–`[K5.16]`, frozen at 16, outside caps.
-- Core experiment `risk`: "Verification weight is proportional to risk." Scope `core`, enforced by ship-gate, `review_by` = end of the two-week post-swap pilot (6.1); charter if the pilot holds.
+- Core experiment `risk`: "Verification weight is proportional to risk." Scope `core`, enforced by ship-gate, `review_by` = end of the two-week post-swap pilot (6.1); charter if the pilot holds. The pilot read drop (6.1 Result): `light` is retired, and `risk` keeps the standard, heavy and smoke-only tiers.
 - Floor (not principles; no rule of two): `F-irreversible` (irreversible actions need explicit user approval; shipping: at merge, 5.4) · `F-secrets` (no secrets or private-lexicon terms in commits, PR bodies, logs or docs the agent writes) · `F-attribution` (no AI attribution in commits or PRs) · `F-force-push` (no force push to shared branches) · `F-hookskip` (an agent never switches hooks off, 5.6) · `F-mod-trust` (every installed Claude Code mod is reviewed: listed in the overlay's reviewed-mods.txt or committed unmodified in the overlay; smoke `mod-trust`, (e)).
 
 ## 2. Enforcement ladder
@@ -79,7 +79,7 @@ Gates branch `git push` and `gh pr merge`; both need review and tests evidence, 
 - `auto_merge` `true` \| `false` (default; absent = `false`): `true` where review and tests are the whole merge bar. Every approval check passes without an approval record: `gh pr merge`, a `push_approval=true` push and the live fast-forward. Review and tests still apply. The optional columns come in order; a file may stop after any of them.
 - `gate=code`: full model. `gate=smoke`: every push needs smoke evidence covering C, no review. `gate=off` or unlisted: pass.
 - Repo key = `owner/repo` (lowercase, last two path segments, `.git` stripped, host ignored) of the repo the command changes. A push reaches every push URL of its remote (`git remote get-url --push --all`; 5.2), or its remote argument as a URL or a path from the clone's top level. Of several repos, a gated repo other than the clone's origin is judged first (deny `F-irreversible`: push from its own clone), then the clone's own gated repo, else the first. A remote resolved at run time, or one that is no remote, URL or existing path, is denied as unattributable. `gh pr merge`: `--repo`/`-R`, else `GH_REPO`, else the PR URL, else gh's default (`remote.<name>.gh-resolved`: the `owner/repo` it stores, or with `base` that remote's URL), else the clone's single remote repo (a stored value that names no `owner/repo` fails closed; a merge naming no repo is unattributable when the same call also runs `gh repo set-default <repo>` or a remote config change); several remote repos with one gated → deny unattributable with the `--repo` command to run. Other commands: origin. A repo's worktrees share evidence. No registry → all repos off (`outcome=warn` once per session).
-- Intended: company code repos `code`; keel `code` (docs, settings `light`); keel-overlay `code` with settings fragments, data and prompt paths (`scheduled-tasks/`, `mcp/`, ledger, registry) `smoke-only` and code (`mods/`, `bin/`, `skills/*/scripts`) `standard`; the `~/.claude` data repo and personal repos `off`.
+- Intended: company code repos `code`; keel `code` (every path `standard` or `heavy`); keel-overlay `code` with settings fragments, data and prompt paths (`scheduled-tasks/`, `mcp/`, ledger, registry) `smoke-only` and code (`mods/`, `bin/`, `skills/*/scripts`) `standard`; the `~/.claude` data repo and personal repos `off`.
 - A job touching only smoke-only paths runs `measure/smoke --candidate` from the worktree (`KEEL_OVERLAY_DIR` or `KEEL_HOME` = the worktree), `keel evidence write-smoke --repo <worktree>`, then pushes; after the merge the owner runs `bin/link --write` so the live data dir follows.
 
 ### 5.4 Risk classes
@@ -88,13 +88,12 @@ The gate recomputes risk from C; evidence never states it. Ambiguous → heavier
 | Class | Paths | Required |
 |---|---|---|
 | smoke-only | every C path matches a `smoke-only` rule | smoke evidence covering C |
-| light | `light` rules (FE copy/style, docs, config) | `lens-review` chain + tests if registry `tests=required`; approval at merge |
 | standard (default) | no rule matches | `lens-review` chain + tests; approval at merge |
 | heavy | `heavy` rules (settlement, pricing, inventory writes, schema, batch, external contracts) | `lens-review` chain + tests; approval at merge |
 
 - "At merge" = `gh pr merge`, plus `git push` where `push_approval=true`; no approval where `auto_merge=true`. Review and tests apply at both push and merge. Every chain link MUST be `lens-review` (a `single-lens` link → `[risk]` deny).
-- Per path: a test path (segment `test`, `tests`, `__tests__`, or basename `test_*.py`, `*_test.*`, `*.test.*`, `*.spec.*`) adds nothing (alone: light); else the repo set's heaviest matching rule; else standard. Push class = heaviest path. smoke-only only if every path is; otherwise smoke-only paths count as light.
-- Registry `tests=none`: light passes without tests; standard and heavy deny "[K3] add test infrastructure first".
+- Per path: a test path (segment `test`, `tests`, `__tests__`, or basename `test_*.py`, `*_test.*`, `*.test.*`, `*.spec.*`) adds nothing (alone: standard); else the repo set's heaviest matching rule; else standard. Push class = heaviest path, at least standard. smoke-only only if every path is; otherwise smoke-only paths count as standard but are no logic paths. A `light` rule is refused as an unknown class, so the gate fails closed until the overlay drops it (the class was retired by the 6.1 drop).
+- Registry `tests=none`: every non-smoke push is denied "[K3] add test infrastructure first".
 - K3: a logic path is a C path that is no test path or gitlink and classifies standard or heavy. Logic path with no test path → deny `[K3] logic changed with no test in the same range`, unless the chain head's `KEEL-EVIDENCE` ((d)) has `no_test_reason`, recorded on the pass line. A path whose change from its merge-base blob is a comment-only deletion is no logic path for this check. No logic path → no check.
 - Comment-only deletion (`lib/evidence/comment_cleanup.ts`) of an old blob (merge-base, reviewed or evidenced) into a new one: same mode (`100644` or `100755`); a `.js`, `.ts` or `.java` file of at most 1 MiB (a `.py` file is none: Python is not run to prove it, so any `.py` change needs fresh evidence) that shrinks to a non-empty file; every comment of the old file, kept or removed, is non-empty (a bare `//` line makes the file no comment-only deletion), holds only letters, digits, `_`, whitespace and `.,!?()'"-` and none of the `PROTECTED` words anywhere, case-insensitive (notice and licence words, tool and linter directives, and words such as `ignore`, `command`, `global`, `region`, `generated`, `__`), so `// ignore empty rows` or `// note: x` makes the file no comment-only deletion; only comments on lines of their own are removed. A file the scanner cannot judge is none either; the exact list is `onlyCommentDeletions` and `slashComments`, and examples are text that is not UTF-8, a backtick in `.js`, `.ts` or `.java`, and in `.js` or `.ts` a `/` or `<` outside strings and comments (division, regex, generics, JSX).
 - Tests and smoke evidence cover C when each C path has the same blob and mode in `git ls-tree <evidence.tree> -- <path>` (deleted = absent), or its blob is a comment-only deletion of that blob.
@@ -169,7 +168,7 @@ Temp bare origins at `<tmp>/remotes/<owner>/<repo>.git` (key `owner/repo`), clon
 | 18 | approval of root R1, change reviewed under R2 | merge (or `push_approval=true` push) denied; plain branch push passes |
 | 19 | `write-review` without `agent_id`, or naming a missing agent transcript | exit 3, no evidence; git-guard denies the CLI call |
 | 20 | smoke-only push (overlay data) with / without smoke evidence; mixed with a code path; from an overlay worktree after `measure/smoke --candidate` | pass / deny / needs review / pass |
-| 21 | K3: logic only / + test / + `no_test_reason` / docs only | deny `[K3]` / base class / pass, reason recorded / not evaluated |
+| 21 | K3: logic only / + test / + `no_test_reason` / docs only | deny `[K3]` / base class / pass, reason recorded / deny `[K3]` like logic |
 | 22 | each `push-merge-spellings.tsv` row (5.2) | its `expect` |
 | 23 | promote over develop chains forked after `mb`: promote approval of the sha / none / of another sha; an uncovered step, then a review of only that step | pass / deny / deny; deny naming `promote-plan`, then pass |
 
@@ -190,6 +189,7 @@ The two-week post-swap pilot decides `risk`. The user confirms or changes these 
 - **adjust**: exactly 1 escaped light defect, or light rework over the bound with 0 escaped; move the path rules behind the misses one class heavier, two more weeks.
 - **drop** (retire `risk`, all pushes standard): ≥ 2 escaped light defects, or light review-to-approval not below standard's.
 - Each later relaxation of a class is its own user-approved ledger change.
+- **Result (2026-11-14): drop.** `node measure/run.ts risk`, 60-day window, 396 ships: light 33 ships, 1 escaped defect, rework 39.6 % over 7 decided ships, median review-to-approval 2 min; standard 347 ships, 4 escaped, rework 23.6 %, 2 min; heavy 14 ships, 0 escaped, 3.5 min; smoke-only 2. Defect sources: `defects-hotfix` 0, `defects-reverts` 5, 0 untraced; baseline deferred. Light review-to-approval was not below standard's, so the owner chose drop: `light` is retired, its paths and test-only pushes class standard (K3 same-range test or `no_test_reason`, and test evidence even where it was skipped), and heavy and smoke-only stay; `measure/metrics/risk` still reports `light` for ships recorded before the drop.
 
 ## 7. Migration and swap
 
@@ -219,7 +219,7 @@ Relied-on Claude Code behaviors; a change is contract drift, logged by report-ga
 ## 10. Removed and deferred (2026-10-11 audit)
 
 Removed: no incident backed them (5.7a). Re-admission, `D` (deferred) first: a ledger row citing 2 real incidents and a metric counting them (§4). report-gate, model-assign, handoff, env-preflight, `bin/link`: nothing removed.
-- `ship-gate-N`: 10 git alias deny; 9 unattributable deny for non-forwarders; 3 quote-insensitive prefilter; 5 tag/branch name-collision check; 7 own refspec-not-a-commit deny; 20 D `keelBase` recording and base; 21 D stale-base warning; 15 deny on disagreeing `--repo`/`GH_REPO`/PR URL; 16 client-side `headRefOid` check; 17 preflight PR not OPEN, draft, CONFLICTING; 26 light `single-lens` review; 27 binary → heavy; 28 test lines deleted, test deleted/renamed → heavy; 29 D heavy size cap; 30 heavy read ack; 31 `gate=smoke` error passes; 36 pushing agent wrote a link; 37 write-review transcript path checks; 40 `no_test_reason` cap, head-PASS re-check; 41 unpushed-submodule deny; 44 D prompt-sentence approval/ack; 45 `/ship` prompt and Skill early warning; 51 contract-miss for `cwd`, `prompt`, `tool_input.skill`; 46 BaseException catch, non-object `tool_input`; 49 fires-unwritable fallback; 52 evidence id-collision refusal; 53 gc of merged heads.
+- `ship-gate-N`: 10 git alias deny; 9 unattributable deny for non-forwarders; 3 quote-insensitive prefilter; 5 tag/branch name-collision check; 7 own refspec-not-a-commit deny; 20 D `keelBase` recording and base; 21 D stale-base warning; 15 deny on disagreeing `--repo`/`GH_REPO`/PR URL; 16 client-side `headRefOid` check; 17 preflight PR not OPEN, draft, CONFLICTING; 26 docs-only `single-lens` review; 27 binary → heavy; 28 test lines deleted, test deleted/renamed → heavy; 29 D heavy size cap; 30 heavy read ack; 31 `gate=smoke` error passes; 36 pushing agent wrote a link; 37 write-review transcript path checks; 40 `no_test_reason` cap, head-PASS re-check; 41 unpushed-submodule deny; 44 D prompt-sentence approval/ack; 45 `/ship` prompt and Skill early warning; 51 contract-miss for `cwd`, `prompt`, `tool_input.skill`; 46 BaseException catch, non-object `tool_input`; 49 fires-unwritable fallback; 52 evidence id-collision refusal; 53 gc of merged heads.
 - `git-guard+lib-N`: 17 HUSKY/LEFTHOOK/SKIP; 21 inline interpreter settings writes; 22 cp/mv/install/ln/rsync of a prepared settings file; 18 `--settings` by file or `<(…)`; 23 `$KEEL_DATA_DIR/settings.json` protection; 24 ancestor removals, `projects/**/*.jsonl` protection, `$KEEL_DATA_DIR` expansion; 25 unresolved and inline store writes; 27 `keelBase` config deny; 29 C-isolation for branch, update-ref, symbolic-ref, `patch`, inline writes; 30 following `--git-dir`/`--work-tree`/`GIT_DIR`/`GIT_WORK_TREE`; 7 PR text from other commands, assignments, env; 5 `-F -`, `/dev/stdin` heredoc resolution; 8 upstream and base push-range tiers; 11 rm/mv, `-i`, `--pathspec-from-file` as staging; 13 known values in pushed commits; 2 fail-closed on keel-only payloads; 3 global 8 s deadline, process-group kill.
 - `measure-N`: 8 smoke CLAUDE.md cap; 9 MEMORY.md GRACE→FAIL; 12 FAIL on malformed fires lines; 14 `feedback_*` note on passing runs; 17 runner-name check; 21 PROPOSAL lines in expiry WARN; 22 `proposals.json`; 25 weekly `metrics`, `expiring`; 26 weekly `core_size` error object; 34 pre-commit per-exit messages; 36 CI WARN for a missing lexicon; 39 memory-imperatives; 2 single-segment origin trees.
 
@@ -318,7 +318,7 @@ KEEL-EVIDENCE: {"v":1,"repo_root":"/abs/repo","review_base":"<40hex commit>","he
 - Each finding and each verifier decision may carry `origin` (`introduced` | `pre-existing`, judged against `git show <review_base>:<path>`). Only when both say `pre-existing` is the finding listed under `Pre-existing (present at the review base; not merge-blocking)` and left out of the verdict; otherwise it is introduced.
 - `keel review prepare` also prints `needs_fixes_rounds`: the NEEDS_FIXES links in the newest recorded chain of the request's `rootRunId` (0 without one). lens-review adds this review when it is NEEDS_FIXES, returns the sum as `needsFixesRound`, and when this review is NEEDS_FIXES and the sum is 3 or more adds `Step back: NEEDS_FIXES round <n> on root <root_run_id> (cap 3). …` after `Refuted`. The verdict is unchanged; a missing or non-integer count is 0.
 - A PASS report adds `Owner approval, in your own terminal once the tests are green: keel approve <root_run_id>` after `Refuted`, so the owner can copy the command. The workflow never runs it; git-guard still denies an agent's `keel approve`.
-- `keel review prepare` also prints `risk_class`: the heaviest tier (`risk.classify` with the repo's gated row and risk rules) across the reviewed diffs, or null when any repo has no gated row. lens-review sets audit and verification effort from it: `medium` for smoke-only, light and standard, `low` for a non-heavy root diff of at most 2 files and 10 changed lines, `high` for heavy, null or an unknown value; an explicit `effort` wins. The result returns the chosen `effort`. Without `prepared`, the prepare agent also runs `keel review prepare` on the diffs and copies its `risk_class` (`none` when null, empty when the command fails), so the same tiers apply.
+- `keel review prepare` also prints `risk_class`: the heaviest tier (`risk.classify` with the repo's gated row and risk rules) across the reviewed diffs, or null when any repo has no gated row. lens-review sets audit and verification effort from it: `medium` for smoke-only and standard, `low` for a non-heavy root diff of at most 2 files and 10 changed lines, `high` for heavy, null or an unknown value; an explicit `effort` wins. The result returns the chosen `effort`. Without `prepared`, the prepare agent also runs `keel review prepare` on the diffs and copies its `risk_class` (`none` when null, empty when the command fails), so the same tiers apply.
 - Every report value is one line: a `repo_root` with a quote, control or line-separator character is rejected; agent text and lens keys are flattened.
 
 ### (e) CLI contracts
@@ -442,14 +442,11 @@ example/keel-overlay	code	main	overlay	required	false
 example/notes-data	off	main	-	none	false
 ```
 
-`risk-rules.tsv` (`path_glob`: `fnmatch.fnmatchcase` on the repo-relative path, `*` crosses `/`; class ∈ `light|heavy|smoke-only`)
+`risk-rules.tsv` (`path_glob`: `fnmatch.fnmatchcase` on the repo-relative path, `*` crosses `/`; class ∈ `heavy|smoke-only`)
 ```
 set	path_glob	class
 acme	src/*/billing/*	heavy
 acme	db/migration/*	heavy
-acme	*.css	light
-keel	docs/*	light
-keel	*.md	light
 overlay	settings/*	smoke-only
 overlay	ledger.tsv	smoke-only
 ```

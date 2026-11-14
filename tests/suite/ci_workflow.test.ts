@@ -16,8 +16,10 @@ describe("ci workflow", () => {
     assert.ok(steps.includes(scripts["test"] as string), steps.join("\n"))
   })
 
-  it("keepsTheSuiteOffTheRunnersHomeDataDir", () => {
-    assert.match(workflow, /KEEL_DATA_DIR: \$\{\{ runner\.temp \}\}/)
+  it("givesTheSuiteStepADataDirUnderTheRunnerTemp", () => {
+    const suiteStep = `- run: ${scripts["test"]}\n        env:\n          KEEL_DATA_DIR: \${{ runner.temp }}/keel-data\n`
+    assert.ok(workflow.includes(suiteStep), workflow)
+    assert.doesNotMatch(workflow, /^    env:/m)
   })
 
   it("runsOnPullRequestsAndPushesToMain", () => {

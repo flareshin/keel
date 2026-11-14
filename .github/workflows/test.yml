@@ -12,8 +12,6 @@ jobs:
   test:
     runs-on: macos-latest
     timeout-minutes: 45
-    env:
-      KEEL_DATA_DIR: ${{ runner.temp }}/keel-data
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -28,3 +26,5 @@ jobs:
       - run: npm ci
       - run: npx tsc -p tsconfig.json
       - run: bash tests/run-all.sh
+        env:
+          KEEL_DATA_DIR: ${{ runner.temp }}/keel-data

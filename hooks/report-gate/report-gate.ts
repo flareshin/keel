@@ -264,7 +264,9 @@ function judgeStop(payload: Payload, fires: FireLog): number {
   const report = withoutReportMarkers(payloadReport ?? transcript?.finalText ?? null);
   const reportedElsewhere = handedBack || transcript?.usedStructuredOutput === true || (payloadReport === null && endsWithHandback(transcript));
   const unrecovered = report !== null || reportedElsewhere ? missing.filter((field) => field !== "last_assistant_message") : missing;
-  if (unrecovered.length > 0) fires.append("K2", OUTCOME, { detail: stopMissDetail(payload, unrecovered, transcript) });
+  const unnamedWithoutTrace = transcript === null && unrecovered.length === 1 && unrecovered[0] === "last_assistant_message" && textField(payload, "agent_type") === "";
+  if (unnamedWithoutTrace) fires.append("K2", "warn", { detail: `unnamed agent stopped with no transcript and no message; agent_id=${textField(payload, "agent_id")}` });
+  else if (unrecovered.length > 0) fires.append("K2", OUTCOME, { detail: stopMissDetail(payload, unrecovered, transcript) });
   if (transcript === null) {
     if (report && verdictOf(report) && hasEvidenceLine(report)) fires.append("K1", "warn", { detail: NO_TRANSCRIPT });
     return protocol.EXIT_PASS;

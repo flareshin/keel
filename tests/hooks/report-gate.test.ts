@@ -41,7 +41,7 @@ function stop(message: string | null, options: { toolUses?: ToolUse[]; stopHookA
   const path = options.agentTranscript ?? sandbox.agentTranscript(`[SCOPE] ${scope}\nDo the task.`, options.toolUses ?? []);
   const payload = subagentStop(sandbox.root, sandbox.mainTranscript(), path, message, options.stopHookActive ?? false);
   if (options.agentType === null) delete payload["agent_type"];
-  else if (options.agentType) payload["agent_type"] = options.agentType;
+  else if (options.agentType !== undefined) payload["agent_type"] = options.agentType;
   return sandbox.runHook(REPORT_GATE, { payload });
 }
 
@@ -576,9 +576,30 @@ describe("SubagentStopTest", () => {
   });
 
   it("stop_marksTheAgentTypeAbsentInTheContractMiss_whenThePayloadCarriesNone", () => {
-    stop(null, { agentTranscript: join(sandbox.root, "missing.jsonl"), agentType: null });
+    stop(null, { toolUses: [editIn(scope, "a.py")], agentType: null });
     const detail = contractMisses()[0]?.detail ?? "";
-    assert.match(detail, /; agent_type=-; last_tool=no transcript; keys=/);
+    assert.match(detail, /; agent_type=-; last_tool=Edit; keys=/);
+  });
+
+  it("stop_warnsInsteadOfAContractMiss_whenAnUnnamedAgentStopsWithNoTranscriptAndNoMessage", () => {
+    for (const agentType of [null, ""]) {
+      sandbox.close();
+      sandbox = new HookSandbox();
+      const result = stop(null, { agentTranscript: join(sandbox.root, "missing.jsonl"), agentType });
+      assert.equal(result.stdout, "", String(agentType));
+      assert.deepEqual(contractMisses(), [], String(agentType));
+      const warns = assertFired(sandbox, "K2", "warn", "report-gate");
+      assert.deepEqual(warns.map((fire) => fire.detail), [`unnamed agent stopped with no transcript and no message; agent_id=${AGENT_ID}`], String(agentType));
+    }
+  });
+
+  it("stop_logsAContractMiss_whenAnUnnamedAgentWithNoTranscriptAlsoLacksItsAgentId", () => {
+    const path = join(sandbox.root, "missing.jsonl");
+    const payload = subagentStop(sandbox.root, sandbox.mainTranscript(), path, null, false);
+    delete payload["agent_type"];
+    delete payload["agent_id"];
+    sandbox.runHook(REPORT_GATE, { payload });
+    assert.match(contractMisses()[0]?.detail ?? "", /^contract-miss: missing agent_id,last_assistant_message; /);
   });
 
   it("stop_prefersThePayloadMessage_whenBothThePayloadAndTheTranscriptCarryFinalText", () => {

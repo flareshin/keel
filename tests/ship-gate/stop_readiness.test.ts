@@ -33,7 +33,6 @@ function feedback(run: Run): string {
 function assertSilent(run: Run): void {
   assert.equal(run.rc, PASS, run.stderr);
   assert.equal(run.stdout, '');
-  assert.equal(run.stderr, '');
 }
 
 describe('StopReadinessTest', () => {
@@ -143,10 +142,21 @@ describe('StopReadinessTest', () => {
   test('stop_isSilent_whenTheIntegrationBaseRefIsMissing', (t) => {
     const [sandbox, repo] = feature(t);
     repo.git('update-ref', '-d', 'refs/remotes/origin/main');
+    assertSilent(stop(sandbox, repo.path));
+  });
+
+  test('stop_namesTheMissingBaseOnStderr_whenItCannotJudgeThePush', (t) => {
+    const [sandbox, repo] = feature(t);
+    repo.git('update-ref', '-d', 'refs/remotes/origin/main');
     const run = stop(sandbox, repo.path);
-    assert.equal(run.rc, PASS, run.stderr);
-    assert.equal(run.stdout, '');
     assert.ok(run.stderr.includes('push readiness at Stop not judged'), run.stderr);
     assert.ok(run.stderr.includes('origin/main is missing'), run.stderr);
+  });
+
+  test('stop_writesNothingToStderr_whenNoPushIsPending', (t) => {
+    const [sandbox, repo] = feature(t);
+    repo.git('push', '-q', '-u', 'origin', 'feature');
+    assert.equal(stop(sandbox, repo.path).stderr, '');
+    assert.equal(stop(sandbox, sandbox.home).stderr, '');
   });
 });

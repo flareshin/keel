@@ -31,8 +31,6 @@ const EXPECTED_DROPS = [
 ]
 const V1_TEXT = JSON.stringify(LIVE_V1, null, 2) + "\n"
 
-const afterRunMarker = (result: LinkResult) => result.stderr.split("run:")[1] as string
-
 describe("link swap safety", () => {
   let box: LinkSandbox
 
@@ -206,7 +204,6 @@ describe("link swap safety", () => {
       assertExit(result, 0)
       assert.equal(box.readData("settings.json"), V1_TEXT)
       assert.ok(ops(result).includes("restore-settings"))
-      assert.ok(!afterRunMarker(result).includes("settings.json"))
     })
 
     it("unlink_keepsPostSwapEditsToKeysKeelDoesNotOwn_whileRestoringTheOwnedKeys", () => {
@@ -248,17 +245,16 @@ describe("link swap safety", () => {
       assert.ok(ops(result).includes("restore-settings"))
     })
 
-    it("unlink_leavesSettingsMissingAndNamesThemInTheV1Command_whenTheUserDeletedTheLiveFile", () => {
+    it("unlink_leavesSettingsMissing_whenTheUserDeletedTheLiveFile", () => {
       assertExit(adopt(), 0)
       fs.unlinkSync(box.dataPath("settings.json"))
       const result = box.runLink("--unlink")
       assertExit(result, 0)
       assert.equal(fs.existsSync(box.dataPath("settings.json")), false)
       assert.ok(!ops(result).includes("restore-settings"))
-      assert.ok(afterRunMarker(result).includes("settings.json"))
     })
 
-    it("unlink_leavesSettingsAndListsThemInTheV1Command_whenNoLinkStateIsRecorded", () => {
+    it("unlink_leavesSettings_whenNoLinkStateIsRecorded", () => {
       assertExit(adopt(), 0)
       const written = box.readData("settings.json")
       fs.unlinkSync(box.dataPath("state/keel/link-state.json"))
@@ -266,7 +262,6 @@ describe("link swap safety", () => {
       assertExit(result, 0)
       assert.equal(box.readData("settings.json"), written)
       assert.ok(!ops(result).includes("restore-settings"))
-      assert.ok(afterRunMarker(result).includes("settings.json"))
     })
 
     it("unlink_savesTheLiveSettingsToANewPrivateBackup_beforeRestoring", () => {
@@ -318,7 +313,7 @@ describe("link swap safety", () => {
       assert.equal(readFile(savedLivePath(result)), "{ broken")
     })
 
-    it("unlink_leavesSettingsAndPrintsTheV1Command_whenNoBackupExists", () => {
+    it("unlink_leavesSettings_whenNoBackupExists", () => {
       box.writeData("settings.json", '{"model": "opus"}\n')
       assertExit(box.runLink("--write"), 0)
       const written = box.readData("settings.json")
@@ -326,7 +321,6 @@ describe("link swap safety", () => {
       const result = box.runLink("--unlink")
       assertExit(result, 0)
       assert.equal(box.readData("settings.json"), written)
-      assert.ok(afterRunMarker(result).includes("settings.json"))
     })
   })
 })

@@ -39,7 +39,7 @@ With an existing `~/.claude` setup, one or both of two problems block `--write`:
 
 With both problems in link mode, the command is `bin/link --write --adopt --force --accept-drops <file>`.
 
-`bin/link --unlink` restores the backed-up `settings.json` and `CLAUDE.md`; ignore the `v1-final` restore command it prints unless you used keel v1.
+`bin/link --unlink` restores the backed-up `settings.json` and `CLAUDE.md`.
 
 ### Environment variables
 

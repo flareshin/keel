@@ -1,6 +1,6 @@
 ---
 name: descending-findings
-description: Moving a recurring review finding down to the strongest layer that can decide it (a type, lint rule, architecture test or CI test in the target repo). Trigger; "descend this rule", "make this a lint rule", "this finding keeps coming back", the owner correcting the same agent mistake twice, the monthly descend pick after a review cycle, a ledger row whose why_not_stronger no longer holds. Do NOT use for a one-off finding (fix it in place), a rule that needs judgment (it stays a skill or lens), or editing keel's own hooks.
+description: Moving a recurring review finding down to the strongest layer that can decide it (a type, lint rule, architecture test or CI test in the target repo). Trigger; a `/lens-review` returns NEEDS_FIXES with a finding of a kind already fixed earlier in this chain or session, a fix round that re-flags the same file or lens, a key under `recurring_findings` in `keel measure weekly` output, the owner correcting the same code mistake a second time, "descend this rule", "make this a lint rule", a ledger row whose why_not_stronger no longer holds. Do NOT use for a finding with no earlier occurrence (fix it in place), a rule that needs judgment (it stays a skill or lens), a subagent that keeps failing its brief (improving-agents), or editing keel's own hooks.
 ---
 
 # Descending findings
@@ -10,6 +10,7 @@ The enforcement ladder is `repo` > `hook` > `skill` > `prose`. A finding reviewe
 ## How it works
 
 1. **Pick the finding from review history.** Collect the last 30–60 days of findings for one repo:
+   - `recurring_findings.top_recurring` in `keel measure weekly` output: (repo, path, lens) keys that two or more review roots logged;
    - reviewer reports (`/lens-review` final reports in subagent transcripts under `$KEEL_DATA_DIR/projects/`), grep for the lens or rule id;
    - `rule-checks.ts` signals the rule-checks lens confirmed;
    - PR review comments (`gh pr view <n> --comments`);

@@ -80,11 +80,11 @@ export function blockStop(message: string): number {
   return EXIT_PASS;
 }
 
-export function rewriteInput(updatedInput: Payload, note: string): number {
-  printJson({
-    hookSpecificOutput: { hookEventName: "PreToolUse", updatedInput },
-    systemMessage: note,
-  });
+export function rewriteInput(updatedInput: Payload, note: string, additionalContext: string | null = null): number {
+  const hookSpecificOutput = additionalContext === null
+    ? { hookEventName: "PreToolUse", updatedInput }
+    : { hookEventName: "PreToolUse", updatedInput, additionalContext };
+  printJson({ hookSpecificOutput, systemMessage: note });
   return EXIT_PASS;
 }
 

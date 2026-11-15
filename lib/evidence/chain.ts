@@ -1,5 +1,7 @@
 import type { ReviewEvidence } from './store.ts';
 
+export const NEEDS_FIXES = 'NEEDS_FIXES';
+
 export type ReviewedPath = [blob: string | null, mode: string];
 
 export interface Chain {
@@ -25,6 +27,10 @@ export function buildChains(reviews: ReviewEvidence[]): Chain[] {
     }
   }
   return chains.sort((left, right) => newestFirst(left.head, right.head));
+}
+
+export function countNeedsFixesLinks(chain: Chain): number {
+  return chain.links.filter((link) => link.verdict === NEEDS_FIXES).length;
 }
 
 function newestFirst(left: ReviewEvidence, right: ReviewEvidence): number {

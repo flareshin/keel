@@ -92,13 +92,14 @@ describe("weekly", () => {
     box.write("data/projects/b/memory/MEMORY.md", "z".repeat(20))
     const [completed, report] = box.runJson("weekly")
     assert.equal(completed.status, 0, completed.stderr)
-    assert.deepEqual(Object.keys(report).sort(), ["always_loaded", "core_size", "defects", "harness_versions", "proposals", "repo_layer_rules", "review_rounds"])
+    assert.deepEqual(Object.keys(report).sort(), ["always_loaded", "core_size", "defects", "harness_versions", "proposals", "recurring_findings", "repo_layer_rules", "review_rounds"])
     assert.deepEqual(report.repo_layer_rules, { count: 1, ids: ["C-repo"] })
     assert.deepEqual(report.always_loaded, { claude_md: 100, memory_indexes: 50 })
     assert.deepEqual(report.proposals.map((p: { id: string; action: string }) => [p.id, p.action]), [["C-late", "demote"]])
     assert.deepEqual(report.defects, {})
     assert.deepEqual(report.review_rounds, { chains: 0, roots_needing_fixes: 0, chains_by_needs_fixes_rounds: {} })
     assert.deepEqual(report.harness_versions, { recorded: [], observed: {}, unrecorded_newer: [], unversioned: 0 })
+    assert.deepEqual(report.recurring_findings, { findings: 0, keys: 0, recurring_keys: 0, top_recurring: [], unkeyed: 0, unparsed: 0, malformed: 0 })
   })
 
   it("weekly_reportsCoreNonTestLocAndDesignBytes_fromTrackedFiles", () => {
@@ -269,4 +270,89 @@ describe("weekly", () => {
       fs.chmodSync(repoDir, 0o700)
     }
   })
+
+  it("weekly_listsAFindingKeyAsRecurring_onlyWhenTwoDistinctReviewRootsLoggedIt", () => {
+    box.writeLedger("keel/ledger.tsv", [charterRow("K1")])
+    givenFinding({ root_run_id: "rv-1", run_id: "rv-1", path: "hooks/gate.ts", lens: "contract" })
+    givenFinding({ root_run_id: "rv-1", run_id: "rv-2", path: "hooks/gate.ts", lens: "contract" })
+    givenFinding({ root_run_id: "rv-3", run_id: "rv-3", path: "lib/once.ts", lens: "tests" })
+    givenFinding({ root_run_id: "rv-4", run_id: "rv-4", path: "lib/once.ts", lens: "tests" })
+    const [completed, report] = box.runJson("weekly")
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.deepEqual(report.recurring_findings, {
+      findings: 4, keys: 2, recurring_keys: 1,
+      top_recurring: [{ repo: "acme/app", path: "lib/once.ts", lens: "tests", roots: 2 }],
+      unkeyed: 0, unparsed: 0, malformed: 0,
+    })
+  })
+
+  it("weekly_keysRecurringFindingsByRepoPathAndLens_andOrdersThemByRootCountThenKey", () => {
+    box.writeLedger("keel/ledger.tsv", [charterRow("K1")])
+    for (const root of ["rv-1", "rv-2"]) {
+      givenFinding({ root_run_id: root, repo: "acme/web", path: "a.ts", lens: "tests" })
+      givenFinding({ root_run_id: root, repo: "acme/app", path: "a.ts", lens: "tests" })
+      givenFinding({ root_run_id: root, repo: "acme/app", path: "a.ts", lens: "contract" })
+    }
+    givenFinding({ root_run_id: "rv-3", repo: "acme/web", path: "a.ts", lens: "tests" })
+    const [completed, report] = box.runJson("weekly")
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.deepEqual(report.recurring_findings.top_recurring, [
+      { repo: "acme/web", path: "a.ts", lens: "tests", roots: 3 },
+      { repo: "acme/app", path: "a.ts", lens: "contract", roots: 2 },
+      { repo: "acme/app", path: "a.ts", lens: "tests", roots: 2 },
+    ])
+  })
+
+  it("weekly_countsUnkeyedUnparsedAndMalformedFindingLines_apartFromTheKeys", () => {
+    box.writeLedger("keel/ledger.tsv", [charterRow("K1")])
+    for (const root of ["rv-1", "rv-2"]) {
+      givenFinding({ root_run_id: root, path: null })
+      givenFinding({ root_run_id: root, path: "N/A" })
+    }
+    givenFinding({ root_run_id: "rv-3", lens: 7 })
+    box.appendLog("keel-findings.jsonl", { ts: "t", evidence_id: "e", repo: "acme/app", root_run_id: "rv-5", run_id: "rv-5", unparsed: true })
+    fs.appendFileSync(path.join(box.data, "logs", "keel-findings.jsonl"), "{not json\n")
+    const [completed, report] = box.runJson("weekly")
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.deepEqual(report.recurring_findings, { findings: 5, keys: 0, recurring_keys: 0, top_recurring: [], unkeyed: 5, unparsed: 1, malformed: 1 })
+  })
+
+  it("weekly_listsAtMostTwentyRecurringKeys_andCountsAllOfThem", () => {
+    box.writeLedger("keel/ledger.tsv", [charterRow("K1")])
+    for (let index = 0; index < 21; index++) {
+      const file = `f${String(index).padStart(2, "0")}.ts`
+      givenFinding({ root_run_id: "rv-1", path: file })
+      givenFinding({ root_run_id: "rv-2", path: file })
+    }
+    const [completed, report] = box.runJson("weekly")
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.equal(report.recurring_findings.recurring_keys, 21)
+    assert.deepEqual(report.recurring_findings.top_recurring.map((key: { path: string }) => key.path),
+      Array.from({ length: 20 }, (_, index) => `f${String(index).padStart(2, "0")}.ts`))
+  })
+
+  it("weekly_reportsAnUnreadableFindingsLogAsARecurringFindingsError_andStillPrintsTheReport", () => {
+    box.writeLedger("keel/ledger.tsv", [charterRow("K1")])
+    fs.mkdirSync(path.join(box.data, "logs", "keel-findings.jsonl"), { recursive: true })
+    const [completed, report] = box.runJson("weekly")
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.ok(report.recurring_findings.error.startsWith("unreadable keel-findings.jsonl: "), report.recurring_findings.error)
+    assert.deepEqual(report.review_rounds, { chains: 0, roots_needing_fixes: 0, chains_by_needs_fixes_rounds: {} })
+  })
+
+  it("weekly_reportsANonUtf8FindingsLogAsARecurringFindingsError", () => {
+    box.writeLedger("keel/ledger.tsv", [charterRow("K1")])
+    fs.mkdirSync(path.join(box.data, "logs"), { recursive: true })
+    fs.writeFileSync(path.join(box.data, "logs", "keel-findings.jsonl"), Buffer.from([0x7b, 0x7d, 0x0a, 0xff, 0xfe, 0x0a]))
+    const [completed, report] = box.runJson("weekly")
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.ok(report.recurring_findings.error.startsWith("unreadable keel-findings.jsonl: "), report.recurring_findings.error)
+  })
+
+  function givenFinding(fields: Record<string, unknown>): void {
+    box.appendLog("keel-findings.jsonl", {
+      ts: "2026-11-15T00:00:00Z", evidence_id: "review-x", repo: "acme/app", root_run_id: "rv-0", run_id: "rv-0",
+      impact: "high", lens: "contract", finding_id: "C1", path: "x.ts", summary: "s", ...fields,
+    })
+  }
 })

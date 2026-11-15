@@ -11,6 +11,7 @@ import type { JsonValue } from "./lib/measurekit/json.ts"
 import { summarizeHarnessVersions } from "./lib/measurekit/harness_versions.ts"
 import { collectMetricItems, defectRunnerNames, MetricError } from "./lib/measurekit/metrics.ts"
 import { buildExpiryProposals } from "./lib/measurekit/propose.ts"
+import { summarizeRecurringFindings } from "./lib/measurekit/recurring_findings.ts"
 import { summarizeReviewRounds } from "./lib/measurekit/review_rounds.ts"
 import { SmokeContext } from "./lib/measurekit/smoke_context.ts"
 
@@ -45,6 +46,7 @@ function buildWeeklyReport(ctx: SmokeContext): object {
     proposals: buildExpiryProposals(rows, ctx.metricWindowStart, ctx.today),
     review_rounds: summarizeReviewRounds(),
     harness_versions: summarizeHarnessVersions(ctx.keelHome),
+    recurring_findings: summarizeRecurringFindings(),
   }
 }
 

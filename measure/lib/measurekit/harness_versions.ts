@@ -3,6 +3,7 @@ import path from "node:path"
 
 import * as store from "../../../lib/evidence/store.ts"
 import { readJsonl } from "./datafiles.ts"
+import { InvalidUtf8Error } from "./files.ts"
 import { compareCodePoints, isJsonObject } from "./json.ts"
 
 const CONTRACT_FIXTURES = path.join("tests", "hooks", "fixtures", "harness-contract")
@@ -27,7 +28,7 @@ export function summarizeHarnessVersions(keelHome: string): HarnessVersions | { 
   const observed = new Map<string, number>()
   let unversioned = 0
   for (const transcript of transcripts) {
-    const version = fs.existsSync(transcript) ? versionsIn(transcript).at(-1) : undefined
+    const version = transcriptVersion(transcript)
     if (version === undefined) unversioned++
     else observed.set(version, (observed.get(version) ?? 0) + 1)
   }
@@ -60,6 +61,19 @@ function reviewTranscripts(): string[] {
   const paths = store.repoKeys("review").flatMap((repoKey) => store.loadReviews(repoKey)).map((review) => review["source"])
     .map((source) => (isJsonObject(source) ? source["agent_transcript_path"] : undefined))
   return [...new Set(paths.filter((transcript) => typeof transcript === "string"))]
+}
+
+function transcriptVersion(transcript: string): string | undefined {
+  try {
+    return versionsIn(transcript).at(-1)
+  } catch (error) {
+    if (error instanceof InvalidUtf8Error || isFileSystemError(error)) return undefined
+    throw error
+  }
+}
+
+function isFileSystemError(error: unknown): boolean {
+  return error instanceof Error && typeof (error as NodeJS.ErrnoException).code === "string"
 }
 
 function contractFixtures(keelHome: string): string[] {

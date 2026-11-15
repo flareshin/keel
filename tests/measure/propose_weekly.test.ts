@@ -185,6 +185,20 @@ describe("weekly", () => {
     })
   })
 
+  it("weekly_countsATranscriptThatCannotBeReadAsUnversioned_andStillPrintsTheReport", () => {
+    box.writeLedger("keel/ledger.tsv", [charterRow("K1")])
+    box.write("data/agents/binary.jsonl", "")
+    fs.writeFileSync(path.join(box.data, "agents/binary.jsonl"), Buffer.from([0x7b, 0x7d, 0x0a, 0xff, 0xfe, 0x0a]))
+    fs.mkdirSync(path.join(box.data, "agents/folder.jsonl"))
+    givenTranscript("data/agents/fine.jsonl", ["2.1.325"])
+    givenReview("acme/app", "a1", { rootRunId: "rv-a", verdict: "PASS", transcript: "agents/binary.jsonl" })
+    givenReview("acme/app", "b1", { rootRunId: "rv-b", verdict: "PASS", transcript: "agents/folder.jsonl" })
+    givenReview("acme/app", "c1", { rootRunId: "rv-c", verdict: "PASS", transcript: "agents/fine.jsonl" })
+    const [completed, report] = box.runJson("weekly")
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.deepEqual(report.harness_versions, { recorded: [], observed: { "2.1.325": 1 }, unrecorded_newer: ["2.1.325"], unversioned: 2 })
+  })
+
   it("weekly_listsEveryObservedVersionAsUnrecorded_whenNoContractFixtureExists", () => {
     box.writeLedger("keel/ledger.tsv", [charterRow("K1")])
     givenTranscript("data/agents/only.jsonl", ["2.1.325"])

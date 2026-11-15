@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { InvalidUtf8Error } from '../../measure/lib/measurekit/files.ts';
-import { compareCodePoints, isJsonObject, parseJsonKeepingIntegers, stringifySorted } from '../../measure/lib/measurekit/json.ts';
+import { isJsonObject, parseJsonKeepingIntegers, stringifySorted } from '../../measure/lib/measurekit/json.ts';
 import type { JsonValue } from '../../measure/lib/measurekit/json.ts';
 import * as affected from '../precheck/affected.ts';
 import { ruleCheckLines, typecheck } from '../precheck/author.ts';
@@ -9,7 +9,6 @@ import { bindPrecheck, precheckRequirement } from '../precheck/binding.ts';
 import { renderCensus, renderRerun, summarizeCensus, summarizeRerun } from '../precheck/render.ts';
 import { buildChains } from './chain.ts';
 import * as codexLenses from './codex_lenses.ts';
-import * as codexReview from './codex_review.ts';
 import * as env from './env.ts';
 import * as gc from './gc.ts';
 import * as gitcmd from './gitcmd.ts';
@@ -33,7 +32,6 @@ const USAGE = `usage:
   keel evidence write-smoke [--repo <path>] [--run <smoke run_id>]
   keel evidence show [--repo <path>] [--root <root_run_id>]
   keel evidence check --repo <path>   (would ship-gate let a push of HEAD through? exit 1 = not ready)
-  keel evidence compatibility         (read-only retirement inventory across repos)
   keel evidence record-codex --repo <path> --audits <UUID,UUID,...> [--verifiers <UUID,UUID,...>]
   keel evidence promote-plan --repo <path> --base <ref> --head <sha>
   keel evidence gc
@@ -277,9 +275,6 @@ function evidence(rest: string[]): number {
     return readiness['ok'] ? EXIT_OK : EXIT_NOT_READY;
   } else if (subcommand === 'show') {
     seams.print(show(options['--repo'] || process.cwd(), options['--root'] ?? null));
-  } else if (subcommand === 'compatibility') {
-    if (optionNames.length > 0) throw new writers.Usage('compatibility inventories all repositories; it takes no options');
-    seams.print(compatibility());
   } else if (subcommand === 'promote-plan') {
     if (optionNames.length !== PROMOTE_PLAN_OPTIONS.length || !PROMOTE_PLAN_OPTIONS.every((name) => name in options)) {
       throw new writers.Usage('promote-plan requires --repo, --base and --head');
@@ -346,20 +341,6 @@ export function promotePlan(repoPath: string, base: string, head: string): JsonO
   if (headSha === null || mergeBase === null) throw new writers.Usage(`no merge base between ${base} and ${head}`);
   const plan = verify.promotePlan({ repoRoot, repoKey, row: row!, head: headSha, mergeBase, needsApproval: true, promote: true });
   return { repo: repoKey, merge_base: mergeBase, head: headSha, steps: plan.steps, uncovered: plan.uncovered };
-}
-
-export function compatibility(): JsonObject {
-  let count = 0;
-  const roots: string[] = [];
-  for (const key of store.repoKeys('review')) {
-    const reviews = store.loadReviews(key);
-    const old = new Set(reviews
-      .filter((item) => item.review_kind === codexReview.KIND && (item.source || {})['version'] !== 2)
-      .map((item) => item.evidence_id));
-    count += old.size;
-    roots.push(...buildChains(reviews).filter((chain) => chain.links.some((link) => old.has(link.evidence_id))).map((chain) => chain.rootRunId));
-  }
-  return { read_only_records: count, chain_roots: [...new Set(roots)].sort(compareCodePoints), reader_removable: count === 0 && roots.length === 0 };
 }
 
 function parseOptions(args: string[], allowed: Set<string>): Record<string, string> {

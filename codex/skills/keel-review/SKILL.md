@@ -33,8 +33,7 @@ only when findings exist. Inspect the resulting evidence. Native evidence suppor
 the OS user's default local sessions only; custom profiles and archived records
 are unsupported. After a code fix, rerun relevant tests and review the delta from
 the recorded version 2 snapshot, settling every prior unresolved finding with
-evidence. A changed requirement or base needs a new full review. Historical records are read-only; use the retirement inventory before removing
-the compatibility decoder. Trusted session/evidence guards
+evidence. A changed requirement or base needs a new full review. Version 1 records are refused. Trusted session/evidence guards
 are prerequisites, not proof of a sandbox. Never modify source rollout records.
 
 Explain the result and remaining limits to the owner. Only the owner runs

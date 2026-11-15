@@ -17,8 +17,6 @@ export const KIND = 'codex-lens-review';
 export const VIA = 'CodexSubagents';
 export const LENSES = new Set(['reuse', 'contract', 'tests', 'writing-readable-code', 'rule-checks']);
 export const REPORT_KEYS = new Set(['version', 'role', 'repo', 'base', 'tree', 'lenses', 'findings', 'audit_session', 'decisions']);
-const SOURCE_KEYS = new Set(['via', 'session_id', 'audit_id', 'agent_id', 'audit_path', 'agent_transcript_path', 'audit_sha256', 'agent_sha256']);
-const LENS_ITEM_KEYS = new Set(['status', 'evidence']);
 const DECISION_KEYS = new Set(['id', 'verdict', 'evidence']);
 const FINDING_KEYS = new Set(['id', 'impact', 'evidence', 'scenario']);
 const CANONICAL_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -32,32 +30,8 @@ export const seams = { sessionRoot };
 
 export function validateEvidence(evidence: JsonObject): void {
   const source = evidence['source'] || {};
-  if (source['version'] === 2) {
-    codexLenses.validateEvidence(evidence);
-    return;
-  }
-  if (!hasExactKeys(source, SOURCE_KEYS) || source['via'] !== VIA || evidence['review_kind'] !== KIND) {
-    throw new writers.Refused('invalid Codex review provenance');
-  }
-  const [auditPath, auditBytes] = locateSession(source['audit_id']);
-  const [verifierPath, verifierBytes] = locateSession(source['agent_id']);
-  const located = [auditPath, verifierPath, digest(auditBytes), digest(verifierBytes)];
-  const recorded = [source['audit_path'], source['agent_transcript_path'], source['audit_sha256'], source['agent_sha256']];
-  if (located.some((value, index) => value !== recorded[index])) throw new writers.Refused('Codex review transcript changed or moved');
-  const [auditMeta, audit] = completedReport(auditBytes, source['audit_id']);
-  const [verifierMeta, verification] = completedReport(verifierBytes, source['agent_id']);
-  const author = sharedAuthor(auditMeta, verifierMeta, source['audit_id'], source['agent_id']);
-  if (author !== source['session_id']) throw new writers.Refused('Codex author identity changed');
-  locateSession(author);
-  const verdict = validateReports(audit, verification, evidence['repo_root'], source['audit_id']);
-  validateRuleChecks(evidence['repo_root'], audit['base'], audit['tree'], audit, verification);
-  const root = 'cx-' + source['agent_id'];
-  const actual = ['review_base', 'reviewed_tree', 'snapshot_tree', 'verdict', 'run_id', 'root_run_id', 'head', 'since', 'since_tree',
-    writers.NO_TEST_REASON].map((key) => evidence[key] ?? null);
-  const expected = [audit['base'], audit['tree'], audit['tree'], verdict, root, root, null, null, null, null];
-  if (actual.some((value, index) => value !== expected[index])) {
-    throw new writers.Refused('Codex evidence does not match its completed reviews');
-  }
+  if (source['version'] !== 2) throw new writers.Refused('Codex review evidence must be version 2');
+  codexLenses.validateEvidence(evidence);
 }
 
 export function locateSession(identity: unknown): [path: string, content: Buffer] {
@@ -151,45 +125,6 @@ function joinOutputText(content: unknown): string {
   }).join('');
 }
 
-export function sharedAuthor(audit: JsonObject, verifier: JsonObject, auditId: string, verifierId: string): string {
-  try {
-    const parents: string[] = [];
-    for (const meta of [audit, verifier]) {
-      const parent = required(required(required(required(meta, 'source'), 'subagent'), 'thread_spawn'), 'parent_thread_id');
-      if (parent !== required(meta, 'parent_thread_id')) throw new RangeError('parent mismatch');
-      parents.push(parent);
-    }
-    if (parents[0] !== parents[1] || new Set([parents[0], auditId, verifierId]).size !== 3) throw new RangeError('not distinct');
-    return parents[0]!;
-  } catch (error) {
-    if (!writers.isInputFailure(error)) throw error;
-    throw new writers.Refused('audit and verifier must be distinct children of the same author');
-  }
-}
-
-export function validateReports(audit: JsonObject, verification: JsonObject, repo: string, auditId: string): string {
-  for (const [report, role] of [[audit, 'audit'], [verification, 'verify']] as const) {
-    if (!hasExactKeys(report, REPORT_KEYS) || report['version'] !== 1 || report['role'] !== role) {
-      throw new writers.Refused('invalid native review report schema or role');
-    }
-    if (report['repo'] !== repo || report['base'] !== audit['base'] || report['tree'] !== audit['tree']) {
-      throw new writers.Refused('native reviewers disagree about the target');
-    }
-    for (const key of ['base', 'tree']) {
-      if (!env.isSha(report[key])) throw new writers.Refused('invalid target object id');
-    }
-    const lenses = report['lenses'];
-    if (!isJsonRecord(lenses) || !hasExactKeys(lenses, LENSES)) throw new writers.Refused('every native review must cover all five lenses');
-    if (Object.values(lenses).some((item) => !isCompleteLens(item))) throw new writers.Refused('incomplete or unproven review lens');
-    validateFindings(report['findings']);
-  }
-  if (audit['audit_session'] !== null || !isEmptyList(audit['decisions']) || verification['audit_session'] !== auditId) {
-    throw new writers.Refused('invalid audit linkage');
-  }
-  const findings = [...adjudicatedFindings(audit['findings'], verification['decisions']), ...verification['findings']];
-  return findings.some((finding) => finding['impact'] === 'high' || finding['impact'] === 'medium') ? 'NEEDS_FIXES' : 'PASS';
-}
-
 export function adjudicatedFindings(findings: JsonObject[], decisions: unknown): JsonObject[] {
   if (!Array.isArray(decisions)) throw new writers.Refused('verifier decisions must be a list');
   const seen: unknown[] = [];
@@ -254,14 +189,11 @@ export function runRuleChecks(repo: string, base: string, tree: string): string 
   return lines.find((line) => line.startsWith(SUMMARY_PREFIX))!;
 }
 
-export function validateRuleChecks(repo: string, base: string, tree: string, audit: JsonObject, verification: JsonObject | null = null): void {
+export function validateRuleChecks(repo: string, base: string, tree: string, audit: JsonObject): void {
   const measured = runRuleChecks(repo, base, tree);
-  const reports = verification !== null ? [audit, verification] : [audit];
-  for (const report of reports) {
-    const cited = report['lenses']['rule-checks']['evidence'].match(CITED_SUMMARY) ?? [];
-    if (cited.length !== 1 || cited[0] !== measured) {
-      throw new writers.Refused('each reviewer must cite the exact rule-checks summary for the reviewed target');
-    }
+  const cited = audit['lenses']['rule-checks']['evidence'].match(CITED_SUMMARY) ?? [];
+  if (cited.length !== 1 || cited[0] !== measured) {
+    throw new writers.Refused('each reviewer must cite the exact rule-checks summary for the reviewed target');
   }
 }
 
@@ -269,14 +201,6 @@ export function hasExactKeys(value: unknown, keys: Set<string>): boolean {
   if (!isJsonRecord(value)) return false;
   const actual = Object.keys(value);
   return actual.length === keys.size && actual.every((key) => keys.has(key));
-}
-
-function isCompleteLens(item: unknown): boolean {
-  return isJsonRecord(item) && hasExactKeys(item, LENS_ITEM_KEYS) && item['status'] === 'complete' && nonblank(item['evidence']);
-}
-
-function isEmptyList(value: unknown): boolean {
-  return Array.isArray(value) && value.length === 0;
 }
 
 function sameMultiset(left: unknown[], right: unknown[]): boolean {

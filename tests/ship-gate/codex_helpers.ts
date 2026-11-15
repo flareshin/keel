@@ -4,9 +4,7 @@ import type { TestContext } from 'node:test';
 import * as codexReview from '../../lib/evidence/codex_review.ts';
 import * as gitcmd from '../../lib/evidence/gitcmd.ts';
 import * as registry from '../../lib/evidence/registry.ts';
-import * as store from '../../lib/evidence/store.ts';
 import type { Outgoing } from '../../lib/evidence/verify.ts';
-import * as writers from '../../lib/evidence/writers.ts';
 import { Sandbox } from './helpers.ts';
 import type { Repo } from './helpers.ts';
 
@@ -64,32 +62,6 @@ export class CodexFixture {
     }
     writeFileSync(path, records.map((row) => JSON.stringify(row) + '\n').join(''));
     return path;
-  }
-
-  register(): { evidence_id: string; root_run_id: string; verdict: string } {
-    const [auditPath, auditBytes] = codexReview.locateSession(AUDIT);
-    const [verifierPath, verifierBytes] = codexReview.locateSession(VERIFY);
-    const [, audit] = codexReview.completedReport(auditBytes, AUDIT);
-    const [, verification] = codexReview.completedReport(verifierBytes, VERIFY);
-    const verdict = codexReview.validateReports(audit, verification, this.repo.path, AUDIT);
-    const root = 'cx-' + VERIFY;
-    const source = {
-      via: codexReview.VIA, session_id: AUTHOR, audit_id: AUDIT, agent_id: VERIFY,
-      audit_path: auditPath, agent_transcript_path: verifierPath,
-      audit_sha256: codexReview.digest(auditBytes), agent_sha256: codexReview.digest(verifierBytes),
-    };
-    const body = {
-      repo: this.repo.key, repo_root: this.repo.path, run_id: root, root_run_id: root,
-      since: null, since_tree: null, review_base: this.base, head: null,
-      snapshot_tree: this.tree, reviewed_tree: this.tree, review_kind: codexReview.KIND,
-      verdict,
-      paths: gitcmd.diffEntries(this.repo.path, this.base, this.tree).map((entry) => ({ path: entry.path, blob: entry.blob, mode: entry.mode })),
-      source, [writers.NO_TEST_REASON]: null,
-    };
-    codexReview.validateEvidence(body);
-    const existing = writers.sameReview(this.repo.key, root, this.tree);
-    const evidence = existing ?? store.write('review', body, this.repo.key);
-    return { evidence_id: evidence.evidence_id, root_run_id: root, verdict };
   }
 
   outgoing(needsApproval = true): Outgoing {

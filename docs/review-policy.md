@@ -229,7 +229,7 @@ protocol records no origin, so its findings keep the existing blocking rule.
 
 Codex uses the version 2 protocol in [codex-review.md](codex-review.md).
 It records the completed native audit and verifier sessions. Old-format records
-are read-only until their valid references expire; old registration is removed.
+are refused; old registration is removed.
 
 Agent-call counts demonstrate batching, not token or latency savings. Measure
 actual usage before claiming a reduction in tokens or elapsed time.

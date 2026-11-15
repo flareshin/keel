@@ -3,12 +3,13 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
+import * as codexLenses from '../../lib/evidence/codex_lenses.ts';
 import * as codexReview from '../../lib/evidence/codex_review.ts';
 import { RegistryError, normalizeRepoKey, readTsv } from '../../lib/evidence/registry.ts';
 import { provenanceReasons } from '../../lib/evidence/verify.ts';
 import type { Chain } from '../../lib/evidence/chain.ts';
 import { Refused } from '../../lib/evidence/writers.ts';
-import { AUDIT, CodexFixture } from './codex_helpers.ts';
+import { AUTHOR, CodexFixture, LENSES } from './codex_helpers.ts';
 import { LOGIC_WITH_TEST, Sandbox } from './helpers.ts';
 
 const scratch = mkdtempSync(join(tmpdir(), 'keel-blank-'));
@@ -35,9 +36,18 @@ describe('a text that is blank by either reading of whitespace is blank', () => 
   for (const blank of BLANKS) {
     test('a Codex lens, decision or finding text of ' + JSON.stringify(blank) + ' is refused', (t) => {
       const f = new CodexFixture(t);
-      const lensWith = (evidence: string) => ({ ...f.report, lenses: { ...f.report.lenses, reuse: { status: 'complete', evidence } } });
-      assert.throws(() => codexReview.validateReports(lensWith(blank), { ...f.verification, lenses: lensWith('ok').lenses }, f.repo.path, AUDIT),
+      const registerWithReuseEvidence = (evidence: string) => {
+        const audits = LENSES.map((lens, index) => {
+          const identity = `44444444-4444-4444-8444-${String(index).padStart(12, '0')}`;
+          const lensEvidence = lens === 'reuse' ? evidence : lens === 'rule-checks' ? codexReview.runRuleChecks(f.repo.path, f.base, f.tree) : 'ok';
+          f.writeSession(identity, AUTHOR, { ...f.report, version: 2, since_tree: null, root_run_id: null, lenses: { [lens]: { status: 'complete', evidence: lensEvidence } } });
+          return identity;
+        });
+        return codexLenses.register(f.repo.path, audits, []);
+      };
+      assert.throws(() => registerWithReuseEvidence(blank),
         (error: Error) => error instanceof Refused && error.message === 'incomplete or unproven review lens');
+      assert.equal(registerWithReuseEvidence('ok')['verdict'], 'PASS');
       const finding = { id: 'f1', impact: 'low', evidence: 'src/a.py:1', scenario: 'it fails' };
       for (const key of ['id', 'evidence', 'scenario']) {
         assert.throws(() => codexReview.validateFindings([{ ...finding, [key]: blank }]),

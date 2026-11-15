@@ -188,15 +188,6 @@ describe('CodexLensesTest', () => {
     assert.throws(() => f.registerLenses(), refused);
   });
 
-  test('compatibilityInventoryCountsUnexpiredReadOnlyRecords', (t) => {
-    const f = new LensFixture(t);
-    assert.equal(cli.compatibility()['read_only_records'], 0);
-    f.register();
-    const inventory = cli.compatibility();
-    assert.equal(inventory['read_only_records'], 1);
-    assert.equal(inventory['reader_removable'], false);
-  });
-
   test('lenses_combinedFindingGetsSeparateVerifier', (t) => {
     const f = new LensFixture(t);
     const identity = f.combineAudits();
@@ -239,6 +230,13 @@ describe('CodexLensesTest', () => {
   test('lenses_refusesAuthorAsReviewer', (t) => {
     const f = new LensFixture(t);
     f.writeSession(f.audits[0]!, f.audits[0]!, f.reports[f.audits[0]!]);
+    assert.throws(() => f.registerLenses(), refused);
+  });
+
+  test('lenses_refusesTopLevelSessionAsReviewer', (t) => {
+    const f = new LensFixture(t);
+    const identity = f.audits[0]!;
+    f.writeSession(identity, null, f.reports[identity]);
     assert.throws(() => f.registerLenses(), refused);
   });
 
@@ -345,6 +343,14 @@ describe('CodexLensesTest', () => {
     const f = new LensFixture(t);
     const audit = f.audits[LENSES.indexOf('rule-checks')]!;
     f.reports[audit].lenses['rule-checks'].evidence = 'looks clean';
+    f.rewrite(audit);
+    assert.throws(() => f.registerLenses(), refused);
+  });
+
+  test('lenses_refusesReviewerSummaryForAnotherScan', (t) => {
+    const f = new LensFixture(t);
+    const audit = f.audits[LENSES.indexOf('rule-checks')]!;
+    f.reports[audit].lenses['rule-checks'].evidence = 'summary repos=999 scanned_lines=99 signals=0 unscanned=none blocked=none';
     f.rewrite(audit);
     assert.throws(() => f.registerLenses(), refused);
   });

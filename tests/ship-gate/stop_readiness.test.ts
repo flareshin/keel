@@ -33,6 +33,7 @@ function feedback(run: Run): string {
 function assertSilent(run: Run): void {
   assert.equal(run.rc, PASS, run.stderr);
   assert.equal(run.stdout, '');
+  assert.equal(run.stderr, '');
 }
 
 describe('StopReadinessTest', () => {
@@ -74,6 +75,13 @@ describe('StopReadinessTest', () => {
     const [sandbox, repo] = feature(t);
     repo.git('push', '-q', '-u', 'origin', 'feature');
     assertSilent(stop(sandbox, repo.path));
+  });
+
+  test('stop_tellsAgain_whenACommitLandsAfterTheUpstreamWasPushed', (t) => {
+    const [sandbox, repo] = feature(t);
+    repo.git('push', '-q', '-u', 'origin', 'feature');
+    repo.commit({ 'src/a.py': 'print(3)\n' });
+    feedback(stop(sandbox, repo.path));
   });
 
   test('stop_isSilent_whenTheHeadHasNoCommitPastTheIntegrationBase', (t) => {
@@ -135,6 +143,10 @@ describe('StopReadinessTest', () => {
   test('stop_isSilent_whenTheIntegrationBaseRefIsMissing', (t) => {
     const [sandbox, repo] = feature(t);
     repo.git('update-ref', '-d', 'refs/remotes/origin/main');
-    assertSilent(stop(sandbox, repo.path));
+    const run = stop(sandbox, repo.path);
+    assert.equal(run.rc, PASS, run.stderr);
+    assert.equal(run.stdout, '');
+    assert.ok(run.stderr.includes('push readiness at Stop not judged'), run.stderr);
+    assert.ok(run.stderr.includes('origin/main is missing'), run.stderr);
   });
 });

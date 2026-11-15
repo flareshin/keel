@@ -1,8 +1,10 @@
 import assert from "node:assert/strict"
 import { afterEach, beforeEach, describe, it } from "node:test"
+import fs from "node:fs"
 import path from "node:path"
 
 import { addDays } from "../../measure/lib/measurekit/dates.ts"
+import { MAX_JSON_DEPTH } from "../../measure/lib/measurekit/json.ts"
 import { FUTURE, PAST, TODAY, MeasureSandbox, charterRow, ledgerRow } from "./helpers.ts"
 
 const EXTENDED = addDays(TODAY, 60)
@@ -171,5 +173,27 @@ describe("weekly", () => {
     assert.equal(completed.status, 0, completed.stderr)
     assert.ok(report.review_rounds.error.startsWith("unreadable evidence "), report.review_rounds.error)
     assert.deepEqual(report.defects, {})
+  })
+
+  it("weekly_reportsAReviewNestedPastTheJsonDepthLimitAsAReviewRoundsError", () => {
+    box.writeLedger("keel/ledger.tsv", [charterRow("K1")])
+    const depth = MAX_JSON_DEPTH + 1
+    box.write("data/state/keel/evidence/review/acme__app/deep.json", "[".repeat(depth) + "]".repeat(depth))
+    const [completed, report] = box.runJson("weekly")
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.ok(report.review_rounds.error.includes(`deeper than ${MAX_JSON_DEPTH} levels`), report.review_rounds.error)
+  })
+
+  it("weekly_fails_whenTheReviewEvidenceDirectoryCannotBeListed", () => {
+    box.writeLedger("keel/ledger.tsv", [charterRow("K1")])
+    box.write("data/state/keel/evidence/review/acme__app/a1.json", "{}")
+    const repoDir = path.join(box.data, "state/keel/evidence/review/acme__app")
+    fs.chmodSync(repoDir, 0o000)
+    try {
+      const completed = box.runMeasure("weekly")
+      assert.notEqual(completed.status, 0)
+    } finally {
+      fs.chmodSync(repoDir, 0o700)
+    }
   })
 })

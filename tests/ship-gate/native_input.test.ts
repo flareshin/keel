@@ -12,7 +12,7 @@ import * as codexReview from '../../lib/evidence/codex_review.ts';
 import { onlyCommentDeletions } from '../../lib/evidence/comment_cleanup.ts';
 import { RegistryError, readTsv } from '../../lib/evidence/registry.ts';
 import * as store from '../../lib/evidence/store.ts';
-import { runCaptured } from '../../lib/evidence/subprocess.ts';
+import { runCaptured, runProcessGroup } from '../../lib/evidence/subprocess.ts';
 import { TimeoutExpired } from '../../measure/lib/measurekit/timeout.ts';
 import { recognize, recognizeFailures } from '../../lib/evidence/testrun.ts';
 import { Refused, Usage, isInputFailure } from '../../lib/evidence/writers.ts';
@@ -254,6 +254,24 @@ describe('failure classification', () => {
   test('a command that cannot start throws the system error itself, and a timeout throws TimeoutExpired', () => {
     assert.throws(() => runCaptured(['definitely-not-a-command-xyz']), (error: NodeJS.ErrnoException) => error.code === 'ENOENT' && isInputFailure(error));
     assert.throws(() => runCaptured(['sleep', '5'], { timeoutSeconds: 0.05 }), TimeoutExpired);
+  });
+});
+
+describe('a command word that cannot be encoded as UTF-8', () => {
+  const REPLACEMENT_BYTES = Buffer.from('a\u{fffd}b');
+
+  test('runCaptured passes an unpaired surrogate to the program as U+FFFD instead of refusing it', () => {
+    for (const lone of ['\ud800', '\udc80', '\udfff']) {
+      const completed = runCaptured(['printf', '%s', `a${lone}b`]);
+      assert.equal(completed.returncode, 0, JSON.stringify(lone));
+      assert.deepEqual(completed.stdout, REPLACEMENT_BYTES, JSON.stringify(lone));
+    }
+  });
+
+  test('runProcessGroup passes an unpaired surrogate to the program as U+FFFD instead of refusing it', async () => {
+    const completed = await runProcessGroup(['printf', '%s', 'a\ud800b']);
+    assert.equal(completed.returncode, 0);
+    assert.deepEqual(completed.stdout, REPLACEMENT_BYTES);
   });
 });
 

@@ -1,12 +1,14 @@
 import { isAbsolute, relative, sep } from 'node:path';
 import * as env from './env.ts';
+import { SPACE_CHARS } from './text.ts';
 
 export const FINDINGS_LOG = 'keel-findings.jsonl';
 const NEEDS_FIXES = 'NEEDS_FIXES';
-export const BLOCKING_HEADING = 'Merge-blocking';
-export const BLOCK_END = /\n(?:Non-blocking|Pre-existing|Optional|Adjusted|Refuted|KEEL-EVIDENCE)/;
-const BLOCKING_ITEM = /^- \[(high|medium)(?:, [^\]\n]*)?\] ([a-z0-9-]+)\/(\S+?): ([^\n]*)(?:\n {2}At: ([^\n]*?)(?: - [^\n]*)?$)?/gm;
-const EVIDENCE_LINE = /^\s*KEEL-EVIDENCE: (\{[^\n]*\})\s*$/gm;
+const BLOCKING_HEADING = 'Merge-blocking';
+const BLOCK_END = /\n(?:Non-blocking|Pre-existing|Optional|Adjusted|Refuted|KEEL-EVIDENCE)/;
+const ITEM_START = /^(?=- \[)/m;
+const ITEM_HEAD = /^- \[(high|medium)(?:, [^\]\n]*)?\] ([a-z0-9-]+)\/(\S+?): ([^\n]*)(?:\n {2}At: ([^\n]*?)(?: - [^\n]*)?$)?/m;
+export const KEEL_EVIDENCE_LINE = new RegExp(`(?<![^\\n])[${SPACE_CHARS}]*KEEL-EVIDENCE: (\\{[^\\n]*\\})[${SPACE_CHARS}]*(?=\\n|$)`, 'gu');
 export const NO_LOCATION = /^N\/A\b/;
 
 export interface BlockingFinding {
@@ -14,6 +16,7 @@ export interface BlockingFinding {
   lens: string;
   findingId: string;
   summary: string;
+  text: string;
   file: string | null;
 }
 
@@ -36,10 +39,15 @@ export function blockingFindings(report: string): BlockingFinding[] | null {
   const start = report.indexOf(BLOCKING_HEADING);
   if (start === -1) return null;
   const block = report.slice(start + BLOCKING_HEADING.length).split(BLOCK_END)[0] as string;
-  return [...block.matchAll(BLOCKING_ITEM)].map(([, impact, lens, findingId, summary, file]) => ({
-    impact: impact as string, lens: lens as string, findingId: findingId as string,
-    summary: (summary as string).trim(), file: locationOf(file),
-  }));
+  return block.split(ITEM_START).flatMap((item) => {
+    const head = ITEM_HEAD.exec(item);
+    if (head === null || head.index !== 0) return [];
+    const [, impact, lens, findingId, summary, file] = head;
+    return [{
+      impact: impact as string, lens: lens as string, findingId: findingId as string,
+      summary: (summary as string).trim(), text: item, file: locationOf(file),
+    }];
+  });
 }
 
 function locationOf(file: string | undefined): string | null {
@@ -83,7 +91,7 @@ function ownedFindings(report: string, review: LoggedReview): OwnedFinding[] | n
 
 function reportedRepoRoots(report: string): string[] {
   const roots = new Set<string>();
-  for (const [, line] of report.matchAll(EVIDENCE_LINE)) {
+  for (const [, line] of report.matchAll(KEEL_EVIDENCE_LINE)) {
     const repoRoot = repoRootOf(line as string);
     if (repoRoot !== null) roots.add(repoRoot);
   }

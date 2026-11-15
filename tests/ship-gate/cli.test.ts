@@ -660,6 +660,17 @@ describe('FindingsLogTest', () => {
     assert.deepEqual(findingsLog(sandbox).map((r) => [r.finding_id, r.path]), [['C1', 'src/a.py']]);
   });
 
+  test('writeReview_countsOnlyTheEvidenceLinesReportGateReads_whenCountingTheReportedRepos', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = feature(sandbox);
+    const report = [
+      blockingReport([blockingItem('medium', 'contract/C1', 'caller breaks', 'src/a.py')], [repo.path]),
+      `\ufeffKEEL-EVIDENCE: ${JSON.stringify({ v: 1, repo_root: `${repo.path}/vendor/lib` })}`,
+    ].join('\n');
+    assert.equal(writeWithReport(sandbox, repo, 'NEEDS_FIXES', report).rc, 0);
+    assert.deepEqual(findingsLog(sandbox).map((r) => [r.finding_id, r.path]), [['C1', 'src/a.py']]);
+  });
+
   test('writeReview_stillWritesEvidence_whenTheFindingsLogCannotBeWritten', (t) => {
     const sandbox = new Sandbox(t);
     const repo = feature(sandbox);

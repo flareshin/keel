@@ -278,7 +278,35 @@ id	scope	type	statement	layer	enforced_at	why_not_stronger	justification	inciden
 | review_by, grace_until | `YYYY-MM-DD` or `-` |
 | status | `active` \| `proposed-demote` \| `retired` |
 
-Seed rows, all `grace_until` 2026-12-10, `layer` = the `enforced_at` kind, metric `fires:<id>` (K4, K5: `evals:<id>`), `review_by` `-` for charter and floor else 2026-12-10, incidents `-`: K1, K2 (charter, incentive; `hook:ship-gate`, `hook:report-gate`) · K3 (charter, knowledge, `hook:ship-gate`) · K4, K5 (charter, knowledge; `skill:refining-requests`, `skill:writing-readable-code`) · risk (core, knowledge, `hook:ship-gate`) · F-irreversible (core, floor, `hook:ship-gate`) · F-secrets, F-attribution, F-force-push, F-hookskip (core, floor, `hook:git-guard`) · F-mod-trust (core, floor, `prose:docs/DESIGN.md`, metric `exists:~/git/keel:HEAD:measure/lib/measurekit/smoke_mods.ts`: no layer names a smoke check, and a mod acts before every hook) · C-dispatch (core, incentive, `hook:model-assign`) · C-handoff (core, knowledge, `hook:handoff`) · C-isolation (core, incentive, `hook:git-guard`) · S-jdk (`stack:spring-maven`, knowledge, `hook:env-preflight`).
+Seed rows, all `grace_until` 2026-12-10 and `layer` = the `enforced_at` kind. F-mod-trust's metric is an `exists:` check because no layer names a smoke check, and a mod acts before every hook. `incidents` reads `cited` where the row names incident files (`ledger.tsv` lists them); `tests/measure/ledger_seed.test.ts` holds this table equal to `ledger.tsv`, row for row:
+
+| id | scope | type | enforced_at | metric | review_by | incidents | status |
+|---|---|---|---|---|---|---|---|
+| K1 | charter | incentive | `hook:ship-gate` | `fires:K1` | - | - | active |
+| K2 | charter | incentive | `hook:report-gate` | `fires:K2` | - | - | active |
+| K3 | charter | knowledge | `hook:ship-gate` | `fires:K3` | - | - | active |
+| K4 | charter | knowledge | `skill:refining-requests` | `evals:K4` | - | - | active |
+| K5 | charter | knowledge | `skill:writing-readable-code` | `evals:K5` | - | - | active |
+| risk | core | knowledge | `hook:ship-gate` | `run:risk` | 2026-12-10 | cited | active |
+| F-irreversible | core | floor | `hook:ship-gate` | `fires:F-irreversible` | - | - | active |
+| F-secrets | core | floor | `hook:git-guard` | `fires:F-secrets` | - | - | active |
+| F-attribution | core | floor | `hook:git-guard` | `fires:F-attribution` | - | - | active |
+| F-force-push | core | floor | `hook:git-guard` | `fires:F-force-push` | - | - | active |
+| F-hookskip | core | floor | `hook:git-guard` | `fires:F-hookskip` | - | - | active |
+| F-mod-trust | core | floor | `prose:docs/DESIGN.md` | `exists:~/git/keel:HEAD:measure/lib/measurekit/smoke_mods.ts` | - | - | active |
+| C-dispatch | core | incentive | `hook:model-assign` | `fires:C-dispatch` | 2026-12-10 | cited | active |
+| C-handoff | core | knowledge | `hook:handoff` | `fires:C-handoff` | 2026-12-10 | - | retired |
+| C-isolation | core | incentive | `hook:git-guard` | `fires:C-isolation` | 2026-12-10 | cited | active |
+| S-jdk | stack:spring-maven | knowledge | `hook:env-preflight` | `fires:S-jdk` | 2026-12-10 | cited | active |
+| C-review-command | core | knowledge | `skill:keel-review` | `run:C-review-command` | 2026-12-10 | - | retired |
+| C-verbatim-fix | core | knowledge | `prose:docs/review-policy.md` | `exists:~/git/keel:HEAD:docs/review-policy.md` | 2026-12-10 | - | retired |
+| C-precheck | core | knowledge | `skill:lens-review` | `run:C-precheck` | 2027-01-08 | cited | active |
+| C-comments | core | knowledge | `hook:git-guard` | `fires:C-comments` | 2026-12-10 | cited | active |
+| C-no-comments | core | knowledge | `skill:removing-comments` | `evals:C-no-comments` | 2026-12-10 | cited | active |
+| C-authoring-agents | core | knowledge | `skill:authoring-agents` | `evals:C-authoring-agents` | 2026-12-10 | - | active |
+| C-improving-structure | core | knowledge | `skill:improving-structure` | `evals:C-improving-structure` | 2026-12-10 | - | active |
+| C-descending-findings | core | knowledge | `skill:descending-findings` | `evals:C-descending-findings` | 2026-12-10 | cited | active |
+| C-improving-agents | core | knowledge | `skill:improving-agents` | `evals:C-improving-agents` | 2026-12-10 | - | active |
 
 Incident refs added later (2026-10-30), two `docs/incidents/` files each: C-dispatch, C-isolation, S-jdk, C-precheck, C-comments. A hook deny counts as an incident when its file names the cost the deny prevented, as the overlay already does with guard denies. risk cites two (2026-11-07), from feedback memories: the 2026-10-14 PRs opened without approval or `/ship1` that its PR boundary answered.
 

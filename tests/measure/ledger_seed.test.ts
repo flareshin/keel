@@ -37,6 +37,21 @@ describe("seed ledger", () => {
     assert.ok(lines.every((line) => line.split("\t").length === LEDGER_COLUMNS.length))
   })
 
+  it("seedLedger_matchesTheDesignSeedTable_rowForRow_withLayerTheEnforcedAtKind", () => {
+    const design = readText(path.join(CHECKOUT, "docs", "DESIGN.md")).split("\n")
+    const start = design.findIndex((line) => line.startsWith("Seed rows, all `grace_until`"))
+    assert.ok(start >= 0, "DESIGN.md lost its seed row table")
+    const tableEnd = design.findIndex((line, index) => index > start + 1 && !line.startsWith("|"))
+    const [header, , ...body] = design.slice(start + 2, tableEnd)
+    assert.equal(header, "| id | scope | type | enforced_at | metric | review_by | incidents | status |")
+    const documented = body.map((line) => line.slice(2, -2).split(" | ").map((cell) => cell.replace(/^`|`$/g, "")))
+    const ledger = SEED_IDS.map((rowId) => seedRow(rowId)).map((row) => [
+      row["id"], row["scope"], row["type"], row["enforced_at"], row["metric"], row["review_by"], row["incidents"] === "-" ? "-" : "cited", row["status"],
+    ])
+    assert.deepEqual(documented, ledger)
+    for (const rowId of SEED_IDS) assert.equal(seedRow(rowId)["layer"], seedRow(rowId)["enforced_at"]!.split(":")[0], rowId)
+  })
+
   it("seedLedger_givesEveryRowTheSeedGraceDate_soNoRowFailsBeforeTheOthers", () => {
     for (const rowId of SEED_IDS) assert.equal(seedRow(rowId)["grace_until"], SEED_GRACE_UNTIL, rowId)
   })

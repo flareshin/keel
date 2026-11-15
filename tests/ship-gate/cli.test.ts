@@ -629,6 +629,37 @@ describe('FindingsLogTest', () => {
     assert.deepEqual(findingsLog(sandbox).map((r) => [r.finding_id, r.path]), [['T1', null]]);
   });
 
+  test('writeReview_logsANullPath_whenTheFindingIsAtNA', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = feature(sandbox);
+    const report = blockingReport([blockingItem('high', 'tests/T1', 'nothing pins it', 'N/A')], [repo.path]);
+    assert.equal(writeWithReport(sandbox, repo, 'NEEDS_FIXES', report).rc, 0);
+    assert.deepEqual(findingsLog(sandbox).map((r) => [r.finding_id, r.path]), [['T1', null]]);
+  });
+
+  test('writeReview_keepsAnAbsoluteAtPathOutsideEveryRootAsWritten_whenTheReportCoversOneRepo', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = feature(sandbox);
+    const outside = join(sandbox.data, 'outside', 'b.py');
+    const report = blockingReport([blockingItem('medium', 'contract/C1', 'caller breaks', outside)], [repo.path]);
+    const run = writeWithReport(sandbox, repo, 'NEEDS_FIXES', report);
+    assert.equal(run.rc, 0, run.stderr);
+    assert.equal(run.json.findings, 1);
+    assert.deepEqual(findingsLog(sandbox).map((r) => [r.finding_id, r.path]), [['C1', outside]]);
+  });
+
+  test('writeReview_ignoresAMalformedEvidenceLine_whenCountingTheReportedRepos', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = feature(sandbox);
+    const report = [
+      blockingReport([blockingItem('medium', 'contract/C1', 'caller breaks', 'src/a.py')], [repo.path]),
+      'KEEL-EVIDENCE: {not json}',
+      'KEEL-EVIDENCE: {"v": 1}',
+    ].join('\n');
+    assert.equal(writeWithReport(sandbox, repo, 'NEEDS_FIXES', report).rc, 0);
+    assert.deepEqual(findingsLog(sandbox).map((r) => [r.finding_id, r.path]), [['C1', 'src/a.py']]);
+  });
+
   test('writeReview_stillWritesEvidence_whenTheFindingsLogCannotBeWritten', (t) => {
     const sandbox = new Sandbox(t);
     const repo = feature(sandbox);

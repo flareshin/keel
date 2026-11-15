@@ -37,7 +37,12 @@ export function logsDir(): string {
 }
 
 export function appendRecord(name: string, record: Record<string, unknown>): void {
-  appendLine(name, stringifySorted(record));
+  appendRecords(name, [record]);
+}
+
+export function appendRecords(name: string, records: Array<Record<string, unknown>>): void {
+  if (records.length === 0) return;
+  appendLine(name, records.map((record) => stringifySorted(record)).join('\n'));
 }
 
 function appendLine(name: string, text: string): void {

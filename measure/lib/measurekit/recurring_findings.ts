@@ -1,6 +1,6 @@
 import path from "node:path"
 
-import { FINDINGS_LOG } from "../../../lib/evidence/findings.ts"
+import { FINDINGS_LOG, NO_LOCATION } from "../../../lib/evidence/findings.ts"
 import { readJsonl } from "./datafiles.ts"
 import * as env from "./env.ts"
 import { InvalidUtf8Error, isSystemError } from "./files.ts"
@@ -9,7 +9,6 @@ import type { JsonObject } from "./json.ts"
 
 const RECURRING_ROOTS = 2
 const TOP_RECURRING = 20
-const NO_PATH = /^N\/A\b/
 
 export interface RecurringKey {
   repo: string
@@ -61,7 +60,7 @@ export function summarizeRecurringFindings(): RecurringFindings | { error: strin
 function keyedFinding(record: JsonObject): KeyedFinding | null {
   const { repo, path: findingPath, lens, root_run_id: rootRunId } = record
   if (typeof repo !== "string" || typeof lens !== "string" || typeof rootRunId !== "string") return null
-  if (typeof findingPath !== "string" || findingPath === "" || NO_PATH.test(findingPath)) return null
+  if (typeof findingPath !== "string" || findingPath === "" || NO_LOCATION.test(findingPath)) return null
   return { repo, path: findingPath, lens, rootRunId }
 }
 

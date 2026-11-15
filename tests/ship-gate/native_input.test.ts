@@ -14,7 +14,7 @@ import { RegistryError, readTsv } from '../../lib/evidence/registry.ts';
 import * as store from '../../lib/evidence/store.ts';
 import { runCaptured } from '../../lib/evidence/subprocess.ts';
 import { TimeoutExpired } from '../../measure/lib/measurekit/timeout.ts';
-import { recognize } from '../../lib/evidence/testrun.ts';
+import { recognize, recognizeFailures } from '../../lib/evidence/testrun.ts';
 import { Refused, Usage, isInputFailure } from '../../lib/evidence/writers.ts';
 import { LOGIC_WITH_TEST, Sandbox } from './helpers.ts';
 
@@ -312,6 +312,24 @@ describe('Codex rollouts and runner output at their edges', () => {
 
   test('the node spec reporter summary counts its pass line', () => {
     assert.deepEqual(recognize('\u2139 tests 5\n\u2139 suites 1\n\u2139 pass 5\n\u2139 fail 0\n'), [5, 'spec']);
+  });
+
+  test('each runner summary reports its failing tests, and a zero, a TAP diagnostic or a glued word reports none', () => {
+    const cases: Array<[string, number]> = [
+      ['Tests run: 4, Failures: 1, Errors: 0\nTests run: 9, Failures: 2, Errors: 1\n', 3],
+      ['Ran 3 tests\n\nFAILED (failures=1, errors=2)\n', 3],
+      ['FAILED (errors=1, skipped=2)\n', 1],
+      ['FAILED (skipped=1, unexpected successes=1)\n', 1],
+      ['# pass 3\n# fail 2\n', 2],
+      ['\u2139 pass 5\n\u2139 fail 4\n', 4],
+      ['===== 2 failed, 5 passed in 0.12s =====\n', 2],
+      ['Tests:       1 failed, 9 passed, 10 total\n', 1],
+      ['      Tests  3 failed | 64 passed (67)\n', 3],
+      ['Tests run: 4, Failures: 0, Errors: 0\n# fail 0\n\u2139 fail 0\n', 0],
+      ['ok 1 - replays\n# parity: 3 failed silently\n# pass 1\n', 0],
+      ['x3 failed\n\u2139 fail 2x\nFAILED tests/a.py::b - boom\n', 0],
+    ];
+    for (const [output, expected] of cases) assert.equal(recognizeFailures(output), expected, output);
   });
 
   test('a TAP diagnostic line that says N passed is not counted as passing tests', () => {

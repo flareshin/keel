@@ -25,7 +25,16 @@ export const COUNT_PATTERNS: Array<[name: string, pattern: RegExp]> = [
   ['passed', new RegExp(
     `${LINE_START}(?!${SPACE_EITHER_WAY}*Test (?:Files|Suites)${NOT_WORD_AFTER})[^\\n]*?${NOT_WORD_BEFORE}${NOT_IN_TAP_DIAGNOSTIC}([0-9]+) passed${NOT_WORD_AFTER}`, 'gu')],
 ];
+const FAILURE_PATTERNS: Array<[name: string, pattern: RegExp]> = [
+  ['surefire', /Tests run: [0-9]+, Failures: ([0-9]+), Errors: ([0-9]+)/gu],
+  ['unittest', new RegExp(`${LINE_START}FAILED \\((?:failures=([0-9]+))?(?:, )?(?:errors=([0-9]+))?`, 'gu')],
+  ['tap', new RegExp(`${LINE_START}# fail ([0-9]+)${NOT_WORD_AFTER}`, 'gu')],
+  ['spec', new RegExp(`${LINE_START}\u2139 fail ([0-9]+)${NOT_WORD_AFTER}`, 'gu')],
+  ['passed', new RegExp(
+    `${LINE_START}(?!${SPACE_EITHER_WAY}*Test (?:Files|Suites)${NOT_WORD_AFTER})[^\\n]*?${NOT_WORD_BEFORE}${NOT_IN_TAP_DIAGNOSTIC}([0-9]+) failed${NOT_WORD_AFTER}`, 'gu')],
+];
 export const NO_TESTS_RECOGNIZED = 4;
+export const FAILURES_RECOGNIZED = 6;
 const COMMAND_NOT_FOUND = 2;
 const DEFAULT_EXEC_PATH = '/bin:/usr/bin';
 const MKFIFO = '/usr/bin/mkfifo';
@@ -49,10 +58,11 @@ export async function run(argv: string[], cwd: string): Promise<number> {
   const after = gitcmd.snapshotTree(repoRoot);
   const submodulesAfter = submoduleSnapshots(repoRoot);
   const [count, framework] = recognize(output);
+  const failures = recognizeFailures(output);
   const testRecord = { run_id: runId, repo: repoKey, repo_root: repoRoot, cmd: argv, exit: exitCode, count, framework, tree: after };
   let evidenceId: string | null = null;
   let submoduleEvidence: Record<string, string> = {};
-  if (exitCode === 0 && count > 0 && before === after) {
+  if (exitCode === 0 && count > 0 && failures === 0 && before === after) {
     const evidence = store.write('tests', { ...testRecord, head: gitcmd.commitSha(repoRoot, 'HEAD') }, repoKey);
     evidenceId = evidence.evidence_id;
     submoduleEvidence = writeSubmoduleEvidence(testRecord, submodulesBefore, submodulesAfter);
@@ -60,9 +70,12 @@ export async function run(argv: string[], cwd: string): Promise<number> {
   env.appendRecord('keel-tests.jsonl', {
     ...testRecord, ts: env.iso(env.utcNow()), evidence_id: evidenceId, submodule_evidence: submoduleEvidence,
   });
+  const failedDespiteExitZero = exitCode === 0 && failures > 0;
+  if (failedDespiteExitZero) printErrorLine(`keel test: the output reports ${failures} failing test${failures === 1 ? '' : 's'} although the command exited 0; no evidence written`);
   printErrorLine('KEEL-TEST ' + JSON.stringify({
     run_id: runId, count, exit: exitCode, evidence_id: evidenceId, submodule_evidence: submoduleEvidence,
   }));
+  if (failedDespiteExitZero) return FAILURES_RECOGNIZED;
   if (exitCode === 0 && count === 0) return NO_TESTS_RECOGNIZED;
   return exitCode;
 }
@@ -94,6 +107,21 @@ export function recognize(output: string): [count: number, framework: string | n
     total += name === 'surefire' ? counts.at(-1)! : counts.reduce((sum, item) => sum + item, 0);
   }
   return [total, framework];
+}
+
+export function recognizeFailures(output: string): number {
+  let total = 0;
+  for (const [name, pattern] of FAILURE_PATTERNS) {
+    const counts = [...output.matchAll(pattern)].map((match) => failuresOf(name, match));
+    if (counts.length === 0) continue;
+    total += name === 'surefire' ? counts.at(-1)! : counts.reduce((sum, item) => sum + item, 0);
+  }
+  return total;
+}
+
+function failuresOf(framework: string, match: RegExpMatchArray): number {
+  const failed = Number(match[1] ?? 0) + Number(match[2] ?? 0);
+  return framework === 'unittest' ? Math.max(failed, 1) : failed;
 }
 
 interface Launched {

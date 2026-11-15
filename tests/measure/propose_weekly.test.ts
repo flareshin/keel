@@ -92,12 +92,13 @@ describe("weekly", () => {
     box.write("data/projects/b/memory/MEMORY.md", "z".repeat(20))
     const [completed, report] = box.runJson("weekly")
     assert.equal(completed.status, 0, completed.stderr)
-    assert.deepEqual(Object.keys(report).sort(), ["always_loaded", "core_size", "defects", "proposals", "repo_layer_rules", "review_rounds"])
+    assert.deepEqual(Object.keys(report).sort(), ["always_loaded", "core_size", "defects", "harness_versions", "proposals", "repo_layer_rules", "review_rounds"])
     assert.deepEqual(report.repo_layer_rules, { count: 1, ids: ["C-repo"] })
     assert.deepEqual(report.always_loaded, { claude_md: 100, memory_indexes: 50 })
     assert.deepEqual(report.proposals.map((p: { id: string; action: string }) => [p.id, p.action]), [["C-late", "demote"]])
     assert.deepEqual(report.defects, {})
     assert.deepEqual(report.review_rounds, { chains: 0, roots_needing_fixes: 0, chains_by_needs_fixes_rounds: {} })
+    assert.deepEqual(report.harness_versions, { recorded: [], observed: {}, unrecorded_newer: [], unversioned: 0 })
   })
 
   it("weekly_reportsCoreNonTestLocAndDesignBytes_fromTrackedFiles", () => {
@@ -144,13 +145,61 @@ describe("weekly", () => {
     assert.ok(!("other" in report.defects))
   })
 
-  function givenReview(repo: string, evidenceId: string, fields: { rootRunId: string; since?: string; verdict: string; expired?: boolean }): void {
+  function givenReview(repo: string, evidenceId: string, fields: { rootRunId: string; since?: string; verdict: string; expired?: boolean; transcript?: string }): void {
     box.write(`data/state/keel/evidence/review/${repo.replace("/", "__")}/${evidenceId}.json`, JSON.stringify({
       schema: 1, kind: "review", evidence_id: evidenceId, run_id: fields.since ? `${fields.rootRunId}-${evidenceId}` : fields.rootRunId,
       root_run_id: fields.rootRunId, since: fields.since ?? null, verdict: fields.verdict, paths: [],
       created_at: `${PAST}T08:00:00Z`, expires_at: `${fields.expired ? PAST : FUTURE}T08:00:00Z`,
+      ...(fields.transcript === undefined ? {} : { source: { agent_transcript_path: path.join(box.data, fields.transcript) } }),
     }))
   }
+
+  function givenTranscript(relative: string, versions: (string | null)[]): void {
+    box.write(relative, versions.map((version) => JSON.stringify(version === null ? { type: "user" } : { type: "assistant", version })).join("\n") + "\n")
+  }
+
+  it("weekly_listsObservedHarnessVersionsNewerThanTheNewestRecordedFixture_comparingSegmentsAsNumbers", () => {
+    box.writeLedger("keel/ledger.tsv", [charterRow("K1")])
+    givenTranscript("keel/tests/hooks/fixtures/harness-contract/old.jsonl", ["2.1.99"])
+    givenTranscript("keel/tests/hooks/fixtures/harness-contract/new.jsonl", ["2.1.309", "2.1.309"])
+    givenTranscript("data/agents/pinned.jsonl", [null, "2.1.309"])
+    givenTranscript("data/agents/older.jsonl", ["2.1.100"])
+    givenTranscript("data/agents/upgraded.jsonl", ["2.1.309", "2.1.400"])
+    givenTranscript("data/agents/bare.jsonl", [null])
+    givenReview("acme/app", "a1", { rootRunId: "rv-a", verdict: "PASS", transcript: "agents/pinned.jsonl" })
+    givenReview("acme/app", "b1", { rootRunId: "rv-b", verdict: "PASS", transcript: "agents/older.jsonl" })
+    givenReview("acme/lib", "c1", { rootRunId: "rv-c", verdict: "NEEDS_FIXES", transcript: "agents/upgraded.jsonl" })
+    givenReview("acme/lib", "c2", { rootRunId: "rv-c", since: "c1", verdict: "PASS", transcript: "agents/upgraded.jsonl" })
+    givenReview("acme/lib", "d1", { rootRunId: "rv-d", verdict: "PASS", transcript: "agents/bare.jsonl" })
+    givenReview("acme/lib", "e1", { rootRunId: "rv-e", verdict: "PASS", transcript: "agents/gone.jsonl" })
+    givenReview("acme/lib", "f1", { rootRunId: "rv-f", verdict: "PASS" })
+    givenReview("acme/lib", "g1", { rootRunId: "rv-g", verdict: "PASS", transcript: "agents/expired.jsonl", expired: true })
+    givenTranscript("data/agents/expired.jsonl", ["9.9.9"])
+    const [completed, report] = box.runJson("weekly")
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.deepEqual(report.harness_versions, {
+      recorded: ["2.1.99", "2.1.309"],
+      observed: { "2.1.100": 1, "2.1.309": 1, "2.1.400": 1 },
+      unrecorded_newer: ["2.1.400"],
+      unversioned: 2,
+    })
+  })
+
+  it("weekly_listsEveryObservedVersionAsUnrecorded_whenNoContractFixtureExists", () => {
+    box.writeLedger("keel/ledger.tsv", [charterRow("K1")])
+    givenTranscript("data/agents/only.jsonl", ["2.1.325"])
+    givenReview("acme/app", "a1", { rootRunId: "rv-a", verdict: "PASS", transcript: "agents/only.jsonl" })
+    const [, report] = box.runJson("weekly")
+    assert.deepEqual(report.harness_versions, { recorded: [], observed: { "2.1.325": 1 }, unrecorded_newer: ["2.1.325"], unversioned: 0 })
+  })
+
+  it("weekly_reportsAnUnreadableReviewAsAHarnessVersionsError", () => {
+    box.writeLedger("keel/ledger.tsv", [charterRow("K1")])
+    box.write("data/state/keel/evidence/review/acme__app/broken.json", "{not json")
+    const [completed, report] = box.runJson("weekly")
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.ok(report.harness_versions.error.startsWith("unreadable evidence "), report.harness_versions.error)
+  })
 
   it("weekly_countsNeedsFixesRoundsPerLiveReviewChain", () => {
     box.writeLedger("keel/ledger.tsv", [charterRow("K1")])

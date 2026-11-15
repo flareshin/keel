@@ -167,7 +167,7 @@ export function excerpt(value: unknown): string {
   return text.length > EXCERPT_CHARACTERS ? text.slice(0, EXCERPT_CHARACTERS) + "…" : text
 }
 
-export function differencesFromRecorded(expected: ObservedDelta, run: Run, root: string, recordedLabel = "python"): string[] {
+export function differencesFromRecorded(expected: ObservedDelta, run: Run, root: string, recordedLabel: string): string[] {
   const actual = deltaOf(root, run)
   const differences: string[] = []
   for (const field of ["code", "stdout", "stderr"] as const) {

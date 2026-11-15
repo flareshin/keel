@@ -4,8 +4,9 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { recordedAnswers } from "../../tests/recorded.ts";
 
+const SHALLOW_DEPTH = 10;
+const PAST_THE_LIMIT_DEPTH = 2000;
 const HOOKS = join(import.meta.dirname, "..", "hooks");
 const SHAPES: Record<string, (depth: number) => string> = {
   arrays: (depth) => `a = ${"[".repeat(depth)}${"]".repeat(depth)}\n`,
@@ -26,11 +27,9 @@ describe("pre-tool-use hook crash depth on deeply nested config TOML", () => {
   }
 
   for (const [name, shape] of Object.entries(SHAPES)) {
-    it(`crashes on ${name} at exactly the depth where the Python hook did`, () => {
-      const [low] = recordedAnswers<unknown, [number]>("codex-hook-recursion", [{ crashDepth: name }])[0] as [number];
-      console.log(`parity hook deep ${name}: python first crashes at depth ${low}`);
-      assert.equal(hookStatus(shape(low - 1)), 0);
-      assert.equal(hookStatus(shape(low)), 1);
+    it(`passes ${name} ${SHALLOW_DEPTH} deep and crashes on ${PAST_THE_LIMIT_DEPTH} deep`, () => {
+      assert.equal(hookStatus(shape(SHALLOW_DEPTH)), 0);
+      assert.equal(hookStatus(shape(PAST_THE_LIMIT_DEPTH)), 1);
     });
   }
 

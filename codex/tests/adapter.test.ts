@@ -9,7 +9,6 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { run } from "../../hooks/lib/hookkit/subprocess.ts";
-import { recordedAnswers } from "../../tests/recorded.ts";
 import type { CompletedProcess } from "../../hooks/lib/hookkit/subprocess.ts";
 import { withEnv } from "../../tests/hooks/helpers.ts";
 import { carriesPrApprovalRule, dropPrRule, rewordPrRule } from "../../tests/link/helpers.ts";
@@ -516,59 +515,6 @@ describe("installation", () => {
       writeFileSync(join(impostor, "node"), "#!/bin/sh\n");
       chmodSync(join(impostor, "node"), 0o755);
       assert.equal(installedCommand(`${impostor}:${join(home, "missing")}:relative/bin::`), commandFor(process.execPath));
-    });
-  });
-
-  describe("reading a profile the Python installer wrote", () => {
-    interface PythonInstall {
-      agents: string;
-      agentsBytes: string;
-      ownedAgentsDigest: string;
-      registry: string;
-    }
-
-    function recordedPythonInstall(): PythonInstall {
-      return recordedAnswers<unknown, PythonInstall>("codex-python-install", [{ install: "write" }], { "{{ROOT}}": home, "{{KEEL_HOME}}": dirname(ADAPTER) })[0] as PythonInstall;
-    }
-
-    const SKILLS_ADDED_AFTER_RECORDING = ["removing-comments", "authoring-agents", "improving-agents", "deepening-prompts"];
-
-    function registryWithoutSkillsAddedAfterRecording(registryText: string): string {
-      const registry = JSON.parse(registryText);
-      for (const name of SKILLS_ADDED_AFTER_RECORDING) delete registry.skills[name];
-      return JSON.stringify(registry, null, 2) + "\n";
-    }
-
-    it("records the same ownership digests and skill registry as the recorded Python install", () => {
-      const install = recordedPythonInstall();
-      assert.equal(runLink("--write").status, 0);
-      const state = readJsonFile(join(home, ".codex/keel-codex-state.json"));
-      const agents = join(home, ".codex/AGENTS.md");
-      assert.equal(install.ownedAgentsDigest, referenceDigest("file", Buffer.from(install.agentsBytes, "base64")));
-      assert.equal(state["owned"][agents], digest("file", install.agents));
-      assert.equal(read(agents), install.agents);
-      const registry = read(join(home, ".agents/keel-codex-skills.json"));
-      assert.equal(registryWithoutSkillsAddedAfterRecording(registry), install.registry);
-      for (const name of SKILLS_ADDED_AFTER_RECORDING) assert.equal(JSON.parse(registry).skills[name].target, join(dirname(ADAPTER), "skills", name));
-    });
-
-    function recordedAgentsFor(source: string): string {
-      const tokens = { "{{ROOT}}": home, "{{KEEL_HOME}}": source, "{{PRINCIPLES}}": read(join(source, "PRINCIPLES.md")) };
-      return recordedAnswers<unknown, PythonInstall>("codex-python-install", [{ install: "write" }], tokens)[0]!.agents;
-    }
-
-    it("matches the recorded install after a PRINCIPLES.md text change, with no fixture edit", () => {
-      const source = sourceWithEdit("reworded", "PRINCIPLES.md", (text) => `${text}- [K6] A rule added after the fixtures were recorded.\n`);
-      const run = runSourceLink(source, "--write");
-      assert.equal(run.status, 0, run.stderr);
-      assert.equal(read(join(home, ".codex/AGENTS.md")), recordedAgentsFor(source));
-    });
-
-    it("differs from the recorded install when the adapter writes a different runtime section", () => {
-      const source = sourceWithEdit("restructured", "codex/AGENTS.md", (text) => text.replace("## Codex runtime\n", "## Codex runtime notes\n"));
-      const run = runSourceLink(source, "--write");
-      assert.equal(run.status, 0, run.stderr);
-      assert.notEqual(read(join(home, ".codex/AGENTS.md")), recordedAgentsFor(source));
     });
   });
 

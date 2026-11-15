@@ -9,8 +9,6 @@ const HOOK_PARITY_SHARDS = 8;
 export const CORPUS_TESTS = [
   ...Array.from({ length: SHIP_GATE_PARITY_SHARDS }, (_unused, index) => `tests/ship-gate/ship-gate-parity-shard-${index + 1}.test.ts`),
   ...Array.from({ length: HOOK_PARITY_SHARDS }, (_unused, index) => `tests/hooks/hook-parity-shard-${index + 1}.test.ts`),
-  'codex/tests/hook-parity.test.ts',
-  'codex/tests/cli-parity.test.ts',
 ];
 export const REPLAY_TESTS = [
   ...CORPUS_TESTS,
@@ -18,7 +16,6 @@ export const REPLAY_TESTS = [
   'tests/ship-gate/cross_impl.test.ts',
   'tests/ship-gate/cross_impl_codex.test.ts',
   'tests/hooks/hook-parity.test.ts',
-  'tests/hooks/shell-parity.test.ts',
   'tests/link/cross_impl.test.ts',
   'tests/skills/rule-checks-parity.test.ts',
 ];

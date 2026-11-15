@@ -17,13 +17,14 @@ const NOT_WORD_AFTER = '(?![\\p{L}\\p{N}_])';
 const NOT_WORD_BEFORE = '(?<![\\p{L}\\p{N}_])';
 const LINE_START = '(?<![^\\n])';
 const NOT_IN_TAP_DIAGNOSTIC = '(?<!(?<![^\\r\\n])[ \\t]*#(?:[ \\t][^\\r\\n]*)?)';
+const TEST_FILES_LINE = `${SPACE_EITHER_WAY}*Test (?:Files|Suites)${NOT_WORD_AFTER}`;
 export const COUNT_PATTERNS: Array<[name: string, pattern: RegExp]> = [
   ['surefire', /Tests run: ([0-9]+)/gu],
   ['unittest', new RegExp(`${LINE_START}Ran ([0-9]+) tests?${NOT_WORD_AFTER}`, 'gu')],
   ['tap', new RegExp(`${LINE_START}# pass ([0-9]+)`, 'gu')],
   ['spec', new RegExp(`${LINE_START}\u2139 pass ([0-9]+)${NOT_WORD_AFTER}`, 'gu')],
   ['passed', new RegExp(
-    `${LINE_START}(?!${SPACE_EITHER_WAY}*Test (?:Files|Suites)${NOT_WORD_AFTER})[^\\n]*?${NOT_WORD_BEFORE}${NOT_IN_TAP_DIAGNOSTIC}([0-9]+) passed${NOT_WORD_AFTER}`, 'gu')],
+    `${LINE_START}(?!${TEST_FILES_LINE})[^\\n]*?${NOT_WORD_BEFORE}${NOT_IN_TAP_DIAGNOSTIC}([0-9]+) passed${NOT_WORD_AFTER}`, 'gu')],
 ];
 const FAILURE_PATTERNS: Array<[name: string, pattern: RegExp]> = [
   ['surefire', /Tests run: [0-9]+, Failures: ([0-9]+), Errors: ([0-9]+)/gu],
@@ -31,10 +32,10 @@ const FAILURE_PATTERNS: Array<[name: string, pattern: RegExp]> = [
   ['tap', new RegExp(`${LINE_START}# fail ([0-9]+)${NOT_WORD_AFTER}`, 'gu')],
   ['spec', new RegExp(`${LINE_START}\u2139 fail ([0-9]+)${NOT_WORD_AFTER}`, 'gu')],
   ['passed', new RegExp(
-    `${LINE_START}(?!${SPACE_EITHER_WAY}*Test (?:Files|Suites)${NOT_WORD_AFTER})[^\\n]*?${NOT_WORD_BEFORE}${NOT_IN_TAP_DIAGNOSTIC}([0-9]+) failed${NOT_WORD_AFTER}`, 'gu')],
+    `${LINE_START}(?!${TEST_FILES_LINE})[^\\n]*?${NOT_WORD_BEFORE}${NOT_IN_TAP_DIAGNOSTIC}([0-9]+) failed${NOT_WORD_AFTER}`, 'gu')],
 ];
 const FILE_FAILURES = new RegExp(
-  `${LINE_START}${SPACE_EITHER_WAY}*Test (?:Files|Suites)${NOT_WORD_AFTER}[^\\n]*?${NOT_WORD_BEFORE}([0-9]+) failed${NOT_WORD_AFTER}`, 'gu');
+  `${LINE_START}${TEST_FILES_LINE}[^\\n]*?${NOT_WORD_BEFORE}([0-9]+) failed${NOT_WORD_AFTER}`, 'gu');
 export const NO_TESTS_RECOGNIZED = 4;
 export const FAILURES_RECOGNIZED = 6;
 const COMMAND_NOT_FOUND = 2;
@@ -73,7 +74,7 @@ export async function run(argv: string[], cwd: string): Promise<number> {
     ...testRecord, ts: env.iso(env.utcNow()), evidence_id: evidenceId, submodule_evidence: submoduleEvidence,
   });
   const failedDespiteExitZero = exitCode === 0 && failures > 0;
-  if (failedDespiteExitZero) printErrorLine(`keel test: the output reports ${failures} failing test${failures === 1 ? '' : 's'} although the command exited 0; no evidence written`);
+  if (failedDespiteExitZero) printErrorLine(`keel test: the output reports ${failures} failing test${failures === 1 ? '' : 's'} or test file${failures === 1 ? '' : 's'} although the command exited 0; no evidence written`);
   printErrorLine('KEEL-TEST ' + JSON.stringify({
     run_id: runId, count, exit: exitCode, evidence_id: evidenceId, submodule_evidence: submoduleEvidence,
   }));

@@ -58,3 +58,34 @@ export function toolUses(entry: Entry): Entry[] {
   if (!Array.isArray(content)) return [];
   return content.filter((block: unknown): block is Entry => isRecord(block) && getField(block, "type") === "tool_use");
 }
+
+const HANDBACK_TOOL = "subagenthandback";
+
+export function finalReport(path: string): string | null {
+  let finalText: string | null = null;
+  let handback: string | null = null;
+  for (const entry of iterEntries(path)) {
+    if (roleOf(entry) !== "assistant") continue;
+    const blocks = toolUses(entry);
+    if (blocks.length === 0) {
+      finalText = withText(finalText, textOf(contentOf(entry)));
+      continue;
+    }
+    finalText = null;
+    handback = handbackMessage(blocks[blocks.length - 1] as Entry);
+  }
+  return finalText ?? handback;
+}
+
+function withText(finalText: string | null, text: string | null): string | null {
+  if (text === null || trimSpace(text) === "") return finalText;
+  return finalText === null ? text : `${finalText}\n${text}`;
+}
+
+function handbackMessage(block: Entry): string | null {
+  const name = getField(block, "name");
+  if (typeof name !== "string" || name.toLowerCase() !== HANDBACK_TOOL) return null;
+  const input = getField(block, "input");
+  const message = isRecord(input) ? getField(input, "message") : null;
+  return typeof message === "string" ? message : null;
+}

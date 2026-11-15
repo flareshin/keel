@@ -165,6 +165,80 @@ describe("AgentDispatchTest", () => {
   });
 });
 
+const LONG_BRIEF = "Update the parser so every caller passes the new flag. ".repeat(10);
+const SHORT_BRIEF = "Find every caller of parse(), then list each file with its line number. ".repeat(8).slice(0, 499);
+
+function contextOf(result: HookResult): string | undefined {
+  return result.json().hookSpecificOutput.additionalContext;
+}
+
+describe("BriefSkillHintTest", () => {
+  it("dispatch_hintsBriefSkills_whenPromptIsLong", () => {
+    const result = dispatch({ prompt: LONG_BRIEF });
+    assert.match(contextOf(result) ?? "", /^keel: a long agent brief .*\/deepening-prompts.*\/authoring-agents/);
+    assert.deepEqual([updated(result)["model"], updated(result)["effort"], updated(result)["prompt"]], ["sonnet", "medium", LONG_BRIEF]);
+    assertFired(sandbox, "C-dispatch", "warn", "model-assign");
+  });
+
+  it("dispatch_hintsWithoutRewrite_whenPromptIsLongAndModelAndEffortInBand", () => {
+    const result = dispatch({ prompt: LONG_BRIEF, model: "sonnet", effort: "low" });
+    assert.equal(result.json().hookSpecificOutput.updatedInput, undefined);
+    assert.match(contextOf(result) ?? "", /deepening-prompts/);
+    assertFired(sandbox, "C-dispatch", "warn", "model-assign");
+  });
+
+  it("dispatch_givesNoHint_whenPromptIsBelowTheThreshold", () => {
+    assert.equal(SHORT_BRIEF.length, 499);
+    assert.equal(contextOf(dispatch({ prompt: SHORT_BRIEF })), undefined);
+    assert.equal(sandbox.fires().filter((fire) => fire.outcome === "warn").length, 0);
+  });
+
+  it("dispatch_hintsBriefSkills_whenPromptIsExactlyAtTheThreshold", () => {
+    assert.match(contextOf(dispatch({ prompt: SHORT_BRIEF + "x" })) ?? "", /deepening-prompts/);
+  });
+
+  for (const subagentType of ["keel:auditor", "keel:reporter", "keel:comment-reviewer", "Keel:Auditor"]) {
+    it(`dispatch_givesNoHint_whenSubagentTypeIs_${subagentType}`, () => {
+      const result = dispatch({ prompt: LONG_BRIEF, subagent_type: subagentType });
+      assert.equal(contextOf(result), undefined);
+      assert.equal(updated(result)["model"], "sonnet");
+    });
+  }
+
+  it("dispatch_givesNoHint_whenIssuedFromInsideASubagent", () => {
+    const payload = preToolUse("Agent", { description: "Find callers", prompt: LONG_BRIEF }, sandbox.root, "/dev/null", true);
+    assert.equal(contextOf(sandbox.runHook(MODEL_ASSIGN, { payload })), undefined);
+    assert.match(contextOf(dispatch({ prompt: LONG_BRIEF })) ?? "", /deepening-prompts/);
+  });
+
+  it("dispatch_hintsOncePerSession_whenSeveralLongBriefsFollow", () => {
+    assert.match(contextOf(dispatch({ prompt: LONG_BRIEF })) ?? "", /deepening-prompts/);
+    const second = dispatch({ prompt: LONG_BRIEF });
+    assert.equal(contextOf(second), undefined);
+    assert.equal(updated(second)["model"], "sonnet");
+    assert.equal(sandbox.fires().filter((fire) => fire.outcome === "warn").length, 1);
+  });
+
+  it("dispatch_hintsAgain_whenALongBriefComesFromAnotherSession", () => {
+    dispatch({ prompt: LONG_BRIEF });
+    const input = { description: "Find callers", prompt: LONG_BRIEF };
+    const payload = { ...preToolUse("Agent", input, sandbox.root), session_id: "99999999-2222-3333-4444-555555555555" };
+    assert.match(contextOf(sandbox.runHook(MODEL_ASSIGN, { payload })) ?? "", /deepening-prompts/);
+  });
+
+  it("dispatch_hintsLaterBrief_whenOnlyAReviewDispatchCameBefore", () => {
+    dispatch({ prompt: LONG_BRIEF, subagent_type: "keel:auditor" });
+    assert.match(contextOf(dispatch({ prompt: LONG_BRIEF })) ?? "", /deepening-prompts/);
+  });
+
+  it("dispatch_stillRewrites_whenTheStateDirectoryCannotBeWritten", () => {
+    sandbox.write(join(sandbox.data, "state"), "not a directory");
+    const result = dispatch({ prompt: LONG_BRIEF });
+    assert.equal(contextOf(result), undefined);
+    assert.deepEqual([updated(result)["model"], updated(result)["effort"]], ["sonnet", "medium"]);
+  });
+});
+
 describe("WorkflowScriptTest", () => {
   it("workflow_deniedWithCDispatch_whenAgentCallsNameNoModel", () => {
     const result = workflow({ script: "await agent('probe', {effort: 'medium'})" });

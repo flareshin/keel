@@ -3,8 +3,9 @@ import { FireLog } from "../lib/hookkit/fires.ts";
 import { getField, isNonEmptyString, textField } from "../lib/hookkit/fields.ts";
 import { joinPath } from "../lib/hookkit/paths.ts";
 import { SPACE_CHARS, WORD_CHARS } from "../lib/hookkit/text.ts";
-import { readFileSync } from "node:fs";
-import { isFile } from "../lib/hookkit/files.ts";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { isFile, isSystemError } from "../lib/hookkit/files.ts";
 import { parsePayload } from "../lib/hookkit/json.ts";
 import { describeError, RecursionError, ValueError } from "../lib/hookkit/errors.ts";
 import { readStdin } from "../lib/hookkit/stdio.ts";
@@ -22,6 +23,12 @@ const JUDGMENT_RE = new RegExp(`${WORD_START}(?:VERDICT|NEEDS_FIXES|review-lense
 const REQUIRED_SCRIPT_OPTIONS: ReadonlyArray<readonly [string, RegExp]> = ["model", "effort"].map((key) => [
   key, new RegExp(`${WORD_START}${key}${WORD_END}["']?[${SPACE_CHARS}]*:`, "u"),
 ]);
+const BRIEF_HINT_MIN_CHARS = 500;
+const BRIEF_HINT_OWNERS: ReadonlySet<string> = new Set(["keel:auditor", "keel:reporter", "keel:comment-reviewer"]);
+const STATE_NAME_UNSAFE = new RegExp(`[^${WORD_CHARS}.-]`, "gu");
+const BRIEF_HINT =
+  "keel: a long agent brief - load /deepening-prompts (one-reading but loose request) or /authoring-agents " +
+  "(new agent or brief form) first if not loaded this session.";
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
 const OPUS = "opus";
 const SONNET = "sonnet";
@@ -75,14 +82,31 @@ function assignDispatch(payload: Payload, fires: FireLog): number {
     ["effort", agentFile.pinsEffort ? null : resolveEffort(textField(toolArgs, "effort"), judgment)],
   ];
   const assigned = choices.flatMap(([key, choice]) => (choice ? [[key, choice] as const] : []));
+  const hint = briefHint(payload, toolArgs, agentType, fires);
   if (assigned.length === 0) {
     fires.append(RULE, "pass");
-    return protocol.EXIT_PASS;
+    return hint === null ? protocol.EXIT_PASS : protocol.warn("PreToolUse", hint);
   }
   const note = assigned.map(([key, [value, why]]) => `${key} -> ${value} (${why})`).join(", ");
   fires.append(RULE, "record", { detail: note });
   const values = Object.fromEntries(assigned.map(([key, [value]]) => [key, value]));
-  return protocol.rewriteInput({ ...toolArgs, ...values }, note);
+  return protocol.rewriteInput({ ...toolArgs, ...values }, note, hint);
+}
+
+function briefHint(payload: Payload, toolArgs: Payload, agentType: string, fires: FireLog): string | null {
+  const session = textField(payload, "session_id");
+  if (session === "" || protocol.isSubagent(payload) || BRIEF_HINT_OWNERS.has(agentType)) return null;
+  if (textField(toolArgs, "prompt").length < BRIEF_HINT_MIN_CHARS) return null;
+  const marker = joinPath(dataDir(), "state", "keel", "sessions", `${session.replace(STATE_NAME_UNSAFE, "_")}.brief-hint`);
+  try {
+    mkdirSync(dirname(marker), { recursive: true });
+    writeFileSync(marker, "", { flag: "wx" });
+  } catch (error) {
+    if (!isSystemError(error)) throw error;
+    return null;
+  }
+  fires.append(RULE, "warn", { detail: "long brief skill hint" });
+  return BRIEF_HINT;
 }
 
 function resolveModel(model: string, readOnlyType: boolean, judgment: boolean): Choice | null {

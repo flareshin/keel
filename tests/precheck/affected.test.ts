@@ -61,7 +61,7 @@ describe("affectedTests", () => {
   it("corpusTests_nameReplayFilesThatExistInThisRepo", () => {
     assert.equal(CORPUS_TESTS.filter((test) => test.startsWith("tests/ship-gate/ship-gate-parity-shard-")).length, SHARD_COUNT)
     assert.equal(CORPUS_TESTS.filter((test) => test.startsWith("tests/hooks/hook-parity-shard-")).length, HOOK_SHARD_COUNT)
-    assert.equal(CORPUS_TESTS.length, SHARD_COUNT + HOOK_SHARD_COUNT + 2)
+    assert.equal(CORPUS_TESTS.length, SHARD_COUNT + HOOK_SHARD_COUNT)
     for (const test of CORPUS_TESTS) assert.ok(existsSync(join(KEEL_ROOT, test)), `${test} is missing`)
   })
 })
@@ -158,7 +158,7 @@ describe("keel test --affected", () => {
   })
 
   it("keelTestAffected_withReplays_listsAndRunsAReplayTheChangeReachesOnce", () => {
-    const reachedReplay = "tests/hooks/shell-parity.test.ts"
+    const reachedReplay = "tests/hooks/hook-parity.test.ts"
     const root = remoteRepo(Object.fromEntries(REPLAY_TESTS.map((test) => [test, PASSING_TEST("node:path")])))
     writeFiles(root, { [reachedReplay]: PASSING_TEST("node:os") })
 

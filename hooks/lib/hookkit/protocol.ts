@@ -1,7 +1,7 @@
-import { writeSync } from "node:fs";
 import { codePointLength, truncate } from "./text.ts";
 import { getField, isNonEmptyString, isRecord } from "./fields.ts";
 import { pythonJsonDumps } from "./jsonout.ts";
+import { printLine, writeStderr } from "./stdio.ts";
 
 export const EXIT_PASS = 0;
 export const EXIT_DENY = 2;
@@ -10,9 +10,6 @@ export const LIST_LIMIT = 10;
 export const RUN_YOURSELF = "Run it yourself in your terminal: ";
 export const ASK_USER = "Stop and ask the user.";
 export const FILE_EDIT_TOOLS: ReadonlySet<string> = new Set(["edit", "multiedit", "write", "notebookedit"]);
-
-const STDOUT = 1;
-const STDERR = 2;
 
 export type Payload = Record<string, unknown>;
 export type Bullet = readonly [ruleId: string, text: string];
@@ -66,7 +63,7 @@ export function listed(items: readonly string[]): string {
 }
 
 export function deny(message: string): number {
-  writeAll(STDERR, message + "\n");
+  writeStderr(message + "\n");
   return EXIT_DENY;
 }
 
@@ -89,17 +86,5 @@ export function rewriteInput(updatedInput: Payload, note: string): number {
 }
 
 function printJson(value: unknown): void {
-  writeAll(STDOUT, pythonJsonDumps(value) + "\n");
-}
-
-function writeAll(descriptor: number, text: string): void {
-  const bytes = Buffer.from(text, "utf8");
-  let written = 0;
-  while (written < bytes.length) {
-    try {
-      written += writeSync(descriptor, bytes, written);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EAGAIN") throw error;
-    }
-  }
+  printLine(pythonJsonDumps(value));
 }

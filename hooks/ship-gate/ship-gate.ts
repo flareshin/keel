@@ -16,7 +16,7 @@ import { AttributeError, describeError, pythonTypeName, RecursionError, ValueErr
 import { readStdin, writeStderr } from "../lib/hookkit/stdio.ts";
 import {
   attachedGhRepo, configKey, dashedGitSubcommand, GH_REPO_OPTIONS, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, interpretPush,
-  isConfigRead,
+  isConfigRead, nextWord,
 } from "../lib/hookkit/gitargs.ts";
 import { RUN_TIME_WORD_RE } from "../lib/hookkit/commands.ts";
 import type { SimpleCommand } from "../lib/hookkit/commands.ts";
@@ -409,7 +409,7 @@ function readGhApi(args: string[]): [GhApiOption[], string[]] {
     if (word.startsWith("--")) {
       const [option, separator, value] = partition(word, "=");
       const takesNext = !separator && GH_API_VALUE_OPTIONS.has(option);
-      options.push([option, takesNext ? nextWord(words) : value]);
+      options.push([option, takesNext ? (nextWord(words) ?? "") : value]);
     } else if (word.startsWith("-")) {
       options.push(...readGhApiCluster(word.slice(1), words));
     } else {
@@ -426,17 +426,12 @@ function readGhApiCluster(letters: string, words: ArrayIterator<string>): GhApiO
     const option = "-" + rest[0];
     rest = rest.slice(1);
     if (GH_API_VALUE_OPTIONS.has(option)) {
-      options.push([option, rest.startsWith("=") ? rest.slice(1) : rest || nextWord(words)]);
+      options.push([option, rest.startsWith("=") ? rest.slice(1) : rest || (nextWord(words) ?? "")]);
       break;
     }
     options.push([option, ""]);
   }
   return options;
-}
-
-function nextWord(words: ArrayIterator<string>): string {
-  const next = words.next();
-  return next.done ? "" : next.value;
 }
 
 function runtimeNameMayPushOrMerge(words: string[], call: string): boolean {
@@ -514,7 +509,7 @@ function configOverride(globalWords: string[], environment: Environment): string
   for (const word of words) {
     const [option, , attached] = partition(word, "=");
     if (!CONFIG_OVERRIDE_OPTIONS.has(option)) continue;
-    const setting = attached || nextWord(words);
+    const setting = attached || (nextWord(words) ?? "");
     if (routesPushes(setting)) return `${option} ${setting}`;
   }
   const variable = [...environment.keys()].find((name) => name.startsWith(CONFIG_VARIABLE_PREFIX));

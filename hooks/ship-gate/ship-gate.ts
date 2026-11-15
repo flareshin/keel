@@ -33,6 +33,7 @@ import type { GatedRepo } from "../../lib/evidence/registry.ts";
 import { runCaptured } from "../../lib/evidence/subprocess.ts";
 import * as verify from "../../lib/evidence/verify.ts";
 import type { Decision, Reason } from "../../lib/evidence/verify.ts";
+import { remindUnreadyPush } from "./stop-readiness.ts";
 
 const HOOK = "ship-gate";
 const FIRES_DETAIL_LIMIT = 200;
@@ -243,6 +244,7 @@ function dispatch(payload: unknown): number {
   }
   const eventField = getField(payload, "hook_event_name");
   const event = typeof eventField === "string" ? eventField : "";
+  if (event === "Stop") return remindUnreadyPush(payload);
   const report = new Report(payload, event);
   if (event === "PreToolUse" && getField(payload, "tool_name") === "Bash") guardBash(payload, report);
   return report.emit();

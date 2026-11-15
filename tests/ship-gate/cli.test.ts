@@ -47,6 +47,41 @@ describe('KeelTestCommandTest', () => {
     assert.deepEqual(sandbox.evidenceFiles('tests'), []);
   });
 
+  test('keelTest_exits6WithoutEvidence_whenAPipeHidesTheFailingExitOfTheTests', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    const run = sandbox.keel(['test', '--', 'bash', '-c', "{ printf '\u2139 pass 7\\n\u2139 fail 3\\n'; exit 1; } | cat"], { cwd: repo.path });
+    assert.equal(run.rc, 6, run.stderr);
+    assert.deepEqual(sandbox.evidenceFiles('tests'), []);
+    assert.match(run.stderr, /the output reports 3 failing tests although the command exited 0; no evidence written/);
+    assert.deepEqual(summaryOf(run), { run_id: summaryOf(run).run_id, count: 7, exit: 0, evidence_id: null, submodule_evidence: {} });
+  });
+
+  test('keelTest_exits6NotFour_whenAGreenExitReportsOnlyFailingTests', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    const run = sandbox.keel(['test', '--', 'bash', '-c', "echo '===== 3 failed in 0.20s ====='"], { cwd: repo.path });
+    assert.equal(run.rc, 6, run.stderr);
+    assert.deepEqual([summaryOf(run).count, summaryOf(run).evidence_id], [0, null]);
+  });
+
+  test('keelTest_writesEvidence_whenTheSummaryReportsZeroFailures', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    const run = sandbox.keel(['test', '--', 'bash', '-c', "printf '\u2139 pass 5\\n\u2139 fail 0\\n'"], { cwd: repo.path });
+    assert.equal(run.rc, 0, run.stderr);
+    assert.equal(sandbox.evidenceFiles('tests').length, 1);
+  });
+
+  test('keelTest_keepsTheCommandsExitCode_whenItFailsAndReportsFailures', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    const run = sandbox.keel(['test', '--', 'bash', '-c', "echo '1 failed, 2 passed'; exit 1"], { cwd: repo.path });
+    assert.equal(run.rc, 1);
+    assert.doesNotMatch(run.stderr, /failing test/);
+    assert.deepEqual(sandbox.evidenceFiles('tests'), []);
+  });
+
   test('keelTest_writesNoEvidence_whenCommandChangesTheTree', (t) => {
     const sandbox = new Sandbox(t);
     const repo = sandbox.clone('acme', 'app');

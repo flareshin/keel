@@ -12,7 +12,7 @@ import type { LinkResult } from "./helpers.ts"
 
 type Run = (...args: string[]) => LinkResult
 type Script = (run: Run, box: LinkSandbox) => void
-type ScenarioOptions = { dataDirName?: string; tagV1?: boolean; plainSandbox?: boolean }
+type ScenarioOptions = { dataDirName?: string; plainSandbox?: boolean }
 type Transcript = { commands: { args: string[]; status: number | null; stdout: string; stderr: string }[]; tree: unknown[] }
 
 const TYPESCRIPT_COMMAND = [process.execPath, LINK_ENTRY]
@@ -58,13 +58,6 @@ function seedRichSandbox(box: LinkSandbox): void {
   fs.symlinkSync("/usr/bin/true", box.dataPath("bin/keel"))
 }
 
-function tagDataRepoAsV1(box: LinkSandbox): void {
-  box.git(box.data, "init", "-q")
-  box.git(box.data, "add", "-A")
-  box.git(box.data, "commit", "-q", "-m", "v1")
-  box.git(box.data, "tag", "v1-final")
-}
-
 type Resume = { from: number; commands: Transcript["commands"] }
 type CommandRecord = Transcript["commands"][number]
 type TranscriptSummary = { commands: (CommandSummary | CommandRecord)[]; tree: unknown }
@@ -102,7 +95,6 @@ function execute(script: Script, options: ScenarioOptions, resume?: Resume): Tra
   }
   try {
     if (resume === undefined && !options.plainSandbox) seedRichSandbox(box)
-    if (resume === undefined && options.tagV1) tagDataRepoAsV1(box)
     script(run, box)
     commands.push({ args: ["git config core.hooksPath"], status: 0, stdout: box.gitConfigValue(box.keel, "core.hooksPath"), stderr: "" })
     return maskDigests({ commands, tree: snapshotTree(box.data) })
@@ -254,7 +246,7 @@ describe("integer-like keys follow JavaScript object order", () => {
 
 describe("link lifecycle scenarios keep their recorded outcomes", () => {
   it("recordedScenarios_belongOnlyToScenariosThatStillExist", () => {
-    assert.deepEqual(Object.keys(RECORDED_SCENARIOS).sort(), ["fullLifecycle", "integerLikeKeysInFragments", "loneSurrogateInLiveUnownedValue", "quotedDataDirWithV1Tag"])
+    assert.deepEqual(Object.keys(RECORDED_SCENARIOS).sort(), ["fullLifecycle", "integerLikeKeysInFragments", "loneSurrogateInLiveUnownedValue", "quotedDataDir"])
   })
 
   const scenarios: Scenario[] = [
@@ -266,11 +258,11 @@ describe("link lifecycle scenarios keep their recorded outcomes", () => {
       options: {},
     },
     {
-      name: "quotedDataDirWithV1Tag",
+      name: "quotedDataDir",
       script: QUOTED_DATA_DIR,
       statuses: QUOTED_DATA_DIR_STATUSES,
       switchPoints: [QUOTED_DATA_DIR_AFTER_WRITE, QUOTED_DATA_DIR_AT_UNLINK],
-      options: { dataDirName: `da ta's \u00e9 ${NON_BMP}`, tagV1: true },
+      options: { dataDirName: `da ta's \u00e9 ${NON_BMP}` },
     },
     { name: "integerLikeKeysInFragments", script: INTEGER_LIKE_KEYS_FRAGMENT, statuses: INTEGER_LIKE_KEYS_FRAGMENT_STATUSES, switchPoints: [1, 2], options: { plainSandbox: true } },
     loneSurrogateScenario("loneSurrogateInLiveUnownedValue", LONE_SURROGATE_LIVE_UNOWNED_VALUE, LONE_SURROGATE_LIVE_UNOWNED_VALUE_STATUSES),

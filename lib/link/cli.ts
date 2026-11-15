@@ -5,7 +5,6 @@ import { flagOption, noPositionals, parseCommandLine, stringOption, usageError }
 import type { CommandSpec } from "../../measure/lib/measurekit/cli.ts"
 import { isFile, isSystemError, readUtf8, resolveLinks, splitLines } from "../../measure/lib/measurekit/files.ts"
 import type { JsonObject } from "../../measure/lib/measurekit/json.ts"
-import { shlexQuote } from "../../measure/lib/measurekit/shlex.ts"
 import * as claudeMd from "./claude_md.ts"
 import { EXIT_INTERNAL, EXIT_NEGATIVE, EXIT_OK, EXIT_REFUSED, Refused, resolvePaths, runGit } from "./config.ts"
 import type { KeelPaths, LinkMode } from "./config.ts"
@@ -16,7 +15,6 @@ import { FORCE_FLAG, LIFTING_FLAGS, buildPlan, changeToJson, problemBlocks, prob
 import type { BlockLevel, Plan, Problem } from "./plan.ts"
 import * as settingsJson from "./settings_json.ts"
 
-const V1_TAG = "v1-final"
 const COMMAND: CommandSpec = {
   prog: "link",
   usage: "link [-h] [--write | --check | --unlink] [--plugin | --full] [--force] [--allow-worktree] [--adopt] [--accept-drops FILE]",
@@ -24,7 +22,7 @@ const COMMAND: CommandSpec = {
   argumentHelp: [
     ["--write", "create/repair links, CLAUDE.md and owned settings keys"],
     ["--check", "report drift; exit 1 when any; write nothing"],
-    ["--unlink", "remove keel links and print the v1 restore command"],
+    ["--unlink", "remove keel links and restore the backed-up settings.json and CLAUDE.md"],
     ["--plugin", "with --write or a dry run: plugin mode; leave what the keel plugin provides to it (recorded)"],
     ["--full", "with --write or a dry run: full mode, the link install (recorded; the default)"],
     ["--force", "with --write: move what is in the way aside, overwrite hand-edited owned keys"],
@@ -119,22 +117,8 @@ function runUnlink(paths: KeelPaths): number {
   const claudeMdRestore = claudeMd.restoreMovedAside(generated, movedAsideClaudeMd)
   if (claudeMdRestore) actions.push({ ...claudeMdRestore })
   if (isFile(settingsJson.linkStatePath(paths))) fs.unlinkSync(settingsJson.linkStatePath(paths))
-  const restorePaths = pathsLeftForV1(entries, claudeMdRestore !== null, settingsRestore)
-  say("link: to restore v1, run:\n  " + buildV1RestoreCommand(paths.dataDir, restorePaths))
   process.stdout.write(JSON.stringify({ actions, problems: [] }) + "\n")
   return EXIT_OK
-}
-
-export function buildV1RestoreCommand(dataDir: string, candidates: string[]): string {
-  let restorable: string[]
-  if (runGit(dataDir, "rev-parse", "-q", "--verify", `refs/tags/${V1_TAG}`) === null) {
-    say(`link: warning: tag ${V1_TAG} not found in ${dataDir}; the command below assumes it exists`)
-    restorable = candidates
-  } else {
-    restorable = candidates.filter((path) => runGit(dataDir, "cat-file", "-e", `${V1_TAG}:${path}`) !== null)
-  }
-  if (restorable.length === 0) return `# ${V1_TAG} holds none of the keel-managed paths; nothing to restore`
-  return `git -C ${shlexQuote(dataDir)} checkout ${V1_TAG} -- ${restorable.map(shlexQuote).join(" ")}`
 }
 
 export function readAcceptedDrops(file: string | undefined): Set<string> {
@@ -156,13 +140,6 @@ function isLinkedWorktree(keelHome: string): boolean {
     throw new TypeError(`git rev-parse printed ${lines.length} lines, expected the git dir and the common dir`)
   }
   return resolveLinks(gitDir) !== resolveLinks(commonDir)
-}
-
-function pathsLeftForV1(entries: links.LinkEntry[], claudeMdRestored: boolean, settingsRestore: JsonObject | null): string[] {
-  const paths = entries.map((entry) => entry.target)
-  if (!claudeMdRestored) paths.push(claudeMd.FILE_NAME)
-  if (settingsRestore === null || settingsRestore["op"] !== settingsJson.RESTORE_OP) paths.push(settingsJson.FILE_NAME)
-  return paths
 }
 
 function requireEveryDropAccepted(plan: Plan, args: LinkArgs): void {

@@ -1,0 +1,3 @@
+### Removed
+
+- The emulation of Python's `UnicodeEncodeError` in `lib/evidence/subprocess.ts`. A command word holding an unpaired high surrogate or a low surrogate outside the escaped-byte range was refused before the spawn with `UnicodeEncodeError: 'utf-8' codec can't encode character ...`; it now reaches the program with the lone surrogate encoded as U+FFFD, as Node does. In the ship-gate golden, `git push '\ud800' feature` is still denied (exit 2), now as an unattributable push instead of an internal error, and a `gh pr merge` on a branch named with a lone surrogate is still denied as a branch missing from the clone.

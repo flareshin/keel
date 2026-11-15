@@ -464,6 +464,23 @@ describe('FindingsLogTest', () => {
     assert.deepEqual(logged.map((r) => [r.unparsed, r.evidence_id, r.lens]), [[true, run.json.evidence_id, undefined]]);
   });
 
+  test('writeReview_logsAnUnparsedMarker_whenTheMergeBlockingBlockHoldsNoItemOfTheFindingShape', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = feature(sandbox);
+    const run = writeWithReport(sandbox, repo, 'NEEDS_FIXES', blockingReport(['- caller breaks, see contract notes'], [repo.path]));
+    assert.equal(run.rc, 0, run.stderr);
+    assert.equal(run.json.findings, 0);
+    assert.deepEqual(findingsLog(sandbox).map((r) => [r.unparsed, r.finding_id]), [[true, undefined]]);
+  });
+
+  test('writeReview_keepsARelativeAtPathAsWritten_whenTheReportCoversOneRepo', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = feature(sandbox);
+    const report = blockingReport([blockingItem('medium', 'contract/C1', 'caller breaks', 'src/a.py')], [repo.path]);
+    assert.equal(writeWithReport(sandbox, repo, 'NEEDS_FIXES', report).rc, 0);
+    assert.deepEqual(findingsLog(sandbox).map((r) => [r.finding_id, r.path]), [['C1', 'src/a.py']]);
+  });
+
   test('writeReview_logsOnlyThisRepoFindings_whenTheReportCoversANestedRepo', (t) => {
     const sandbox = new Sandbox(t);
     const repo = feature(sandbox);

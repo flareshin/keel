@@ -7,6 +7,7 @@ export const BLOCKING_HEADING = 'Merge-blocking';
 export const BLOCK_END = /\n(?:Non-blocking|Pre-existing|Optional|Adjusted|Refuted|KEEL-EVIDENCE)/;
 const BLOCKING_ITEM = /^- \[(high|medium)(?:, [^\]\n]*)?\] ([a-z0-9-]+)\/(\S+?): ([^\n]*)(?:\n {2}At: ([^\n]*?)(?: - [^\n]*)?$)?/gm;
 const EVIDENCE_LINE = /^\s*KEEL-EVIDENCE: (\{[^\n]*\})\s*$/gm;
+const NO_LOCATION = /^N\/A\b/;
 
 export interface BlockingFinding {
   impact: string;
@@ -37,8 +38,13 @@ export function blockingFindings(report: string): BlockingFinding[] | null {
   const block = report.slice(start + BLOCKING_HEADING.length).split(BLOCK_END)[0] as string;
   return [...block.matchAll(BLOCKING_ITEM)].map(([, impact, lens, findingId, summary, file]) => ({
     impact: impact as string, lens: lens as string, findingId: findingId as string,
-    summary: (summary as string).trim(), file: file ? file.trim() : null,
+    summary: (summary as string).trim(), file: locationOf(file),
   }));
+}
+
+function locationOf(file: string | undefined): string | null {
+  const location = file?.trim() ?? '';
+  return location === '' || NO_LOCATION.test(location) ? null : location;
 }
 
 export function logBlockingFindings(report: string, review: LoggedReview): number {
@@ -51,12 +57,10 @@ export function logBlockingFindings(report: string, review: LoggedReview): numbe
     env.appendRecord(FINDINGS_LOG, { ...base, unparsed: true });
     return 0;
   }
-  for (const finding of owned) {
-    env.appendRecord(FINDINGS_LOG, {
-      ...base, impact: finding.impact, lens: finding.lens, finding_id: finding.findingId,
-      path: finding.path, summary: finding.summary,
-    });
-  }
+  env.appendRecords(FINDINGS_LOG, owned.map((finding) => ({
+    ...base, impact: finding.impact, lens: finding.lens, finding_id: finding.findingId,
+    path: finding.path, summary: finding.summary,
+  })));
   return owned.length;
 }
 
@@ -67,12 +71,12 @@ function ownedFindings(report: string, review: LoggedReview): OwnedFinding[] | n
   const ownRoots = [review.claimedRepoRoot, review.repoRoot];
   const owned: OwnedFinding[] = [];
   for (const finding of findings) {
-    if (finding.file === null || !isAbsolute(finding.file)) {
+    const owner = finding.file !== null && isAbsolute(finding.file) ? innermostRoot(finding.file, [...reportedRoots, ...ownRoots]) : null;
+    if (owner === null) {
       if (reportedRoots.length <= 1) owned.push({ ...finding, path: finding.file });
-      continue;
+    } else if (ownRoots.includes(owner)) {
+      owned.push({ ...finding, path: relative(owner, finding.file as string) });
     }
-    const owner = innermostRoot(finding.file, [...reportedRoots, ...ownRoots]);
-    if (owner !== null && ownRoots.includes(owner)) owned.push({ ...finding, path: relative(owner, finding.file) });
   }
   return owned;
 }

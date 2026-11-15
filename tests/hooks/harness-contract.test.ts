@@ -8,6 +8,7 @@ import type { Fixture } from "./harness-contract.ts";
 
 const UNPROVEN_REPORT = "Done. All good, VERDICT: PASS";
 const PLAIN_REPORT = "Done.";
+const PROVEN_REPORT = "Done.\nRan 12 tests in 0.4s\nOK";
 const CLI_RESPONSE = '{"evidence_id":"review-20261011T090000Z-1a2b3c4d","repo":"acme/app","paths":3}';
 const FIXTURES = new Map(loadFixtures().map((fixture) => [fixture.name, fixture]));
 
@@ -31,9 +32,9 @@ function fixture(name: string): Fixture {
   return found;
 }
 
-function installRecorded(name: string, report: string): string {
+function installRecorded(name: string, report: string, editPath = join(scope, "a.ts")): string {
   const path = join(sandbox.data, "projects", "-work-app", SESSION_ID, "subagents", "workflows", "wf-1", `agent-${AGENT_ID}.jsonl`);
-  sandbox.write(path, filled(fixture(name), { brief: `[SCOPE] ${scope}\nDo the task.`, report, editPath: join(scope, "a.ts") }));
+  sandbox.write(path, filled(fixture(name), { brief: `[SCOPE] ${scope}\nDo the task.`, report, editPath }));
   sandbox.write(sandbox.mainTranscript(), "");
   return path;
 }
@@ -43,8 +44,8 @@ function stopWithoutMessage(name: string, report: string): HookResult {
   return sandbox.runHook(REPORT_GATE, { payload: subagentStop(sandbox.root, sandbox.mainTranscript(), path, null) });
 }
 
-function handback(name: string, report: string): HookResult {
-  installRecorded(name, report);
+function handback(name: string, report: string, editPath?: string): HookResult {
+  installRecorded(name, report, editPath);
   return sandbox.runHook(REPORT_GATE, { payload: preToolUse("SubagentHandback", { message: report }, sandbox.root, sandbox.mainTranscript(), true) });
 }
 
@@ -85,6 +86,14 @@ describe("HarnessContractTest", () => {
     assert.deepEqual(fired(), ["K2/deny"]);
   });
 
+  it("handback_deniesK5_fromTheBriefScopeOfARecordedWorker_whenItsEditFallsOutsideIt", () => {
+    const outside = join(sandbox.root, "elsewhere", "b.ts");
+    const result = handback("worker-edits-final-text", PROVEN_REPORT, outside);
+    assert.equal(result.code, 2);
+    assert.ok(result.stderr.includes("[K5]") && result.stderr.includes(outside), result.stderr);
+    assert.deepEqual(fired(), ["K5/deny"]);
+  });
+
   it("handbackWithoutEvidence_passes_whenTheRecordedReporterEditedNothing", () => {
     const result = handback("reporter-handback", PLAIN_REPORT);
     assert.equal(result.code, 0);
@@ -118,8 +127,8 @@ describe("ScrubTranscriptTest", () => {
     { type: "user", version: "9.9.9", cwd: "/Users/someone/repo", message: { role: "user", content: "[SCOPE] /Users/someone/repo\nsecret brief" } },
     { type: "assistant", version: "9.9.9", message: { role: "assistant", content: [
       { type: "tool_use", id: "toolu_01AbC", name: "Edit", input: { file_path: "/Users/someone/repo/a.ts", old_string: "a", new_string: "b" } },
-      { type: "tool_use", id: "toolu_01DeF", name: "mcp__1e974420-7e39__notion-fetch", input: { id: "page-id" } },
-    ] }, wireToolInputs: { toolu_01AbC: { command: "rm x" } } },
+      { type: "tool_use", id: "toolu_01DeF", name: "mcp__1e974420-7e39__notion-fetch", input: { id: "page-id", role: "someone@example.com", type: "private" } },
+    ] }, wireToolInputs: { toolu_01AbC: { command: "rm x", version: "private" } }, toolUseResult: { type: "private", stop_reason: "private" } },
     { type: "assistant", version: "9.9.9", message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_01GhI", name: "SubagentHandback", input: { message: "VERDICT: PASS someone@example.com" } }] } },
     { type: "assistant", version: "9.9.9", message: { role: "assistant", content: [{ type: "text", text: "final words" }, { type: "text", text: "more words" }] } },
   ].map((entry) => JSON.stringify(entry)).join("\n") + "\n";
@@ -130,8 +139,8 @@ describe("ScrubTranscriptTest", () => {
       { type: "user", version: "9.9.9", cwd: "x", message: { role: "user", content: BRIEF } },
       { type: "assistant", version: "9.9.9", message: { role: "assistant", content: [
         { type: "tool_use", id: "x", name: "Edit", input: { file_path: EDIT_PATH, old_string: "x", new_string: "x" } },
-        { type: "tool_use", id: "x", name: "mcp__server__notion-fetch", input: { id: "x" } },
-      ] }, wireToolInputs: { toolu_0: { command: "x" } } },
+        { type: "tool_use", id: "x", name: "mcp__server__notion-fetch", input: { id: "x", role: "x", type: "x" } },
+      ] }, wireToolInputs: { toolu_0: { command: "x", version: "x" } }, toolUseResult: { type: "x", stop_reason: "x" } },
       { type: "assistant", version: "9.9.9", message: { role: "assistant", content: [{ type: "tool_use", id: "x", name: "SubagentHandback", input: { message: REPORT } }] } },
       { type: "assistant", version: "9.9.9", message: { role: "assistant", content: [{ type: "text", text: REPORT }, { type: "text", text: "" }] } },
     ]);

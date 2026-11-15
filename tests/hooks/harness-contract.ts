@@ -10,6 +10,7 @@ export const EDIT_PATH = "{{EDIT_PATH}}";
 const SCRUBBED = "x";
 const KEPT_STRING_KEYS = new Set(["type", "role", "version", "userType", "entrypoint", "renderedRole", "stop_reason"]);
 const NAMED_BLOCKS = new Set(["tool_use", "server_tool_use"]);
+const OPAQUE_KEYS = new Set(["input", "toolUseResult", "wireToolInputs"]);
 const EDIT_PATH_KEYS = new Set(["file_path", "notebook_path"]);
 const HANDBACK_TOOL = "SubagentHandback";
 const TOOL_USE_ID_KEY = /^toolu_/;
@@ -82,13 +83,13 @@ function scrubFinal(entry: JsonRecord, finalText: { placed: boolean }): JsonReco
   return scrubbed;
 }
 
-function scrub(value: Json, key: string): Json {
-  if (typeof value === "string") return KEPT_STRING_KEYS.has(key) ? value : SCRUBBED;
-  if (Array.isArray(value)) return value.map((item) => scrub(item, ""));
+function scrub(value: Json, key: string, opaque = false): Json {
+  if (typeof value === "string") return !opaque && KEPT_STRING_KEYS.has(key) ? value : SCRUBBED;
+  if (Array.isArray(value)) return value.map((item) => scrub(item, "", opaque));
   if (!isRecord(value)) return value;
   const scrubbed: JsonRecord = {};
   Object.entries(value).forEach(([field, item], index) => {
-    scrubbed[TOOL_USE_ID_KEY.test(field) ? `toolu_${index}` : field] = scrub(item, field);
+    scrubbed[TOOL_USE_ID_KEY.test(field) ? `toolu_${index}` : field] = scrub(item, field, opaque || OPAQUE_KEYS.has(field));
   });
   if (NAMED_BLOCKS.has(String(value["type"])) && typeof value["name"] === "string") {
     scrubbed["name"] = value["name"].replace(MCP_SERVER_ID, "mcp__server__");

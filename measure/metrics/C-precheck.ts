@@ -3,7 +3,7 @@ import path from "node:path"
 
 import { DELETED_BLOB, describeTestChange, isPrecheckSource, REQUIRED_SCRIPT_SOURCES } from "../../lib/precheck/binding.ts"
 import { finalReport } from "../../hooks/lib/hookkit/transcript.ts"
-import { BLOCK_END, BLOCKING_HEADING } from "../../lib/evidence/findings.ts"
+import { blockingFindings } from "../../lib/evidence/findings.ts"
 import { objectType } from "../../lib/evidence/gitcmd.ts"
 import * as store from "../../lib/evidence/store.ts"
 import * as env from "../lib/measurekit/env.ts"
@@ -23,7 +23,6 @@ const COMMAND: CommandSpec = {
 const ISO_DATE_LENGTH = 10
 const NEEDS_FIXES = "NEEDS_FIXES"
 const TESTS_LENSES = new Set(["tests", "test-adequacy"])
-const BLOCKING_FINDING = /^- \[(high|medium)(?:, [^\]\n]+)?\] ([a-z-]+)\/\S+?: (.*?)(?=^- \[|$(?![\s\S]))/gms
 const MUTATION_SHAPED = /revert|remov|delet|drop|replac|swap|invert|flip|weaken|still pass|stays? green|keeps? (?:the suite )?green|would pass|without (?:any )?test fail|no test (?:fails|would fail)|unpinned|not pinned/i
 
 interface FirstReview {
@@ -126,11 +125,9 @@ function removedTestLines(review: FirstReview): boolean | null {
 
 function mutationShapedTestsFindings(transcript: string | null): number | null {
   const report = transcript === null || !fs.existsSync(transcript) ? null : finalReport(transcript)
-  if (report === null || !report.includes(BLOCKING_HEADING)) return null
-  const block = report.slice(report.indexOf(BLOCKING_HEADING) + BLOCKING_HEADING.length).split(BLOCK_END)[0] as string
-  return [...block.matchAll(BLOCKING_FINDING)]
-    .filter(([, , lens, text]) => TESTS_LENSES.has(lens as string) && MUTATION_SHAPED.test(text as string))
-    .length
+  const findings = report === null ? null : blockingFindings(report)
+  if (findings === null) return null
+  return findings.filter((finding) => TESTS_LENSES.has(finding.lens) && MUTATION_SHAPED.test(finding.text)).length
 }
 
 runMain(main)

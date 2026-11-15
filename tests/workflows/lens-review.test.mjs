@@ -1231,8 +1231,11 @@ test('lensReview_blockingFindingsReadBack_fromTheRenderedReport', async () => {
   const rt = createRuntime({ respond: responder({ audits, verdicts }) })
   const result = await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
   assert.equal(result.verdict, 'NEEDS_FIXES')
-  assert.deepEqual(blockingFindings(result.report), [
+  const findings = blockingFindings(result.report)
+  assert.deepEqual(findings.map(({ text, ...finding }) => finding), [
     { impact: 'medium', lens: 'contract', findingId: 'c1', summary: 'summary c1', file: '/work/app/a.py' },
     { impact: 'high', lens: 'contract', findingId: 'c2', summary: 'adjusted c2', file: '/work/app/a.py' },
   ])
+  assert.deepEqual(findings.map(({ text }) => text.split('\n')[0]), ['- [medium] contract/c1: summary c1', '- [high, ADJUSTED] contract/c2: adjusted c2'])
+  assert.match(findings[1].text, /\n {2}Fix: fix c2 again\n/)
 })

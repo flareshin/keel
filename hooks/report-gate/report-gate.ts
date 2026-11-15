@@ -15,6 +15,7 @@ import { readStdin } from "../lib/hookkit/stdio.ts";
 import { sleep } from "../lib/hookkit/sleep.ts";
 import { SPACE_CHARS, SPACE_CLASS, testCaseFolded, trimCharacters, trimSpace, WORD_BOUNDARY, WORD_CHARS } from "../lib/hookkit/text.ts";
 import { TimeoutExpired } from "../../measure/lib/measurekit/timeout.ts";
+import { KEEL_EVIDENCE_LINE } from "../../lib/evidence/findings.ts";
 import { OSError, run } from "../lib/hookkit/subprocess.ts";
 import type { CompletedProcess } from "../lib/hookkit/subprocess.ts";
 import { commandWritesFiles } from "../lib/hookkit/writes.ts";
@@ -48,7 +49,6 @@ const VERDICT_RE = new RegExp(
   "u",
 );
 const REVIEW_VERDICTS: ReadonlyMap<string, string> = new Map([["VERDICT: PASS", "PASS"], ["VERDICT: NEEDS_FIXES", "NEEDS_FIXES"]]);
-const KEEL_EVIDENCE_RE = new RegExp(`(?<![^\\n])${SPACE_CLASS}*KEEL-EVIDENCE: (\\{[^\\n]*\\})${SPACE_CLASS}*(?=\\n|$)`, "gu");
 export const REPORT_START = "<<<KEEL-REPORT";
 export const REPORT_END = "KEEL-REPORT>>>";
 const SCOPE_RE = /\[SCOPE\][ \t]*([^\n]+)/g;
@@ -412,7 +412,7 @@ function writeReviewEvidence(
   report: string, payload: Payload, agentTranscript: string | null, transcript: AgentTranscript, via: string, fires: FireLog,
 ): void {
   const verdict = verdictOf(report);
-  const evidenceLines = Array.from(report.matchAll(KEEL_EVIDENCE_RE), (match) => match[1] ?? "");
+  const evidenceLines = Array.from(report.matchAll(KEEL_EVIDENCE_LINE), (match) => match[1] ?? "");
   if (verdict === null || evidenceLines.length === 0) return;
   if (!protocol.isSubagent(payload) || !agentTranscript) {
     fires.append("K1", "warn", { detail: NO_TRANSCRIPT });
@@ -491,7 +491,7 @@ function verdictOf(report: string): string | null {
 }
 
 function hasEvidenceLine(report: string): boolean {
-  return Array.from(report.matchAll(KEEL_EVIDENCE_RE)).length > 0;
+  return Array.from(report.matchAll(KEEL_EVIDENCE_LINE)).length > 0;
 }
 
 function lacksEvidence(report: string, needsEvidence: boolean, fires: FireLog): boolean {

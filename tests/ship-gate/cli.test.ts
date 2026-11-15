@@ -312,6 +312,33 @@ describe('WriteReviewTest', () => {
     return { sandbox, run: sandbox.keel(['evidence', 'write-review'], { stdin: JSON.stringify(request) }) };
   }
 
+  test('writeReview_refuses_whenSinceIsATreeThisRootNeverReviewed', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = feature(sandbox);
+    sandbox.review(repo);
+    repo.commit({ 'src/b.py': 'b\n' });
+    const unreviewedTree = sandbox.keel(['snapshot', repo.path]).json.tree;
+    repo.commit({ 'src/c.py': 'c\n' });
+    const request = sandbox.reviewRequest(repo, { runId: 'rv-delta-0002', rootRunId: 'rv-root-0001', since: unreviewedTree });
+    const run = sandbox.keel(['evidence', 'write-review'], { stdin: JSON.stringify(request) });
+    assert.equal(run.rc, 3, run.stderr);
+    assert.match(run.stderr, /no review of root rv-root-0001 reviewed tree/);
+  });
+
+  test('writeReview_refuses_whenSinceIsATreeOnlyAnotherRootReviewed', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = feature(sandbox);
+    sandbox.review(repo);
+    repo.commit({ 'src/b.py': 'b\n' });
+    const otherRootTree = sandbox.keel(['snapshot', repo.path]).json.tree;
+    sandbox.review(repo, { runId: 'rv-other-0009' });
+    repo.commit({ 'src/c.py': 'c\n' });
+    const request = sandbox.reviewRequest(repo, { runId: 'rv-delta-0002', rootRunId: 'rv-root-0001', since: otherRootTree });
+    const run = sandbox.keel(['evidence', 'write-review'], { stdin: JSON.stringify(request) });
+    assert.equal(run.rc, 3, run.stderr);
+    assert.match(run.stderr, /no review of root rv-root-0001 reviewed tree/);
+  });
+
   test('writeReview_writesAFixDelta_whenTheReviewAtSinceIsNeedsFixes', (t) => {
     const { sandbox, run } = deltaAfter(t, 'NEEDS_FIXES', { fixDelta: true });
     assert.equal(run.rc, 0, run.stderr);

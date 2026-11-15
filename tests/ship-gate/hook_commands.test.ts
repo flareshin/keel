@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { describe, test } from 'node:test';
+import { setTimeout as sleep } from 'node:timers/promises';
 import type { TestContext } from 'node:test';
 import * as gitcmd from '../../lib/evidence/gitcmd.ts';
 import {
@@ -16,6 +17,14 @@ const DECISION_MARGIN_SECONDS = 5;
 const NOT_GATED_REGISTRY = ['acme/app\toff\tmain\t-\tnone'];
 const NO_REVIEW = '- [K1] no review evidence';
 const UNATTRIBUTABLE = '- [K1] cannot attribute this push or merge';
+
+const REMOVAL_DEADLINE_MS = 10_000;
+const POLL_MS = 20;
+
+async function waitUntil(done: () => boolean): Promise<void> {
+  const deadline = Date.now() + REMOVAL_DEADLINE_MS;
+  while (!done() && Date.now() < deadline) await sleep(POLL_MS);
+}
 
 function actions(command: string, cwd = '/work'): Action[] {
   return callActions(command, cwd);
@@ -796,6 +805,32 @@ describe('HookBehaviorTest', () => {
     sandbox.push(repo, 'git push origin main');
     assert.equal(sandbox.fires('K1', 'record').filter((line) => line.detail.includes('gc')).length, 1);
     assert.ok(existsSync(join(sandbox.data, 'state', 'keel', 'gc.stamp')));
+  });
+
+  test('gc_removesStaleCompileCache_whenAPushIsJudged', async (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    const cache = join(sandbox.data, 'state', 'keel', 'node-compile-cache');
+    const current = `${process.version}-${process.arch}-310b2ce3-399993245`;
+    mkdirSync(join(cache, 'v20.11.0-arm64-0a1b2c3d-11223344'), { recursive: true });
+    mkdirSync(join(cache, current));
+    writeFileSync(join(cache, 'v20.11.0-arm64-0a1b2c3d-11223344', 'old'), '12345');
+    writeFileSync(join(cache, 'v20.11.0-arm64-0a1b2c3d-11223344', 'older'), '123');
+    writeFileSync(join(cache, current, 'live'), '1');
+    sandbox.push(repo, 'git push origin main');
+    await waitUntil(() => readdirSync(cache).length === 1);
+    assert.deepEqual(readdirSync(cache), [current]);
+    assert.deepEqual(readdirSync(join(cache, current)), ['live']);
+    const recorded = sandbox.fires('K1', 'record').map((line) => line.detail);
+    assert.ok(recorded.includes('compile cache removed 2 files 8 bytes'), recorded.join(' | '));
+  });
+
+  test('gc_recordsNoCompileCacheLine_whenNothingWasRemoved', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    sandbox.push(repo, 'git push origin main');
+    const recorded = sandbox.fires('K1', 'record').map((line) => line.detail);
+    assert.equal(recorded.filter((detail) => detail.includes('compile cache')).length, 0, recorded.join(' | '));
   });
 });
 

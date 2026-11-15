@@ -328,7 +328,7 @@ Path: `$KEEL_DATA_DIR/state/keel/evidence/<kind>/<owner>__<repo>/<evidence_id>.j
 | approval, ack | `root_run_id`, `heads` (`{"<owner/repo>": "<review evidence_id>"}`), `source` (`cli`), `session_id` (null) |
 | promote | `repo`, `head` (the develop sha the promote merges), `source` (`cli`), `session_id` (null) |
 
-The gate ignores expired evidence. `keel evidence gc` deletes expired files; ship-gate runs it at most once per 24 h (stamp `$KEEL_DATA_DIR/state/keel/gc.stamp`), failures ignored.
+The gate ignores expired evidence. `keel evidence gc` deletes expired files; ship-gate runs it at most once per 24 h (stamp `$KEEL_DATA_DIR/state/keel/gc.stamp`), failures ignored. The same run bounds the node compile cache (`lib/evidence/compile-cache.ts`): it removes every `state/keel/node-compile-cache/<version>` folder whose name does not start with the running node's `<process.version>-<process.arch>-`, then removes the rest as well when those folders together hold more than 64 MiB of file content, and records `compile cache removed <files> files <bytes> bytes` only when it removed something. Before the decision is emitted it only walks the folders (about 1.2 s for 132,000 files) and renames each doomed folder to `removing-<ms>-<name>`; a detached node process deletes the renamed folders (about 11 s for 132,000 files), and a later run finishes any it left behind. The limit counts file bytes, not disk blocks (about 1.6 times more on the owner's machine), and the cache can grow by the writes of one gc interval past it: the peak is 64 MiB plus a day's writes (about 285 MB on the heaviest measured day).
 
 ### (d) Reviewer report format
 
@@ -414,6 +414,7 @@ smoke checks (kind × scope): ledger-format, id-unique, caps (each), id-tagging 
 | ship-gate | `gh pr merge` without `--match-head-commit`, merge-preflight (5.2), `push --all`/`--branches`/`--mirror` in a gated repo, a push or merge reaching a gated repo from a clone of another repo | F-irreversible | deny |
 | ship-gate | registry absent (once per session), `gh pr create` early warning | K1 (early warning: first missing requirement's id, else K1) | warn |
 | ship-gate | gc run | K1 | record |
+| ship-gate | compile cache removed (files and bytes, only when something was removed) | K1 | record |
 | git-guard | AI attribution | F-attribution | deny |
 | git-guard | secrets (`measure/boundary --staged --generic-only` hits; known values in written or committed content) | F-secrets | deny |
 | git-guard | force push | F-force-push | deny |
@@ -448,7 +449,7 @@ A fragment is a JSON object with only `hooks`, `permissions`, `env`, in Claude C
 | model-assign | PreToolUse | `Agent\|Workflow` | `node {{KEEL}}/hooks/model-assign/model-assign.ts` | 10 | 5.7 | fail open |
 | env-preflight | PreToolUse | `Bash`, `"if": "Bash(*mvn*)"` | `node {{KEEL}}/stacks/spring-maven/hooks/env-preflight.ts` | 10 | 5.7 | fail open |
 
-- Every command runs node with `NODE_COMPILE_CACHE="${KEEL_DATA_DIR:-$HOME/.claude}/state/keel/node-compile-cache"` before the `node {{KEEL}}/…` shown above; the cached compile saves about 30 ms per hook start. The env-preflight `if` rule keeps Claude Code from starting the hook for a call that never names `mvn`, the same test the hook itself applies first (`commandLine.includes("mvn")`); a call Claude Code cannot split still starts it.
+- Every command runs node with `NODE_COMPILE_CACHE="${KEEL_DATA_DIR:-$HOME/.claude}/state/keel/node-compile-cache"` before the `node {{KEEL}}/…` shown above; the cached compile saves about 30 ms per hook start. The cache is bounded by the daily ship-gate gc (section (c) Evidence): other node versions' folders are removed, and the current one is removed whole when over 64 MiB, the cap sitting well above the 3.9 MiB one checkout's tests compile; a node process that finds its cache folder gone skips the cache write and the next start recreates it. The env-preflight `if` rule keeps Claude Code from starting the hook for a call that never names `mvn`, the same test the hook itself applies first (`commandLine.includes("mvn")`); a call Claude Code cannot split still starts it.
 - "On process failure" = Claude Code's action when the hook process crashes or times out. Only the two gate registrations carry `"onFailure":"block"` and an explicit `timeout` (else `link --check` `gate-onfailure-missing`); a broken blocking gate blocks every matching call, and the way out is the user's terminal.
 - Each registered `timeout` exceeds the longest subprocess budget in that hook: git-guard gives each git call and the boundary scan 8 s; ship-gate gives each git call and fetch 20 s and `gh pr view` 12 s (`keel snapshot` and `keel test`, which no hook runs, give each snapshot git call 300 s); a merge path that still runs past its 60 s is killed and `onFailure: block` denies it; each hook's test reads the registered timeout from `settings/core.json`.
 

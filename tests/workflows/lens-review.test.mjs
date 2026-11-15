@@ -4,6 +4,7 @@ import {
   createRuntime, reportBetweenMarkers, evidenceLines, parseEvidenceLine, preparedLine, preparePromptCommands,
   cleanRuleChecksNotes, CLEAN_RULE_CHECKS_SUMMARY, REPORT_START, REPORT_END, SHA_A, SHA_B, SHA_C, SHA_D,
 } from './helpers.mjs'
+import { blockingFindings } from '../../lib/evidence/findings.ts'
 
 const DERIVED_RUN_ID = 'rv-20261011T090000Z-abc123'
 const CALLER_LENSES = [{ key: 'contract', prompt: 'Lens: contract.' }]
@@ -1218,4 +1219,20 @@ test('lensReview_callsTheAuditByItsPluginName_underThePluginInstall', async () =
 
   assert.deepEqual(rt.record.workflows.map(({ name }) => name), ['keel:adversarial-audit'])
   assert.deepEqual(rt.record.unresolved, [])
+})
+
+test('lensReview_blockingFindingsReadBack_fromTheRenderedReport', async () => {
+  const audits = { contract: { findings: [finding('c1', 'medium'), finding('c2', 'high'), finding('c3', 'low')] } }
+  const verdicts = {
+    c1: { verdict: 'CONFIRMED', evidence: 'reran' },
+    c2: { verdict: 'ADJUSTED', evidence: 'reran', adjusted_summary: 'adjusted c2', adjusted_proposal: 'fix c2 again' },
+    c3: { verdict: 'CONFIRMED', evidence: 'reran' },
+  }
+  const rt = createRuntime({ respond: responder({ audits, verdicts }) })
+  const result = await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
+  assert.equal(result.verdict, 'NEEDS_FIXES')
+  assert.deepEqual(blockingFindings(result.report), [
+    { impact: 'medium', lens: 'contract', findingId: 'c1', summary: 'summary c1', file: '/work/app/a.py' },
+    { impact: 'high', lens: 'contract', findingId: 'c2', summary: 'adjusted c2', file: '/work/app/a.py' },
+  ])
 })

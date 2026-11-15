@@ -5,6 +5,7 @@ import { buildChains } from './chain.ts';
 import type { Chain } from './chain.ts';
 import * as codexReview from './codex_review.ts';
 import * as env from './env.ts';
+import { carriesFindings, logBlockingFindings } from './findings.ts';
 import * as gitcmd from './gitcmd.ts';
 import { isBlankEitherWay, isWhitespaceBothWays } from './text.ts';
 import * as registry from './registry.ts';
@@ -48,6 +49,7 @@ export function writeReview(request: JsonObject): JsonObject {
   const verdict = request['verdict'];
   if (!VERDICTS.includes(verdict)) throw new Usage(`verdict must be one of ${VERDICTS.join(', ')}`);
   const source = validatedSource(request['source']);
+  const report = validatedReport(request['report']);
   checkProvenance(source);
   const [repoRoot, repoKey] = repoOf(claim['repo_root']);
   checkObjects(repoRoot, claim);
@@ -69,7 +71,27 @@ export function writeReview(request: JsonObject): JsonObject {
     [NO_TEST_REASON]: claim[NO_TEST_REASON] ?? null,
   };
   const evidence = store.write('review', body, repoKey);
-  return { evidence_id: evidence.evidence_id, repo: repoKey, paths: paths.length };
+  const written = { evidence_id: evidence.evidence_id, repo: repoKey, paths: paths.length };
+  if (report === null || !carriesFindings(verdict)) return written;
+  return { ...written, ...findingsLogged(report, {
+    evidenceId: evidence.evidence_id, repo: repoKey, repoRoot, claimedRepoRoot: claim['repo_root'],
+    rootRunId: claim['root_run_id'], runId: claim['run_id'],
+  }) };
+}
+
+function validatedReport(report: unknown): string | null {
+  if (report === undefined) return null;
+  if (typeof report !== 'string') throw new Usage('report must be a string when present');
+  return report;
+}
+
+function findingsLogged(report: string, review: Parameters<typeof logBlockingFindings>[1]): JsonObject {
+  try {
+    return { findings: logBlockingFindings(report, review) };
+  } catch (error) {
+    if (!isSystemError(error)) throw error;
+    return { findings_error: `${error.name}: ${error.message}` };
+  }
 }
 
 export function checkProvenance(source: JsonObject): void {

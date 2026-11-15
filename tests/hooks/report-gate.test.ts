@@ -272,6 +272,22 @@ describe("HandbackReviewEvidenceTest", () => {
     });
   }
 
+  it("handback_warnsK1_whenTheWriteReviewAnswerNamesAFindingsError", () => {
+    const answer = '{"evidence_id":"review-20261011T090000Z-1a2b3c4d","repo":"acme/app","paths":3,"findings_error":"Error: EACCES"}';
+    sandbox.env["KEEL_CLI"] = sandbox.stub("keel-answer", { stdout: answer });
+    assert.equal(handback(PASS_REPORT.replace("VERDICT: PASS", "VERDICT: NEEDS_FIXES")).code, 0);
+    const fires = sandbox.fires().map((fire) => [fire.outcome, fire.detail]);
+    assert.deepEqual(fires.filter(([outcome]) => outcome === "warn"), [["warn", "findings log not written: Error: EACCES"]]);
+    assert.ok(fires.some(([outcome, detail]) => outcome === "record" && detail === "review evidence review-20261011T090000Z-1a2b3c4d"));
+  });
+
+  it("handback_firesNoWarn_whenTheWriteReviewAnswerLogsFindings", () => {
+    const answer = '{"evidence_id":"review-20261011T090000Z-1a2b3c4d","repo":"acme/app","paths":3,"findings":2}';
+    sandbox.env["KEEL_CLI"] = sandbox.stub("keel-answer", { stdout: answer });
+    assert.equal(handback(PASS_REPORT.replace("VERDICT: PASS", "VERDICT: NEEDS_FIXES")).code, 0);
+    assert.deepEqual(sandbox.fires().filter((fire) => fire.outcome === "warn"), []);
+  });
+
   it("handback_sendsNeedsFixes_whenFirstLineIsVerdictNeedsFixes", () => {
     handback(PASS_REPORT.replace("VERDICT: PASS", "VERDICT: NEEDS_FIXES"));
     assert.equal(keelRequests()[0].verdict, "NEEDS_FIXES");
@@ -280,6 +296,12 @@ describe("HandbackReviewEvidenceTest", () => {
   it("handback_sendsOneRequestPerRepo_whenSeveralEvidenceLines", () => {
     handback(PASS_REPORT + "\n" + KEEL_EVIDENCE_LINE.replace("/work/app", "/work/lib"));
     assert.equal(sandbox.stubCalls("keel").length, 2);
+  });
+
+  it("handback_sendsTheReportWithEachRequest_withoutTheMarkerLines", () => {
+    const report = PASS_REPORT.replace("VERDICT: PASS", "VERDICT: NEEDS_FIXES") + "\n" + KEEL_EVIDENCE_LINE.replace("/work/app", "/work/lib");
+    handback(`<<<KEEL-REPORT\n${report}\nKEEL-REPORT>>>`);
+    assert.deepEqual(keelRequests().map((request) => request.report), [report, report]);
   });
 
   it("handback_writesNothing_whenVerdictIsNotFirstLine", () => {
@@ -418,6 +440,11 @@ describe("SubagentStopTest", () => {
   it("stop_writesEvidenceViaStop_whenNoHandbackThisTurn", () => {
     stop(PASS_REPORT);
     assert.equal(keelRequests()[0].source.via, "SubagentStop");
+  });
+
+  it("stop_sendsTheReportWithTheRequest_withoutTheMarkerLines", () => {
+    stop(FRAMED_PASS_REPORT);
+    assert.equal(keelRequests()[0].report, PASS_REPORT);
   });
 
   it("stop_writesEvidence_whenReporterEchoesTheMarkerLines", () => {

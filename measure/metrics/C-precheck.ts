@@ -3,6 +3,7 @@ import path from "node:path"
 
 import { DELETED_BLOB, describeTestChange, isPrecheckSource, REQUIRED_SCRIPT_SOURCES } from "../../lib/precheck/binding.ts"
 import { finalReport } from "../../hooks/lib/hookkit/transcript.ts"
+import { BLOCK_END, BLOCKING_HEADING } from "../../lib/evidence/findings.ts"
 import { objectType } from "../../lib/evidence/gitcmd.ts"
 import * as store from "../../lib/evidence/store.ts"
 import * as env from "../lib/measurekit/env.ts"
@@ -22,8 +23,6 @@ const COMMAND: CommandSpec = {
 const ISO_DATE_LENGTH = 10
 const NEEDS_FIXES = "NEEDS_FIXES"
 const TESTS_LENSES = new Set(["tests", "test-adequacy"])
-const BLOCKING_HEADING = "Merge-blocking"
-const BLOCK_END = /\n(?:Non-blocking|Pre-existing|Optional|Adjusted|Refuted|KEEL-EVIDENCE)/
 const BLOCKING_FINDING = /^- \[(high|medium)(?:, [^\]\n]+)?\] ([a-z-]+)\/\S+?: (.*?)(?=^- \[|$(?![\s\S]))/gms
 const MUTATION_SHAPED = /revert|remov|delet|drop|replac|swap|invert|flip|weaken|still pass|stays? green|keeps? (?:the suite )?green|would pass|without (?:any )?test fail|no test (?:fails|would fail)|unpinned|not pinned/i
 

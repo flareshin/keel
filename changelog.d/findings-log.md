@@ -1,0 +1,2 @@
+### Added
+- `keel evidence write-review` logs each Merge-blocking finding of a NEEDS_FIXES review to `logs/keel-findings.jsonl` (lens, finding id, impact, repo-relative path, summary), from the report text report-gate now sends with the request. The log outlives the 14-day evidence TTL, so a finding that keeps coming back can be counted across review cycles. A report whose findings cannot be parsed leaves an `unparsed` line; a log that cannot be written leaves the evidence in place and is named in the response.

@@ -428,13 +428,13 @@ function writeReviewEvidence(
   for (const key of ["session_id", "agent_id", "agent_type", "transcript_path"]) source[key] = getField(payload, key);
   source["agent_transcript_path"] = agentTranscript;
   source["via"] = via;
-  for (const line of evidenceLines) sendToCli(line, verdict, source, fires);
+  for (const line of evidenceLines) sendToCli(line, verdict, source, report, fires);
 }
 
-function sendToCli(evidenceLine: string, verdict: string, source: Record<string, unknown>, fires: FireLog): void {
+function sendToCli(evidenceLine: string, verdict: string, source: Record<string, unknown>, report: string, fires: FireLog): void {
   let request: string;
   try {
-    request = dumpsAscii({ keel_evidence: parseFiniteJson(evidenceLine), verdict, source });
+    request = dumpsAscii({ keel_evidence: parseFiniteJson(evidenceLine), verdict, source, report });
   } catch (error) {
     if (!(error instanceof ValueError)) throw error;
     fires.append("K1", "warn", { detail: "KEEL-EVIDENCE line is not JSON" });
@@ -453,15 +453,21 @@ function sendToCli(evidenceLine: string, verdict: string, source: Record<string,
     return;
   }
   fires.append("K1", "record", { detail: `review evidence ${evidenceIdOf(result.stdout)}` });
+  const findingsError = responseField(result.stdout, "findings_error");
+  if (findingsError !== null) fires.append("K1", "warn", { detail: `findings log not written: ${findingsError}` });
 }
 
 function evidenceIdOf(stdout: string): string {
+  return responseField(stdout, "evidence_id") ?? "(unparsed stdout)";
+}
+
+function responseField(stdout: string, key: string): string | null {
   try {
     const response = parseJson(stdout);
-    const evidenceId = isRecord(response) ? getField(response, "evidence_id") : null;
-    return typeof evidenceId === "string" ? evidenceId : "(unparsed stdout)";
+    const value = isRecord(response) ? getField(response, key) : null;
+    return typeof value === "string" ? value : null;
   } catch (error) {
-    if (error instanceof ValueError) return "(unparsed stdout)";
+    if (error instanceof ValueError) return null;
     throw error;
   }
 }

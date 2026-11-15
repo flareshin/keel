@@ -272,6 +272,22 @@ describe("HandbackReviewEvidenceTest", () => {
     });
   }
 
+  it("handback_warnsK1_whenTheWriteReviewAnswerNamesAFindingsError", () => {
+    const answer = '{"evidence_id":"review-20261011T090000Z-1a2b3c4d","repo":"acme/app","paths":3,"findings_error":"Error: EACCES"}';
+    sandbox.env["KEEL_CLI"] = sandbox.stub("keel-answer", { stdout: answer });
+    assert.equal(handback(PASS_REPORT.replace("VERDICT: PASS", "VERDICT: NEEDS_FIXES")).code, 0);
+    const fires = sandbox.fires().map((fire) => [fire.outcome, fire.detail]);
+    assert.deepEqual(fires.filter(([outcome]) => outcome === "warn"), [["warn", "findings log not written: Error: EACCES"]]);
+    assert.ok(fires.some(([outcome, detail]) => outcome === "record" && detail === "review evidence review-20261011T090000Z-1a2b3c4d"));
+  });
+
+  it("handback_firesNoWarn_whenTheWriteReviewAnswerLogsFindings", () => {
+    const answer = '{"evidence_id":"review-20261011T090000Z-1a2b3c4d","repo":"acme/app","paths":3,"findings":2}';
+    sandbox.env["KEEL_CLI"] = sandbox.stub("keel-answer", { stdout: answer });
+    assert.equal(handback(PASS_REPORT.replace("VERDICT: PASS", "VERDICT: NEEDS_FIXES")).code, 0);
+    assert.deepEqual(sandbox.fires().filter((fire) => fire.outcome === "warn"), []);
+  });
+
   it("handback_sendsNeedsFixes_whenFirstLineIsVerdictNeedsFixes", () => {
     handback(PASS_REPORT.replace("VERDICT: PASS", "VERDICT: NEEDS_FIXES"));
     assert.equal(keelRequests()[0].verdict, "NEEDS_FIXES");

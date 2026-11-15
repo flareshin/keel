@@ -44,7 +44,7 @@ export function blockingFindings(report: string): BlockingFinding[] | null {
 export function logBlockingFindings(report: string, review: LoggedReview): number {
   const owned = ownedFindings(report, review);
   const base = {
-    at: env.iso(env.utcNow()), evidence_id: review.evidenceId, repo: review.repo,
+    ts: env.iso(env.utcNow()), evidence_id: review.evidenceId, repo: review.repo,
     root_run_id: review.rootRunId, run_id: review.runId,
   };
   if (owned === null) {

@@ -453,15 +453,21 @@ function sendToCli(evidenceLine: string, verdict: string, source: Record<string,
     return;
   }
   fires.append("K1", "record", { detail: `review evidence ${evidenceIdOf(result.stdout)}` });
+  const findingsError = responseField(result.stdout, "findings_error");
+  if (findingsError !== null) fires.append("K1", "warn", { detail: `findings log not written: ${findingsError}` });
 }
 
 function evidenceIdOf(stdout: string): string {
+  return responseField(stdout, "evidence_id") ?? "(unparsed stdout)";
+}
+
+function responseField(stdout: string, key: string): string | null {
   try {
     const response = parseJson(stdout);
-    const evidenceId = isRecord(response) ? getField(response, "evidence_id") : null;
-    return typeof evidenceId === "string" ? evidenceId : "(unparsed stdout)";
+    const value = isRecord(response) ? getField(response, key) : null;
+    return typeof value === "string" ? value : null;
   } catch (error) {
-    if (error instanceof ValueError) return "(unparsed stdout)";
+    if (error instanceof ValueError) return null;
     throw error;
   }
 }

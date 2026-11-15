@@ -90,11 +90,12 @@ describe("weekly", () => {
     box.write("data/projects/b/memory/MEMORY.md", "z".repeat(20))
     const [completed, report] = box.runJson("weekly")
     assert.equal(completed.status, 0, completed.stderr)
-    assert.deepEqual(Object.keys(report).sort(), ["always_loaded", "core_size", "defects", "proposals", "repo_layer_rules"])
+    assert.deepEqual(Object.keys(report).sort(), ["always_loaded", "core_size", "defects", "proposals", "repo_layer_rules", "review_rounds"])
     assert.deepEqual(report.repo_layer_rules, { count: 1, ids: ["C-repo"] })
     assert.deepEqual(report.always_loaded, { claude_md: 100, memory_indexes: 50 })
     assert.deepEqual(report.proposals.map((p: { id: string; action: string }) => [p.id, p.action]), [["C-late", "demote"]])
     assert.deepEqual(report.defects, {})
+    assert.deepEqual(report.review_rounds, { chains: 0, roots_needing_fixes: 0, chains_by_needs_fixes_rounds: {} })
   })
 
   it("weekly_reportsCoreNonTestLocAndDesignBytes_fromTrackedFiles", () => {
@@ -139,5 +140,36 @@ describe("weekly", () => {
     assert.deepEqual(report.defects["defects-reverts"], { count: 1, items: ["abc"] })
     assert.ok(report.defects["defects-broken"].error.includes("exited 3"))
     assert.ok(!("other" in report.defects))
+  })
+
+  function givenReview(repo: string, evidenceId: string, fields: { rootRunId: string; since?: string; verdict: string; expired?: boolean }): void {
+    box.write(`data/state/keel/evidence/review/${repo.replace("/", "__")}/${evidenceId}.json`, JSON.stringify({
+      schema: 1, kind: "review", evidence_id: evidenceId, run_id: fields.since ? `${fields.rootRunId}-${evidenceId}` : fields.rootRunId,
+      root_run_id: fields.rootRunId, since: fields.since ?? null, verdict: fields.verdict, paths: [],
+      created_at: `${PAST}T08:00:00Z`, expires_at: `${fields.expired ? PAST : FUTURE}T08:00:00Z`,
+    }))
+  }
+
+  it("weekly_countsNeedsFixesRoundsPerLiveReviewChain", () => {
+    box.writeLedger("keel/ledger.tsv", [charterRow("K1")])
+    givenReview("acme/app", "a1", { rootRunId: "rv-a", verdict: "NEEDS_FIXES" })
+    givenReview("acme/app", "a2", { rootRunId: "rv-a", since: "a1", verdict: "NEEDS_FIXES" })
+    givenReview("acme/app", "a3", { rootRunId: "rv-a", since: "a2", verdict: "PASS" })
+    givenReview("acme/app", "b1", { rootRunId: "rv-b", verdict: "PASS" })
+    givenReview("acme/lib", "c1", { rootRunId: "rv-c", verdict: "NEEDS_FIXES" })
+    givenReview("acme/lib", "c2", { rootRunId: "rv-c", since: "c1", verdict: "PASS" })
+    givenReview("acme/lib", "d1", { rootRunId: "rv-d", verdict: "NEEDS_FIXES", expired: true })
+    const [completed, report] = box.runJson("weekly")
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.deepEqual(report.review_rounds, { chains: 3, roots_needing_fixes: 2, chains_by_needs_fixes_rounds: { "0": 1, "1": 1, "2": 1 } })
+  })
+
+  it("weekly_reportsAnUnreadableReviewAsAReviewRoundsError_andStillReportsTheRest", () => {
+    box.writeLedger("keel/ledger.tsv", [charterRow("K1")])
+    box.write("data/state/keel/evidence/review/acme__app/broken.json", "{not json")
+    const [completed, report] = box.runJson("weekly")
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.ok(report.review_rounds.error.startsWith("unreadable evidence "), report.review_rounds.error)
+    assert.deepEqual(report.defects, {})
   })
 })

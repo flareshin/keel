@@ -10,6 +10,7 @@ import { runGitOrThrow } from "./lib/measurekit/gitutil.ts"
 import type { JsonValue } from "./lib/measurekit/json.ts"
 import { collectMetricItems, defectRunnerNames, MetricError } from "./lib/measurekit/metrics.ts"
 import { buildExpiryProposals } from "./lib/measurekit/propose.ts"
+import { summarizeReviewRounds } from "./lib/measurekit/review_rounds.ts"
 import { SmokeContext } from "./lib/measurekit/smoke_context.ts"
 
 const COMMAND: CommandSpec = {
@@ -41,6 +42,7 @@ function buildWeeklyReport(ctx: SmokeContext): object {
     core_size: measureCoreSize(ctx.keelHome),
     defects: collectDefects(ctx),
     proposals: buildExpiryProposals(rows, ctx.metricWindowStart, ctx.today),
+    review_rounds: summarizeReviewRounds(),
   }
 }
 

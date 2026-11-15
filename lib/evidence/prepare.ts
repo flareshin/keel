@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { InvalidUtf8Error, readUtf8 } from '../../measure/lib/measurekit/files.ts';
 import { parseJsonKeepingIntegers } from '../../measure/lib/measurekit/json.ts';
+import { countNeedsFixesLinks } from './chain.ts';
 import { bindPrecheck, precheckRequirement, precheckTreeOf } from '../precheck/binding.ts';
 import * as env from './env.ts';
 import * as gitcmd from './gitcmd.ts';
@@ -48,7 +49,7 @@ function withPrecheckRequirement(target: JsonObject): JsonObject {
 export function countNeedsFixesRounds(rootRunId: unknown): number {
   if (typeof rootRunId !== 'string') return 0;
   const rounds = [...writers.newestChains(rootRunId).values()]
-    .map((chain) => chain.links.filter((link) => link.verdict === 'NEEDS_FIXES').length);
+    .map(countNeedsFixesLinks);
   return Math.max(0, ...rounds);
 }
 

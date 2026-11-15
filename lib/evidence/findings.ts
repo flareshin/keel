@@ -41,7 +41,7 @@ export function blockingFindings(report: string): BlockingFinding[] | null {
   const block = report.slice(start + BLOCKING_HEADING.length).split(BLOCK_END)[0] as string;
   return block.split(ITEM_START).flatMap((item) => {
     const head = ITEM_HEAD.exec(item);
-    if (head === null || head.index !== 0) return [];
+    if (head === null) return [];
     const [, impact, lens, findingId, summary, file] = head;
     return [{
       impact: impact as string, lens: lens as string, findingId: findingId as string,

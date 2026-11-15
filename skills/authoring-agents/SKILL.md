@@ -1,6 +1,6 @@
 ---
 name: authoring-agents
-description: Choosing the form for delegated work and writing a subagent definition or an agent brief. Trigger; "make an agent for X", "write a brief for the worker", a task about to be handed to a subagent that needs more than a one-line prompt, a new `agents/*.md` file, "should this agent fold back into the main loop", a new skill or agent added beside overlapping ones. Do NOT use for a quick lookup a few tool calls settle, fixing an agent that keeps failing (improving-agents), or a review dispatch (lens-review and removing-comments own their briefs).
+description: Choosing the form for delegated work and writing a subagent definition or an agent brief. Trigger; you are about to call `Agent` or a workflow `agent()` with a prompt you are writing yourself that runs past a one-line lookup, the same brief is being pasted into a second dispatch, a new or edited `agents/*.md` file, "make an agent for X", "write a brief for the worker", "set up a subagent for this", "should this agent fold back into the main loop", a new skill or agent added beside overlapping ones. Do NOT use for a quick lookup a few tool calls settle, fixing an agent that keeps failing (improving-agents), deepening the owner's loose one-line words into a brief (deepening-prompts), or a review dispatch (lens-review and removing-comments own their briefs).
 ---
 
 # Authoring agents

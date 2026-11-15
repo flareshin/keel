@@ -1,6 +1,6 @@
 ---
 name: improving-agents
-description: Improving an agent definition or a reusable brief from evidence — diagnose the runs that went wrong, change one component, compare base and candidate on the same task, adopt only what helped. Trigger; "the worker keeps doing X", "improve this agent", the owner correcting the same agent mistake twice, a subagent failing the same way in two runs. Do NOT use for a one-off bad result (fix the brief and rerun), a recurring review finding a machine can decide (descending-findings), or writing a new agent (authoring-agents).
+description: Improving an agent definition or a reusable brief from evidence — diagnose the runs that went wrong, change one component, compare base and candidate on the same task, adopt only what helped. Trigger; you are about to rerun a subagent or rewrite its brief because its result was rejected, wrong or incomplete, and an earlier run of that agent or brief failed the same way; a subagent returned none, skipped a check or missed an item in two runs; "the worker keeps doing X", "improve this agent". Do NOT use for the first bad result of a brief (fix the brief and rerun), a recurring review finding a machine can decide (descending-findings), or writing a new agent (authoring-agents).
 ---
 
 # Improving agents

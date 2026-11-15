@@ -233,6 +233,13 @@ describe('CodexLensesTest', () => {
     assert.throws(() => f.registerLenses(), refused);
   });
 
+  test('lenses_refusesTopLevelSessionAsReviewer', (t) => {
+    const f = new LensFixture(t);
+    const identity = f.audits[0]!;
+    f.writeSession(identity, null, f.reports[identity]);
+    assert.throws(() => f.registerLenses(), refused);
+  });
+
   test('lenses_refusesMissingDuplicateOrBlockedLens', (t) => {
     const f = new LensFixture(t);
     const original = f.audits.slice();

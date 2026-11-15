@@ -7,6 +7,8 @@ import { basename, dirname, join } from 'node:path';
 import { describe, test } from 'node:test';
 import * as codexReview from '../../lib/evidence/codex_review.ts';
 import * as gitcmd from '../../lib/evidence/gitcmd.ts';
+import * as store from '../../lib/evidence/store.ts';
+import * as verify from '../../lib/evidence/verify.ts';
 import * as writers from '../../lib/evidence/writers.ts';
 import { AUDIT, AUTHOR, CodexFixture, VERIFY } from './codex_helpers.ts';
 
@@ -127,6 +129,19 @@ describe('CodexReviewTest', () => {
       (error: Error) => error instanceof refused && error.message === 'Codex review evidence must be version 2');
     assert.throws(() => codexReview.validateEvidence({ ...evidence, source: { ...evidence.source, version: 1 } }),
       (error: Error) => error instanceof refused && error.message === 'Codex review evidence must be version 2');
+  });
+
+  test('gate_refusesStoredVersionOneEvidence_atApprovalAndShipping', (t) => {
+    const f = new CodexFixture(t);
+    const evidence = versionOneEvidence(f);
+    store.write('review', evidence, f.repo.key);
+    f.repo.commit({});
+    f.sandbox.testsEvidence(f.repo);
+    assert.throws(() => writers.writeApproval(evidence.root_run_id, 'approval'), refused);
+    const decision = verify.judge(f.outgoing());
+    assert.equal(decision.ok, false);
+    assert.ok(decision.reasons.some((reason) => reason.text.includes('invalid Codex provenance: Codex review evidence must be version 2')),
+      JSON.stringify(decision.reasons));
   });
 
   test('genericWriter_rejectsNativeEvidenceImport', (t) => {

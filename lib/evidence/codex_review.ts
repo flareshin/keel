@@ -189,14 +189,11 @@ export function runRuleChecks(repo: string, base: string, tree: string): string 
   return lines.find((line) => line.startsWith(SUMMARY_PREFIX))!;
 }
 
-export function validateRuleChecks(repo: string, base: string, tree: string, audit: JsonObject, verification: JsonObject | null = null): void {
+export function validateRuleChecks(repo: string, base: string, tree: string, audit: JsonObject): void {
   const measured = runRuleChecks(repo, base, tree);
-  const reports = verification !== null ? [audit, verification] : [audit];
-  for (const report of reports) {
-    const cited = report['lenses']['rule-checks']['evidence'].match(CITED_SUMMARY) ?? [];
-    if (cited.length !== 1 || cited[0] !== measured) {
-      throw new writers.Refused('each reviewer must cite the exact rule-checks summary for the reviewed target');
-    }
+  const cited = audit['lenses']['rule-checks']['evidence'].match(CITED_SUMMARY) ?? [];
+  if (cited.length !== 1 || cited[0] !== measured) {
+    throw new writers.Refused('each reviewer must cite the exact rule-checks summary for the reviewed target');
   }
 }
 

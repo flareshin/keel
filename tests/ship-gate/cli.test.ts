@@ -53,7 +53,7 @@ describe('KeelTestCommandTest', () => {
     const run = sandbox.keel(['test', '--', 'bash', '-c', "{ printf '\u2139 pass 7\\n\u2139 fail 3\\n'; exit 1; } | cat"], { cwd: repo.path });
     assert.equal(run.rc, 6, run.stderr);
     assert.deepEqual(sandbox.evidenceFiles('tests'), []);
-    assert.match(run.stderr, /the output reports 3 failing tests although the command exited 0; no evidence written/);
+    assert.match(run.stderr, /the output reports 3 failing tests or test files although the command exited 0; no evidence written/);
     assert.deepEqual(summaryOf(run), { run_id: summaryOf(run).run_id, count: 7, exit: 0, evidence_id: null, submodule_evidence: {} });
   });
 

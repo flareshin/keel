@@ -7,7 +7,7 @@ export const BLOCKING_HEADING = 'Merge-blocking';
 export const BLOCK_END = /\n(?:Non-blocking|Pre-existing|Optional|Adjusted|Refuted|KEEL-EVIDENCE)/;
 const BLOCKING_ITEM = /^- \[(high|medium)(?:, [^\]\n]*)?\] ([a-z0-9-]+)\/(\S+?): ([^\n]*)(?:\n {2}At: ([^\n]*?)(?: - [^\n]*)?$)?/gm;
 const EVIDENCE_LINE = /^\s*KEEL-EVIDENCE: (\{[^\n]*\})\s*$/gm;
-const NO_LOCATION = /^N\/A\b/;
+export const NO_LOCATION = /^N\/A\b/;
 
 export interface BlockingFinding {
   impact: string;

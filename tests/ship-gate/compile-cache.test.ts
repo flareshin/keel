@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import fs, { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
@@ -98,6 +99,43 @@ describe('CompileCacheTrimTest', () => {
     const root = cacheRoot(t);
     assert.deepEqual(trim(root, LIMIT_BYTES), { files: 0, bytes: 0 });
     assert.equal(existsSync(root), false);
+  });
+});
+
+describe('CompileCacheConcurrentTrimTest', () => {
+  function replaceRename(t: TestContext, replacement: (from: string, to: string) => void): void {
+    const mocked = t.mock.method(fs, 'renameSync', replacement);
+    syncBuiltinESMExports();
+    t.after(() => {
+      mocked.mock.restore();
+      syncBuiltinESMExports();
+    });
+  }
+
+  test('trim_skipsAFolderAnotherRunRetired_andRemovesTheRest', (t) => {
+    const root = cacheRoot(t);
+    fill(root, OLDER_NODE_VERSION, { a: 100, b: 50 });
+    fill(root, OTHER_ARCH_VERSION, { c: 7 });
+    fill(root, CURRENT_VERSION, { d: 40 });
+    const victim = join(root, OLDER_NODE_VERSION);
+    const renameSync = fs.renameSync;
+    replaceRename(t, (from, to) => {
+      if (from === victim) renameSync(from, join(root, `${RETIRED_PREFIX}other-run`));
+      renameSync(from, to);
+    });
+    assert.deepEqual(trim(root, LIMIT_BYTES), { files: 1, bytes: 7 });
+    const listing = readdirSync(root);
+    assert.ok(listing.includes(`${RETIRED_PREFIX}other-run`), listing.join(' | '));
+    assert.ok(listing.includes(CURRENT_VERSION), listing.join(' | '));
+  });
+
+  test('trim_throws_whenRetiringFailsForAnotherReason', (t) => {
+    const root = cacheRoot(t);
+    fill(root, OLDER_NODE_VERSION, { a: 100 });
+    replaceRename(t, () => {
+      throw Object.assign(new Error('denied'), { code: 'EACCES' });
+    });
+    assert.throws(() => trim(root, LIMIT_BYTES), /denied/);
   });
 });
 

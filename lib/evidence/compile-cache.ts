@@ -29,18 +29,22 @@ export function trim(cacheDir: string = compileCacheDir(), limitBytes: number = 
   const folders = versionFolders(cacheDir);
   const currentBytes = folders.filter((folder) => folder.isCurrentNode).reduce((sum, folder) => sum + folder.bytes, 0);
   const doomed = currentBytes > limitBytes ? folders : folders.filter((folder) => !folder.isCurrentNode);
-  removeInBackground(doomed.map((folder) => retire(folder.path)));
+  const retired = doomed.flatMap(retireUnlessTakenByAnotherRun);
+  removeInBackground(retired.map((folder) => folder.path));
   return {
-    files: doomed.reduce((sum, folder) => sum + folder.files, 0),
-    bytes: doomed.reduce((sum, folder) => sum + folder.bytes, 0),
+    files: retired.reduce((sum, folder) => sum + folder.files, 0),
+    bytes: retired.reduce((sum, folder) => sum + folder.bytes, 0),
   };
 }
 
-function retire(path: string): string {
-  if (basename(path).startsWith(RETIRED_PREFIX)) return path;
-  const retired = join(dirname(path), `${RETIRED_PREFIX}${Date.now()}-${basename(path)}`);
-  renameSync(path, retired);
-  return retired;
+function retireUnlessTakenByAnotherRun(folder: Folder): Folder[] {
+  if (basename(folder.path).startsWith(RETIRED_PREFIX)) return [folder];
+  const retiredPath = join(dirname(folder.path), `${RETIRED_PREFIX}${Date.now()}-${basename(folder.path)}`);
+  const moved = ignoringVanished(() => {
+    renameSync(folder.path, retiredPath);
+    return { ...folder, path: retiredPath };
+  });
+  return moved === null ? [] : [moved];
 }
 
 function removeInBackground(paths: string[]): void {

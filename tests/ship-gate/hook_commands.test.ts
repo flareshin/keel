@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { describe, test } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -823,6 +823,24 @@ describe('HookBehaviorTest', () => {
     assert.deepEqual(readdirSync(join(cache, current)), ['live']);
     const recorded = sandbox.fires('K1', 'record').map((line) => line.detail);
     assert.ok(recorded.includes('compile cache removed 2 files 8 bytes'), recorded.join(' | '));
+  });
+
+  test('gc_recordsAnErrorAndLetsThePushThrough_whenTheCompileCacheCannotBeRead', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    const unreadable = join(sandbox.data, 'state', 'keel', 'node-compile-cache', 'v20.11.0-arm64-0a1b2c3d-11223344');
+    mkdirSync(unreadable, { recursive: true });
+    chmodSync(unreadable, 0o000);
+    try {
+      const run = sandbox.push(repo, 'git push origin main');
+      assert.equal(run.rc, 0, run.stderr + run.stdout);
+      const errors = sandbox.fires('K1', 'error');
+      assert.equal(errors.length, 1, JSON.stringify(errors));
+      assert.ok(errors[0].detail.includes('EACCES'), errors[0].detail);
+      assert.equal(sandbox.fires('risk', 'pass').length, 1);
+    } finally {
+      chmodSync(unreadable, 0o755);
+    }
   });
 
   test('gc_recordsNoCompileCacheLine_whenNothingWasRemoved', (t) => {

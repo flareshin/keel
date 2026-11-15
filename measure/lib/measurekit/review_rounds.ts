@@ -10,11 +10,19 @@ export interface ReviewRounds {
 
 export function summarizeReviewRounds(): ReviewRounds | { error: string } {
   try {
-    return countRounds(store.repoKeys("review").flatMap((repoKey) => buildChains(store.loadReviews(repoKey))))
+    return countRounds(store.repoKeys("review").flatMap((repoKey) => newestChainPerRoot(buildChains(store.loadReviews(repoKey)))))
   } catch (error) {
     if (!(error instanceof store.EvidenceError || error instanceof store.EvidenceTooDeepError)) throw error
     return { error: error.message }
   }
+}
+
+function newestChainPerRoot(newestFirstChains: Chain[]): Chain[] {
+  const byRoot = new Map<string, Chain>()
+  for (const chain of newestFirstChains) {
+    if (!byRoot.has(chain.rootRunId)) byRoot.set(chain.rootRunId, chain)
+  }
+  return [...byRoot.values()]
 }
 
 function countRounds(chains: Chain[]): ReviewRounds {

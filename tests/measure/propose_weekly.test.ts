@@ -166,6 +166,16 @@ describe("weekly", () => {
     assert.deepEqual(report.review_rounds, { chains: 3, roots_needing_fixes: 2, chains_by_needs_fixes_rounds: { "0": 1, "1": 1, "2": 1 } })
   })
 
+  it("weekly_countsARootWithTwoLiveHeadsOnce_byItsNewestChain", () => {
+    box.writeLedger("keel/ledger.tsv", [charterRow("K1")])
+    givenReview("acme/svc", "e1", { rootRunId: "rv-e", verdict: "NEEDS_FIXES" })
+    givenReview("acme/svc", "e2", { rootRunId: "rv-e", since: "e1", verdict: "PASS" })
+    givenReview("acme/svc", "e3", { rootRunId: "rv-e", since: "e1", verdict: "NEEDS_FIXES" })
+    const [completed, report] = box.runJson("weekly")
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.deepEqual(report.review_rounds, { chains: 1, roots_needing_fixes: 1, chains_by_needs_fixes_rounds: { "2": 1 } })
+  })
+
   it("weekly_reportsAnUnreadableReviewAsAReviewRoundsError_andStillReportsTheRest", () => {
     box.writeLedger("keel/ledger.tsv", [charterRow("K1")])
     box.write("data/state/keel/evidence/review/acme__app/broken.json", "{not json")

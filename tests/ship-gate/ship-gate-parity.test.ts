@@ -7,7 +7,7 @@ import { fullCorpusRequested, goldenOf, judgeCase, loadStore, recordedCorpus, re
 import type { RecordedCase, RecordedStore, ShipGateParityReport } from "./ship-gate-parity.ts";
 import { fineClass, maskedOutcome, sampleCorpus, samplingGroup } from "./ship-gate-parity-sample.ts";
 
-const MIN_CASES = 800;
+const MIN_CASES = 450;
 const MIN_RECORDED_CASES = 1500;
 const SHARD_FILE = /^ship-gate-parity-shard-\d+\.test\.ts$/;
 const DENY = 2;
@@ -205,20 +205,33 @@ describe("ship-gate parity sample over synthetic cases", () => {
     assert.deepEqual(keptIds(cases), ["py-2", "py-3", "ts-1", "ts-2"]);
   });
 
-  it("keeps the groups no native test covers whole", () => {
+  it("keeps the message-contract cases whole", () => {
+    const cases = [recordedCase("mc-1", "message-contract", "t.Class.test_a", denied), recordedCase("mc-2", "message-contract", "t.Class.test_a", denied)];
+    assert.deepEqual(keptIds(cases), ["mc-1", "mc-2"]);
+  });
+
+  it("keeps the first extra case of each outcome class in each extra test", () => {
+    const otherReason = denial("[K1] denied push of feature\n", fire("deny", "chain rv-2 is not approved"));
     const cases = [
       recordedCase("ex-1", "extra", "malformed_payloads", denied), recordedCase("ex-2", "extra", "malformed_payloads", denied),
-      recordedCase("mc-1", "message-contract", "t.Class.test_a", denied), recordedCase("mc-2", "message-contract", "t.Class.test_a", denied),
-      recordedCase("ex-3", "extra", "merge_spellings", denied, "partial"), recordedCase("ex-4", "extra", "merge_spellings", denied, "partial"),
-      recordedCase("ex-5", "extra", "merge_spellings", denied, "stubbed"), recordedCase("ex-6", "extra", "merge_spellings", denied, "stubbed"),
+      recordedCase("ex-3", "extra", "malformed_payloads", otherReason), recordedCase("ex-4", "extra", "broken_state", denied),
+      recordedCase("ex-5", "extra", "merge_spellings", denied, "partial"), recordedCase("ex-6", "extra", "merge_spellings", denied, "partial"),
+      recordedCase("ex-7", "extra", "merge_spellings", denied, "stubbed"), recordedCase("ex-8", "extra", "merge_spellings", denied, "shape"),
+      recordedCase("ex-9", "extra", "merge_spellings", denied, "shape"),
     ];
-    assert.deepEqual(keptIds(cases), cases.map((testCase) => testCase.id));
+    assert.deepEqual(keptIds(cases), ["ex-1", "ex-3", "ex-4", "ex-5", "ex-8"]);
   });
 
   it("samples the merge_spellings gh answer shapes, which carry the seven standard fields and no stub responses", () => {
     const cases = [recordedCase("ex-1", "extra", "merge_spellings", denied, "shape"), recordedCase("ex-2", "extra", "merge_spellings", denied, "shape")];
     assert.equal(samplingGroup(cases[0] as RecordedCase, SYNTHETIC_STORE), "extra:gh-answer-shapes");
     assert.deepEqual(keptIds(cases), ["ex-1"]);
+  });
+
+  it("names the group of an extra case after its test, and leaves the message-contract cases in no group", () => {
+    assert.equal(samplingGroup(recordedCase("ex-1", "extra", "merge_spellings", denied, "stubbed"), SYNTHETIC_STORE), "extra:merge_spellings");
+    assert.equal(samplingGroup(recordedCase("ex-2", "extra", "broken_state", denied), SYNTHETIC_STORE), "extra:broken_state");
+    assert.equal(samplingGroup(recordedCase("mc-1", "message-contract", "t.Class.test_a", denied), SYNTHETIC_STORE), null);
   });
 });
 
@@ -290,10 +303,24 @@ describe("ship-gate parity sample over the recorded golden", () => {
     assert.ok(sampledGroups(sample).length < sampledGroups(all).length);
   });
 
-  it("keeps every case of the groups no native test covers", () => {
-    for (const testCase of all.filter((candidate) => candidate.suite !== "python-keel" && samplingGroup(candidate, store) === null)) {
-      assert.ok(keptIds.has(testCase.id), `${testCase.id} (${testCase.test}) was dropped`);
+  it("keeps every message-contract case, the only cases in no sampled group besides python-keel", () => {
+    const ungrouped = all.filter((candidate) => candidate.suite !== "python-keel" && samplingGroup(candidate, store) === null);
+    assert.ok(ungrouped.length > 0);
+    assert.ok(ungrouped.every((testCase) => testCase.suite === "message-contract"));
+    for (const testCase of ungrouped) assert.ok(keptIds.has(testCase.id), `${testCase.id} (${testCase.test}) was dropped`);
+  });
+
+  it("keeps exactly the first extra case of each outcome class in each extra test", () => {
+    const extra = all.filter((testCase) => testCase.suite === "extra");
+    const firstOfClass = new Map<string, string>();
+    for (const testCase of extra) {
+      const group = samplingGroup(testCase, store);
+      assert.ok(group === `extra:${testCase.test}` || group === "extra:gh-answer-shapes", `${testCase.id} is in group ${group}`);
+      const key = `${group}\n${fineClass(testCase.expected)}`;
+      if (!firstOfClass.has(key)) firstOfClass.set(key, testCase.id);
     }
+    assert.ok(firstOfClass.size < extra.length);
+    assert.deepEqual(sample.filter((testCase) => testCase.suite === "extra").map((testCase) => testCase.id), [...firstOfClass.values()]);
   });
 
   it("keeps a python-keel case exactly when it differs from its ts-keel twin, and keeps the twin too", () => {

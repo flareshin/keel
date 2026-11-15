@@ -7,6 +7,7 @@ import type { RecordedCase, RecordedStore } from "./ship-gate-parity.ts";
 const SPELLINGS_TEST = "test_everySpelling_getsItsExpectedVerdict";
 const BUNDLE_TEST = "test_gateSpellings_pass_whenABundleCoversTheBranch";
 const MERGE_SPELLINGS_TEST = "merge_spellings";
+const GH_ANSWER_SHAPES_GROUP = "extra:gh-answer-shapes";
 const GH_ANSWER_FILE = "gh.json";
 const GH_STUB_DIRECTORY = "responses/";
 const GH_ANSWER_FIELDS = ["state", "isDraft", "mergeable", "mergeStateStatus", "statusCheckRollup", "baseRefName", "headRefOid"];
@@ -37,8 +38,9 @@ export function maskedOutcome(expected: ObservedDelta): string {
 
 export function samplingGroup(testCase: RecordedCase, store: RecordedStore): string | null {
   if (testCase.suite === "ts-keel") return `ts-keel:${nativeTestKind(testCase.test)}`;
-  if (testCase.suite === "extra" && testCase.test === MERGE_SPELLINGS_TEST && answersWithGhShape(store, testCase.snapshot)) return "extra:gh-answer-shapes";
-  return null;
+  if (testCase.suite !== "extra") return null;
+  if (testCase.test === MERGE_SPELLINGS_TEST && answersWithGhShape(store, testCase.snapshot)) return GH_ANSWER_SHAPES_GROUP;
+  return `extra:${testCase.test}`;
 }
 
 function nativeTestKind(test: string): string {

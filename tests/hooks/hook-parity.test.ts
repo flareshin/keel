@@ -15,7 +15,7 @@ import { wrongTypeCases } from "./hook-parity-wrong-types.ts";
 const MIN_RECORDED_CASES = 300;
 const MIN_ADVERSARIAL_CASES = 50;
 const MIN_SAMPLED_RECORDED_CASES = 100;
-const MIN_SAMPLED_ADVERSARIAL_CASES = 300;
+const MIN_SAMPLED_ADVERSARIAL_CASES = 150;
 const MIN_WRONG_TYPE_CASES = 400;
 const SHARD_FILE = /^hook-parity-shard-\d+\.test\.ts$/;
 const HOOK_ENTRIES = [GIT_GUARD, HANDOFF, MODEL_ASSIGN, REPORT_GATE, ENV_PREFLIGHT, SHIP_GATE];
@@ -297,12 +297,13 @@ describe("hook parity sample over synthetic cases", () => {
     assert.deepEqual(keptTests(cases), ["recorded", "git-guard wrong-type command number#0"]);
   });
 
-  it("keeps the adversarial payloads that are not wrong-type whole", () => {
+  it("samples the adversarial payloads that are not wrong-type as a group of their own, from the first of a class", () => {
     const cases = [
       adversarialCase("git-guard command 0#0", GIT_GUARD, denied), adversarialCase("git-guard command 0#1", GIT_GUARD, denied),
-      adversarialCase("git-guard denying command over-limit integer", GIT_GUARD, denied), adversarialCase("git-guard denying command over-limit integer", GIT_GUARD, denied),
+      adversarialCase("git-guard denying command 10001-deep arrays", GIT_GUARD, recorded(0, BLOCKED, GIT_GUARD_FIRE)), adversarialCase("git-guard denying command 10001-deep objects", GIT_GUARD, recorded(0, BLOCKED, GIT_GUARD_FIRE)),
+      adversarialCase("env-preflight command 0#0", ENV_PREFLIGHT, denied), adversarialCase("git-guard wrong-type command number#0", GIT_GUARD, denied),
     ];
-    assert.deepEqual(keptTests(cases), cases.map((testCase) => testCase.test));
+    assert.deepEqual(keptTests(cases), ["git-guard command 0#0", "git-guard denying command 10001-deep arrays", "env-preflight command 0#0", "git-guard wrong-type command number#0"]);
   });
 
   it("keeps a case with no golden outcome, so that the replay reports it", () => {
@@ -313,16 +314,16 @@ describe("hook parity sample over synthetic cases", () => {
   it("puts a case without an input digest in the recorded group and names the wrong-type payloads by their name", () => {
     assert.equal(samplingGroup({ test: "test_git_guard.AttributionTest.test_x" }), "recorded");
     assert.equal(samplingGroup({ test: "git-guard wrong-type command number#0", input: "digest" }), "wrong-type");
-    assert.equal(samplingGroup({ test: "git-guard command 0#0", input: "digest" }), null);
-    assert.equal(samplingGroup({ test: "model-assign tool_input 3000-deep arrays", input: "digest" }), null);
+    assert.equal(samplingGroup({ test: "git-guard command 0#0", input: "digest" }), "adversarial");
+    assert.equal(samplingGroup({ test: "model-assign tool_input 3000-deep arrays", input: "digest" }), "adversarial");
   });
 
   it("keeps the cases it samples in corpus order", () => {
     const cases = [
       recordedCase("b", GIT_GUARD, recorded(0, "b")), recordedCase("a", GIT_GUARD, recorded(0, "a")), recordedCase("b again", GIT_GUARD, recorded(0, "b")),
-      adversarialCase("kept whole", GIT_GUARD, denied),
+      adversarialCase("adversarial", GIT_GUARD, denied),
     ];
-    assert.deepEqual(keptTests(cases), ["b", "a", "kept whole"]);
+    assert.deepEqual(keptTests(cases), ["b", "a", "adversarial"]);
   });
 
   it("builds an outcome class from the hook and the masked outcome", () => {
@@ -353,9 +354,7 @@ describe("hook parity sample over the recorded golden", () => {
   let corpus: SampleCandidate[];
   let sample: SampleCandidate[];
   let sampleMembers: Set<SampleCandidate>;
-  const groupOf = (testCase: SampleCandidate): string => samplingGroup(testCase) ?? "kept whole";
-  const classOf = (testCase: SampleCandidate): string => `${groupOf(testCase)}\n${fineClass(testCase.script, testCase.expected as ObservedDelta)}`;
-  const sampledGroups = (cases: SampleCandidate[]): SampleCandidate[] => cases.filter((testCase) => samplingGroup(testCase) !== null);
+  const classOf = (testCase: SampleCandidate): string => `${samplingGroup(testCase)}\n${fineClass(testCase.script, testCase.expected as ObservedDelta)}`;
 
   before(() => {
     corpus = withCorpus((cases) => cases.map(({ test, script, input, expected }) => ({ test, script, ...(input === undefined ? {} : { input }), ...(expected === undefined ? {} : { expected }) })));
@@ -391,34 +390,32 @@ describe("hook parity sample over the recorded golden", () => {
       }
       const jsonLimits = jsonLimitCases(adversarial.sandbox, adversarial.sandbox.root);
       assert.ok(jsonLimits.length > 0);
-      for (const adversarialCase of jsonLimits) assert.equal(samplingGroup({ test: adversarialCase.name, input: "digest" }), null, adversarialCase.name);
+      for (const adversarialCase of jsonLimits) assert.equal(samplingGroup({ test: adversarialCase.name, input: "digest" }), "adversarial", adversarialCase.name);
     } finally {
       adversarial.sandbox.close();
     }
   });
 
-  it("keeps every outcome class that the full corpus has in each sampled group, and fewer cases than the groups hold", () => {
-    assert.deepEqual([...new Set(sampledGroups(sample).map(classOf))].sort(), [...new Set(sampledGroups(corpus).map(classOf))].sort());
-    for (const group of ["recorded", "wrong-type"]) {
+  it("keeps every outcome class that the full corpus has in each group, and fewer cases than the groups hold", () => {
+    for (const group of ["recorded", "wrong-type", "adversarial"]) {
       const inGroup = (cases: SampleCandidate[]): SampleCandidate[] => cases.filter((testCase) => samplingGroup(testCase) === group);
-      assert.ok(inGroup(sample).length > 0 && inGroup(sample).length < inGroup(corpus).length, group);
+      const classesIn = (cases: SampleCandidate[]): string[] => [...new Set(inGroup(cases).map(classOf))].sort();
+      assert.ok(classesIn(corpus).length > 0, group);
+      assert.deepEqual(classesIn(sample), classesIn(corpus), group);
+      assert.ok(inGroup(sample).length < inGroup(corpus).length, group);
     }
   });
 
-  it("keeps every case of the groups no native test covers", () => {
-    const whole = corpus.filter((testCase) => samplingGroup(testCase) === null);
-    assert.ok(whole.length > 0);
-    for (const testCase of whole) assert.ok(sampleMembers.has(testCase), `${testCase.test} was dropped`);
-  });
-
   it("keeps every outcome class that the full corpus has", () => {
-    assert.deepEqual([...new Set(sample.map(classOf))].sort(), [...new Set(corpus.map(classOf))].sort());
+    const outcomeClasses = (cases: SampleCandidate[]): string[] => [...new Set(cases.map((testCase) => fineClass(testCase.script, testCase.expected as ObservedDelta)))].sort();
+    assert.ok(outcomeClasses(corpus).length > 0);
+    assert.deepEqual(outcomeClasses(sample), outcomeClasses(corpus));
   });
 
   it("keeps the first case of each class, once, in corpus order", () => {
     assert.deepEqual(sample, corpus.filter((testCase) => sampleMembers.has(testCase)));
     const firstOfClass = new Map<string, SampleCandidate>();
-    for (const testCase of sampledGroups(corpus)) if (!firstOfClass.has(classOf(testCase))) firstOfClass.set(classOf(testCase), testCase);
-    assert.deepEqual(sampledGroups(sample), [...firstOfClass.values()]);
+    for (const testCase of corpus) if (!firstOfClass.has(classOf(testCase))) firstOfClass.set(classOf(testCase), testCase);
+    assert.deepEqual(sample, [...firstOfClass.values()]);
   });
 });

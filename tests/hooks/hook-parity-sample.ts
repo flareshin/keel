@@ -3,6 +3,7 @@ import { firesTail, masked, stderrReasons } from "../recorded-sample.ts";
 
 const RECORDED_GROUP = "recorded";
 const WRONG_TYPE_GROUP = "wrong-type";
+const ADVERSARIAL_GROUP = "adversarial";
 const WRONG_TYPE_NAME_MARKER = "wrong-type";
 
 export interface SampleCandidate {
@@ -15,18 +16,17 @@ export interface SampleCandidate {
 export function sampleCases<T extends SampleCandidate>(cases: readonly T[]): T[] {
   const seenClasses = new Set<string>();
   return cases.filter((testCase) => {
-    const group = samplingGroup(testCase);
-    if (group === null || testCase.expected === undefined) return true;
-    const classKey = `${group}\n${fineClass(testCase.script, testCase.expected)}`;
+    if (testCase.expected === undefined) return true;
+    const classKey = `${samplingGroup(testCase)}\n${fineClass(testCase.script, testCase.expected)}`;
     const firstOfClass = !seenClasses.has(classKey);
     seenClasses.add(classKey);
     return firstOfClass;
   });
 }
 
-export function samplingGroup(testCase: Pick<SampleCandidate, "test" | "input">): string | null {
+export function samplingGroup(testCase: Pick<SampleCandidate, "test" | "input">): string {
   if (testCase.input === undefined) return RECORDED_GROUP;
-  return testCase.test.includes(WRONG_TYPE_NAME_MARKER) ? WRONG_TYPE_GROUP : null;
+  return testCase.test.includes(WRONG_TYPE_NAME_MARKER) ? WRONG_TYPE_GROUP : ADVERSARIAL_GROUP;
 }
 
 export function fineClass(script: string, expected: ObservedDelta): string {

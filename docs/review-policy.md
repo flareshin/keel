@@ -179,7 +179,11 @@ The bar is checked where the evidence is written, not taken from the caller. A
 fix delta's `KEEL-EVIDENCE` carries `fix_delta: true`, and `keel evidence
 write-review` refuses it unless the review at its `since` tree is NEEDS_FIXES.
 A lens-review delta whose `since` review is NEEDS_FIXES must carry the flag, so
-a fix cannot skip its prior findings by running as a plain delta. The check
+a fix cannot skip its prior findings by running as a plain delta. The flag is per
+run and the check per repo, so a multi-repo delta whose repos' `since` reviews
+differ in verdict runs as two deltas under the same `rootRunId`, one per side.
+The refusal reaches the author only as a K1 warn in the fires log: the chain
+head stays at the parent, which `keel evidence check` shows. The check
 covers the precondition only: the `priorFindings` text is still the caller's,
 and new code that rides inside a real fix delta is judged at the high-only bar.
 

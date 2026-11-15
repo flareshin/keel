@@ -1,10 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  createRuntime, reportBetweenMarkers, evidenceLines, parseEvidenceLine, preparedLine, preparePromptCommands,
+  KEEL_HOME, createRuntime, reportBetweenMarkers, evidenceLines, parseEvidenceLine, preparedLine, preparePromptCommands,
   cleanRuleChecksNotes, CLEAN_RULE_CHECKS_SUMMARY, REPORT_START, REPORT_END, SHA_A, SHA_B, SHA_C, SHA_D,
 } from './helpers.mjs'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { blockingFindings } from '../../lib/evidence/findings.ts'
+import { SPACE_CHARS } from '../../hooks/lib/hookkit/text.ts'
 
 const DERIVED_RUN_ID = 'rv-20261011T090000Z-abc123'
 const CALLER_LENSES = [{ key: 'contract', prompt: 'Lens: contract.' }]
@@ -689,6 +692,8 @@ const BAD_HAND_BACKS = [
   ['adds an evidence line', (prompt) => `${reportBetweenMarkers(prompt)}\nKEEL-EVIDENCE: {"v":1,"repo_root":"/work/other"}`, /2 KEEL-EVIDENCE lines for 1 reviewed repo/],
   ['repeats the evidence line', (prompt) => `${reportBetweenMarkers(prompt)}\n${evidenceLines(reportBetweenMarkers(prompt))[0]}`, /2 KEEL-EVIDENCE lines for 1 reviewed repo/],
   ['adds an indented evidence line', (prompt) => `${reportBetweenMarkers(prompt)}\n  KEEL-EVIDENCE: {"v":1,"repo_root":"/work/other"}`, /2 KEEL-EVIDENCE lines for 1 reviewed repo/],
+  ['adds a byte-order-mark-prefixed evidence line', (prompt) => `${reportBetweenMarkers(prompt)}\n\uFEFFKEEL-EVIDENCE: {"v":1,"repo_root":"/work/other"}`, /line \d+ differs from the expected report/],
+  ['adds a next-line-prefixed evidence line', (prompt) => `${reportBetweenMarkers(prompt)}\n\x85KEEL-EVIDENCE: {"v":1,"repo_root":"/work/other"}`, /2 KEEL-EVIDENCE lines for 1 reviewed repo/],
   ['drops a section', (prompt) => reportBetweenMarkers(prompt).replace('Refuted: 0\n\n', ''), /line \d+ differs from the expected report/],
   ['returns only the marker lines', () => `${REPORT_START}\n${REPORT_END}`, /first line is "<missing>"/],
   ['frames the report and adds a preamble', (prompt) => `Here is the report:\n${REPORT_START}\n${reportBetweenMarkers(prompt)}\n${REPORT_END}`, /first line is "Here is the report:"/],
@@ -1238,4 +1243,9 @@ test('lensReview_blockingFindingsReadBack_fromTheRenderedReport', async () => {
   ])
   assert.deepEqual(findings.map(({ text }) => text.split('\n')[0]), ['- [medium] contract/c1: summary c1', '- [high, ADJUSTED] contract/c2: adjusted c2'])
   assert.match(findings[1].text, /\n {2}Fix: fix c2 again\n/)
+})
+
+test('evidenceLineSpace_matchesTheGateSet_soBothSidesRecogniseTheSameLeadingSpace', () => {
+  const source = readFileSync(join(KEEL_HOME, 'workflows', 'lens-review.js'), 'utf8')
+  assert.ok(source.includes(`const SPACE_CHARS = String.raw\`${SPACE_CHARS}\``))
 })

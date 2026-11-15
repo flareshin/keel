@@ -550,6 +550,7 @@ function buildEvidenceLine(target, runId, rootRunId) {
     run_id: runId,
     root_run_id: rootRunId,
     review_kind: REVIEW_KIND,
+    ...(PRIOR_FINDINGS ? { fix_delta: true } : {}),
   }
   return `${EVIDENCE_PREFIX}${JSON.stringify(evidence)}`
 }

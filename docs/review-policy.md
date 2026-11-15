@@ -175,6 +175,14 @@ mediums, so letting them block kept chains running for many rounds. A root
 review and a delta after a PASS keep high and medium blocking. The Codex
 protocol keeps its existing blocking rule.
 
+The bar is checked where the evidence is written, not taken from the caller. A
+fix delta's `KEEL-EVIDENCE` carries `fix_delta: true`, and `keel evidence
+write-review` refuses it unless the review at its `since` tree is NEEDS_FIXES.
+A lens-review delta whose `since` review is NEEDS_FIXES must carry the flag, so
+a fix cannot skip its prior findings by running as a plain delta. The check
+covers the precondition only: the `priorFindings` text is still the caller's,
+and new code that rides inside a real fix delta is judged at the high-only bar.
+
 A prior finding is resolved only when its defect is fixed. A fix that makes the
 finding stop applying by deleting, hiding, renaming or exempting the flagged
 code, or by editing the check or test that caught it, leaves it unresolved

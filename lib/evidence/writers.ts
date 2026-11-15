@@ -15,9 +15,12 @@ export type JsonObject = Record<string, any>;
 
 const REVIEW_CLAIM_KEYS = ['v', 'repo_root', 'review_base', 'head', 'snapshot_tree', 'since', 'run_id', 'root_run_id', 'review_kind'];
 export const NO_TEST_REASON = 'no_test_reason';
+export const FIX_DELTA = 'fix_delta';
+const LENS_REVIEW = 'lens-review';
+const NEEDS_FIXES = 'NEEDS_FIXES';
 const SOURCE_KEYS = ['session_id', 'agent_id', 'agent_type', 'transcript_path', 'agent_transcript_path', 'via'];
-const REVIEW_KINDS = ['lens-review', 'single-lens'];
-const VERDICTS = ['PASS', 'NEEDS_FIXES'];
+const REVIEW_KINDS = [LENS_REVIEW, 'single-lens'];
+const VERDICTS = ['PASS', NEEDS_FIXES];
 const VIAS = ['SubagentHandback', 'SubagentStop'];
 export const FORK_AGENT_TYPE = 'fork';
 const APPROVAL_SOURCE = 'cli';
@@ -49,7 +52,10 @@ export function writeReview(request: JsonObject): JsonObject {
   const [repoRoot, repoKey] = repoOf(claim['repo_root']);
   checkObjects(repoRoot, claim);
   const reviewedTree = claim['head'] ? gitcmd.treeOfCommit(repoRoot, claim['head']) : claim['snapshot_tree'];
-  const [sinceId, sinceTree] = resolveSince(repoKey, claim);
+  const sinceReview = resolveSince(repoKey, claim);
+  checkDeltaBar(claim, sinceReview);
+  const sinceId = sinceReview?.evidence_id ?? null;
+  const sinceTree = sinceReview ? claim['since'] : null;
   const duplicate = sameReview(repoKey, claim['run_id'], reviewedTree);
   if (duplicate) return { evidence_id: duplicate.evidence_id, repo: repoKey, paths: duplicate.paths.length };
   const diffFrom = sinceTree || claim['review_base'];
@@ -132,7 +138,7 @@ export function newestChains(rootRunId: string): Map<string, Chain> {
 
 function validatedClaim(claim: any): JsonObject {
   const isObject = isJsonRecord(claim);
-  const claimKeys = isObject ? Object.keys(claim).filter((key) => key !== NO_TEST_REASON) : [];
+  const claimKeys = isObject ? Object.keys(claim).filter((key) => key !== NO_TEST_REASON && key !== FIX_DELTA) : [];
   if (!isObject || claimKeys.length !== REVIEW_CLAIM_KEYS.length || !REVIEW_CLAIM_KEYS.every((key) => claimKeys.includes(key))) {
     throw new Usage(`keel_evidence must have exactly the keys ${REVIEW_CLAIM_KEYS.join(', ')} (plus optional ${NO_TEST_REASON})`);
   }
@@ -140,6 +146,7 @@ function validatedClaim(claim: any): JsonObject {
   if (reason !== undefined && reason !== null && !(typeof reason === 'string' && !isBlankEitherWay(reason))) {
     throw new Usage(`${NO_TEST_REASON} must be a non-empty string`);
   }
+  if (claim[FIX_DELTA] !== undefined && claim[FIX_DELTA] !== true) throw new Usage(`${FIX_DELTA} must be true when present`);
   if (claim['v'] !== 1) throw new Usage('keel_evidence.v must be 1');
   if ((claim['head'] === null) === (claim['snapshot_tree'] === null)) {
     throw new Usage('exactly one of head and snapshot_tree must be set');
@@ -154,6 +161,7 @@ function validatedClaim(claim: any): JsonObject {
   if (claim['since'] === null && claim['run_id'] !== claim['root_run_id']) {
     throw new Refused('a root review needs root_run_id == run_id');
   }
+  if (claim['since'] === null && claim[FIX_DELTA] === true) throw new Refused(`${FIX_DELTA} needs a since tree: a root review has no prior findings`);
   return claim;
 }
 
@@ -187,14 +195,23 @@ function checkObjects(repoRoot: string, claim: JsonObject): void {
   }
 }
 
-function resolveSince(repoKey: string, claim: JsonObject): [string | null, string | null] {
-  if (claim['since'] === null) return [null, null];
+function resolveSince(repoKey: string, claim: JsonObject): ReviewEvidence | null {
+  if (claim['since'] === null) return null;
   for (const review of store.loadReviews(repoKey).reverse()) {
-    if (review.root_run_id === claim['root_run_id'] && review.reviewed_tree === claim['since']) {
-      return [review.evidence_id, claim['since']];
-    }
+    if (review.root_run_id === claim['root_run_id'] && review.reviewed_tree === claim['since']) return review;
   }
   throw new Refused(`no review of root ${claim['root_run_id']} reviewed tree ${claim['since']}`);
+}
+
+function checkDeltaBar(claim: JsonObject, sinceReview: ReviewEvidence | null): void {
+  if (sinceReview === null) return;
+  const sinceNeedsFixes = sinceReview.verdict === NEEDS_FIXES;
+  if (claim[FIX_DELTA] === true && !sinceNeedsFixes) {
+    throw new Refused(`${FIX_DELTA} claims the high-only bar, but the review at since ${claim['since']} is ${sinceReview.verdict}, not ${NEEDS_FIXES}`);
+  }
+  if (claim[FIX_DELTA] !== true && sinceNeedsFixes && claim['review_kind'] === LENS_REVIEW) {
+    throw new Refused(`the review at since ${claim['since']} is ${NEEDS_FIXES}: a delta after it is a fix delta and must carry its prior findings (${FIX_DELTA})`);
+  }
 }
 
 export function sameReview(repoKey: string, runId: string, reviewedTree: string): ReviewEvidence | null {

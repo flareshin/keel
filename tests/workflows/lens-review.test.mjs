@@ -356,6 +356,14 @@ test('lensReview_keepsAMediumBlocking_whenTheDeltaFollowsAPass', async () => {
   assert.deepEqual(result.blocking.map((f) => f.id), ['c1'])
 })
 
+test('lensReview_marksTheEvidenceAsAFixDelta_onlyWhenPriorFindingsAreGiven', async () => {
+  const [fix] = await runDelta({ impact: 'low', priorFindings: ['a.py:3 drops the null check'] })
+  assert.equal(fix.evidence[0].fix_delta, true)
+  assert.equal(parseEvidenceLine(linesStartingWith(fix.report, 'KEEL-EVIDENCE')[0]).fix_delta, true)
+  const [plain] = await runDelta({ impact: 'low' })
+  assert.deepEqual(Object.keys(plain.evidence[0]), EVIDENCE_KEYS)
+})
+
 test('lensReview_tellsTheAuditorOnlyHighBlocks_inAFixDelta', async () => {
   const [, rt] = await runDelta({ impact: 'low', priorFindings: ['a.py:3 drops the null check'] })
   assert.match(auditChildArgs(rt).target, /only impact high is merge-blocking; a new medium finding is reported as non-blocking/)

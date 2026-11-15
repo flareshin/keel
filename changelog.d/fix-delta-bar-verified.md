@@ -1,0 +1,2 @@
+### Changed
+- `keel evidence write-review` checks the fix-delta bar against the chain. lens-review adds `fix_delta: true` to `KEEL-EVIDENCE` when the run carried `priorFindings` (only impact high blocks). The writer refuses (3) that flag on a root review or when the review at `since` is not NEEDS_FIXES, and refuses a lens-review delta without the flag whose `since` review is NEEDS_FIXES, so a fix is judged with its prior findings and never as a delta after a PASS. A non-`true` `fix_delta` is a usage error (2). Stored review evidence is unchanged.

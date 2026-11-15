@@ -146,7 +146,7 @@ describe('PushScenarioTest', () => {
     const rootTree = snapshotTree(sandbox, repo);
     sandbox.review(repo, { verdict: 'NEEDS_FIXES' });
     repo.commit({ 'src/a.py': 'print(2)\n' }, 'fix');
-    sandbox.review(repo, { runId: 'rv-delta-0002', rootRunId: 'rv-root-0001', since: rootTree });
+    sandbox.review(repo, { runId: 'rv-delta-0002', rootRunId: 'rv-root-0001', since: rootTree, fixDelta: true });
     sandbox.testsEvidence(repo);
     sandbox.approve('rv-root-0001');
     assertPassed(sandbox, sandbox.push(repo, PUSH_FEATURE));

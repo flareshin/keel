@@ -1,6 +1,8 @@
+import fs from "node:fs"
 import path from "node:path"
 
 import { DELETED_BLOB, describeTestChange, isPrecheckSource, REQUIRED_SCRIPT_SOURCES } from "../../lib/precheck/binding.ts"
+import { finalReport } from "../../hooks/lib/hookkit/transcript.ts"
 import { objectType } from "../../lib/evidence/gitcmd.ts"
 import * as store from "../../lib/evidence/store.ts"
 import * as env from "../lib/measurekit/env.ts"
@@ -22,7 +24,7 @@ const NEEDS_FIXES = "NEEDS_FIXES"
 const TESTS_LENSES = new Set(["tests", "test-adequacy"])
 const BLOCKING_HEADING = "Merge-blocking"
 const BLOCK_END = /\n(?:Non-blocking|Pre-existing|Optional|Adjusted|Refuted|KEEL-EVIDENCE)/
-const BLOCKING_FINDING = /^- \[(high|medium)\] ([a-z-]+)\/\S+?: (.*?)(?=^- \[|$(?![\s\S]))/gms
+const BLOCKING_FINDING = /^- \[(high|medium)(?:, [^\]\n]+)?\] ([a-z-]+)\/\S+?: (.*?)(?=^- \[|$(?![\s\S]))/gms
 const MUTATION_SHAPED = /revert|remov|delet|drop|replac|swap|invert|flip|weaken|still pass|stays? green|keeps? (?:the suite )?green|would pass|without (?:any )?test fail|no test (?:fails|would fail)|unpinned|not pinned/i
 
 interface FirstReview {
@@ -124,24 +126,12 @@ function removedTestLines(review: FirstReview): boolean | null {
 }
 
 function mutationShapedTestsFindings(transcript: string | null): number | null {
-  const report = transcript === null ? null : lastAssistantText(transcript)
+  const report = transcript === null || !fs.existsSync(transcript) ? null : finalReport(transcript)
   if (report === null || !report.includes(BLOCKING_HEADING)) return null
   const block = report.slice(report.indexOf(BLOCKING_HEADING) + BLOCKING_HEADING.length).split(BLOCK_END)[0] as string
   return [...block.matchAll(BLOCKING_FINDING)]
     .filter(([, , lens, text]) => TESTS_LENSES.has(lens as string) && MUTATION_SHAPED.test(text as string))
     .length
-}
-
-function lastAssistantText(transcript: string): string | null {
-  let last: string | null = null
-  for (const record of readJsonl(transcript).records) {
-    const message = record["message"]
-    if (!isJsonObject(message) || message["role"] !== "assistant" || !Array.isArray(message["content"])) continue
-    for (const part of message["content"]) {
-      if (isJsonObject(part) && part["type"] === "text" && typeof part["text"] === "string") last = part["text"]
-    }
-  }
-  return last
 }
 
 runMain(main)

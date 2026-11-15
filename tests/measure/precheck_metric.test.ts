@@ -4,6 +4,7 @@ import path from "node:path"
 
 import { addDays } from "../../measure/lib/measurekit/dates.ts"
 import { isExecutable } from "../../measure/lib/measurekit/files.ts"
+import { filled, loadFixtures } from "../hooks/harness-contract.ts"
 import { CHECKOUT, FUTURE, MeasureSandbox, NOW_TS, TODAY, ledgerRow } from "./helpers.ts"
 
 const RUNNER = "measure/metrics/C-precheck"
@@ -86,8 +87,16 @@ describe("C-precheck runner", () => {
 
   const givenReport = (text: string): string => {
     const assistant = { message: { role: "assistant", content: [{ type: "text", text }] } }
-    const earlier = { message: { role: "assistant", content: [{ type: "text", text: "Merge-blocking (9): - [high] tests/X: draft still pass" }] } }
+    const earlier = { message: { role: "assistant", content: [
+      { type: "text", text: "Merge-blocking (9): - [high] tests/X: draft still pass" },
+      { type: "tool_use", id: "toolu_1", name: "Read", input: { file_path: "/somewhere/report.md" } },
+    ] } }
     return box.write("data/transcripts/reporter.jsonl", [earlier, { message: { role: "user", content: "next" } }, assistant].map((line) => JSON.stringify(line)).join("\n") + "\n")
+  }
+
+  const givenHandedBackReport = (text: string): string => {
+    const fixture = loadFixtures().find((candidate) => candidate.name === "reporter-handback")!
+    return box.write("data/transcripts/handback.jsonl", filled(fixture, { brief: "Hand back the report.", report: text }))
   }
 
   const runMetric = () => {
@@ -110,6 +119,25 @@ describe("C-precheck runner", () => {
       run_id: "rv-a", created_at: NOW_TS, repos: ["flareshin/keel"], verdict: "NEEDS_FIXES", prechecked: true, mutation_tests_findings: 2,
       existing_test_lines_removed: null,
     }])
+  })
+
+  it("handedBackReport_isReadFromTheSubagentHandbackMessage_asTheReportGateTakesIt", () => {
+    givenReview({ runId: "rv-a", verdict: "NEEDS_FIXES", transcript: givenHandedBackReport(NEEDS_FIXES_REPORT) })
+    givenPrecheck()
+    assert.equal(runMetric().items[0].mutation_tests_findings, 2)
+  })
+
+  it("adjustedOrUnreproducedBlockingFinding_countsLikeAPlainOne", () => {
+    const report = [
+      "Merge-blocking (2):",
+      "- [medium, ADJUSTED] tests/T1: Reverting the guard keeps every test green.",
+      "- [high, ADJUSTED, no repro] tests/T2: Removing the limit still passes.",
+      "",
+      "KEEL-EVIDENCE: {}",
+    ].join("\n")
+    givenReview({ runId: "rv-a", verdict: "NEEDS_FIXES", transcript: givenReport(report) })
+    givenPrecheck()
+    assert.equal(runMetric().items[0].mutation_tests_findings, 2)
   })
 
   const givenRepoHistory = (before: Record<string, string>, after: Record<string, string | null>) => {

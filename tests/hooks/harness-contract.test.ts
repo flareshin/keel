@@ -5,6 +5,7 @@ import { AGENT_ID, HookSandbox, preToolUse, REPORT_GATE, SESSION_ID, subagentSto
 import type { HookResult } from "./helpers.ts";
 import { BRIEF, EDIT_PATH, filled, loadFixtures, REPORT, scrubTranscript, versionOf } from "./harness-contract.ts";
 import type { Fixture } from "./harness-contract.ts";
+import { finalReport } from "../../hooks/lib/hookkit/transcript.ts";
 
 const UNPROVEN_REPORT = "Done. All good, VERDICT: PASS";
 const PLAIN_REPORT = "Done.";
@@ -89,6 +90,25 @@ describe("HarnessContractTest", () => {
     const result = handback("reporter-handback", PLAIN_REPORT);
     assert.equal(result.code, 0);
     assert.deepEqual(fired(), []);
+  });
+});
+
+describe("FinalReportTest", () => {
+  it("finalReport_readsTheReportEveryRecordedTranscriptCarries_finalTextOrHandbackMessage", () => {
+    const reports = loadFixtures().map((recorded) => {
+      const report = `VERDICT: PASS from ${recorded.name}`;
+      return [recorded.name, finalReport(installRecorded(recorded.name, report)) === report];
+    });
+    assert.deepEqual(reports, loadFixtures().map((recorded) => [recorded.name, true]));
+  });
+
+  it("finalReport_isNull_whenTheTranscriptEndsInAToolUseThatIsNotAHandback", () => {
+    const path = join(sandbox.root, "ends-in-read.jsonl");
+    sandbox.write(path, [
+      { message: { role: "assistant", content: [{ type: "text", text: "draft" }] } },
+      { message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_1", name: "Read", input: { file_path: "/a" } }] } },
+    ].map((line) => JSON.stringify(line)).join("\n"));
+    assert.equal(finalReport(path), null);
   });
 });
 

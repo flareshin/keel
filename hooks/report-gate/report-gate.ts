@@ -428,13 +428,13 @@ function writeReviewEvidence(
   for (const key of ["session_id", "agent_id", "agent_type", "transcript_path"]) source[key] = getField(payload, key);
   source["agent_transcript_path"] = agentTranscript;
   source["via"] = via;
-  for (const line of evidenceLines) sendToCli(line, verdict, source, fires);
+  for (const line of evidenceLines) sendToCli(line, verdict, source, report, fires);
 }
 
-function sendToCli(evidenceLine: string, verdict: string, source: Record<string, unknown>, fires: FireLog): void {
+function sendToCli(evidenceLine: string, verdict: string, source: Record<string, unknown>, report: string, fires: FireLog): void {
   let request: string;
   try {
-    request = dumpsAscii({ keel_evidence: parseFiniteJson(evidenceLine), verdict, source });
+    request = dumpsAscii({ keel_evidence: parseFiniteJson(evidenceLine), verdict, source, report });
   } catch (error) {
     if (!(error instanceof ValueError)) throw error;
     fires.append("K1", "warn", { detail: "KEEL-EVIDENCE line is not JSON" });

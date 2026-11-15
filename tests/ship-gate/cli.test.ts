@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import childProcess from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
@@ -392,6 +392,118 @@ describe('WriteReviewTest', () => {
     const request = sandbox.reviewRequest(repo);
     request.source.agent_transcript_path = sandbox.agentTranscript('s1', 'ag1', 'wf-1');
     assert.equal(sandbox.keel(['evidence', 'write-review'], { stdin: JSON.stringify(request) }).rc, 0);
+  });
+});
+
+function blockingItem(impact: string, lensAndId: string, summary: string, at: string | null): string {
+  const location = at === null ? [] : [`  At: ${at} - x.py:1 quoted line`];
+  return [`- [${impact}] ${lensAndId}: ${summary}`, ...location, '  Repro: ran it', '  Fix: change it'].join('\n');
+}
+
+function blockingReport(items: string[], evidenceRoots: string[]): string {
+  const evidence = evidenceRoots.map((root) => `KEEL-EVIDENCE: ${JSON.stringify({ v: 1, repo_root: root })}`);
+  return ['VERDICT: NEEDS_FIXES', '', `Merge-blocking (${items.length}):`, ...items, 'Non-blocking: none', ...evidence].join('\n');
+}
+
+function findingsLog(sandbox: Sandbox): any[] {
+  const path = join(sandbox.data, 'logs', 'keel-findings.jsonl');
+  if (!existsSync(path)) return [];
+  return readFileSync(path, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+}
+
+function writeWithReport(sandbox: Sandbox, repo: Repo, verdict: string, report: unknown): Run {
+  const request = { ...sandbox.reviewRequest(repo, { verdict }), report };
+  return sandbox.keel(['evidence', 'write-review'], { stdin: JSON.stringify(request) });
+}
+
+describe('FindingsLogTest', () => {
+  test('writeReview_logsEachBlockingFinding_withARepoRelativePath_whenVerdictIsNeedsFixes', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = feature(sandbox);
+    const report = blockingReport([
+      blockingItem('medium', 'contract/C1', 'caller breaks', `${repo.path}/src/a.py`),
+      blockingItem('high, ADJUSTED', 'tests/T1', 'no test pins it', `${repo.path}/tests/test_a.py`),
+    ], [repo.path]);
+    const run = writeWithReport(sandbox, repo, 'NEEDS_FIXES', report);
+    assert.equal(run.rc, 0, run.stderr);
+    assert.equal(run.json.findings, 2);
+    const logged = findingsLog(sandbox).map((r) => [r.repo, r.root_run_id, r.run_id, r.lens, r.finding_id, r.impact, r.path, r.summary]);
+    assert.deepEqual(logged, [
+      ['acme/app', 'rv-root-0001', 'rv-root-0001', 'contract', 'C1', 'medium', 'src/a.py', 'caller breaks'],
+      ['acme/app', 'rv-root-0001', 'rv-root-0001', 'tests', 'T1', 'high', 'tests/test_a.py', 'no test pins it'],
+    ]);
+    assert.equal(findingsLog(sandbox)[0].evidence_id, run.json.evidence_id);
+  });
+
+  test('writeReview_logsNothing_whenVerdictIsPass', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = feature(sandbox);
+    const run = writeWithReport(sandbox, repo, 'PASS', 'VERDICT: PASS\n\nMerge-blocking: none');
+    assert.equal(run.rc, 0, run.stderr);
+    assert.equal('findings' in run.json, false);
+    assert.deepEqual(findingsLog(sandbox), []);
+  });
+
+  test('writeReview_logsOnce_whenTheSameReviewIsWrittenTwice', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = feature(sandbox);
+    const report = blockingReport([blockingItem('medium', 'contract/C1', 'caller breaks', `${repo.path}/src/a.py`)], [repo.path]);
+    assert.equal(writeWithReport(sandbox, repo, 'NEEDS_FIXES', report).rc, 0);
+    const again = writeWithReport(sandbox, repo, 'NEEDS_FIXES', report);
+    assert.equal(again.rc, 0, again.stderr);
+    assert.equal(findingsLog(sandbox).length, 1);
+  });
+
+  test('writeReview_logsAnUnparsedMarker_whenANeedsFixesReportListsNoBlockingFinding', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = feature(sandbox);
+    const run = writeWithReport(sandbox, repo, 'NEEDS_FIXES', 'VERDICT: NEEDS_FIXES\n\nsomething went wrong');
+    assert.equal(run.rc, 0, run.stderr);
+    assert.equal(run.json.findings, 0);
+    const logged = findingsLog(sandbox);
+    assert.deepEqual(logged.map((r) => [r.unparsed, r.evidence_id, r.lens]), [[true, run.json.evidence_id, undefined]]);
+  });
+
+  test('writeReview_logsOnlyThisRepoFindings_whenTheReportCoversANestedRepo', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = feature(sandbox);
+    const nested = `${repo.path}/vendor/lib`;
+    const report = blockingReport([
+      blockingItem('medium', 'contract/C1', 'outer finding', `${repo.path}/src/a.py`),
+      blockingItem('medium', 'contract/C2', 'nested finding', `${nested}/b.py`),
+      blockingItem('medium', 'contract/C3', 'finding with no location', null),
+    ], [repo.path, nested]);
+    const run = writeWithReport(sandbox, repo, 'NEEDS_FIXES', report);
+    assert.equal(run.rc, 0, run.stderr);
+    assert.deepEqual(findingsLog(sandbox).map((r) => [r.finding_id, r.path]), [['C1', 'src/a.py']]);
+  });
+
+  test('writeReview_keepsAPathlessFinding_whenTheReportCoversOneRepo', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = feature(sandbox);
+    const report = blockingReport([blockingItem('high', 'tests/T1', 'nothing pins it', null)], [repo.path]);
+    assert.equal(writeWithReport(sandbox, repo, 'NEEDS_FIXES', report).rc, 0);
+    assert.deepEqual(findingsLog(sandbox).map((r) => [r.finding_id, r.path]), [['T1', null]]);
+  });
+
+  test('writeReview_stillWritesEvidence_whenTheFindingsLogCannotBeWritten', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = feature(sandbox);
+    writeFileSync(join(sandbox.data, 'logs'), 'not a directory');
+    const report = blockingReport([blockingItem('medium', 'contract/C1', 'caller breaks', `${repo.path}/src/a.py`)], [repo.path]);
+    const run = writeWithReport(sandbox, repo, 'NEEDS_FIXES', report);
+    assert.equal(run.rc, 0, run.stderr);
+    assert.match(run.json.findings_error, /EEXIST|ENOTDIR/);
+    assert.equal(sandbox.evidenceFiles('review').length, 1);
+  });
+
+  test('writeReview_isUsageError_whenReportIsNotAString', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = feature(sandbox);
+    const run = writeWithReport(sandbox, repo, 'NEEDS_FIXES', ['VERDICT: NEEDS_FIXES']);
+    assert.equal(run.rc, 2);
+    assert.match(run.stderr, /report must be a string when present/);
+    assert.equal(sandbox.evidenceFiles('review').length, 0);
   });
 });
 

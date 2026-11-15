@@ -282,6 +282,12 @@ describe("HandbackReviewEvidenceTest", () => {
     assert.equal(sandbox.stubCalls("keel").length, 2);
   });
 
+  it("handback_sendsTheReportWithEachRequest_withoutTheMarkerLines", () => {
+    const report = PASS_REPORT.replace("VERDICT: PASS", "VERDICT: NEEDS_FIXES") + "\n" + KEEL_EVIDENCE_LINE.replace("/work/app", "/work/lib");
+    handback(`<<<KEEL-REPORT\n${report}\nKEEL-REPORT>>>`);
+    assert.deepEqual(keelRequests().map((request) => request.report), [report, report]);
+  });
+
   it("handback_writesNothing_whenVerdictIsNotFirstLine", () => {
     handback("Summary first.\n" + PASS_REPORT);
     assert.deepEqual(sandbox.stubCalls("keel"), []);
@@ -418,6 +424,11 @@ describe("SubagentStopTest", () => {
   it("stop_writesEvidenceViaStop_whenNoHandbackThisTurn", () => {
     stop(PASS_REPORT);
     assert.equal(keelRequests()[0].source.via, "SubagentStop");
+  });
+
+  it("stop_sendsTheReportWithTheRequest_withoutTheMarkerLines", () => {
+    stop(FRAMED_PASS_REPORT);
+    assert.equal(keelRequests()[0].report, PASS_REPORT);
   });
 
   it("stop_writesEvidence_whenReporterEchoesTheMarkerLines", () => {

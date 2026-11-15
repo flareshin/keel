@@ -3,7 +3,7 @@ import path from "node:path"
 
 import * as store from "../../../lib/evidence/store.ts"
 import { readJsonl } from "./datafiles.ts"
-import { InvalidUtf8Error, isSystemError } from "./files.ts"
+import { InvalidUtf8Error } from "./files.ts"
 import { compareCodePoints, isJsonObject } from "./json.ts"
 
 const CONTRACT_FIXTURES = path.join("tests", "hooks", "fixtures", "harness-contract")
@@ -67,9 +67,13 @@ function transcriptVersion(transcript: string): string | undefined {
   try {
     return versionsIn(transcript).at(-1)
   } catch (error) {
-    if (error instanceof InvalidUtf8Error || isSystemError(error)) return undefined
+    if (error instanceof InvalidUtf8Error || isFileSystemError(error)) return undefined
     throw error
   }
+}
+
+function isFileSystemError(error: unknown): boolean {
+  return error instanceof Error && typeof (error as NodeJS.ErrnoException).code === "string"
 }
 
 function contractFixtures(keelHome: string): string[] {

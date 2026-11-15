@@ -33,6 +33,8 @@ const FAILURE_PATTERNS: Array<[name: string, pattern: RegExp]> = [
   ['passed', new RegExp(
     `${LINE_START}(?!${SPACE_EITHER_WAY}*Test (?:Files|Suites)${NOT_WORD_AFTER})[^\\n]*?${NOT_WORD_BEFORE}${NOT_IN_TAP_DIAGNOSTIC}([0-9]+) failed${NOT_WORD_AFTER}`, 'gu')],
 ];
+const FILE_FAILURES = new RegExp(
+  `${LINE_START}${SPACE_EITHER_WAY}*Test (?:Files|Suites)${NOT_WORD_AFTER}[^\\n]*?${NOT_WORD_BEFORE}([0-9]+) failed${NOT_WORD_AFTER}`, 'gu');
 export const NO_TESTS_RECOGNIZED = 4;
 export const FAILURES_RECOGNIZED = 6;
 const COMMAND_NOT_FOUND = 2;
@@ -116,7 +118,8 @@ export function recognizeFailures(output: string): number {
     if (counts.length === 0) continue;
     total += name === 'surefire' ? Math.max(...counts) : counts.reduce((sum, item) => sum + item, 0);
   }
-  return total;
+  const failedFiles = [...output.matchAll(FILE_FAILURES)].reduce((sum, match) => sum + Number(match[1]), 0);
+  return Math.max(total, failedFiles);
 }
 
 function failuresOf(framework: string, match: RegExpMatchArray): number {

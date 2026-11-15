@@ -351,7 +351,7 @@ KEEL-EVIDENCE: {"v":1,"repo_root":"/abs/repo","review_base":"<40hex commit>","he
 
 ### (e) CLI contracts
 
-Exit codes: 0 ok · 1 negative result · 2 usage error · 3 refused (validation or provenance) · 4 no tests recognized · 5 test output stayed open after the command exited · 6 test output reports failing tests although the command exited 0 · 70 internal error. Machine output: one JSON object on stdout; human messages on stderr.
+Exit codes: 0 ok · 1 negative result · 2 usage error · 3 refused (validation or provenance) · 4 no tests recognized · 5 test output stayed open after the command exited · 6 test output reports failing tests or failed test files (a vitest `Test Files` or jest `Test Suites` line) although the command exited 0 · 70 internal error. Machine output: one JSON object on stdout; human messages on stderr.
 
 | Command | Args | Behavior | stdout |
 |---|---|---|---|

@@ -24,6 +24,7 @@ import { SHELLS } from "../lib/hookkit/parser.ts";
 import { steps } from "../lib/hookkit/steps.ts";
 import type { Step } from "../lib/hookkit/steps.ts";
 import { appendRecord, dataDir, iso, stateDir, utcNow } from "../../lib/evidence/env.ts";
+import * as compileCache from "../../lib/evidence/compile-cache.ts";
 import * as gc from "../../lib/evidence/gc.ts";
 import * as gitcmd from "../../lib/evidence/gitcmd.ts";
 import * as registry from "../../lib/evidence/registry.ts";
@@ -923,6 +924,8 @@ function collectGarbageIfDue(report: Report): void {
     mkdirSync(pathDirname(stamp), { recursive: true });
     touch(stamp);
     report.record(`evidence gc deleted ${gc.collect()}`);
+    const removed = compileCache.trim();
+    if (removed.files > 0) report.record(`compile cache removed ${removed.files} files ${removed.bytes} bytes`);
   } catch (error) {
     report.error(error, false, "");
   }

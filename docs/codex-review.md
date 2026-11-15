@@ -109,12 +109,10 @@ The mechanical scanner still uses the original base and final tree, as in Claude
 ## Storage and retirement
 
 New registrations use only the current flow; the old `--audit/--verify` writer is
-removed. Existing old-format records remain read-only under their original source
-validation, so already approved chains stay usable. No old workflow instructions
-need to be loaded for new reviews. The compatibility decoder is removed once
-`keel evidence compatibility` reports no unexpired old-format records or chain
-references across all repositories. Never relabel or rewrite historical evidence.
-A delta cannot start from a record that lacks per-lens unresolved findings.
+removed, and so is the version 1 decoder: evidence whose `source.version` is not 2
+is refused on validation, so it can no longer be approved or pass the ship gate.
+No old workflow instructions need to be loaded for new reviews. Never relabel or
+rewrite historical evidence. A delta cannot start from a record that lacks per-lens unresolved findings.
 
 ## Runtime boundary
 

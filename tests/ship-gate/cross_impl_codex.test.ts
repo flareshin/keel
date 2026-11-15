@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
@@ -7,8 +6,7 @@ import * as codexLenses from '../../lib/evidence/codex_lenses.ts';
 import * as codexReview from '../../lib/evidence/codex_review.ts';
 import * as gitcmd from '../../lib/evidence/gitcmd.ts';
 import * as store from '../../lib/evidence/store.ts';
-import { AUTHOR, AUDIT, CodexFixture, LENSES, VERIFY } from './codex_helpers.ts';
-import { KEEL } from './helpers.ts';
+import { AUTHOR, CodexFixture, LENSES } from './codex_helpers.ts';
 
 type Outcome = string[];
 
@@ -28,14 +26,6 @@ function registerLenses(f: CodexFixture, audits: string[]): Outcome {
 function validateStored(path: string): Outcome {
   codexReview.validateEvidence(store.readFile(path));
   return ['ok', 'validated'];
-}
-
-function compatibilityOutcome(f: CodexFixture, dataDir: string, runner: string[]): Outcome {
-  const [program, ...prefix] = runner;
-  const completed = spawnSync(program!, [...prefix, 'evidence', 'compatibility'], {
-    encoding: 'utf8', cwd: f.repo.path, env: { ...f.sandbox.env, KEEL_DATA_DIR: dataDir },
-  });
-  return ['rc ' + completed.status, completed.stdout.trim(), completed.stderr.trim()];
 }
 
 const DELTA_IDENTITY_OFFSET = 100;
@@ -91,9 +81,6 @@ describe('Codex evidence with float spellings of version fields', () => {
     const stored = storedReviews(f.sandbox.data);
     for (const path of stored) respell(path, /"version":2([,}\n])/, '"version":2.0$1');
 
-    const [status, inventory] = compatibilityOutcome(f, f.sandbox.data, ['node', KEEL]);
-    assert.equal(status, 'rc 0');
-    assert.deepEqual(JSON.parse(inventory!), { chain_roots: [], read_only_records: 0, reader_removable: true });
     assert.deepEqual(typescriptOutcome(() => validateStored(stored[0]!)), ['ok', 'validated']);
     assert.deepEqual(typescriptOutcome(() => registerLenses(f, audits)), ['ok', 'PASS', RECORDED_ROOT_RUN_ID, '2']);
 
@@ -102,15 +89,5 @@ describe('Codex evidence with float spellings of version fields', () => {
     f.tree = gitcmd.snapshotTree(f.repo.path);
     const delta = writeLensAudits(f, { since: previousTree, root: RECORDED_ROOT_RUN_ID });
     assert.deepEqual(typescriptOutcome(() => registerLenses(f, delta)), ['ok', 'PASS', RECORDED_ROOT_RUN_ID, '1']);
-  });
-
-  test('native reports spelled "version": 1.0 are accepted as version 1', (t) => {
-    const f = new CodexFixture(t);
-    for (const identity of [AUDIT, VERIFY]) respell(sessionFile(f, identity), /\\"version\\":1([,}])/, '\\"version\\":1.0$1');
-
-    assert.deepEqual(typescriptOutcome(() => {
-      f.register();
-      return ['ok', 'validated'];
-    }), ['ok', 'validated']);
   });
 });

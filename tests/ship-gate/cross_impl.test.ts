@@ -272,7 +272,7 @@ function inspectEvidence(sandbox: Sandbox, repo: Repo, mixed: Pipeline): Evidenc
   repo.commit({ 'src/unreviewed.py': 'print(3)\n' }, 'unreviewed');
   const states: Array<[string, string, boolean]> = [[head, base, true], [head, base, false], [repo.head(), base, true], [base, base, true]];
   const judged = states.map(([stateHead, stateBase, needsApproval]) => judge(mixed.dataDir, sandbox, repo, stateHead, stateBase, needsApproval));
-  const probes = [['evidence', 'show', '--repo', repo.path], ['evidence', 'compatibility'], ['evidence', 'gc'], ['snapshot', repo.path]];
+  const probes = [['evidence', 'show', '--repo', repo.path], ['evidence', 'gc'], ['snapshot', repo.path]];
   const cli = probes.map((args): [number, string] => {
     const run = mixed.use().keel(args);
     return [run.rc, run.stdout];
@@ -547,7 +547,7 @@ describe('cross-implementation evidence compatibility', () => {
       { args: [] }, { args: ['bogus'] }, { args: ['test', 'x'] }, { args: ['test', '--'] }, { args: ['approve'] }, { args: ['approve', 'x'] },
       { args: ['approve', 'rv-none-0001'] }, { args: ['approve', 'rv-none-0001', '--bogus'] }, { args: ['snapshot'] }, { args: ['snapshot', sandbox.home] },
       { args: ['evidence'] }, { args: ['evidence', 'bogus'] }, { args: ['evidence', 'show', '--bogus'] }, { args: ['evidence', 'show', '--repo'] },
-      { args: ['evidence', 'show', '--repo', sandbox.home] }, { args: ['evidence', 'compatibility', '--repo', repo.path] },
+      { args: ['evidence', 'show', '--repo', sandbox.home] },
       { args: ['evidence', 'record-codex'] }, { args: ['evidence', 'record-codex', '--repo', repo.path] },
       { args: ['evidence', 'record-codex', '--repo', repo.path, '--audits', 'not-a-uuid'] },
       { args: ['evidence', 'write-review'], stdin: '' }, { args: ['evidence', 'write-review'], stdin: '{"a":' }, { args: ['evidence', 'write-review'], stdin: '[1]' },

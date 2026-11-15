@@ -1,6 +1,6 @@
 import { isAbsolute, relative, sep } from 'node:path';
 import * as env from './env.ts';
-import { SPACE_CHARS } from './text.ts';
+import { SPACE_CHARS } from '../../hooks/lib/hookkit/text.ts';
 
 export const FINDINGS_LOG = 'keel-findings.jsonl';
 const NEEDS_FIXES = 'NEEDS_FIXES';

@@ -1,6 +1,4 @@
-import { SPACE_CHARS } from "../../../lib/evidence/text.ts";
-
-export { SPACE_CHARS };
+export const SPACE_CHARS = String.raw`\t-\r\x1c-\x20\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000`;
 export const WORD_CHARS = String.raw`\p{L}\p{N}_`;
 export const SPACE_CLASS = `[${SPACE_CHARS}]`;
 const WORD_CLASS = `[${WORD_CHARS}]`;

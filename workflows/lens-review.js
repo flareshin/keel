@@ -58,7 +58,8 @@ const HARNESS_NOTICE = /^\[harness: [^\n]*\]\n\s*\n/
 const RULE_CHECKS_SUMMARY = /summary repos=\d+ scanned_lines=\d+ signals=\d+ unscanned=[^\n]*? blocked=(\S+)/g
 const TRAILING_QUOTE_OR_PUNCTUATION = /[`'".,;:)\]]+$/
 const EVIDENCE_PREFIX = 'KEEL-EVIDENCE: '
-const EVIDENCE_LINE = /^\s*KEEL-EVIDENCE:/
+const SPACE_CHARS = String.raw`\t-\r\x1c-\x20\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000`
+const EVIDENCE_LINE = new RegExp(`^[${SPACE_CHARS}]*KEEL-EVIDENCE:`)
 const LINE_BREAKS = /\s*[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]+\s*/g
 const JOINED_LINES = ' / '
 const PRECHECK_HEADER = /^precheck tree ([0-9a-f]{40})(?: ·|$)/

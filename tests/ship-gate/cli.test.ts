@@ -57,6 +57,14 @@ describe('KeelTestCommandTest', () => {
     assert.deepEqual(summaryOf(run), { run_id: summaryOf(run).run_id, count: 7, exit: 0, evidence_id: null, submodule_evidence: {} });
   });
 
+  test('keelTest_exits6NotFour_whenAGreenExitReportsOnlyFailingTests', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    const run = sandbox.keel(['test', '--', 'bash', '-c', "echo '===== 3 failed in 0.20s ====='"], { cwd: repo.path });
+    assert.equal(run.rc, 6, run.stderr);
+    assert.deepEqual([summaryOf(run).count, summaryOf(run).evidence_id], [0, null]);
+  });
+
   test('keelTest_writesEvidence_whenTheSummaryReportsZeroFailures', (t) => {
     const sandbox = new Sandbox(t);
     const repo = sandbox.clone('acme', 'app');

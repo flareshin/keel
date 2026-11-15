@@ -114,7 +114,7 @@ export function recognizeFailures(output: string): number {
   for (const [name, pattern] of FAILURE_PATTERNS) {
     const counts = [...output.matchAll(pattern)].map((match) => failuresOf(name, match));
     if (counts.length === 0) continue;
-    total += name === 'surefire' ? counts.at(-1)! : counts.reduce((sum, item) => sum + item, 0);
+    total += name === 'surefire' ? Math.max(...counts) : counts.reduce((sum, item) => sum + item, 0);
   }
   return total;
 }

@@ -317,6 +317,7 @@ describe('Codex rollouts and runner output at their edges', () => {
   test('each runner summary reports its failing tests, and a zero, a TAP diagnostic or a glued word reports none', () => {
     const cases: Array<[string, number]> = [
       ['Tests run: 4, Failures: 1, Errors: 0\nTests run: 9, Failures: 2, Errors: 1\n', 3],
+      ['Tests run: 4, Failures: 1, Errors: 0\nTests run: 6, Failures: 0, Errors: 0\n', 1],
       ['Ran 3 tests\n\nFAILED (failures=1, errors=2)\n', 3],
       ['FAILED (errors=1, skipped=2)\n', 1],
       ['FAILED (skipped=1, unexpected successes=1)\n', 1],

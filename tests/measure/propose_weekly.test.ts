@@ -292,6 +292,7 @@ describe("weekly", () => {
       givenFinding({ root_run_id: root, repo: "acme/web", path: "a.ts", lens: "tests" })
       givenFinding({ root_run_id: root, repo: "acme/app", path: "a.ts", lens: "tests" })
       givenFinding({ root_run_id: root, repo: "acme/app", path: "a.ts", lens: "contract" })
+      givenFinding({ root_run_id: root, repo: "acme/web", path: "a.ts", lens: "contract" })
     }
     givenFinding({ root_run_id: "rv-3", repo: "acme/web", path: "a.ts", lens: "tests" })
     const [completed, report] = box.runJson("weekly")
@@ -300,6 +301,7 @@ describe("weekly", () => {
       { repo: "acme/web", path: "a.ts", lens: "tests", roots: 3 },
       { repo: "acme/app", path: "a.ts", lens: "contract", roots: 2 },
       { repo: "acme/app", path: "a.ts", lens: "tests", roots: 2 },
+      { repo: "acme/web", path: "a.ts", lens: "contract", roots: 2 },
     ])
   })
 
@@ -308,13 +310,17 @@ describe("weekly", () => {
     for (const root of ["rv-1", "rv-2"]) {
       givenFinding({ root_run_id: root, path: null })
       givenFinding({ root_run_id: root, path: "N/A" })
+      givenFinding({ root_run_id: root, path: "" })
+      givenFinding({ root_run_id: root, repo: undefined })
     }
+    givenFinding({ root_run_id: 7 })
+    givenFinding({ root_run_id: 8 })
     givenFinding({ root_run_id: "rv-3", lens: 7 })
     box.appendLog("keel-findings.jsonl", { ts: "t", evidence_id: "e", repo: "acme/app", root_run_id: "rv-5", run_id: "rv-5", unparsed: true })
     fs.appendFileSync(path.join(box.data, "logs", "keel-findings.jsonl"), "{not json\n")
     const [completed, report] = box.runJson("weekly")
     assert.equal(completed.status, 0, completed.stderr)
-    assert.deepEqual(report.recurring_findings, { findings: 5, keys: 0, recurring_keys: 0, top_recurring: [], unkeyed: 5, unparsed: 1, malformed: 1 })
+    assert.deepEqual(report.recurring_findings, { findings: 11, keys: 0, recurring_keys: 0, top_recurring: [], unkeyed: 11, unparsed: 1, malformed: 1 })
   })
 
   it("weekly_listsAtMostTwentyRecurringKeys_andCountsAllOfThem", () => {

@@ -141,6 +141,7 @@ export interface ReviewOptions {
   session?: string;
   baseBranch?: string;
   noTestReason?: string | null;
+  fixDelta?: boolean;
   agentType?: string;
 }
 
@@ -363,6 +364,7 @@ export class Sandbox {
       root_run_id: options.rootRunId ?? runId, review_kind: options.kind ?? 'lens-review',
     };
     if (options.noTestReason !== undefined && options.noTestReason !== null) keelEvidence['no_test_reason'] = options.noTestReason;
+    if (options.fixDelta) keelEvidence['fix_delta'] = true;
     return {
       keel_evidence: keelEvidence,
       verdict: options.verdict ?? 'PASS',

@@ -124,9 +124,9 @@ describe('PrepareTest', () => {
     box.review(repo, { verdict: 'NEEDS_FIXES' });
     repo.write('fix.py', 'print(2)\n');
     const deltaTree = box.keel(['snapshot', repo.path]).json.tree;
-    box.review(repo, { runId: 'rv-delta-0002', rootRunId: 'rv-root-0001', since: rootTree, verdict: 'NEEDS_FIXES' });
+    box.review(repo, { runId: 'rv-delta-0002', rootRunId: 'rv-root-0001', since: rootTree, verdict: 'NEEDS_FIXES', fixDelta: true });
     repo.write('fix.py', 'print(3)\n');
-    box.review(repo, { runId: 'rv-delta-0003', rootRunId: 'rv-root-0001', since: deltaTree });
+    box.review(repo, { runId: 'rv-delta-0003', rootRunId: 'rv-root-0001', since: deltaTree, fixDelta: true });
     const diffs = [{ repo: repo.path, base }];
 
     const delta = box.keel(['review', 'prepare'], { stdin: JSON.stringify({ diffs, lenses: [], rootRunId: 'rv-root-0001' }) });

@@ -7,7 +7,7 @@ import { describe, test } from 'node:test';
 import type { TestContext } from 'node:test';
 import * as gitcmd from '../../lib/evidence/gitcmd.ts';
 import { KEEL, KEEL_HOME, Sandbox, expireEvidence, readJson } from './helpers.ts';
-import type { Repo, Run } from './helpers.ts';
+import type { Repo, ReviewOptions, Run } from './helpers.ts';
 
 function summaryOf(run: Run): any {
   const lastLine = run.stderr.trim().split('\n').at(-1)!;
@@ -300,6 +300,97 @@ describe('WriteReviewTest', () => {
     const run = sandbox.keel(['evidence', 'write-review'], { stdin: JSON.stringify(request) });
     assert.equal(run.rc, 3, run.stderr);
     assert.equal(sandbox.evidenceFiles('review').length, 1);
+  });
+
+  function deltaAfter(t: TestContext, rootVerdict: string, delta: ReviewOptions): { sandbox: Sandbox; run: Run } {
+    const sandbox = new Sandbox(t);
+    const repo = feature(sandbox);
+    const rootTree = sandbox.keel(['snapshot', repo.path]).json.tree;
+    sandbox.review(repo, { verdict: rootVerdict });
+    repo.write('src/a.py', 'print(2)\n');
+    const request = sandbox.reviewRequest(repo, { runId: 'rv-delta-0002', rootRunId: 'rv-root-0001', since: rootTree, ...delta });
+    return { sandbox, run: sandbox.keel(['evidence', 'write-review'], { stdin: JSON.stringify(request) }) };
+  }
+
+  test('writeReview_refuses_whenSinceIsATreeThisRootNeverReviewed', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = feature(sandbox);
+    sandbox.review(repo);
+    repo.commit({ 'src/b.py': 'b\n' });
+    const unreviewedTree = sandbox.keel(['snapshot', repo.path]).json.tree;
+    repo.commit({ 'src/c.py': 'c\n' });
+    const request = sandbox.reviewRequest(repo, { runId: 'rv-delta-0002', rootRunId: 'rv-root-0001', since: unreviewedTree });
+    const run = sandbox.keel(['evidence', 'write-review'], { stdin: JSON.stringify(request) });
+    assert.equal(run.rc, 3, run.stderr);
+    assert.match(run.stderr, /no review of root rv-root-0001 reviewed tree/);
+  });
+
+  test('writeReview_refuses_whenSinceIsATreeOnlyAnotherRootReviewed', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = feature(sandbox);
+    sandbox.review(repo);
+    repo.commit({ 'src/b.py': 'b\n' });
+    const otherRootTree = sandbox.keel(['snapshot', repo.path]).json.tree;
+    sandbox.review(repo, { runId: 'rv-other-0009' });
+    repo.commit({ 'src/c.py': 'c\n' });
+    const request = sandbox.reviewRequest(repo, { runId: 'rv-delta-0002', rootRunId: 'rv-root-0001', since: otherRootTree });
+    const run = sandbox.keel(['evidence', 'write-review'], { stdin: JSON.stringify(request) });
+    assert.equal(run.rc, 3, run.stderr);
+    assert.match(run.stderr, /no review of root rv-root-0001 reviewed tree/);
+  });
+
+  test('writeReview_writesAFixDelta_whenTheReviewAtSinceIsNeedsFixes', (t) => {
+    const { sandbox, run } = deltaAfter(t, 'NEEDS_FIXES', { fixDelta: true });
+    assert.equal(run.rc, 0, run.stderr);
+    assert.equal(sandbox.evidenceFiles('review').length, 2);
+  });
+
+  test('writeReview_refusesAFixDelta_whenTheReviewAtSinceIsPass', (t) => {
+    const { sandbox, run } = deltaAfter(t, 'PASS', { fixDelta: true });
+    assert.equal(run.rc, 3, run.stderr);
+    assert.match(run.stderr, /fix_delta claims the high-only bar, but the review at since [0-9a-f]{40} is PASS, not NEEDS_FIXES/);
+    assert.equal(sandbox.evidenceFiles('review').length, 1);
+  });
+
+  test('writeReview_refusesAPlainDelta_whenTheReviewAtSinceIsNeedsFixes', (t) => {
+    const { sandbox, run } = deltaAfter(t, 'NEEDS_FIXES', {});
+    assert.equal(run.rc, 3, run.stderr);
+    assert.match(run.stderr, /is NEEDS_FIXES: a delta after it is a fix delta and must carry its prior findings \(fix_delta\)/);
+    assert.equal(sandbox.evidenceFiles('review').length, 1);
+  });
+
+  test('writeReview_writesAPlainDelta_whenTheReviewAtSinceIsPass', (t) => {
+    const { sandbox, run } = deltaAfter(t, 'PASS', {});
+    assert.equal(run.rc, 0, run.stderr);
+    assert.equal(sandbox.evidenceFiles('review').length, 2);
+  });
+
+  test('writeReview_writesASingleLensDeltaWithoutTheFlag_afterNeedsFixes', (t) => {
+    const { sandbox, run } = deltaAfter(t, 'NEEDS_FIXES', { kind: 'single-lens' });
+    assert.equal(run.rc, 0, run.stderr);
+    assert.equal(sandbox.evidenceFiles('review').length, 2);
+  });
+
+  test('writeReview_refusesFixDeltaOnARootReview', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = feature(sandbox);
+    const run = sandbox.keel(['evidence', 'write-review'], { stdin: JSON.stringify(sandbox.reviewRequest(repo, { fixDelta: true })) });
+    assert.equal(run.rc, 3, run.stderr);
+    assert.match(run.stderr, /fix_delta needs a since tree/);
+    assert.deepEqual(sandbox.evidenceFiles('review'), []);
+  });
+
+  test('writeReview_isUsageError_whenFixDeltaIsNotTrue', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = feature(sandbox);
+    for (const value of [false, 'true', 1, null]) {
+      const request = sandbox.reviewRequest(repo);
+      request.keel_evidence.fix_delta = value;
+      const run = sandbox.keel(['evidence', 'write-review'], { stdin: JSON.stringify(request) });
+      assert.equal(run.rc, 2, `${JSON.stringify(value)}: ${run.stderr}`);
+      assert.match(run.stderr, /fix_delta must be true when present/);
+    }
+    assert.deepEqual(sandbox.evidenceFiles('review'), []);
   });
 
   test('writeReview_refuses_whenRootRunIdDiffersForRootReview', (t) => {

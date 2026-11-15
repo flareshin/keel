@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, test } from 'node:test';
 import type { TestContext } from 'node:test';
 import { DEFAULT_REGISTRY, LOGIC_WITH_TEST, PUSH_APPROVAL_REGISTRY, Sandbox } from './helpers.ts';
@@ -93,6 +95,18 @@ describe('StopReadinessTest', () => {
     feedback(stop(sandbox, repo.path));
     repo.commit({ 'src/a.py': 'print(2)\n' });
     feedback(stop(sandbox, repo.path));
+  });
+
+  test('stop_tellsEveryTime_andSaysSoOnStderr_whenTheReminderRecordCannotBeKept', (t) => {
+    const [sandbox, repo] = feature(t);
+    mkdirSync(join(sandbox.data, 'state', 'keel'), { recursive: true });
+    writeFileSync(join(sandbox.data, 'state', 'keel', 'stop-readiness'), 'not a directory\n');
+    const first = stop(sandbox, repo.path);
+    feedback(first);
+    assert.ok(first.stderr.includes('could not record the Stop reminder'), first.stderr);
+    const second = stop(sandbox, repo.path);
+    feedback(second);
+    assert.ok(second.stderr.includes('ENOTDIR'), second.stderr);
   });
 
   test('stop_writesOneWarnFire_andNoDeny', (t) => {

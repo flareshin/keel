@@ -273,7 +273,7 @@ function evidence(rest: string[]): number {
     if (optionNames.length !== 1 || !('--repo' in options)) throw new writers.Usage('check requires --repo and takes no other option');
     const readiness = pushReadiness(options['--repo']!);
     seams.print(readiness);
-    return readiness['ok'] ? EXIT_OK : EXIT_NOT_READY;
+    return readiness.ok ? EXIT_OK : EXIT_NOT_READY;
   } else if (subcommand === 'show') {
     seams.print(show(options['--repo'] || process.cwd(), options['--root'] ?? null));
   } else if (subcommand === 'promote-plan') {

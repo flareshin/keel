@@ -1,20 +1,21 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname } from "node:path";
+import { sessionStatePath } from "../lib/hookkit/contract.ts";
 import { describeError } from "../lib/hookkit/errors.ts";
 import { getField, isNonEmptyString } from "../lib/hookkit/fields.ts";
 import { FireLog } from "../lib/hookkit/fires.ts";
 import * as protocol from "../lib/hookkit/protocol.ts";
 import type { Bullet, Payload } from "../lib/hookkit/protocol.ts";
 import { writeStderr } from "../lib/hookkit/stdio.ts";
-import { stateDir } from "../../lib/evidence/env.ts";
 import * as gitcmd from "../../lib/evidence/gitcmd.ts";
 import { pushReadiness } from "../../lib/evidence/readiness.ts";
 
 const HOOK = "ship-gate";
 const EVENT = "Stop";
 const NO_SESSION = "-";
+const NO_REPO_KEY = "-";
 const SHORT_SHA = 12;
-const UNSAFE_FILE_CHARACTERS = /[^A-Za-z0-9_-]/gu;
+const REMINDER_EXTENSION = "stop-readiness";
 const NEXT_STEP = "Before you stop, do what is listed, or say in your reply why it waits; ship-gate denies this push until it is done.";
 
 interface UnreadyPush {
@@ -34,7 +35,7 @@ export function remindUnreadyPush(payload: Payload): number {
     writeStderr(`${HOOK}: push readiness at Stop not judged: ${describeError(error)}\n`);
     return protocol.EXIT_PASS;
   }
-  if (unready === null || !isNewReminder(session, unready)) return protocol.EXIT_PASS;
+  if (unready === null || !claimFirstReminder(session, unready)) return protocol.EXIT_PASS;
   const [firstRule] = unready.reasons[0]!;
   new FireLog(HOOK, session).append(firstRule, "warn", {
     repo: unready.repo, head: unready.head, detail: unready.reasons.map(([, text]) => text).join("; "),
@@ -47,9 +48,9 @@ function unreadyPush(cwd: string): UnreadyPush | null {
   const repoRoot = gitcmd.toplevel(cwd);
   if (repoRoot === null || upstreamHoldsHead(repoRoot)) return null;
   const readiness = pushReadiness(repoRoot, "skipped");
-  if (readiness["ok"]) return null;
-  const reasons: Bullet[] = readiness["reasons"].map((reason: { rule_id: string; text: string }) => [reason.rule_id, reason.text]);
-  return { repo: readiness["repo"], head: readiness["head"], reasons };
+  if (readiness.ok) return null;
+  const reasons: Bullet[] = readiness.reasons.map((reason) => [reason.rule_id, reason.text]);
+  return { repo: readiness.repo ?? NO_REPO_KEY, head: readiness.head, reasons };
 }
 
 function upstreamHoldsHead(repoRoot: string): boolean {
@@ -57,8 +58,8 @@ function upstreamHoldsHead(repoRoot: string): boolean {
   return upstream !== null && gitcmd.isAncestor(repoRoot, "HEAD", upstream);
 }
 
-function isNewReminder(session: string, unready: UnreadyPush): boolean {
-  const path = join(stateDir(), "stop-readiness", session.replace(UNSAFE_FILE_CHARACTERS, "_"));
+function claimFirstReminder(session: string, unready: UnreadyPush): boolean {
+  const path = sessionStatePath(session, REMINDER_EXTENSION);
   const key = [unready.repo, unready.head, ...unready.reasons.map(([ruleId, text]) => `${ruleId} ${text}`)].join("\n");
   try {
     if (readFileSync(path, "utf8") === key) return false;
@@ -66,7 +67,7 @@ function isNewReminder(session: string, unready: UnreadyPush): boolean {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") writeStderr(`${HOOK}: ${describeError(error)}\n`);
   }
   try {
-    mkdirSync(join(stateDir(), "stop-readiness"), { recursive: true });
+    mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, key, "utf8");
   } catch (error) {
     writeStderr(`${HOOK}: could not record the Stop reminder: ${describeError(error)}\n`);

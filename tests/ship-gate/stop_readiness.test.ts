@@ -97,6 +97,16 @@ describe('StopReadinessTest', () => {
     feedback(stop(sandbox, repo.path, { session: 's2' }));
   });
 
+  test('stop_tellsAgain_whenTheReasonsChangeOnTheSameHead', (t) => {
+    const [sandbox, repo] = feature(t);
+    const first = feedback(stop(sandbox, repo.path));
+    assert.ok(first.includes('[K3]'), first);
+    sandbox.testsEvidence(repo);
+    const second = feedback(stop(sandbox, repo.path));
+    assert.ok(second.includes('[K1]'), second);
+    assert.ok(!second.includes('[K3]'), second);
+  });
+
   test('stop_tellsAgain_afterANewCommitMovesTheHead', (t) => {
     const [sandbox, repo] = feature(t);
     feedback(stop(sandbox, repo.path));
@@ -107,7 +117,7 @@ describe('StopReadinessTest', () => {
   test('stop_tellsEveryTime_andSaysSoOnStderr_whenTheReminderRecordCannotBeKept', (t) => {
     const [sandbox, repo] = feature(t);
     mkdirSync(join(sandbox.data, 'state', 'keel'), { recursive: true });
-    writeFileSync(join(sandbox.data, 'state', 'keel', 'stop-readiness'), 'not a directory\n');
+    writeFileSync(join(sandbox.data, 'state', 'keel', 'sessions'), 'not a directory\n');
     const first = stop(sandbox, repo.path);
     feedback(first);
     assert.ok(first.stderr.includes('could not record the Stop reminder'), first.stderr);

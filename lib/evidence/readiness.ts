@@ -2,11 +2,22 @@ import * as gitcmd from './gitcmd.ts';
 import * as registry from './registry.ts';
 import * as verify from './verify.ts';
 import * as writers from './writers.ts';
-import type { JsonObject } from './writers.ts';
 
 export type ApprovalCheck = 'as-the-push' | 'skipped';
 
-export function pushReadiness(repoPath: string, approval: ApprovalCheck = 'as-the-push'): JsonObject {
+export type ReadinessReason = { rule_id: string; text: string };
+
+export type PushReadiness = {
+  repo: string | null;
+  head: string;
+  gated: boolean;
+  ok: boolean;
+  risk: string | null;
+  root_run_id: string | null;
+  reasons: ReadinessReason[];
+};
+
+export function pushReadiness(repoPath: string, approval: ApprovalCheck = 'as-the-push'): PushReadiness {
   const repoRoot = gitcmd.toplevel(repoPath);
   if (repoRoot === null) throw new writers.Usage(`${repoPath} is not in a git repository`);
   const head = gitcmd.commitSha(repoRoot, 'HEAD');

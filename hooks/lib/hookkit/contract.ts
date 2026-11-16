@@ -30,9 +30,13 @@ export function missDetail(payload: Payload, missing: readonly string[], context
   return `contract-miss: ${leading}; keys=${keys}; cc_version=${ccVersion(getField(payload, "session_id"))}`;
 }
 
-export function ccVersion(session: unknown): string {
+export function sessionStatePath(session: unknown, extension: string): string {
   const sessionName = (isNonEmptyString(session) ? session : "-").replace(UNSAFE_FILENAME_CHARACTER, "_");
-  const cache = joinPath(dataDir(), "state", "keel", "sessions", `${sessionName}.cc-version`);
+  return joinPath(dataDir(), "state", "keel", "sessions", `${sessionName}.${extension}`);
+}
+
+export function ccVersion(session: unknown): string {
+  const cache = sessionStatePath(session, "cc-version");
   const cached = tryReadCachedVersion(cache);
   if (cached !== null) return cached;
   const version = askClaude();

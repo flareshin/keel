@@ -13,6 +13,7 @@ import * as env from './env.ts';
 import * as gc from './gc.ts';
 import * as gitcmd from './gitcmd.ts';
 import * as prepare from './prepare.ts';
+import { pushReadiness } from './readiness.ts';
 import * as registry from './registry.ts';
 import { printErrorLine, printLine, readStdinText } from './stdio.ts';
 import * as store from './store.ts';
@@ -272,7 +273,7 @@ function evidence(rest: string[]): number {
     if (optionNames.length !== 1 || !('--repo' in options)) throw new writers.Usage('check requires --repo and takes no other option');
     const readiness = pushReadiness(options['--repo']!);
     seams.print(readiness);
-    return readiness['ok'] ? EXIT_OK : EXIT_NOT_READY;
+    return readiness.ok ? EXIT_OK : EXIT_NOT_READY;
   } else if (subcommand === 'show') {
     seams.print(show(options['--repo'] || process.cwd(), options['--root'] ?? null));
   } else if (subcommand === 'promote-plan') {
@@ -307,27 +308,6 @@ export function show(repoPath: string, rootRunId: string | null): JsonObject {
     repo: repoKey, chains,
     tests: store.load('tests', repoKey).map((item) => item.evidence_id),
     smoke: store.load('smoke', repoKey).map((item) => item.evidence_id),
-  };
-}
-
-export function pushReadiness(repoPath: string): JsonObject {
-  const repoRoot = gitcmd.toplevel(repoPath);
-  if (repoRoot === null) throw new writers.Usage(`${repoPath} is not in a git repository`);
-  const head = gitcmd.commitSha(repoRoot, 'HEAD');
-  if (head === null) throw new writers.Usage(`${repoRoot} has no commit at HEAD`);
-  const repoKey = registry.originKey(repoRoot);
-  const row = registry.lookup(repoKey);
-  if (!registry.isGated(row)) return { repo: repoKey, head, gated: false, ok: true, risk: null, root_run_id: null, reasons: [] };
-  const baseRef = 'origin/' + row!.integrationBase;
-  if (!gitcmd.refExists(repoRoot, 'refs/remotes/' + baseRef)) throw new writers.Usage(`base ${baseRef} is missing: run \`git fetch origin\``);
-  const mergeBase = gitcmd.mergeBase(repoRoot, baseRef, head);
-  if (mergeBase === null) throw new writers.Usage(`no merge base between ${baseRef} and HEAD`);
-  const decision = verify.judge({
-    repoRoot, repoKey: repoKey!, row: row!, head, mergeBase, needsApproval: registry.pushNeedsApproval(row!), promote: false,
-  });
-  return {
-    repo: repoKey, head, gated: true, ok: decision.ok, risk: decision.riskClass, root_run_id: decision.rootRunId,
-    reasons: decision.reasons.map((reason) => ({ rule_id: reason.ruleId, text: reason.text })),
   };
 }
 

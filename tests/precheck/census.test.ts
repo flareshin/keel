@@ -85,6 +85,17 @@ describe("runCensus", { skip: typescriptInstalled ? false : "typescript is not i
     assert.ok(result.mutation.notRun.some((each) => each.line === 3 && each.operator === "return-constant"))
   })
 
+  it("runCensus_runsTheDiffsOwnTestFileFirst_whenTheBudgetCutsTheBaseline", async () => {
+    const { root, reviewBase, tree } = changedRepo({ "lib/a.ts": PICK, "tests/a.test.ts": PICK_TEST }, { "lib/a.ts": CHANGED_PICK, "tests/z.test.ts": PICK_TEST })
+
+    const result = await runCensus(root, { base: "main", reviewBase, tree }, { load: 1, cpus: 12 }, 0)
+
+    assert.equal(result.mutation.outcome, "ran")
+    if (result.mutation.outcome !== "ran") return
+    assert.deepEqual(result.mutation.baselineNotRun, ["tests/a.test.ts"])
+    assert.ok(result.mutation.results.every((each) => each.verdict.outcome !== "survived" || each.verdict.ran.includes("tests/z.test.ts")))
+  })
+
   it("runCensus_recordsADeletedSourceFileAsZeros_withoutMutatingIt", async () => {
     const { root, reviewBase } = changedRepo({ "lib/a.ts": PICK, "lib/old.ts": "export const old = 1\n", "tests/a.test.ts": PICK_TEST }, { "lib/a.ts": CHANGED_PICK })
     git(root, "rm", "-q", "lib/old.ts")

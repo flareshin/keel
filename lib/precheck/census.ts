@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import ts from 'typescript';
 import { diffEntries, REGULAR_FILE_MODES } from '../evidence/gitcmd.ts';
+import type { PathEntry } from '../evidence/gitcmd.ts';
 import { baselineTimeoutSeconds, DEFAULT_BASELINE_BUDGET_MS, materializeTree, runBaseline } from './baseline.ts';
 import type { Baseline } from './baseline.ts';
 import { bindPrecheck, DELETED_BLOB } from './binding.ts';
@@ -14,7 +15,7 @@ import { generateMutants } from './mutants.ts';
 import type { Operator } from './mutants.ts';
 import { runMutants } from './run.ts';
 import type { MutantTarget, MutantVerdict, MutationRun } from './run.ts';
-import { candidateTests } from './select.ts';
+import { candidateTests, isRunnableTest } from './select.ts';
 
 export interface CensusTarget {
   base: string;
@@ -86,7 +87,7 @@ export async function runCensus(repo: string, target: CensusTarget, host: HostLo
     base: target.base,
     paths: { source: sourcePaths.length, test: entries.length - sourcePaths.length },
     blobs,
-    mutation: await runMutation(repo, target, sourcePaths.filter((path) => blobs[path] !== DELETED_BLOB), scriptFiles, baselineTimeoutSeconds(host.load, host.cpus), baselineBudgetMs),
+    mutation: await runMutation(repo, target, sourcePaths.filter((path) => blobs[path] !== DELETED_BLOB), changedTestFiles(entries), scriptFiles, baselineTimeoutSeconds(host.load, host.cpus), baselineBudgetMs),
     consumers: findConsumers(repo, target.reviewBase, target.tree),
   };
 }
@@ -108,10 +109,14 @@ export function currentHostLoad(): HostLoad {
   return { load: loadavg()[0]!, cpus: availableParallelism() };
 }
 
-async function runMutation(repo: string, target: CensusTarget, sourcePaths: string[], scriptFiles: string[], timeoutSeconds: number, baselineBudgetMs: number): Promise<MutationCensus> {
+function changedTestFiles(entries: PathEntry[]): string[] {
+  return entries.map((entry) => entry.path).filter(isRunnableTest);
+}
+
+async function runMutation(repo: string, target: CensusTarget, sourcePaths: string[], testFiles: string[], scriptFiles: string[], timeoutSeconds: number, baselineBudgetMs: number): Promise<MutationCensus> {
   const directory = materializeTree(repo, target.tree);
   try {
-    const baseline = await runBaseline(directory, candidateTests(directory, sourcePaths), timeoutSeconds, undefined, baselineBudgetMs);
+    const baseline = await runBaseline(directory, candidateTests(directory, [...sourcePaths, ...testFiles]), timeoutSeconds, undefined, baselineBudgetMs);
     if (baseline.outcome !== 'green') return { outcome: 'stopped', baseline };
     const sources = new Map(scriptFiles.map((path) => [path, readFileSync(join(directory, path), 'utf8')]));
     const targets = mutantTargets(sources, addedLinesByPath(repo, target.reviewBase, target.tree));

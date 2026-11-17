@@ -471,9 +471,14 @@ async function runAudit(reviewed, lensSet, effort, precheck) {
 function buildTarget(reviewed, precheck) {
   const commands = reviewed.flatMap((target) => [buildLensDiffCommand(target), buildReviewBaseCommand(target)]).join('\n')
   const delta = reviewed.some((target) => target.since) ? `\n${describeDelta()}` : ''
+  const noTestRanges = reviewed.filter((target) => target.since).map(describeNoTestRange).join('')
   const requirement = A.requirement ? `\nRequirement (the request as stated, not a claim that the diff meets it):\n${A.requirement}` : ''
   const census = precheck ? `\n${buildPrecheckBlock(precheck)}` : ''
-  return `the code diff from these commands; review only what it introduces or changes, judge new and changed lines; existing-comment cleanup is a separate requested task. Read file content at the reviewed end with \`git show <end>:<path>\`, never from the live working tree, which may have moved on:\n${commands}${delta}${requirement}${census}`
+  return `the code diff from these commands; review only what it introduces or changes, judge new and changed lines; existing-comment cleanup is a separate requested task. Read file content at the reviewed end with \`git show <end>:<path>\`, never from the live working tree, which may have moved on:\n${commands}${delta}${noTestRanges}${requirement}${census}`
+}
+
+function describeNoTestRange(target) {
+  return `\nNo-test range for ${target.repo_root}: git -C '${target.repo_root}' diff ${target.review_base} ${target.head || target.snapshot_tree}. A no_test_reasons entry for this repo waives the test obligation for this whole range, not only the delta: give one only after reading this range and finding no changed logic that needs a test.`
 }
 
 function buildPrecheckBlock(precheck) {

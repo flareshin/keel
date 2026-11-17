@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { blockingFindings } from '../../lib/evidence/findings.ts'
 import { SPACE_CHARS } from '../../hooks/lib/hookkit/text.ts'
+import { isBlankEitherWay } from '../../lib/evidence/text.ts'
 
 const DERIVED_RUN_ID = 'rv-20261011T090000Z-abc123'
 const CALLER_LENSES = [{ key: 'contract', prompt: 'Lens: contract.' }]
@@ -1291,4 +1292,28 @@ test('lensReview_givesEachRepoOnlyItsOwnNoTestReason_whenTwoReposAreReviewed', a
 test('lensReview_joinsAMultiLineNoTestReasonIntoOneLine', async () => {
   const result = await reviewWithTestsAudit({ no_test_reasons: [{ repo_root: '/work/app', reason: 'Only prose changed.\nNo test reads DESIGN.md.' }] })
   assert.equal(result.evidence[0].no_test_reason, 'Only prose changed. / No test reads DESIGN.md.')
+})
+
+test('lensReview_asksTheDeltaAuditorToJudgeTheWholeRange_beforeItGivesANoTestReason', async () => {
+  const wholeRange = `git -C '/work/app' diff ${SHA_A} ${SHA_B}`
+  const delta = createRuntime({ respond: responder({ audits: { tests: { findings: [], no_test_reasons: [{ repo_root: '/work/app', reason: 'Only prose changed since the root.' }] } } }) })
+  const result = await delta.run('lens-review', { auditMode: 'split', diffs: [{ ...ROOT_DIFF, since: SHA_C }], rootRunId: DERIVED_RUN_ID, lenses: TESTS_LENSES })
+  const testsAudit = delta.record.agents.find((call) => call.opts.label === 'audit:tests')
+  assert.match(testsAudit.prompt, new RegExp(`No-test range for /work/app: ${wholeRange}\\. A no_test_reasons entry for this repo waives the test obligation for this whole range, not only the delta`))
+  assert.equal(result.evidence[0].no_test_reason, 'Only prose changed since the root.')
+
+  const root = createRuntime({ respond: responder() })
+  await root.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: TESTS_LENSES })
+  assert.doesNotMatch(root.record.agents.find((call) => call.opts.label === 'audit:tests').prompt, /No-test range/)
+})
+
+test('noTestReasonBlankSet_matchesTheEvidenceWriter_forEveryCharacter', () => {
+  const source = readFileSync(join(KEEL_HOME, 'workflows', 'lens-review.js'), 'utf8')
+  const blank = new RegExp(source.match(/const BLANK_TO_EVIDENCE_WRITER = \/(.+)\/\n/)[1])
+  const disagreeing = []
+  for (let code = 0; code <= 0xffff; code += 1) {
+    const char = String.fromCharCode(code)
+    if (blank.test(char) !== isBlankEitherWay(char)) disagreeing.push(code.toString(16))
+  }
+  assert.deepEqual(disagreeing, [])
 })

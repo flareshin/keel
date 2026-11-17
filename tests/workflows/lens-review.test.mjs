@@ -1249,3 +1249,46 @@ test('evidenceLineSpace_matchesTheGateSet_soBothSidesRecogniseTheSameLeadingSpac
   const source = readFileSync(join(KEEL_HOME, 'workflows', 'lens-review.js'), 'utf8')
   assert.ok(source.includes(`const SPACE_CHARS = String.raw\`${SPACE_CHARS}\``))
 })
+
+const TESTS_LENSES = [...CALLER_LENSES, { key: 'tests', prompt: 'Lens: tests.' }]
+
+async function reviewWithTestsAudit(testsAudit, { diffs = [ROOT_DIFF], prepare } = {}) {
+  const rt = createRuntime({ respond: responder({ audits: { tests: { findings: [], notes: 'tests ran', ...testsAudit } }, prepare }) })
+  return rt.run('lens-review', { auditMode: 'split', diffs, lenses: TESTS_LENSES })
+}
+
+test('lensReview_putsTheTestsAuditorsReasonInTheEvidence_whenItNamesTheReviewedRepo', async () => {
+  const result = await reviewWithTestsAudit({ no_test_reasons: [{ repo_root: '/work/app', reason: 'Only DESIGN prose changed; no test reads it.' }] })
+  const evidence = evidenceLines(result.report).map(parseEvidenceLine)
+  assert.equal(evidence[0].no_test_reason, 'Only DESIGN prose changed; no test reads it.')
+  assert.deepEqual(result.evidence, evidence)
+})
+
+test('lensReview_leavesNoTestReasonOut_whenAnotherLensGivesIt', async () => {
+  const rt = createRuntime({ respond: responder({ audits: { contract: { findings: [], no_test_reasons: [{ repo_root: '/work/app', reason: 'Contract says no test.' }] } } }) })
+  const result = await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: TESTS_LENSES })
+  assert.deepEqual(Object.keys(result.evidence[0]), EVIDENCE_KEYS)
+})
+
+test('lensReview_leavesNoTestReasonOut_whenTheReasonIsBlankToTheEvidenceWriter', async () => {
+  for (const reason of ['', '  ', '\x1f\x85', 7]) {
+    const result = await reviewWithTestsAudit({ no_test_reasons: [{ repo_root: '/work/app', reason }] })
+    assert.deepEqual(Object.keys(result.evidence[0]), EVIDENCE_KEYS, JSON.stringify(reason))
+  }
+})
+
+test('lensReview_givesEachRepoOnlyItsOwnNoTestReason_whenTwoReposAreReviewed', async () => {
+  const prepare = {
+    diff_outputs: [preparedLine({ repoRoot: '/work/app/lib' }), preparedLine({ repoRoot: '/work/app', snapshotTree: SHA_C })],
+    run_id_output: DERIVED_RUN_ID, lenses_output: '',
+  }
+  const diffs = [{ repo: '/work/app/lib', base: 'origin/main' }, ROOT_DIFF]
+  const result = await reviewWithTestsAudit({ no_test_reasons: [{ repo_root: '/work/app/lib', reason: 'Only the lib README changed.' }] }, { diffs, prepare })
+  assert.equal(result.evidence[0].no_test_reason, 'Only the lib README changed.')
+  assert.deepEqual(Object.keys(result.evidence[1]), EVIDENCE_KEYS)
+})
+
+test('lensReview_joinsAMultiLineNoTestReasonIntoOneLine', async () => {
+  const result = await reviewWithTestsAudit({ no_test_reasons: [{ repo_root: '/work/app', reason: 'Only prose changed.\nNo test reads DESIGN.md.' }] })
+  assert.equal(result.evidence[0].no_test_reason, 'Only prose changed. / No test reads DESIGN.md.')
+})

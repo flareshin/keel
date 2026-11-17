@@ -25,6 +25,7 @@ const KEEL_NAMESPACE = 'keel:'
 const REVIEW_KIND = 'lens-review'
 const READABLE_KEY = 'writing-readable-code'
 const RULE_CHECKS_KEY = 'rule-checks'
+const TESTS_LENS_KEY = 'tests'
 const BLOCKING_IMPACT = ['high', 'medium']
 const FIX_DELTA_BLOCKING_IMPACT = ['high']
 const PRE_EXISTING = 'pre-existing'
@@ -62,6 +63,7 @@ const SPACE_CHARS = String.raw`\t-\r\x1c-\x20\x85\xa0\u1680\u2000-\u200a\u2028\u
 const EVIDENCE_LINE = new RegExp(`^[${SPACE_CHARS}]*KEEL-EVIDENCE:`)
 const LINE_BREAKS = /\s*[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]+\s*/g
 const JOINED_LINES = ' / '
+const BLANK_TO_EVIDENCE_WRITER = /^[\s\x1c-\x1f\x85]*$/
 const PRECHECK_HEADER = /^precheck tree ([0-9a-f]{40})(?: ·|$)/
 const PRECHECK_BLOBS = /^blobs\s+(.+)$/m
 const BLOB_ENTRY = /^(.+) ([0-9a-f]{40})$/
@@ -115,7 +117,7 @@ if (audit.error) return failed(audit.error)
 
 const outcome = judge(audit, lensSet, reviewed.length, priorNeedsFixesRounds, PRIOR_FINDINGS ? FIX_DELTA_BLOCKING_IMPACT : BLOCKING_IMPACT)
 log(`${outcome.verdict}: ${outcome.blocking.length} merge-blocking, ${outcome.nonBlocking.length} non-blocking, ${audit.unverified.length} unverified, ${outcome.failedLenses.length} lens(es) not run, ${audit.refuted.length} refuted`)
-const evidenceLines = reviewed.map((target) => buildEvidenceLine(target, runId, rootRunId))
+const evidenceLines = reviewed.map((target) => buildEvidenceLine(target, runId, rootRunId, findNoTestReason(audit, target)))
 const expectedReport = buildReport(outcome, audit, reviewed, evidenceLines, precheck)
 
 phase('Report')
@@ -540,7 +542,7 @@ function hasRepro(finding) {
   return typeof finding.repro === 'string' && finding.repro.trim() !== ''
 }
 
-function buildEvidenceLine(target, runId, rootRunId) {
+function buildEvidenceLine(target, runId, rootRunId, noTestReason) {
   const evidence = {
     v: 1,
     repo_root: target.repo_root,
@@ -551,9 +553,18 @@ function buildEvidenceLine(target, runId, rootRunId) {
     run_id: runId,
     root_run_id: rootRunId,
     review_kind: REVIEW_KIND,
+    ...(noTestReason ? { no_test_reason: noTestReason } : {}),
     ...(PRIOR_FINDINGS ? { fix_delta: true } : {}),
   }
   return `${EVIDENCE_PREFIX}${JSON.stringify(evidence)}`
+}
+
+function findNoTestReason(audit, target) {
+  return (audit.noTestReasons || [])
+    .filter((item) => item.lens === TESTS_LENS_KEY && item.repo_root === target.repo_root)
+    .map((item) => item.reason)
+    .filter((reason) => !BLANK_TO_EVIDENCE_WRITER.test(reason))
+    .map(toOneLine)[0]
 }
 
 function buildReport(outcome, audit, reviewed, evidenceLines, precheck) {

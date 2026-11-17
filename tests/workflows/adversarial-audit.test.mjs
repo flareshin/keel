@@ -453,3 +453,25 @@ test('adversarialAudit_failsTheLens_whenNeitherAuditorNameResolves', async () =>
   assert.deepEqual(result.failedLenses, ['contract'])
   assert.deepEqual(rt.record.unresolved, ['keel:auditor', 'auditor'])
 })
+
+test('adversarialAudit_returnsEachRanLensNoTestReasons_withTheLensThatGaveThem', async () => {
+  const reasons = [{ repo_root: '/work/app', reason: 'Only DESIGN prose changed.' }]
+  const rt = createRuntime({ respond: (prompt, opts) => ({ audits: [
+    { lens: 'contract', findings: [] },
+    { lens: 'tests', findings: [], no_test_reasons: reasons },
+  ] }) })
+
+  const result = await rt.run('adversarial-audit', { target: '/work/app', lenses: LENSES })
+
+  assert.deepEqual(result.noTestReasons, [{ lens: 'tests', repo_root: '/work/app', reason: 'Only DESIGN prose changed.' }])
+})
+
+test('adversarialAudit_dropsNoTestReasons_whenTheirLensDidNotRun', async () => {
+  const brokenTests = { findings: [{ id: '' }], no_test_reasons: [{ repo_root: '/work/app', reason: 'Only prose changed.' }] }
+  const rt = createRuntime({ respond: respondWith({ audits: { tests: brokenTests } }) })
+
+  const result = await rt.run('adversarial-audit', { auditMode: 'split', target: '/work/app', lenses: LENSES })
+
+  assert.deepEqual(result.failedLenses, ['tests'])
+  assert.deepEqual(result.noTestReasons, [])
+})

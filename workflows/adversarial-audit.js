@@ -43,6 +43,15 @@ const FINDINGS_SCHEMA = {
       },
     },
     notes: { type: 'string' },
+    no_test_reasons: {
+      type: 'array',
+      description: 'tests lens only: one entry per reviewed repo whose changed logic has no test in the range and needs none, with the reason; omit otherwise',
+      items: {
+        type: 'object',
+        properties: { repo_root: { type: 'string' }, reason: { type: 'string' } },
+        required: ['repo_root', 'reason'],
+      },
+    },
   },
   required: ['findings'],
 }
@@ -88,7 +97,7 @@ const COMMON = buildCommonPrompt()
 
 phase('Audit')
 const lensResults = AUDIT_MODE === 'split'
-  ? await pipeline(LENSES, auditLens, verifyLensFindings)
+  ? await pipeline(LENSES, auditLens, verifyLensAudit)
   : await auditCombinedLenses()
 return summarize(lensResults)
 
@@ -120,11 +129,11 @@ async function auditCombinedLenses() {
   const groups = LENSES.map((lens) => {
     const matching = audits.filter((audit) => audit?.lens === lens.key)
     const audit = !unknown && matching.length === 1 ? matching[0] : null
-    return { lens: lens.key, findings: audit?.findings, notes: audit?.notes || '', failed: !hasValidFindingIds(audit?.findings) }
+    return { lens: lens.key, findings: audit?.findings, notes: audit?.notes || '', noTestReasons: audit?.no_test_reasons, failed: !hasValidFindingIds(audit?.findings) }
   })
   const findings = groups.filter((group) => !group.failed).flatMap((group) => group.findings.map((finding) => ({ ...finding, id: `${group.lens}:${finding.id}` })))
   const batch = await verifyLensFindings({ findings }, { key: 'combined' })
-  return groups.map((group) => ({ lens: group.lens, failed: group.failed || Boolean(batch.failed), notes: group.notes,
+  return groups.map((group) => ({ lens: group.lens, failed: group.failed || Boolean(batch.failed), notes: group.notes, noTestReasons: group.noTestReasons,
     verified: (batch.verified || []).filter((finding) => group.findings?.some((local) => finding.id === `${group.lens}:${local.id}`)).map((finding) => ({ ...finding, id: finding.id.slice(group.lens.length + 1), lens: group.lens })),
   }))
 }
@@ -171,6 +180,11 @@ async function callByKeelName(name, call) {
 
 function errorMessage(error) {
   return String((error && error.message) || error)
+}
+
+async function verifyLensAudit(audit, lens) {
+  const result = await verifyLensFindings(audit, lens)
+  return { ...result, noTestReasons: audit?.no_test_reasons }
 }
 
 async function verifyLensFindings(audit, lens) {
@@ -258,5 +272,13 @@ function summarize(lensResults) {
     unverified,
     failedLenses,
     lensNotes: ranLenses.map((result) => ({ lens: result.lens, notes: result.notes })),
+    noTestReasons: ranLenses.flatMap(listNoTestReasons),
   }
+}
+
+function listNoTestReasons(result) {
+  const reasons = Array.isArray(result.noTestReasons) ? result.noTestReasons : []
+  return reasons
+    .filter((item) => typeof item?.repo_root === 'string' && typeof item?.reason === 'string')
+    .map((item) => ({ lens: result.lens, repo_root: item.repo_root, reason: item.reason }))
 }

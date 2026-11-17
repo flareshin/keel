@@ -101,7 +101,9 @@ function denyForExplicitValues(
 ): number {
   fires.append(RULE, "deny", { detail: `auto mode: ${note}` });
   const values = choices
-    .map(([key, choice]) => `${key}: ${JSON.stringify(choice ? choice[0] : textField(toolArgs, key))}`)
+    .map(([key, choice]) => [key, choice ? choice[0] : textField(toolArgs, key)] as const)
+    .filter(([, value]) => value !== "")
+    .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
     .join(", ");
   const text = `Issue the same Agent call again with ${values} set (${note}). Auto mode reviews the call as written, ` +
     "so a hook rewrite would be refused as unreviewed input." + (hint === null ? "" : ` ${hint}`);

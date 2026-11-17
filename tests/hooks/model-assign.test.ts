@@ -196,6 +196,14 @@ describe("AutoModeDispatchTest", () => {
     assert.doesNotMatch(result.stderr, /effort:/);
   });
 
+  it("dispatch_leavesThePinnedModelOut_whenAutoModeAndAgentFilePinsAnInBandModel", () => {
+    sandbox.write(join(sandbox.data, "agents", "lead.md"), "---\nname: lead\nmodel: opus\n---\nBody\n");
+    const result = dispatchInAutoMode({ subagent_type: "lead" });
+    assert.equal(result.code, 2);
+    assert.match(result.stderr, /with effort: "medium" set/);
+    assert.doesNotMatch(result.stderr, /model: ""/);
+  });
+
   it("dispatch_carriesTheBriefHintInTheDeny_whenAutoModeAndPromptIsLong", () => {
     const result = dispatchInAutoMode({ prompt: LONG_BRIEF });
     assert.equal(result.code, 2);

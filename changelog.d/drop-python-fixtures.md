@@ -1,4 +1,0 @@
-### Removed
-
-- The Python recordings under `tests/fixtures/python` and the tests that compared the TypeScript with them: the shell parser parity (`tests/hooks/shell-parity*.ts`), the Codex hook and link scenario parity (`codex/tests/hook-parity*.ts`, `codex/tests/cli-parity*.ts`, with their recorders), the TOML and path comparisons with the recorded Python answers, the comparison with the Python installer's `AGENTS.md` and registry, and the comparison of the over-deep guard payload with the Python adapter, along with `tests/recorded.ts`. The tools that made the recordings needed the Python, which is gone, and survive in git history. `keel test --affected --with-replays` no longer lists the removed replay tests.
-- The Codex hook crash test now pins a fixed shallow and a fixed deep nesting instead of the depth the Python hook crashed at.

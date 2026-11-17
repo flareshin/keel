@@ -14,9 +14,12 @@ describe("keel's own changelog", () => {
     assert.equal(unreleasedBody(changelog), UNRELEASED_POINTER, "put the entry in changelog.d/<change-name>.md, not in CHANGELOG.md [Unreleased]")
   })
 
-  it("everyFragment_foldsIntoAReleaseSection", () => {
+  it("everyFragment_foldsIntoAReleaseSection", (t) => {
     const fragments = readFragments(path.join(KEEL, "changelog.d"))
-    assert.ok(fragments.length > 0)
+    if (fragments.length === 0) {
+      t.skip("no fragments: a release just folded them into CHANGELOG.md")
+      return
+    }
 
     const { section } = assembleRelease(changelog, fragments, "999.0.0", "2026-01-01")
 

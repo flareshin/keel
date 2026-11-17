@@ -1,2 +1,0 @@
-### Fixed
-- report-gate no longer logs a `contract-miss` when a subagent's transcript ends with its `SubagentHandback` call but the turn state holds no handback for it: the handback hook already judged that report. The remaining `contract-miss` lines from SubagentStop name the `agent_id` and the transcript's last tool, ahead of the payload keys, so the next miss shows which agent and ending it was.

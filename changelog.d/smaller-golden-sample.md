@@ -1,3 +1,0 @@
-### Changed
-
-- The default replay of the ship-gate and hook golden snapshots is smaller: every `extra` ship-gate case and every adversarial hook payload that is not a wrong-type payload used to be kept whole, and each is now sampled like the other groups, keeping the first case of each outcome class in its group (the ship-gate `extra` cases per test, the hook payloads as one group). The ship-gate sample drops from 995 to 544 of 1757 recorded cases and the hook sample from 549 to 325 of 1069, which cuts the CPU time of the sixteen replay shard files by about 43% (769 s to 440 s of user plus system time), and every outcome class of the full corpus is still replayed. `SHIP_GATE_PARITY_FULL=1` and `HOOK_PARITY_FULL=1` still replay every case.

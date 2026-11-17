@@ -97,6 +97,23 @@ describe('StopAdvisorTest', () => {
     assertSilent(stop(sandbox, [advisorAvailable(), advisorAvailable(false), ownerPrompt(), toolCall('Edit')]));
   });
 
+  test('stop_keepsTheAdvisorAvailable_whenALaterAttachmentIsAnotherType', (t) => {
+    const otherAttachment = { type: 'attachment', attachment: { type: 'todo_reminder', available: false } };
+    blockReason(stop(sandboxFor(t), [advisorAvailable(), otherAttachment, ownerPrompt(), toolCall('Edit'), toolResult()]));
+  });
+
+  test('stop_blocks_whenTheTurnsOnlyServerToolCallIsNotTheAdvisor', (t) => {
+    const webSearch = {
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'server_tool_use', id: 'srvtoolu_2', name: 'web_search', input: {} }] },
+    };
+    blockReason(stop(sandboxFor(t), [advisorAvailable(), ownerPrompt(), webSearch, toolCall('Edit'), toolResult()]));
+  });
+
+  test('stop_blocks_whenOnlyAClientToolUseIsNamedAdvisor', (t) => {
+    blockReason(stop(sandboxFor(t), [advisorAvailable(), ownerPrompt(), toolCall('advisor'), toolCall('Edit'), toolResult()]));
+  });
+
   test('stop_ignoresSubagentToolCalls_andSubagentAdvisorAttachments', (t) => {
     const sandbox = sandboxFor(t);
     assertSilent(stop(sandbox, [advisorAvailable(), ownerPrompt(), toolCall('Edit', true), toolCall('Write', true)]));

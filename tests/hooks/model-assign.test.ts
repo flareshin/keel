@@ -168,6 +168,34 @@ describe("AgentDispatchTest", () => {
 const LONG_BRIEF = "Update the parser so every caller passes the new flag. ".repeat(10);
 const SHORT_BRIEF = "Find every caller of parse(), then list each file with its line number. ".repeat(8).slice(0, 499);
 
+function dispatchInAutoMode(toolInput: Record<string, unknown> = {}): HookResult {
+  const input = { description: "Find callers", prompt: "Find every caller of parse().", ...toolInput };
+  return sandbox.runHook(MODEL_ASSIGN, { payload: { ...preToolUse("Agent", input, sandbox.root), permission_mode: "auto" } });
+}
+
+describe("AutoModeDispatchTest", () => {
+  it("dispatch_deniesWithTheValuesToAdd_whenAutoModeAndModelAndEffortOmitted", () => {
+    const result = dispatchInAutoMode();
+    assert.equal(result.code, 2);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, /model: "sonnet", effort: "medium"/);
+    assertFired(sandbox, "C-dispatch", "deny", "model-assign");
+  });
+
+  it("dispatch_namesOnlyTheChangedValue_whenAutoModeAndOnlyTheModelIsOutOfBand", () => {
+    const result = dispatchInAutoMode({ model: "fable", effort: "high" });
+    assert.equal(result.code, 2);
+    assert.match(result.stderr, /model: "opus"/);
+    assert.doesNotMatch(result.stderr, /effort:/);
+  });
+
+  it("dispatch_passes_whenAutoModeAndModelAndEffortInBand", () => {
+    const result = dispatchInAutoMode({ model: "sonnet", effort: "medium" });
+    assert.equal(result.code, 0);
+    assert.equal(result.stdout, "");
+  });
+});
+
 function contextOf(result: HookResult): string | undefined {
   return result.json().hookSpecificOutput.additionalContext;
 }

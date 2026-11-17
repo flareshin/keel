@@ -77,7 +77,7 @@ Then, in a Claude Code session in that repo: work in a worktree, run `keel test 
 | `ship-gate` | Bash | Review, tests and approval evidence for `git push` and `gh pr merge` |
 | `git-guard` | Bash, Edit, Write, NotebookEdit | No secrets, AI attribution, force push to shared branches, hook skipping, or edits in the live keel and overlay checkouts; keel's own evidence and install stay out of an agent's reach |
 | `report-gate` | Subagent handback and stop | Done or pass claims carry evidence; writes review evidence from a reviewer's report |
-| `model-assign` | Agent, Workflow | Every agent dispatch names a model and an effort: it fills them in on an Agent call that names none and denies a Workflow script whose `agent()` calls name none |
+| `model-assign` | Agent, Workflow | Every agent dispatch names a model and an effort: it fills them in on an Agent call that names none (in auto mode it denies the call naming the values to add, since auto mode refuses a hook-rewritten input) and denies a Workflow script whose `agent()` calls name none |
 | `principles` | Session and subagent start | Loads `PRINCIPLES.md` and the overlay's `PERSONAL.md` |
 
 `ship-gate` and `git-guard` block the call if they crash or time out; the others fail open. Every decision is logged to `~/.claude/logs/keel-fires.jsonl`, which the ledger's metrics count.

@@ -189,6 +189,12 @@ describe("AutoModeDispatchTest", () => {
     assert.doesNotMatch(result.stderr, /effort:/);
   });
 
+  it("dispatch_carriesTheBriefHintInTheDeny_whenAutoModeAndPromptIsLong", () => {
+    const result = dispatchInAutoMode({ prompt: LONG_BRIEF });
+    assert.equal(result.code, 2);
+    assert.match(result.stderr, /deepening-prompts/);
+  });
+
   it("dispatch_passes_whenAutoModeAndModelAndEffortInBand", () => {
     const result = dispatchInAutoMode({ model: "sonnet", effort: "medium" });
     assert.equal(result.code, 0);

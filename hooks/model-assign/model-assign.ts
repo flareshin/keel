@@ -99,7 +99,7 @@ function assignDispatch(payload: Payload, fires: FireLog): number {
 function denyForExplicitValues(assigned: ReadonlyArray<readonly [string, Choice]>, note: string, hint: string | null, fires: FireLog): number {
   fires.append(RULE, "deny", { detail: `auto mode: ${note}` });
   const values = assigned.map(([key, [value]]) => `${key}: ${JSON.stringify(value)}`).join(", ");
-  const text = `Issue the same Agent call again with ${values} added (${note}). Auto mode reviews the call as written, ` +
+  const text = `Issue the same Agent call again with ${values} set (${note}). Auto mode reviews the call as written, ` +
     "so a hook rewrite would be refused as unreviewed input." + (hint === null ? "" : ` ${hint}`);
   return protocol.deny(protocol.formatMessage(HOOK, "name the model and effort in the call", [[RULE, text]], AUTO_MODE_NEXT_STEP));
 }

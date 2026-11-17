@@ -35,6 +35,7 @@ const SONNET = "sonnet";
 const HAIKU = "haiku";
 const ABOVE_BAND = "fable";
 const AUTO_MODE = "auto";
+const DISPATCH_VALUE_KEYS = ["model", "effort"] as const;
 const AUTO_MODE_NEXT_STEP = "Then go on; this needs no user input.";
 const PLAIN_TOOL_LIST_RE = /^[\w*:.()-]+(?:[\s,]+[\w*:.()-]+)*$/u;
 const WORKFLOW_GUIDE =
@@ -90,15 +91,22 @@ function assignDispatch(payload: Payload, fires: FireLog): number {
     return hint === null ? protocol.EXIT_PASS : protocol.warn("PreToolUse", hint);
   }
   const note = assigned.map(([key, [value, why]]) => `${key} -> ${value} (${why})`).join(", ");
-  if (getField(payload, "permission_mode") === AUTO_MODE) return denyForExplicitValues(assigned, note, hint, fires);
+  if (getField(payload, "permission_mode") === AUTO_MODE) return denyForExplicitValues(toolArgs, assigned, note, hint, fires);
   fires.append(RULE, "record", { detail: note });
   const values = Object.fromEntries(assigned.map(([key, [value]]) => [key, value]));
   return protocol.rewriteInput({ ...toolArgs, ...values }, note, hint);
 }
 
-function denyForExplicitValues(assigned: ReadonlyArray<readonly [string, Choice]>, note: string, hint: string | null, fires: FireLog): number {
+function denyForExplicitValues(
+  toolArgs: Payload, assigned: ReadonlyArray<readonly [string, Choice]>, note: string, hint: string | null, fires: FireLog,
+): number {
   fires.append(RULE, "deny", { detail: `auto mode: ${note}` });
-  const values = assigned.map(([key, [value]]) => `${key}: ${JSON.stringify(value)}`).join(", ");
+  const assignedValues = new Map(assigned.map(([key, [value]]) => [key, value]));
+  const values = DISPATCH_VALUE_KEYS
+    .map((key) => [key, assignedValues.get(key) ?? textField(toolArgs, key)] as const)
+    .filter(([, value]) => value !== "")
+    .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
+    .join(", ");
   const text = `Issue the same Agent call again with ${values} set (${note}). Auto mode reviews the call as written, ` +
     "so a hook rewrite would be refused as unreviewed input." + (hint === null ? "" : ` ${hint}`);
   return protocol.deny(protocol.formatMessage(HOOK, "name the model and effort in the call", [[RULE, text]], AUTO_MODE_NEXT_STEP));

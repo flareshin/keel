@@ -182,11 +182,10 @@ describe("AutoModeDispatchTest", () => {
     assertFired(sandbox, "C-dispatch", "deny", "model-assign");
   });
 
-  it("dispatch_namesOnlyTheChangedValue_whenAutoModeAndOnlyTheModelIsOutOfBand", () => {
+  it("dispatch_namesBothValues_whenAutoModeAndOnlyTheModelIsOutOfBand", () => {
     const result = dispatchInAutoMode({ model: "fable", effort: "high" });
     assert.equal(result.code, 2);
-    assert.match(result.stderr, /model: "opus"/);
-    assert.doesNotMatch(result.stderr, /effort:/);
+    assert.match(result.stderr, /model: "opus", effort: "high"/);
   });
 
   it("dispatch_carriesTheBriefHintInTheDeny_whenAutoModeAndPromptIsLong", () => {

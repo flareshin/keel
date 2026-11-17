@@ -35,7 +35,6 @@ const SONNET = "sonnet";
 const HAIKU = "haiku";
 const ABOVE_BAND = "fable";
 const AUTO_MODE = "auto";
-const DISPATCH_VALUE_KEYS = ["model", "effort"] as const;
 const AUTO_MODE_NEXT_STEP = "Then go on; this needs no user input.";
 const PLAIN_TOOL_LIST_RE = /^[\w*:.()-]+(?:[\s,]+[\w*:.()-]+)*$/u;
 const WORKFLOW_GUIDE =
@@ -82,7 +81,7 @@ function assignDispatch(payload: Payload, fires: FireLog): number {
     : resolveModel(namedModel, READ_ONLY_TYPES.has(agentType), judgment);
   const choices: Array<[string, Choice | null]> = agentType === FORK_TYPE ? [] : [
     ["model", modelChoice],
-    ["effort", agentFile.pinsEffort ? null : resolveEffort(textField(toolArgs, "effort"), judgment)],
+    ...(agentFile.pinsEffort ? [] : [["effort", resolveEffort(textField(toolArgs, "effort"), judgment)] as [string, Choice | null]]),
   ];
   const assigned = choices.flatMap(([key, choice]) => (choice ? [[key, choice] as const] : []));
   const hint = briefHint(payload, toolArgs, agentType, fires);
@@ -91,21 +90,18 @@ function assignDispatch(payload: Payload, fires: FireLog): number {
     return hint === null ? protocol.EXIT_PASS : protocol.warn("PreToolUse", hint);
   }
   const note = assigned.map(([key, [value, why]]) => `${key} -> ${value} (${why})`).join(", ");
-  if (getField(payload, "permission_mode") === AUTO_MODE) return denyForExplicitValues(toolArgs, assigned, note, hint, fires);
+  if (getField(payload, "permission_mode") === AUTO_MODE) return denyForExplicitValues(toolArgs, choices, note, hint, fires);
   fires.append(RULE, "record", { detail: note });
   const values = Object.fromEntries(assigned.map(([key, [value]]) => [key, value]));
   return protocol.rewriteInput({ ...toolArgs, ...values }, note, hint);
 }
 
 function denyForExplicitValues(
-  toolArgs: Payload, assigned: ReadonlyArray<readonly [string, Choice]>, note: string, hint: string | null, fires: FireLog,
+  toolArgs: Payload, choices: ReadonlyArray<readonly [string, Choice | null]>, note: string, hint: string | null, fires: FireLog,
 ): number {
   fires.append(RULE, "deny", { detail: `auto mode: ${note}` });
-  const assignedValues = new Map(assigned.map(([key, [value]]) => [key, value]));
-  const values = DISPATCH_VALUE_KEYS
-    .map((key) => [key, assignedValues.get(key) ?? textField(toolArgs, key)] as const)
-    .filter(([, value]) => value !== "")
-    .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
+  const values = choices
+    .map(([key, choice]) => `${key}: ${JSON.stringify(choice ? choice[0] : textField(toolArgs, key))}`)
     .join(", ");
   const text = `Issue the same Agent call again with ${values} set (${note}). Auto mode reviews the call as written, ` +
     "so a hook rewrite would be refused as unreviewed input." + (hint === null ? "" : ` ${hint}`);

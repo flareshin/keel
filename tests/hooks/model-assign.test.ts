@@ -188,6 +188,14 @@ describe("AutoModeDispatchTest", () => {
     assert.match(result.stderr, /model: "opus", effort: "high"/);
   });
 
+  it("dispatch_namesOnlyTheModel_whenAutoModeAndAgentFilePinsEffort", () => {
+    sandbox.write(join(sandbox.data, "agents", "worker-pinned.md"), "---\nname: worker-pinned\neffort: low\n---\nBody\n");
+    const result = dispatchInAutoMode({ subagent_type: "worker-pinned", model: "fable", effort: ["x"] });
+    assert.equal(result.code, 2);
+    assert.match(result.stderr, /model: "opus"/);
+    assert.doesNotMatch(result.stderr, /effort:/);
+  });
+
   it("dispatch_carriesTheBriefHintInTheDeny_whenAutoModeAndPromptIsLong", () => {
     const result = dispatchInAutoMode({ prompt: LONG_BRIEF });
     assert.equal(result.code, 2);

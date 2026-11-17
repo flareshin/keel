@@ -2,17 +2,18 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { join } from "node:path";
 import {
-  bash, ENV_PREFLIGHT, GIT_GUARD, HookSandbox, MODEL_ASSIGN, preToolUse, REPORT_GATE, SEEDED_RULE_IDS, SHIP_GATE, subagentStop,
+  basePayload, bash, ENV_PREFLIGHT, GIT_GUARD, HookSandbox, MODEL_ASSIGN, preToolUse, REPORT_GATE, SEEDED_RULE_IDS, SHIP_GATE, subagentStop,
 } from "./helpers.ts";
 import { HANDBACK_TAIL } from "../../hooks/report-gate/report-gate.ts";
 import { DROP_COMMENTS } from "../../hooks/git-guard/git-guard.ts";
+import { CALL_ADVISOR } from "../../hooks/ship-gate/stop-advisor.ts";
 
 const FIRST_LINE = /^\[[A-Za-z0-9-]+\] (ship-gate|git-guard|report-gate|model-assign|env-preflight): \S/;
 const BULLET = /^- \[[A-Za-z0-9-]+\] \S/;
 const RUN_YOURSELF = "Run it yourself in your terminal: ";
 const ASK_USER = "Stop and ask the user.";
 const MESSAGE_LIMIT = 2000;
-const NEXT_STEPS = [RUN_YOURSELF, ASK_USER, HANDBACK_TAIL, DROP_COMMENTS];
+const NEXT_STEPS = [RUN_YOURSELF, ASK_USER, HANDBACK_TAIL, DROP_COMMENTS, CALL_ADVISOR];
 
 let sandbox: HookSandbox;
 
@@ -55,6 +56,17 @@ function gatedFeatureRepo(): string {
   sandbox.git(repo, "checkout", "-q", "-b", "feature");
   sandbox.commitFile(repo, "src/a.py", "x\n", "feature work");
   return repo;
+}
+
+function unadvisedStop(): Record<string, unknown> {
+  const transcript = sandbox.mainTranscript();
+  const lines = [
+    { type: "attachment", attachment: { type: "advisor_tool", available: true } },
+    { type: "user", origin: { kind: "human" }, message: { role: "user", content: "fix it" } },
+    { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_1", name: "Edit", input: {} }] } },
+  ];
+  sandbox.write(transcript, lines.map((line) => JSON.stringify(line) + "\n").join(""));
+  return { ...basePayload("Stop", sandbox.home, transcript, false), stop_hook_active: false };
 }
 
 describe("MessageContractTest", () => {
@@ -119,6 +131,13 @@ describe("MessageContractTest", () => {
     assertDenyShape(result.json().reason);
   });
 
+  it("shipGate_advisorStopBlock_followsTheContract", () => {
+    const result = sandbox.runHook(SHIP_GATE, { payload: unadvisedStop() });
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(result.json().decision, "block");
+    assertDenyShape(result.json().reason);
+  });
+
   it("modelAssign_deny_followsTheContract", () => {
     const payload = preToolUse("Workflow", { script: "await agent('probe', {effort: 'medium'})" }, sandbox.root);
     const result = sandbox.runHook(MODEL_ASSIGN, { payload });
@@ -154,7 +173,8 @@ describe("MessageContractTest", () => {
     const failedClosed = sandbox.runHook(SHIP_GATE, {
       raw: '{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "git push origin x"',
     });
-    assert.deepEqual([denied.code, warned.code, failedClosed.code], [2, 0, 2]);
+    const blocked = sandbox.runHook(SHIP_GATE, { payload: unadvisedStop() });
+    assert.deepEqual([denied.code, warned.code, failedClosed.code, blocked.json().decision], [2, 0, 2, "block"]);
     const fires = sandbox.fires();
     assert.ok(fires.length > 0, "the ship-gate runs wrote no fires line");
     for (const fire of fires) assert.ok(SEEDED_RULE_IDS.has(fire.rule_id), JSON.stringify(fire));

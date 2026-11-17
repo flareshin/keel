@@ -2,7 +2,6 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { sessionStatePath } from "../lib/hookkit/contract.ts";
 import { describeError } from "../lib/hookkit/errors.ts";
-import { getField, isNonEmptyString } from "../lib/hookkit/fields.ts";
 import { FireLog } from "../lib/hookkit/fires.ts";
 import * as protocol from "../lib/hookkit/protocol.ts";
 import type { Bullet, Payload } from "../lib/hookkit/protocol.ts";
@@ -11,8 +10,6 @@ import * as gitcmd from "../../lib/evidence/gitcmd.ts";
 import { pushReadiness } from "../../lib/evidence/readiness.ts";
 
 const HOOK = "ship-gate";
-const EVENT = "Stop";
-const NO_SESSION = "-";
 const NO_REPO_KEY = "-";
 const SHORT_SHA = 12;
 const REMINDER_EXTENSION = "stop-readiness";
@@ -24,24 +21,21 @@ interface UnreadyPush {
   reasons: Bullet[];
 }
 
-export function remindUnreadyPush(payload: Payload): number {
-  if (getField(payload, "stop_hook_active") === true) return protocol.EXIT_PASS;
-  const sessionField = getField(payload, "session_id");
-  const session = isNonEmptyString(sessionField) ? sessionField : NO_SESSION;
+export function unreadyPushReminder(payload: Payload, session: string): string | null {
   let unready: UnreadyPush | null;
   try {
     unready = unreadyPush(protocol.cwdOrProcessDirectory(payload));
   } catch (error) {
     writeStderr(`${HOOK}: push readiness at Stop not judged: ${describeError(error)}\n`);
-    return protocol.EXIT_PASS;
+    return null;
   }
-  if (unready === null || !claimFirstReminder(session, unready)) return protocol.EXIT_PASS;
+  if (unready === null || !claimFirstReminder(session, unready)) return null;
   const [firstRule] = unready.reasons[0]!;
   new FireLog(HOOK, session).append(firstRule, "warn", {
     repo: unready.repo, head: unready.head, detail: unready.reasons.map(([, text]) => text).join("; "),
   });
   const summary = `this turn ends with ${unready.repo} HEAD ${unready.head.slice(0, SHORT_SHA)} not ready to push`;
-  return protocol.warn(EVENT, protocol.formatMessage(HOOK, summary, unready.reasons, NEXT_STEP));
+  return protocol.formatMessage(HOOK, summary, unready.reasons, NEXT_STEP);
 }
 
 function unreadyPush(cwd: string): UnreadyPush | null {

@@ -25,6 +25,8 @@ const HOME_PREFIX = '~';
 const TEMP_INDEX_RANDOM_BYTES = 6;
 const OTHER_LINE_BREAK = /[\r\v\f\x1c-\x1e\x85\u2028\u2029]/;
 const OBJECT_ID = /^[0-9a-f]{40}$/;
+const MIN_PAIRS_WORTH_ONE_QUERY = 2;
+const COMMIT_OBJECT_TYPE = 'commit';
 const SNAPSHOT_COMMIT_MESSAGE = 'keel precheck snapshot';
 const SNAPSHOT_IDENTITY = {
   GIT_AUTHOR_NAME: 'keel precheck',
@@ -37,6 +39,7 @@ type TreeEntry = [mode: string, object: string];
 
 const treeListings = new Map<string, Map<string, TreeEntry>>();
 const ancestryAnswers = new Map<string, boolean>();
+const commitObjects = new Map<string, boolean>();
 
 export class GitError extends Error {
   override name = 'GitError';
@@ -63,6 +66,7 @@ export interface GhDefault {
 export interface GitOptions {
   env?: NodeJS.ProcessEnv;
   timeoutSeconds?: number;
+  input?: string;
 }
 
 export function isDeleted(entry: PathEntry): boolean {
@@ -75,7 +79,7 @@ export function isGitlink(entry: PathEntry): boolean {
 
 export function runUnchecked(repo: string, args: string[], options: GitOptions = {}): Completed {
   return runCaptured(['git', '-C', repo, ...args],
-    { env: options.env, timeoutSeconds: options.timeoutSeconds ?? LOCAL_GIT_TIMEOUT_SECONDS });
+    { env: options.env, input: options.input, timeoutSeconds: options.timeoutSeconds ?? LOCAL_GIT_TIMEOUT_SECONDS });
 }
 
 export function runOrThrow(repo: string, args: string[], options: GitOptions = {}): Completed {
@@ -193,7 +197,7 @@ export function mergeBase(repo: string, left: string, right: string): string | n
 }
 
 export function isAncestor(repo: string, ancestor: string, descendant: string): boolean {
-  const key = [repo, ancestor, descendant].join('\0');
+  const key = ancestryKey(repo, ancestor, descendant);
   const known = ancestryAnswers.get(key);
   if (known !== undefined) return known;
   const completed = runUnchecked(repo, ['merge-base', '--is-ancestor', ancestor, descendant]);
@@ -203,6 +207,57 @@ export function isAncestor(repo: string, ancestor: string, descendant: string): 
   const answer = completed.returncode === 0;
   if (OBJECT_ID.test(ancestor) && OBJECT_ID.test(descendant)) ancestryAnswers.set(key, answer);
   return answer;
+}
+
+export function preloadAncestorsOf(repo: string, descendant: string, candidates: string[]): void {
+  const unanswered = commitsAmong(repo, descendant, candidates).filter((candidate) => !ancestryAnswers.has(ancestryKey(repo, candidate, descendant)));
+  const outsideDescendant = commitsReachable(repo, [], unanswered, descendant);
+  if (outsideDescendant === null) return;
+  for (const candidate of unanswered) {
+    ancestryAnswers.set(ancestryKey(repo, candidate, descendant), !outsideDescendant.has(candidate));
+  }
+}
+
+export function preloadDescendantsOf(repo: string, ancestor: string, candidates: string[]): void {
+  const unanswered = commitsAmong(repo, ancestor, candidates).filter((candidate) => !ancestryAnswers.has(ancestryKey(repo, ancestor, candidate)));
+  const afterAncestor = commitsReachable(repo, ['--ancestry-path'], unanswered, ancestor);
+  if (afterAncestor === null) return;
+  for (const candidate of unanswered) {
+    ancestryAnswers.set(ancestryKey(repo, ancestor, candidate), candidate === ancestor || afterAncestor.has(candidate));
+  }
+}
+
+function commitsAmong(repo: string, anchor: string, candidates: string[]): string[] {
+  const ids = [...new Set([anchor, ...candidates])].filter((id) => OBJECT_ID.test(id));
+  const untyped = ids.filter((id) => !commitObjects.has(objectKey(repo, id)));
+  if (untyped.length > 0) recordObjectTypes(repo, untyped);
+  const isCommit = (id: string): boolean => commitObjects.get(objectKey(repo, id)) === true;
+  return isCommit(anchor) ? [...new Set(candidates)].filter(isCommit) : [];
+}
+
+function recordObjectTypes(repo: string, ids: string[]): void {
+  const args = ['cat-file', '--batch-check=%(objecttype)'];
+  const completed = runUnchecked(repo, args, { input: ids.join('\n') + '\n' });
+  if (completed.returncode !== 0) return;
+  const types = gateLines(args, completed.stdout.toString());
+  if (types.length !== ids.length) return;
+  ids.forEach((id, index) => commitObjects.set(objectKey(repo, id), types[index] === COMMIT_OBJECT_TYPE));
+}
+
+function commitsReachable(repo: string, walk: string[], from: string[], butNotFrom: string): Set<string> | null {
+  if (from.length < MIN_PAIRS_WORTH_ONE_QUERY) return null;
+  const args = ['rev-list', ...walk, '--stdin'];
+  const completed = runUnchecked(repo, args, { input: [...from, '^' + butNotFrom, ''].join('\n') });
+  if (completed.returncode !== 0) return null;
+  return new Set(gateLines(args, completed.stdout.toString()));
+}
+
+function objectKey(repo: string, id: string): string {
+  return [repo, id].join('\0');
+}
+
+function ancestryKey(repo: string, ancestor: string, descendant: string): string {
+  return [repo, ancestor, descendant].join('\0');
 }
 
 export function firstParentAncestors(repo: string, head: string, stop: string): string[] {

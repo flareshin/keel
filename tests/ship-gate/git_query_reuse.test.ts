@@ -8,6 +8,7 @@ import { matchesContent } from '../../lib/evidence/comment_cleanup.ts';
 import * as gitcmd from '../../lib/evidence/gitcmd.ts';
 import { covers } from '../../lib/evidence/verify.ts';
 import { LOGIC_WITH_TEST, Sandbox } from './helpers.ts';
+import type { Repo } from './helpers.ts';
 
 const FILES = ['a.ts', 'b.ts', 'c.md', 'docs/d.json', 'e.sh'];
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
@@ -114,6 +115,79 @@ test('isAncestor_asksGitOncePerCommitPair_butEveryTimeForRefNames', (t) => {
   assert.equal(count(calls, 'merge-base', '--is-ancestor'), 4);
 });
 
+function forkedHistory(t: TestContext) {
+  const { repo, base, head } = setUp(t);
+  const middle = repo.git('rev-parse', head + '^');
+  repo.branch('side', base);
+  const side = repo.commit({ 'side.ts': 'export const y = 1;\n' });
+  return { repo, base, middle, head, side };
+}
+
+test('preloadAncestorsOf_answersEveryCandidateFromOneQuery_asPairQueriesWould', (t) => {
+  const { repo, base, middle, head, side } = forkedHistory(t);
+  const calls = gitCalls(t);
+
+  gitcmd.preloadAncestorsOf(repo.path, middle, [base, middle, side, head, base]);
+  const answers = [base, middle, side, head].map((candidate) => gitcmd.isAncestor(repo.path, candidate, middle));
+
+  assert.deepEqual(answers, [true, true, false, false]);
+  assert.equal(count(calls, 'rev-list'), 1);
+  assert.equal(count(calls, 'merge-base', '--is-ancestor'), 0);
+});
+
+test('preloadDescendantsOf_answersEveryCandidateFromOneQuery_asPairQueriesWould', (t) => {
+  const { repo, base, middle, head, side } = forkedHistory(t);
+  const calls = gitCalls(t);
+
+  gitcmd.preloadDescendantsOf(repo.path, middle, [base, middle, side, head, head]);
+  const answers = [base, middle, side, head].map((candidate) => gitcmd.isAncestor(repo.path, middle, candidate));
+
+  assert.deepEqual(answers, [false, true, false, true]);
+  assert.equal(count(calls, 'rev-list'), 1);
+  assert.equal(count(calls, 'merge-base', '--is-ancestor'), 0);
+});
+
+test('preloadAncestorsOf_learnsNothing_whenACandidateIsNoCommitOfTheRepo', (t) => {
+  const { repo, base, head } = setUp(t);
+  const missing = 'f'.repeat(40);
+  const calls = gitCalls(t);
+
+  gitcmd.preloadAncestorsOf(repo.path, head, [base, missing]);
+  gitcmd.preloadDescendantsOf(repo.path, base, [head, missing]);
+
+  assert.equal(gitcmd.isAncestor(repo.path, base, head), true);
+  assert.throws(() => gitcmd.isAncestor(repo.path, missing, head), gitcmd.GitError);
+  assert.throws(() => gitcmd.isAncestor(repo.path, base, missing), gitcmd.GitError);
+  assert.equal(count(calls, 'merge-base', '--is-ancestor'), 3);
+});
+
+test('preloadAncestorsOf_leavesObjectsThatAreNotCommits_toThePairQuery', (t) => {
+  const { repo, base, head, headTree } = setUp(t);
+  const blob = repo.git('rev-parse', head + ':a.ts');
+  repo.git('tag', '-a', 'v1', '-m', 'release', base);
+  const tag = repo.git('rev-parse', 'refs/tags/v1');
+
+  gitcmd.preloadAncestorsOf(repo.path, head, [base, headTree, blob, tag]);
+  gitcmd.preloadDescendantsOf(repo.path, base, [head, headTree, blob, tag]);
+
+  assert.throws(() => gitcmd.isAncestor(repo.path, headTree, head), gitcmd.GitError);
+  assert.throws(() => gitcmd.isAncestor(repo.path, blob, head), gitcmd.GitError);
+  assert.throws(() => gitcmd.isAncestor(repo.path, base, headTree), gitcmd.GitError);
+  assert.throws(() => gitcmd.isAncestor(repo.path, base, blob), gitcmd.GitError);
+  assert.deepEqual([gitcmd.isAncestor(repo.path, tag, head), gitcmd.isAncestor(repo.path, base, tag)], [true, true]);
+  assert.deepEqual([gitcmd.isAncestor(repo.path, base, head), gitcmd.isAncestor(repo.path, head, base)], [true, false]);
+});
+
+test('preloadAncestorsOf_asksNothing_whenACommitIsNamedByARef', (t) => {
+  const { repo, base, head } = setUp(t);
+  const calls = gitCalls(t);
+
+  gitcmd.preloadAncestorsOf(repo.path, 'HEAD', [base, head]);
+  gitcmd.preloadDescendantsOf(repo.path, base, ['HEAD', head]);
+
+  assert.equal(count(calls, 'rev-list'), 0);
+});
+
 test('matchesContent_readsNoBlob_forPathsCommentCleanupCannotJudge', (t) => {
   const { repo, firstTree, headTree } = setUp(t);
   const calls = gitCalls(t);
@@ -174,4 +248,52 @@ test('push_listsNoOlderTestsTree_whenTheNewestTestsEvidenceCoversTheChange', (t)
   const listed = shim.calls().filter((line) => line.includes(' ls-tree '));
   assert.ok(listed.length > 0, shim.calls().join('\n'));
   assert.deepEqual(listed.filter((line) => olderTrees.some((tree) => line.includes(tree))), []);
+});
+
+function withEarlierReviews(t: TestContext, earlierReviews: number) {
+  const sandbox = new Sandbox(t);
+  const repo = sandbox.clone('acme', 'app');
+  repo.branch('feature');
+  const branchPoint = repo.head();
+  for (let index = 0; index < earlierReviews; index++) {
+    const reviewBase = repo.commit({ [`src/old${index}.py`]: `print(${index})\n` });
+    sandbox.review(repo, { runId: `rv-old-${index}`, reviewBase });
+  }
+  return { sandbox, repo, branchPoint };
+}
+
+function ancestryQueriesOnPush(sandbox: Sandbox, repo: Repo): number {
+  const shim = gitLogShim(sandbox);
+
+  const run = sandbox.hook(sandbox.bashPayload(repo, 'git push origin feature'), shim.env);
+
+  assert.equal(run.rc, 0, run.stderr);
+  return shim.calls().filter((line) => line.includes(' merge-base --is-ancestor ')).length;
+}
+
+function queriesForOneReview(t: TestContext, earlierReviews: number): number {
+  const { sandbox, repo } = withEarlierReviews(t, earlierReviews);
+  repo.commit(LOGIC_WITH_TEST);
+  sandbox.fullBundle(repo);
+  return ancestryQueriesOnPush(sandbox, repo);
+}
+
+function queriesForTwoStackedReviews(t: TestContext, earlierReviews: number): number {
+  const { sandbox, repo, branchPoint } = withEarlierReviews(t, earlierReviews);
+  const boundary = repo.commit(LOGIC_WITH_TEST);
+  sandbox.review(repo, { runId: 'rv-series-0001', reviewBase: branchPoint });
+  sandbox.approve('rv-series-0001');
+  repo.commit({ 'src/a.py': 'print(2)\n', 'src/second.py': 'second = 2\n' });
+  sandbox.review(repo, { runId: 'rv-series-0002', reviewBase: boundary });
+  sandbox.approve('rv-series-0002');
+  sandbox.testsEvidence(repo);
+  return ancestryQueriesOnPush(sandbox, repo);
+}
+
+test('push_asksNoMoreAncestryQueries_whenMoreReviewChainsAreLive', (t) => {
+  assert.equal(queriesForOneReview(t, 6), queriesForOneReview(t, 2));
+});
+
+test('pushOfTwoStackedReviews_asksNoMoreAncestryQueries_whenMoreReviewChainsAreLive', (t) => {
+  assert.equal(queriesForTwoStackedReviews(t, 6), queriesForTwoStackedReviews(t, 2));
 });

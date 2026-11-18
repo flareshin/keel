@@ -8,6 +8,22 @@ All notable changes to keel are recorded here. The format follows
 
 New entries go in `changelog.d/`, one file per branch; `changelog.d/README.md` explains the format.
 
+## [1.1.1] - 2026-11-17
+
+### Added
+
+- `keel test` warns `[K3] warn: run <run_id> of this command failed on this same tree …` when a run writes tests evidence and an earlier run of the same command on the same repo tree failed with tests recognized, and records that run as `passed_after_failure` in `keel-tests.jsonl`. It is a flaky signal; the evidence is still written.
+
+- The tests lens reports flaky-test patches as fake green: an added sleep, fixed delay or longer timeout, a retry wrapper or retry setting, or skipping, quarantining or deleting an intermittent test instead of removing its nondeterminism. With no root cause in the change, the finding says to stop and ask the owner.
+
+- ship-gate at Stop blocks once when a main-session turn edited a file or made six or more tool calls without calling the available advisor since the owner's latest prompt (K1); an unready-push reminder rides inside the same block.
+
+### Fixed
+
+- DESIGN: the auto-mode `updatedInput` refusal note names Claude Code 2.1.325 (Desktop), the version whose transcripts recorded `server_input_rewritten`, instead of 2.1.326.
+
+- lens-review writes `no_test_reason` into a repo's KEEL-EVIDENCE when the tests-lens auditor gives a non-blank reason for that repo, so a docs-only change can pass ship-gate K3 without a placeholder test. adversarial-audit returns these as `noTestReasons`.
+
 ## [1.1.0] - 2026-11-17
 
 `keel precheck rerun --repo <path> --base <ref> --census <file>` reruns a saved census's survived and no-test-reaches mutants against only the test files changed since its tree, and prints the census followed by the `rerun: survivors` result lens-review already recognizes. It refuses and asks for the full `keel precheck run` when a source changed, an existing test line changed or was removed, or no runnable test changed; it also refuses when the census lists no open mutant, since nothing is left to rerun. Each successful rerun is logged as a precheck of its tree, so a review after it counts as prechecked.

@@ -325,8 +325,16 @@ export function treeEntry(repo: string, tree: string, path: string): TreeEntry |
   return treeListing(repo, tree).get(path) ?? null;
 }
 
+export function isObjectId(name: string): boolean {
+  return OBJECT_ID.test(name);
+}
+
+export function isPlainPath(path: string): boolean {
+  return PLAIN_PATH.test(path);
+}
+
 export function sizedObjectsAt(repo: string, places: Array<[tree: string, path: string]>): Array<SizedObject | null> | null {
-  if (!places.every(([tree, path]) => OBJECT_ID.test(tree) && PLAIN_PATH.test(path))) return null;
+  if (!places.every(([tree, path]) => isObjectId(tree) && isPlainPath(path))) return null;
   return sizedObjects(repo, places.map(([tree, path]) => `${tree}:${path}`));
 }
 

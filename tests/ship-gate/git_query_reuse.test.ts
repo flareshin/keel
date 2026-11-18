@@ -298,15 +298,17 @@ test('pushOfTwoStackedReviews_asksNoMoreAncestryQueries_whenMoreReviewChainsAreL
   assert.equal(queriesForTwoStackedReviews(t, 6), queriesForTwoStackedReviews(t, 2));
 });
 
-function treeListingsOnPushWithoutTests(t: TestContext, staleTestRuns: number): number {
+type Files = Record<string, string | null>;
+
+function treeListingsOnPushWithoutTests(t: TestContext, staleTestRuns: number, stale: (version: number) => Files, outgoing: Files): number {
   const sandbox = new Sandbox(t);
   const repo = sandbox.clone('acme', 'app');
   repo.branch('feature');
   for (let version = 0; version < staleTestRuns; version++) {
-    repo.commit({ 'src/a.py': `print(${version})\n`, 'tests/test_a.py': `def test_a():\n    assert ${version} >= 0\n` });
+    repo.commit(stale(version));
     sandbox.testsEvidence(repo);
   }
-  repo.commit(LOGIC_WITH_TEST);
+  repo.commit(outgoing);
   sandbox.review(repo);
   sandbox.approve('rv-root-0001');
   const shim = gitLogShim(sandbox);
@@ -318,6 +320,46 @@ function treeListingsOnPushWithoutTests(t: TestContext, staleTestRuns: number): 
   return shim.calls().filter((line) => line.includes(' ls-tree ')).length;
 }
 
+function assertStaleTestRunsAddNoTreeListing(t: TestContext, stale: (version: number) => Files, outgoing: Files): void {
+  assert.equal(treeListingsOnPushWithoutTests(t, 5, stale, outgoing), treeListingsOnPushWithoutTests(t, 2, stale, outgoing));
+}
+
+const stalePython = (version: number): Files =>
+  ({ 'src/a.py': `print(${version})\n`, 'tests/test_a.py': `def test_a():\n    assert ${version} >= 0\n` });
+const growingTypeScript = (version: number): Files =>
+  ({ 'src/a.ts': `export const a = [${'1, '.repeat(version)}1];\n`, 'tests/a.test.ts': `assert(${version} >= 0);\n` });
+
 test('pushWithoutTestsEvidence_listsNoMoreTrees_whenMoreStaleTestRunsAreLive', (t) => {
-  assert.equal(treeListingsOnPushWithoutTests(t, 5), treeListingsOnPushWithoutTests(t, 2));
+  assertStaleTestRunsAddNoTreeListing(t, stalePython, LOGIC_WITH_TEST);
+});
+
+test('pushWithoutTestsEvidence_listsNoMoreTrees_whenStaleRunsHoldSmallerVersionsOfACommentJudgedFile', (t) => {
+  assertStaleTestRunsAddNoTreeListing(t, growingTypeScript,
+    { 'src/a.ts': 'export const a = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1];\n', 'tests/a.test.ts': 'assert(10 >= 0);\n' });
+});
+
+test('pushWithoutTestsEvidence_listsNoMoreTrees_whenTheChangeAlsoTouchesADotDirectoryPath', (t) => {
+  assertStaleTestRunsAddNoTreeListing(t, stalePython, { ...LOGIC_WITH_TEST, '.github/[ci] flow.yml': 'on: push\n' });
+});
+
+const staleSeedFile = (version: number): Files => ({ 'src/app.py': `print(${version})\n` });
+
+test('pushWithoutTestsEvidence_listsNoMoreTrees_whenTheChangeOnlyDeletesAFileStaleRunsHold', (t) => {
+  assertStaleTestRunsAddNoTreeListing(t, staleSeedFile, { 'src/app.py': null });
+});
+
+test('push_acceptsTestsEvidenceOfADeletion_whenStaleTestRunsAreLiveToo', (t) => {
+  const sandbox = new Sandbox(t);
+  const repo = sandbox.clone('acme', 'app');
+  repo.branch('feature');
+  for (const version of [1, 2]) {
+    repo.commit(staleSeedFile(version));
+    sandbox.testsEvidence(repo);
+  }
+  repo.commit({ 'src/app.py': null, 'tests/test_gone.py': 'def test_gone():\n    assert True\n' });
+  sandbox.fullBundle(repo);
+
+  const run = sandbox.push(repo, 'git push origin feature');
+
+  assert.equal(run.rc, 0, run.stderr);
 });

@@ -342,6 +342,16 @@ test('pushWithoutTestsEvidence_listsNoMoreTrees_whenTheChangeAlsoTouchesADotDire
   assertStaleTestRunsAddNoTreeListing(t, stalePython, { ...LOGIC_WITH_TEST, '.github/[ci] flow.yml': 'on: push\n' });
 });
 
+test('pushWithoutTestsEvidence_listsNoMoreTrees_whenStaleRunsOnlyLackFilesTheChangeAdds', (t) => {
+  const addingOneFile = (version: number): Files => ({ [`src/old${version}.py`]: `print(${version})\n` });
+  assertStaleTestRunsAddNoTreeListing(t, addingOneFile, { 'src/new.py': 'print(9)\n', 'tests/test_new.py': 'def test_new():\n    assert True\n' });
+});
+
+test('pushWithoutTestsEvidence_listsNoMoreTrees_whenStaleRunsHoldLargerVersionsOfAFileCommentCleanupDoesNotJudge', (t) => {
+  const shrinkingPython = (version: number): Files => ({ 'src/app.py': `print('${'x'.repeat(20 - version)}')\n` });
+  assertStaleTestRunsAddNoTreeListing(t, shrinkingPython, { 'src/app.py': "print('x')\n" });
+});
+
 const staleSeedFile = (version: number): Files => ({ 'src/app.py': `print(${version})\n` });
 
 test('pushWithoutTestsEvidence_listsNoMoreTrees_whenTheChangeOnlyDeletesAFileStaleRunsHold', (t) => {

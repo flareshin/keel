@@ -25,7 +25,7 @@ const HOME_PREFIX = '~';
 const TEMP_INDEX_RANDOM_BYTES = 6;
 const OTHER_LINE_BREAK = /[\r\v\f\x1c-\x1e\x85\u2028\u2029]/;
 const OBJECT_ID = /^[0-9a-f]{40}$/;
-const MIN_CANDIDATES_WORTH_ONE_QUERY = 2;
+const MIN_PAIRS_WORTH_ONE_QUERY = 2;
 const SNAPSHOT_COMMIT_MESSAGE = 'keel precheck snapshot';
 const SNAPSHOT_IDENTITY = {
   GIT_AUTHOR_NAME: 'keel precheck',
@@ -207,18 +207,30 @@ export function isAncestor(repo: string, ancestor: string, descendant: string): 
   return answer;
 }
 
-export function preloadAncestry(repo: string, candidates: string[], descendant: string): void {
-  if (!OBJECT_ID.test(descendant)) return;
-  const unanswered = [...new Set(candidates)]
-    .filter((candidate) => OBJECT_ID.test(candidate) && !ancestryAnswers.has(ancestryKey(repo, candidate, descendant)));
-  if (unanswered.length < MIN_CANDIDATES_WORTH_ONE_QUERY) return;
-  const args = ['rev-list', '--stdin'];
-  const completed = runUnchecked(repo, args, { input: [...unanswered, '^' + descendant, ''].join('\n') });
-  if (completed.returncode !== 0) return;
-  const outsideDescendant = new Set(gateLines(args, completed.stdout.toString()));
+export function preloadAncestorsOf(repo: string, descendant: string, candidates: string[]): void {
+  const unanswered = candidates.filter((candidate) => !ancestryAnswers.has(ancestryKey(repo, candidate, descendant)));
+  const outsideDescendant = commitsReachable(repo, [], unanswered, descendant);
+  if (outsideDescendant === null) return;
   for (const candidate of unanswered) {
     ancestryAnswers.set(ancestryKey(repo, candidate, descendant), !outsideDescendant.has(candidate));
   }
+}
+
+export function preloadDescendantsOf(repo: string, ancestor: string, candidates: string[]): void {
+  const unanswered = candidates.filter((candidate) => !ancestryAnswers.has(ancestryKey(repo, ancestor, candidate)));
+  const afterAncestor = commitsReachable(repo, ['--ancestry-path'], unanswered, ancestor);
+  if (afterAncestor === null) return;
+  for (const candidate of unanswered) {
+    ancestryAnswers.set(ancestryKey(repo, ancestor, candidate), candidate === ancestor || afterAncestor.has(candidate));
+  }
+}
+
+function commitsReachable(repo: string, walk: string[], from: string[], butNotFrom: string): Set<string> | null {
+  if (from.length < MIN_PAIRS_WORTH_ONE_QUERY || ![butNotFrom, ...from].every((commit) => OBJECT_ID.test(commit))) return null;
+  const args = ['rev-list', ...walk, '--stdin'];
+  const completed = runUnchecked(repo, args, { input: [...from, '^' + butNotFrom, ''].join('\n') });
+  if (completed.returncode !== 0) return null;
+  return new Set(gateLines(args, completed.stdout.toString()));
 }
 
 function ancestryKey(repo: string, ancestor: string, descendant: string): string {

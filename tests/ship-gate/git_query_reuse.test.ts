@@ -114,14 +114,19 @@ test('isAncestor_asksGitOncePerCommitPair_butEveryTimeForRefNames', (t) => {
   assert.equal(count(calls, 'merge-base', '--is-ancestor'), 4);
 });
 
-test('preloadAncestry_answersEveryCandidateFromOneQuery_asPairQueriesWould', (t) => {
+function forkedHistory(t: TestContext) {
   const { repo, base, head } = setUp(t);
   const middle = repo.git('rev-parse', head + '^');
   repo.branch('side', base);
   const side = repo.commit({ 'side.ts': 'export const y = 1;\n' });
+  return { repo, base, middle, head, side };
+}
+
+test('preloadAncestorsOf_answersEveryCandidateFromOneQuery_asPairQueriesWould', (t) => {
+  const { repo, base, middle, head, side } = forkedHistory(t);
   const calls = gitCalls(t);
 
-  gitcmd.preloadAncestry(repo.path, [base, middle, side, head], middle);
+  gitcmd.preloadAncestorsOf(repo.path, middle, [base, middle, side, head, base]);
   const answers = [base, middle, side, head].map((candidate) => gitcmd.isAncestor(repo.path, candidate, middle));
 
   assert.deepEqual(answers, [true, true, false, false]);
@@ -129,16 +134,40 @@ test('preloadAncestry_answersEveryCandidateFromOneQuery_asPairQueriesWould', (t)
   assert.equal(count(calls, 'merge-base', '--is-ancestor'), 0);
 });
 
-test('preloadAncestry_learnsNothing_whenACandidateIsNoCommitOfTheRepo', (t) => {
+test('preloadDescendantsOf_answersEveryCandidateFromOneQuery_asPairQueriesWould', (t) => {
+  const { repo, base, middle, head, side } = forkedHistory(t);
+  const calls = gitCalls(t);
+
+  gitcmd.preloadDescendantsOf(repo.path, middle, [base, middle, side, head, head]);
+  const answers = [base, middle, side, head].map((candidate) => gitcmd.isAncestor(repo.path, middle, candidate));
+
+  assert.deepEqual(answers, [false, true, false, true]);
+  assert.equal(count(calls, 'rev-list'), 1);
+  assert.equal(count(calls, 'merge-base', '--is-ancestor'), 0);
+});
+
+test('preloadAncestorsOf_learnsNothing_whenACandidateIsNoCommitOfTheRepo', (t) => {
   const { repo, base, head } = setUp(t);
   const missing = 'f'.repeat(40);
   const calls = gitCalls(t);
 
-  gitcmd.preloadAncestry(repo.path, [base, missing], head);
+  gitcmd.preloadAncestorsOf(repo.path, head, [base, missing]);
+  gitcmd.preloadDescendantsOf(repo.path, base, [head, missing]);
 
   assert.equal(gitcmd.isAncestor(repo.path, base, head), true);
   assert.throws(() => gitcmd.isAncestor(repo.path, missing, head), gitcmd.GitError);
-  assert.equal(count(calls, 'merge-base', '--is-ancestor'), 2);
+  assert.throws(() => gitcmd.isAncestor(repo.path, base, missing), gitcmd.GitError);
+  assert.equal(count(calls, 'merge-base', '--is-ancestor'), 3);
+});
+
+test('preloadAncestorsOf_asksNothing_whenACommitIsNamedByARef', (t) => {
+  const { repo, base, head } = setUp(t);
+  const calls = gitCalls(t);
+
+  gitcmd.preloadAncestorsOf(repo.path, 'HEAD', [base, head]);
+  gitcmd.preloadDescendantsOf(repo.path, base, ['HEAD', head]);
+
+  assert.equal(count(calls, 'rev-list'), 0);
 });
 
 test('matchesContent_readsNoBlob_forPathsCommentCleanupCannotJudge', (t) => {

@@ -297,3 +297,27 @@ test('push_asksNoMoreAncestryQueries_whenMoreReviewChainsAreLive', (t) => {
 test('pushOfTwoStackedReviews_asksNoMoreAncestryQueries_whenMoreReviewChainsAreLive', (t) => {
   assert.equal(queriesForTwoStackedReviews(t, 6), queriesForTwoStackedReviews(t, 2));
 });
+
+function treeListingsOnPushWithoutTests(t: TestContext, staleTestRuns: number): number {
+  const sandbox = new Sandbox(t);
+  const repo = sandbox.clone('acme', 'app');
+  repo.branch('feature');
+  for (let version = 0; version < staleTestRuns; version++) {
+    repo.commit({ 'src/a.py': `print(${version})\n`, 'tests/test_a.py': `def test_a():\n    assert ${version} >= 0\n` });
+    sandbox.testsEvidence(repo);
+  }
+  repo.commit(LOGIC_WITH_TEST);
+  sandbox.review(repo);
+  sandbox.approve('rv-root-0001');
+  const shim = gitLogShim(sandbox);
+
+  const run = sandbox.hook(sandbox.bashPayload(repo, 'git push origin feature'), shim.env);
+
+  assert.equal(run.rc, 2, run.stderr);
+  assert.match(run.stderr, /no tests evidence covers this exact content/);
+  return shim.calls().filter((line) => line.includes(' ls-tree ')).length;
+}
+
+test('pushWithoutTestsEvidence_listsNoMoreTrees_whenMoreStaleTestRunsAreLive', (t) => {
+  assert.equal(treeListingsOnPushWithoutTests(t, 5), treeListingsOnPushWithoutTests(t, 2));
+});

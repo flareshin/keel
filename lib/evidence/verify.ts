@@ -18,6 +18,7 @@ import { NO_TEST_REASON } from './writers.ts';
 export const K1 = 'K1';
 export const K3 = 'K3';
 export const RISK = 'risk';
+const MIN_TREES_WORTH_ONE_QUERY = 2;
 const PASS = 'PASS';
 const LENS_REVIEW = 'lens-review';
 const GATE_SMOKE = 'smoke';
@@ -461,7 +462,25 @@ function noTestReason(chain: Chain | null): string | null {
 }
 
 function coveredBy(kind: string, outgoing: Outgoing, entries: PathEntry[]): boolean {
-  return store.load(kind, outgoing.repoKey).reverse().some((evidence) => covers(outgoing.repoRoot, evidence['tree'], entries));
+  const trees: string[] = store.load(kind, outgoing.repoKey).reverse().map((evidence) => evidence['tree']);
+  return treesThatMayCover(outgoing.repoRoot, trees, entries).some((tree) => covers(outgoing.repoRoot, tree, entries));
+}
+
+function treesThatMayCover(repoRoot: string, trees: string[], entries: PathEntry[]): string[] {
+  const judged = entries.filter((entry) => !gitcmd.isGitlink(entry));
+  if (trees.length < MIN_TREES_WORTH_ONE_QUERY || judged.length === 0) return trees;
+  const current = currentObjects(repoRoot, judged);
+  const held = gitcmd.sizedObjectsAt(repoRoot, trees.flatMap((tree) => judged.map((entry): [string, string] => [tree, entry.path])));
+  if (current === null || held === null) return trees;
+  return trees.filter((_, treeIndex) => judged.every((entry, entryIndex) =>
+    commentCleanup.couldMatchContent(entry.path, held[treeIndex * judged.length + entryIndex]!, current[entryIndex]!)));
+}
+
+function currentObjects(repoRoot: string, entries: PathEntry[]): Array<gitcmd.SizedObject | null> | null {
+  const kept = entries.filter((entry) => !gitcmd.isDeleted(entry));
+  const sized = gitcmd.sizedObjectsNamed(repoRoot, kept.map((entry) => entry.blob!));
+  if (sized === null || sized.includes(null)) return null;
+  return entries.map((entry) => (gitcmd.isDeleted(entry) ? null : sized[kept.indexOf(entry)]!));
 }
 
 function smokeReasons(outgoing: Outgoing, entries: PathEntry[]): Reason[] {

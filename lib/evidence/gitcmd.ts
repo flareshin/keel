@@ -25,6 +25,8 @@ const HOME_PREFIX = '~';
 const TEMP_INDEX_RANDOM_BYTES = 6;
 const OTHER_LINE_BREAK = /[\r\v\f\x1c-\x1e\x85\u2028\u2029]/;
 const OBJECT_ID = /^[0-9a-f]{40}$/;
+const SIZED_OBJECT = /^([0-9a-f]{40}) (\d+)$/;
+const PLAIN_PATH = /^[A-Za-z0-9_][A-Za-z0-9_.-]*(\/[A-Za-z0-9_.][A-Za-z0-9_.-]*)*$/;
 const MIN_PAIRS_WORTH_ONE_QUERY = 2;
 const COMMIT_OBJECT_TYPE = 'commit';
 const SNAPSHOT_COMMIT_MESSAGE = 'keel precheck snapshot';
@@ -36,6 +38,11 @@ const SNAPSHOT_IDENTITY = {
 };
 
 type TreeEntry = [mode: string, object: string];
+
+export interface SizedObject {
+  id: string;
+  size: number;
+}
 
 const treeListings = new Map<string, Map<string, TreeEntry>>();
 const ancestryAnswers = new Map<string, boolean>();
@@ -316,6 +323,28 @@ export function diffStats(repo: string, oldTree: string, newTree: string): Map<s
 
 export function treeEntry(repo: string, tree: string, path: string): TreeEntry | null {
   return treeListing(repo, tree).get(path) ?? null;
+}
+
+export function sizedObjectsAt(repo: string, places: Array<[tree: string, path: string]>): Array<SizedObject | null> | null {
+  if (!places.every(([tree, path]) => OBJECT_ID.test(tree) && PLAIN_PATH.test(path))) return null;
+  return sizedObjects(repo, places.map(([tree, path]) => `${tree}:${path}`));
+}
+
+export function sizedObjectsNamed(repo: string, ids: string[]): Array<SizedObject | null> | null {
+  return ids.every((id) => OBJECT_ID.test(id)) ? sizedObjects(repo, ids) : null;
+}
+
+function sizedObjects(repo: string, names: string[]): Array<SizedObject | null> | null {
+  if (names.length === 0) return [];
+  const args = ['cat-file', '--batch-check=%(objectname) %(objectsize)'];
+  const completed = runUnchecked(repo, args, { input: names.join('\n') + '\n' });
+  if (completed.returncode !== 0) return null;
+  const answers = gateLines(args, completed.stdout.toString());
+  if (answers.length !== names.length) return null;
+  return answers.map((answer) => {
+    const sized = SIZED_OBJECT.exec(answer);
+    return sized ? { id: sized[1]!, size: Number.parseInt(sized[2]!, 10) } : null;
+  });
 }
 
 function treeListing(repo: string, tree: string): Map<string, TreeEntry> {

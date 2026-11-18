@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { deltaOf, differencesFromRecorded, digestOf, envFromTemplate, materialize, paddedRoot, restored, runInSandbox, tokenized } from "../recorded-cases.ts";
 import type { ObservedDelta, Run, SnapshotStore } from "../recorded-cases.ts";
+import { DETAIL_LIMIT } from "../../hooks/lib/hookkit/fires.ts";
 import { KEEL_HOME } from "./helpers.ts";
 import { buildAdversarialSet } from "./hook-parity-adversarial.ts";
 import type { AdversarialCase, AdversarialSet } from "./hook-parity-adversarial.ts";
@@ -23,6 +24,8 @@ const REMOTES_TREE = "remotes";
 const FIRES_PATH = join("data", "logs", "keel-fires.jsonl");
 const DECODE_DETAIL = /\b(JsonSyntaxError: |payload is not JSON: )(?!hook payload is not a JSON object)(?:[^"\\]|\\.)*/g;
 const DECODE_MESSAGE = "<JSON syntax error message>";
+const CUT_PATH = /(\/[^\s"\\]*)("\})$/;
+const CUT_PATH_TOKEN = "<cut path>";
 const GOLDEN_LABEL = "golden";
 
 export interface ParityCase {
@@ -254,19 +257,41 @@ function maskedDecodeDetail(fires: string): string {
   return fires.replace(DECODE_DETAIL, (_match, prefix: string) => `${prefix}${DECODE_MESSAGE}`);
 }
 
-function comparableRun(run: Run): Run {
+function maskedCutPath(fires: string, root: string): string {
+  const masked = (path: string, lineEnd: string): string => (path.startsWith(root) ? path : CUT_PATH_TOKEN) + lineEnd;
+  return fires.split("\n").map((line) => (detailFillsTheLimit(line) ? line.replace(CUT_PATH, (_match, path: string, lineEnd: string) => masked(path, lineEnd)) : line)).join("\n");
+}
+
+function detailFillsTheLimit(line: string): boolean {
+  const detail = detailOf(line);
+  return detail !== null && Array.from(detail).length === DETAIL_LIMIT;
+}
+
+function detailOf(line: string): string | null {
+  let record: unknown;
+  try {
+    record = JSON.parse(line);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    return null;
+  }
+  const detail = typeof record === "object" && record !== null ? (record as Record<string, unknown>)["detail"] : undefined;
+  return typeof detail === "string" ? detail : null;
+}
+
+function comparableRun(run: Run, root: string): Run {
   const fires = run.observation.files.get(FIRES_PATH);
   if (fires === undefined) return run;
-  const files = new Map(run.observation.files).set(FIRES_PATH, maskedDecodeDetail(fires));
+  const files = new Map(run.observation.files).set(FIRES_PATH, maskedCutPath(maskedDecodeDetail(fires), root));
   return { ...run, observation: { ...run.observation, files } };
 }
 
 export function goldenOf(run: Run, root: string): ObservedDelta {
-  return deltaOf(root, comparableRun(run));
+  return deltaOf(root, comparableRun(run, root));
 }
 
 export function judgeCase(expected: ObservedDelta, run: Run, root: string): string[] {
-  return differencesFromRecorded(expected, comparableRun(run), root, GOLDEN_LABEL);
+  return differencesFromRecorded(expected, comparableRun(run, root), root, GOLDEN_LABEL);
 }
 
 export function summary(report: ParityReport): string {

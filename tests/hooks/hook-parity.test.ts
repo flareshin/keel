@@ -23,9 +23,18 @@ const DENY = 2;
 const ROOT = "/root";
 const FIRES = "data/logs/keel-fires.jsonl";
 const DECODE_MASKED = "<JSON syntax error message>";
+const DETAIL_LIMIT = 200;
+const RECORDING_TEMP = "/private/var/folders/aa/recorder/T/keel-parity-1";
+const REPLAYING_TEMP = "/private/var/folders/bb/replayer/T/keel-parity-2";
+const TEMP_PATH = /\/var\/folders\//;
 
 function fire(detail: string): string {
   return `{"ts": "<ts>", "rule_id": "K2", "hook": "report-gate", "outcome": "error", "session": "s", "detail": "${detail}"}\n`;
+}
+
+function detailEndingIn(path: string, length: number): string {
+  const lead = "is a live checkout. Work in a worktree: `git -C ";
+  return (lead.padStart(length - path.length, "x") + path).slice(0, length);
 }
 
 function recorded(code: number, stderr: string, fires = "", overrides: Partial<ObservedDelta> = {}): ObservedDelta {
@@ -137,6 +146,26 @@ describe("hook parity comparison", () => {
   it("still compares a fire detail that is not a JSON syntax error", () => {
     const golden = recorded(0, "", fire("hook payload is not a JSON object"));
     assert.equal(judgeCase(golden, run(0, "", fire("hook payload is not an object")), ROOT).length, 1);
+  });
+
+  it("ignores the path that the detail limit cut off at the end of a fire detail, which names the temporary folder of the machine that ran", () => {
+    const golden = goldenOf(run(DENY, "", fire(detailEndingIn(RECORDING_TEMP, DETAIL_LIMIT))), ROOT);
+    assert.deepEqual(judgeCase(golden, run(DENY, "", fire(detailEndingIn(REPLAYING_TEMP, DETAIL_LIMIT))), ROOT), []);
+    assert.doesNotMatch(golden.set[FIRES] as string, TEMP_PATH);
+  });
+
+  it("still compares the words ahead of a cut-off path, and a path that ends a detail shorter than the limit", () => {
+    const golden = goldenOf(run(DENY, "", fire(detailEndingIn(RECORDING_TEMP, DETAIL_LIMIT))), ROOT);
+    const otherWords = detailEndingIn(REPLAYING_TEMP, DETAIL_LIMIT).replace("worktree", "checkout");
+    assert.equal(judgeCase(golden, run(DENY, "", fire(otherWords)), ROOT).length, 1);
+    const short = goldenOf(run(DENY, "", fire(detailEndingIn(RECORDING_TEMP, DETAIL_LIMIT - 1))), ROOT);
+    assert.equal(judgeCase(short, run(DENY, "", fire(detailEndingIn(REPLAYING_TEMP, DETAIL_LIMIT - 1))), ROOT).length, 1);
+  });
+
+  it("still compares a path under the sandbox root that the detail limit cut off past the root", () => {
+    const golden = goldenOf(run(DENY, "", fire(detailEndingIn(`${ROOT}/evidence/r.js`, DETAIL_LIMIT))), ROOT);
+    assert.match(golden.set[FIRES] as string, /\{\{ROOT\}\}\/evidence\/r\.js/);
+    assert.equal(judgeCase(golden, run(DENY, "", fire(detailEndingIn(`${ROOT}/evidence/q.js`, DETAIL_LIMIT))), ROOT).length, 1);
   });
 });
 
@@ -368,6 +397,10 @@ describe("hook parity sample over the recorded golden", () => {
     assert.ok(recordedCases.length >= MIN_RECORDED_CASES, `only ${recordedCases.length} cases recorded`);
     assert.ok(corpus.length - recordedCases.length >= MIN_ADVERSARIAL_CASES, `only ${corpus.length - recordedCases.length} adversarial cases`);
     for (const entry of [GIT_GUARD, HANDOFF, MODEL_ASSIGN, REPORT_GATE, ENV_PREFLIGHT]) assert.ok(recordedCases.some((testCase) => testCase.script === entry), `no case recorded for ${entry}`);
+  });
+
+  it("holds no temporary folder of the machine that recorded it in a golden outcome", () => {
+    for (const testCase of corpus) assert.doesNotMatch(JSON.stringify(testCase.expected), TEMP_PATH, testCase.test);
   });
 
   it("has a golden outcome for every case", () => {

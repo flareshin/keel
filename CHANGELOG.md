@@ -8,7 +8,7 @@ All notable changes to keel are recorded here. The format follows
 
 New entries go in `changelog.d/`, one file per branch; `changelog.d/README.md` explains the format.
 
-## [1.1.1] - 2026-11-18
+## [1.1.1] - 2026-11-17
 
 ### Added
 

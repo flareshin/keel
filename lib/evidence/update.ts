@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { resolveLinks } from '../../measure/lib/measurekit/files.ts';
 import { isJsonObject } from '../../measure/lib/measurekit/json.ts';
+import { TimeoutExpired } from '../../measure/lib/measurekit/timeout.ts';
 import * as gitcmd from './gitcmd.ts';
 import { stripEitherWay } from './text.ts';
 import { Refused } from './writers.ts';
@@ -22,10 +23,10 @@ export interface UpdateResult {
   after: CheckoutState;
 }
 
-export function updateCheckout(home: string): UpdateResult {
+export function updateCheckout(home: string, pullTimeoutSeconds = PULL_TIMEOUT_SECONDS): UpdateResult {
   requireCheckoutRoot(home);
   const before = checkoutState(home);
-  const pulled = gitcmd.runUnchecked(home, ['pull', '--ff-only'], { timeoutSeconds: PULL_TIMEOUT_SECONDS });
+  const pulled = pullFastForward(home, pullTimeoutSeconds);
   if (pulled.returncode !== 0) {
     throw new Refused(`git pull --ff-only in ${home} failed and left the checkout as it was: ${stripEitherWay(pulled.stderr.toString())}`);
   }
@@ -38,6 +39,15 @@ export function describeUpdate(result: UpdateResult): string {
   if (!result.updated) return `keel is already at the latest version, ${shown(result.after)}`;
   return `keel moved from ${shown(result.before)} to ${shown(result.after)}; `
     + 'start a new Claude Code session or run /reload-plugins to load it, then run bin/link --check';
+}
+
+function pullFastForward(home: string, timeoutSeconds: number): ReturnType<typeof gitcmd.runUnchecked> {
+  try {
+    return gitcmd.runUnchecked(home, ['pull', '--ff-only'], { timeoutSeconds });
+  } catch (error) {
+    if (!(error instanceof TimeoutExpired)) throw error;
+    throw new Refused(`git pull --ff-only in ${home} did not finish within ${timeoutSeconds} s and was stopped; the checkout is as it was unless git had begun moving it, so check it with git -C ${home} status`);
+  }
 }
 
 function requireCheckoutRoot(home: string): void {

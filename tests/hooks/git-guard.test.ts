@@ -970,6 +970,11 @@ describe("KeelCommandTest", () => {
   it("bash_deniedWithFHookskip_whenKeelUpdate", () => {
     assertDenied(guard("keel update"), "F-hookskip");
     assertDenied(guard("bash -c '~/.claude/bin/keel update'"), "F-hookskip");
+    assertDenied(guard("~/git/keel/bin/keel update"), "F-hookskip");
+    assertDenied(guard("node /x/bin/keel.ts update"), "F-hookskip");
+    assertDenied(guard('"${KEEL_DATA_DIR:-$HOME/.claude}/bin/keel" update'), "F-hookskip");
+    assertDenied(guard("python3 -I /x/bin/keel update"), "F-hookskip");
+    assertDenied(guard("KEEL_HOME=/x keel update"), "F-hookskip");
     assertFired(sandbox, "F-hookskip", "deny", "git-guard");
   });
 

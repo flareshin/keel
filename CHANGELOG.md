@@ -8,6 +8,25 @@ All notable changes to keel are recorded here. The format follows
 
 New entries go in `changelog.d/`, one file per branch; `changelog.d/README.md` explains the format.
 
+## [1.1.2] - 2026-11-17
+
+### Changed
+
+- ship-gate asks git once per direction, not once per review chain, how each chain's review base relates to the outgoing merge base, head or series boundary (`git rev-list --stdin`), so judging a push or a Stop no longer slows by one `git merge-base --is-ancestor` per live review base; when git cannot resolve a candidate, the per-pair query runs as before and reports its error.
+
+- `model-assign` has no ceiling. A dispatch that names `fable` is kept as written in default and auto mode; it was rewritten to `opus`, or denied in auto mode. The hook now knows only the names it acts on (`haiku`, `sonnet`, `opus`), so any other named model, including a tier released later, passes unchanged and needs no hook change. A name the hook does not know was rewritten to `sonnet`; it is now kept, and the hook does not check that it exists (the Agent tool on Claude Code 2.1.326 was observed rejecting a name outside its own list before the hook ran).
+- An agent file's `model:` pin above `opus` is kept; a `fable` pin was capped at `opus`. A judgment marker raises a `haiku`, `sonnet` or `inherit` pin to `opus` and keeps every other pin; it raised every pin that did not name `opus`.
+- Unchanged: C-dispatch still requires every dispatch to name a model and an effort, an omitted model still gets `sonnet` (`opus` with a judgment marker, `haiku` for Explore), and `haiku` on a type that can edit is still raised to `sonnet`.
+
+- ship-gate asks git once (`git cat-file --batch-check`) which blob and size every live tests or smoke evidence tree holds at up to 32 changed paths, and lists only the trees that could still cover the change: a tree is skipped when a changed path holds other content there that a comment deletion cannot explain (a path present on one side only, a file type comment cleanup does not judge, or a reviewed blob no larger than the current one). A push or Stop with no covering evidence no longer runs one `git ls-tree` per live evidence tree. Submodule paths, paths outside plain ASCII names and trees not named by a full id are left to the full check as before.
+
+### Fixed
+
+- `skills/descending-findings` named `keel measure weekly`, which the keel CLI refuses as an unknown command; it now names `measure/weekly`, the entry point that prints `recurring_findings`.
+- The `C-precheck` ledger row said review evidence expires 14 days after it is written; it expires after 30, as `lib/evidence/env.ts`, the README and DESIGN say.
+
+- report-gate: a SubagentStop that finds its turn-state file unreadable (cut short or not JSON) still passes as if the report had been handed back, and now logs a `K2` `warn` fire, `turn state unreadable; judged as handed back`, where it logged nothing.
+
 ## [1.1.1] - 2026-11-17
 
 ### Added

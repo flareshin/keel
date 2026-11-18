@@ -227,6 +227,7 @@ function* approvedPredecessors(outgoing: Outgoing, boundary: string, chains: Cha
 
 function stackableChains(outgoing: Outgoing, chains: Chain[]): Chain[] {
   const approved = { ...outgoing, needsApproval: true };
+  gitcmd.preloadAncestry(outgoing.repoRoot, reviewBases(chains), outgoing.head);
   return chains.filter((chain) => gitcmd.isAncestor(outgoing.repoRoot, chain.root.review_base, outgoing.head)
     && chainLevelReasons(approved, chain).length === 0);
 }
@@ -293,6 +294,10 @@ function* consecutivePredecessors(outgoing: Outgoing, boundary: string, chains: 
   }
 }
 
+function reviewBases(chains: Chain[]): string[] {
+  return chains.map((chain) => chain.root.review_base);
+}
+
 function byReviewBase(chains: Chain[]): Map<string, Chain[]> {
   const grouped = new Map<string, Chain[]>();
   for (const chain of chains) {
@@ -306,6 +311,7 @@ function bestChain(outgoing: Outgoing, entries: PathEntry[], chains: Chain[]): [
   if (chains.length === 0) {
     return [null, [{ ruleId: K1, text: `no review evidence for ${outgoing.repoKey}: run lens-review on this change` }]];
   }
+  gitcmd.preloadAncestry(outgoing.repoRoot, reviewBases(chains), outgoing.mergeBase);
   const judged = chains.map((chain): [Chain, Reason[]] => [chain, chainReasons(outgoing, chain, entries)]);
   const clean = judged.find(([, reasons]) => reasons.length === 0);
   if (clean) return [clean[0], []];

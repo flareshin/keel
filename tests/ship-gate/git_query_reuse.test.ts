@@ -114,6 +114,33 @@ test('isAncestor_asksGitOncePerCommitPair_butEveryTimeForRefNames', (t) => {
   assert.equal(count(calls, 'merge-base', '--is-ancestor'), 4);
 });
 
+test('preloadAncestry_answersEveryCandidateFromOneQuery_asPairQueriesWould', (t) => {
+  const { repo, base, head } = setUp(t);
+  const middle = repo.git('rev-parse', head + '^');
+  repo.branch('side', base);
+  const side = repo.commit({ 'side.ts': 'export const y = 1;\n' });
+  const calls = gitCalls(t);
+
+  gitcmd.preloadAncestry(repo.path, [base, middle, side, head], middle);
+  const answers = [base, middle, side, head].map((candidate) => gitcmd.isAncestor(repo.path, candidate, middle));
+
+  assert.deepEqual(answers, [true, true, false, false]);
+  assert.equal(count(calls, 'rev-list'), 1);
+  assert.equal(count(calls, 'merge-base', '--is-ancestor'), 0);
+});
+
+test('preloadAncestry_learnsNothing_whenACandidateIsNoCommitOfTheRepo', (t) => {
+  const { repo, base, head } = setUp(t);
+  const missing = 'f'.repeat(40);
+  const calls = gitCalls(t);
+
+  gitcmd.preloadAncestry(repo.path, [base, missing], head);
+
+  assert.equal(gitcmd.isAncestor(repo.path, base, head), true);
+  assert.throws(() => gitcmd.isAncestor(repo.path, missing, head), gitcmd.GitError);
+  assert.equal(count(calls, 'merge-base', '--is-ancestor'), 2);
+});
+
 test('matchesContent_readsNoBlob_forPathsCommentCleanupCannotJudge', (t) => {
   const { repo, firstTree, headTree } = setUp(t);
   const calls = gitCalls(t);
@@ -174,4 +201,26 @@ test('push_listsNoOlderTestsTree_whenTheNewestTestsEvidenceCoversTheChange', (t)
   const listed = shim.calls().filter((line) => line.includes(' ls-tree '));
   assert.ok(listed.length > 0, shim.calls().join('\n'));
   assert.deepEqual(listed.filter((line) => olderTrees.some((tree) => line.includes(tree))), []);
+});
+
+function ancestryQueriesOnPush(t: TestContext, earlierReviews: number): number {
+  const sandbox = new Sandbox(t);
+  const repo = sandbox.clone('acme', 'app');
+  repo.branch('feature');
+  for (let index = 0; index < earlierReviews; index++) {
+    const reviewBase = repo.commit({ [`src/old${index}.py`]: `print(${index})\n` });
+    sandbox.review(repo, { runId: `rv-old-${index}`, reviewBase });
+  }
+  repo.commit(LOGIC_WITH_TEST);
+  sandbox.fullBundle(repo);
+  const shim = gitLogShim(sandbox);
+
+  const run = sandbox.hook(sandbox.bashPayload(repo, 'git push origin feature'), shim.env);
+
+  assert.equal(run.rc, 0, run.stderr);
+  return shim.calls().filter((line) => line.includes(' merge-base --is-ancestor ')).length;
+}
+
+test('push_asksNoMoreAncestryQueries_whenMoreReviewChainsAreLive', (t) => {
+  assert.equal(ancestryQueriesOnPush(t, 6), ancestryQueriesOnPush(t, 2));
 });

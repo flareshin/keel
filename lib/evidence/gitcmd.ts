@@ -25,6 +25,7 @@ const HOME_PREFIX = '~';
 const TEMP_INDEX_RANDOM_BYTES = 6;
 const OTHER_LINE_BREAK = /[\r\v\f\x1c-\x1e\x85\u2028\u2029]/;
 const OBJECT_ID = /^[0-9a-f]{40}$/;
+const MIN_CANDIDATES_WORTH_ONE_QUERY = 2;
 const SNAPSHOT_COMMIT_MESSAGE = 'keel precheck snapshot';
 const SNAPSHOT_IDENTITY = {
   GIT_AUTHOR_NAME: 'keel precheck',
@@ -63,6 +64,7 @@ export interface GhDefault {
 export interface GitOptions {
   env?: NodeJS.ProcessEnv;
   timeoutSeconds?: number;
+  input?: string;
 }
 
 export function isDeleted(entry: PathEntry): boolean {
@@ -75,7 +77,7 @@ export function isGitlink(entry: PathEntry): boolean {
 
 export function runUnchecked(repo: string, args: string[], options: GitOptions = {}): Completed {
   return runCaptured(['git', '-C', repo, ...args],
-    { env: options.env, timeoutSeconds: options.timeoutSeconds ?? LOCAL_GIT_TIMEOUT_SECONDS });
+    { env: options.env, input: options.input, timeoutSeconds: options.timeoutSeconds ?? LOCAL_GIT_TIMEOUT_SECONDS });
 }
 
 export function runOrThrow(repo: string, args: string[], options: GitOptions = {}): Completed {
@@ -193,7 +195,7 @@ export function mergeBase(repo: string, left: string, right: string): string | n
 }
 
 export function isAncestor(repo: string, ancestor: string, descendant: string): boolean {
-  const key = [repo, ancestor, descendant].join('\0');
+  const key = ancestryKey(repo, ancestor, descendant);
   const known = ancestryAnswers.get(key);
   if (known !== undefined) return known;
   const completed = runUnchecked(repo, ['merge-base', '--is-ancestor', ancestor, descendant]);
@@ -203,6 +205,24 @@ export function isAncestor(repo: string, ancestor: string, descendant: string): 
   const answer = completed.returncode === 0;
   if (OBJECT_ID.test(ancestor) && OBJECT_ID.test(descendant)) ancestryAnswers.set(key, answer);
   return answer;
+}
+
+export function preloadAncestry(repo: string, candidates: string[], descendant: string): void {
+  if (!OBJECT_ID.test(descendant)) return;
+  const unanswered = [...new Set(candidates)]
+    .filter((candidate) => OBJECT_ID.test(candidate) && !ancestryAnswers.has(ancestryKey(repo, candidate, descendant)));
+  if (unanswered.length < MIN_CANDIDATES_WORTH_ONE_QUERY) return;
+  const args = ['rev-list', '--stdin'];
+  const completed = runUnchecked(repo, args, { input: [...unanswered, '^' + descendant, ''].join('\n') });
+  if (completed.returncode !== 0) return;
+  const outsideDescendant = new Set(gateLines(args, completed.stdout.toString()));
+  for (const candidate of unanswered) {
+    ancestryAnswers.set(ancestryKey(repo, candidate, descendant), !outsideDescendant.has(candidate));
+  }
+}
+
+function ancestryKey(repo: string, ancestor: string, descendant: string): string {
+  return [repo, ancestor, descendant].join('\0');
 }
 
 export function firstParentAncestors(repo: string, head: string, stop: string): string[] {

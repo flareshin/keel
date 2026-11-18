@@ -4,15 +4,14 @@ import { once } from 'node:events';
 import { closeSync, constants, mkdtempSync, openSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
-import { isFile, readUtf8, splitLines } from '../../measure/lib/measurekit/files.ts';
-import { parseJsonKeepingIntegers } from '../../measure/lib/measurekit/json.ts';
+import { readJsonl } from '../../measure/lib/measurekit/datafiles.ts';
 import * as env from './env.ts';
 import * as gitcmd from './gitcmd.ts';
 import * as registry from './registry.ts';
 import { printErrorLine, writeStdout } from './stdio.ts';
 import * as store from './store.ts';
 import { returnCode } from './subprocess.ts';
-import { SPACE_EITHER_WAY, isWhitespaceBothWays } from './text.ts';
+import { SPACE_EITHER_WAY } from './text.ts';
 import { Usage } from './writers.ts';
 
 const NOT_WORD_AFTER = '(?![\\p{L}\\p{N}_])';
@@ -90,14 +89,12 @@ export async function run(argv: string[], cwd: string): Promise<number> {
 }
 
 function earlierFailureOnSameTree(run: { repo_root: string; tree: string; cmd: string[] }): string | null {
-  const path = join(env.logsDir(), TESTS_LOG);
-  if (!isFile(path)) return null;
   const sameCommand = JSON.stringify(run.cmd);
-  const failure = splitLines(readUtf8(path))
-    .filter((line) => !isWhitespaceBothWays(line)).map((line) => parseJsonKeepingIntegers(line) as { [key: string]: any })
+  const failure = readJsonl(join(env.logsDir(), TESTS_LOG)).records
     .findLast((earlier) => earlier.repo_root === run.repo_root && earlier.tree === run.tree
-      && JSON.stringify(earlier.cmd) === sameCommand && earlier.count > 0 && earlier.exit !== 0);
-  return failure?.run_id ?? null;
+      && JSON.stringify(earlier.cmd) === sameCommand && typeof earlier.count === 'number' && earlier.count > 0
+      && earlier.exit !== 0 && typeof earlier.run_id === 'string');
+  return typeof failure?.run_id === 'string' ? failure.run_id : null;
 }
 
 function submoduleSnapshots(repoRoot: string): Map<string, string> {

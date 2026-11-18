@@ -127,6 +127,39 @@ describe('KeelTestCommandTest', () => {
     assert.doesNotMatch(passed.stderr, /\[K3\] warn/);
   });
 
+  test('keelTest_doesNotWarn_whenTheSameCommandPassedEarlierOnTheSameTree', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    const command = ['bash', '-c', "echo 'Ran 2 tests'"];
+    sandbox.keel(['test', '--', ...command], { cwd: repo.path });
+    const passed = sandbox.keel(['test', '--', ...command], { cwd: repo.path });
+    assert.equal(passed.rc, 0, passed.stderr);
+    assert.doesNotMatch(passed.stderr, /\[K3\] warn/);
+    assert.equal('passed_after_failure' in testLogRecords(sandbox).at(-1), false);
+  });
+
+  test('keelTest_doesNotWarn_whenADifferentCommandFailedOnTheSameTree', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    const failed = sandbox.keel(['test', '--', 'bash', '-c', "echo 'Ran 2 tests'; echo 'FAILED (failures=1)'; exit 1"], { cwd: repo.path });
+    const passed = sandbox.keel(['test', '--', 'bash', '-c', "echo 'Ran 2 tests'"], { cwd: repo.path });
+    assert.equal(failed.rc, 1, failed.stderr);
+    assert.equal(passed.rc, 0, passed.stderr);
+    assert.doesNotMatch(passed.stderr, /\[K3\] warn/);
+  });
+
+  test('keelTest_writesEvidenceAndTheLogRecord_whenTheTestsLogHasMalformedLines', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    mkdirSync(join(sandbox.data, 'logs'), { recursive: true });
+    writeFileSync(join(sandbox.data, 'logs', 'keel-tests.jsonl'), '{"run_id":"tr-x","cmd":["bash"\nnull\n');
+    const passed = sandbox.keel(['test', '--', 'bash', '-c', "echo 'Ran 2 tests'"], { cwd: repo.path });
+    assert.equal(passed.rc, 0, passed.stderr);
+    assert.match(summaryOf(passed).evidence_id, /^tests-/);
+    const lastLine = readFileSync(join(sandbox.data, 'logs', 'keel-tests.jsonl'), 'utf8').trim().split('\n').at(-1) as string;
+    assert.equal(JSON.parse(lastLine).run_id, summaryOf(passed).run_id);
+  });
+
   test('keelTest_writesNoEvidence_whenCommandChangesTheTree', (t) => {
     const sandbox = new Sandbox(t);
     const repo = sandbox.clone('acme', 'app');

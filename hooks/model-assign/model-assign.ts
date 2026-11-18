@@ -33,7 +33,7 @@ const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
 const OPUS = "opus";
 const SONNET = "sonnet";
 const HAIKU = "haiku";
-const ABOVE_BAND = "fable";
+const PINS_BELOW_OPUS: ReadonlyArray<string> = [HAIKU, SONNET, "inherit"];
 const AUTO_MODE = "auto";
 const AUTO_MODE_NEXT_STEP = "Then go on; this needs no user input.";
 const PLAIN_TOOL_LIST_RE = /^[\w*:.()-]+(?:[\s,]+[\w*:.()-]+)*$/u;
@@ -127,19 +127,17 @@ function briefHint(payload: Payload, toolArgs: Payload, agentType: string, fires
 }
 
 function resolveModel(model: string, readOnlyType: boolean, judgment: boolean): Choice | null {
-  const named = model.toLowerCase();
-  const tier = [OPUS, SONNET, HAIKU, ABOVE_BAND].find((candidate) => named.includes(candidate));
-  if (tier === OPUS || tier === SONNET) return null;
-  if (tier === ABOVE_BAND) return [OPUS, "ceiling"];
+  const named = model.trim().toLowerCase();
+  const namesHaiku = named.includes(HAIKU);
+  if (named !== "" && !namesHaiku) return null;
   if (judgment) return [OPUS, "judgment marker"];
-  if (tier === HAIKU) return readOnlyType ? null : [SONNET, "floor"];
+  if (namesHaiku) return readOnlyType ? null : [SONNET, "floor"];
   return readOnlyType ? [HAIKU, "read-only type"] : [SONNET, "default"];
 }
 
 function resolvePinnedModel(agentFile: AgentFile, judgment: boolean): Choice | null {
   const pinned = agentFile.model;
-  if (pinned.includes(ABOVE_BAND)) return [OPUS, "ceiling"];
-  if (judgment) return pinned.includes(OPUS) ? null : [OPUS, "judgment marker"];
+  if (judgment) return PINS_BELOW_OPUS.some((name) => pinned.includes(name)) ? [OPUS, "judgment marker"] : null;
   if (pinned.includes(HAIKU) && agentFile.canEdit) return [SONNET, "floor"];
   return null;
 }

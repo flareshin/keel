@@ -54,8 +54,25 @@ describe("AgentDispatchTest", () => {
     assert.equal(updated(dispatch({ model: "haiku", effort: "low" }))["model"], "sonnet");
   });
 
-  it("dispatch_capsFableToOpus_whenAgentDispatch", () => {
-    assert.equal(updated(dispatch({ model: "fable", effort: "high" }))["model"], "opus");
+  it("dispatch_passesUntouched_whenAgentDispatchNamesFable", () => {
+    const result = dispatch({ model: "fable", effort: "high" });
+    assert.equal(result.stdout, "");
+    assertFired(sandbox, "C-dispatch", "pass", "model-assign");
+  });
+
+  it("dispatch_passesUntouched_whenFableIsNamedAndBriefAsksForVerdict", () => {
+    assert.equal(dispatch({ model: "fable", effort: "high", prompt: "Return a VERDICT line." }).stdout, "");
+  });
+
+  for (const model of ["mythos", "claude-fable-5-2", "Fable"]) {
+    it(`dispatch_passesUntouched_whenTheNamedModelIs_${model}`, () => {
+      assert.equal(dispatch({ model, effort: "high" }).stdout, "");
+    });
+  }
+
+  it("dispatch_addsOnlyTheEffort_whenFableIsNamedWithoutOne", () => {
+    const result = updated(dispatch({ model: "fable" }));
+    assert.deepEqual([result["model"], result["effort"]], ["fable", "medium"]);
   });
 
   it("dispatch_passesUntouched_whenModelAndEffortInBand", () => {
@@ -159,9 +176,21 @@ describe("AgentDispatchTest", () => {
     assert.equal(updated(dispatch({ subagent_type: "log-reader", prompt: "Return a VERDICT line." }))["model"], "opus");
   });
 
-  it("dispatch_capsPinnedFableToOpus_whenAgentFilePinsFable", () => {
-    sandbox.write(join(sandbox.data, "agents", "lead.md"), "---\nname: lead\nmodel: fable\n---\nBody\n");
-    assert.equal(updated(dispatch({ subagent_type: "lead" }))["model"], "opus");
+  for (const pinned of ["fable", "mythos"]) {
+    it(`dispatch_keepsModelUnset_whenAgentFilePins_${pinned}`, () => {
+      sandbox.write(join(sandbox.data, "agents", "lead.md"), `---\nname: lead\nmodel: ${pinned}\n---\nBody\n`);
+      assert.equal(updated(dispatch({ subagent_type: "lead" }))["model"], undefined);
+    });
+
+    it(`dispatch_keepsModelUnset_whenAgentFilePins_${pinned}_andBriefAsksForVerdict`, () => {
+      sandbox.write(join(sandbox.data, "agents", "lead.md"), `---\nname: lead\nmodel: ${pinned}\n---\nBody\n`);
+      assert.equal(updated(dispatch({ subagent_type: "lead", prompt: "Return a VERDICT line." }))["model"], undefined);
+    });
+  }
+
+  it("dispatch_getsOpus_whenAgentFilePinsInheritAndBriefAsksForVerdict", () => {
+    sandbox.write(join(sandbox.data, "agents", "inheritor.md"), "---\nname: inheritor\ntools: Read, Grep\nmodel: inherit\n---\nBody\n");
+    assert.equal(updated(dispatch({ subagent_type: "inheritor", prompt: "Return a VERDICT line." }))["model"], "opus");
   });
 });
 
@@ -182,17 +211,28 @@ describe("AutoModeDispatchTest", () => {
     assertFired(sandbox, "C-dispatch", "deny", "model-assign");
   });
 
-  it("dispatch_namesBothValues_whenAutoModeAndOnlyTheModelIsOutOfBand", () => {
-    const result = dispatchInAutoMode({ model: "fable", effort: "high" });
+  it("dispatch_namesBothValues_whenAutoModeAndOnlyTheModelIsBelowTheFloor", () => {
+    const result = dispatchInAutoMode({ model: "haiku", effort: "high" });
     assert.equal(result.code, 2);
-    assert.match(result.stderr, /model: "opus", effort: "high"/);
+    assert.match(result.stderr, /model: "sonnet", effort: "high"/);
+  });
+
+  it("dispatch_passes_whenAutoModeAndAgentDispatchNamesFable", () => {
+    const result = dispatchInAutoMode({ model: "fable", effort: "high" });
+    assert.deepEqual([result.code, result.stdout, result.stderr], [0, "", ""]);
+  });
+
+  it("dispatch_keepsFableInTheValuesToSet_whenAutoModeAndEffortOmitted", () => {
+    const result = dispatchInAutoMode({ model: "fable" });
+    assert.equal(result.code, 2);
+    assert.match(result.stderr, /model: "fable", effort: "medium"/);
   });
 
   it("dispatch_namesOnlyTheModel_whenAutoModeAndAgentFilePinsEffort", () => {
     sandbox.write(join(sandbox.data, "agents", "worker-pinned.md"), "---\nname: worker-pinned\neffort: low\n---\nBody\n");
-    const result = dispatchInAutoMode({ subagent_type: "worker-pinned", model: "fable", effort: ["x"] });
+    const result = dispatchInAutoMode({ subagent_type: "worker-pinned", model: "haiku", effort: ["x"] });
     assert.equal(result.code, 2);
-    assert.match(result.stderr, /model: "opus"/);
+    assert.match(result.stderr, /model: "sonnet"/);
     assert.doesNotMatch(result.stderr, /effort:/);
   });
 

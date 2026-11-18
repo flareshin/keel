@@ -1,0 +1,5 @@
+### Changed
+
+- `model-assign` has no ceiling. A dispatch that names `fable` is kept as written in default and auto mode; it was rewritten to `opus`, or denied in auto mode. The hook now knows only the names it acts on (`haiku`, `sonnet`, `opus`), so any other named model, including a tier released later, passes unchanged and needs no hook change. A name the hook does not know was rewritten to `sonnet`; it is now kept, and the hook does not check that it exists (the Agent tool on Claude Code 2.1.326 was observed rejecting a name outside its own list before the hook ran).
+- An agent file's `model:` pin above `opus` is kept; a `fable` pin was capped at `opus`. A judgment marker raises a `haiku`, `sonnet` or `inherit` pin to `opus` and keeps every other pin; it raised every pin that did not name `opus`.
+- Unchanged: C-dispatch still requires every dispatch to name a model and an effort, an omitted model still gets `sonnet` (`opus` with a judgment marker, `haiku` for Explore), and `haiku` on a type that can edit is still raised to `sonnet`.

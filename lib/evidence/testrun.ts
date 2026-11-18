@@ -128,9 +128,12 @@ export function recognize(output: string): [count: number, framework: string | n
 
 export function recognizeFailures(output: string): number {
   let total = 0;
+  let surefireSummarized = false;
   for (const [name, pattern] of FAILURE_PATTERNS) {
+    if (name === 'passed' && surefireSummarized) continue;
     const counts = [...output.matchAll(pattern)].map((match) => failuresOf(name, match));
     if (counts.length === 0) continue;
+    surefireSummarized ||= name === 'surefire';
     total += name === 'surefire' ? Math.max(...counts) : counts.reduce((sum, item) => sum + item, 0);
   }
   const failedFiles = [...output.matchAll(FILE_FAILURES)].reduce((sum, match) => sum + Number(match[1]), 0);

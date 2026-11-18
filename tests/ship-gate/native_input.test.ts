@@ -363,6 +363,19 @@ describe('Codex rollouts and runner output at their edges', () => {
     for (const [output, expected] of cases) assert.equal(recognizeFailures(output), expected, output);
   });
 
+  test('a surefire summary is the only failure count of its run, so an application log line ending in N failed reports none', () => {
+    const logLine = '13:32:04.186 WARN  [main] c.b.h.service.MaintenanceInvoiceFiling   : [invoice-store] record 15 failed\n';
+    const cases: Array<[string, number]> = [
+      [`${logLine}[INFO] Tests run: 277, Failures: 0, Errors: 0, Skipped: 0\n[INFO] BUILD SUCCESS\n`, 0],
+      [`${logLine}[ERROR] Tests run: 277, Failures: 2, Errors: 0, Skipped: 0\n[INFO] BUILD FAILURE\n`, 2],
+      ['[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0\n===== 3 failed in 0.20s =====\n', 0],
+      ['[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0\n Test Files  1 failed | 3 passed (4)\n', 1],
+      ['[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0\n# pass 3\n# fail 2\n', 2],
+      [logLine, 15],
+    ];
+    for (const [output, expected] of cases) assert.equal(recognizeFailures(output), expected, output);
+  });
+
   test('a TAP diagnostic line that says N passed is not counted as passing tests', () => {
     const output = 'ok 1 - replays\n# parity hook: 587 cases, 0 mismatches (196 passed silently)\n    # nested: 3 passed\n# pass 1\n';
     assert.deepEqual(recognize(output), [1, 'tap']);

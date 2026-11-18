@@ -74,6 +74,20 @@ describe('KeelTestCommandTest', () => {
     assert.deepEqual([summaryOf(run).count, summaryOf(run).evidence_id], [0, null]);
   });
 
+  test('keelTest_writesEvidence_whenAGreenSurefireRunLogsAnApplicationLineEndingInNFailed', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    const output = [
+      '13:32:04.186 WARN  [main] c.b.h.service.MaintenanceInvoiceFiling   : [invoice-store] record 15 failed',
+      '[INFO] Tests run: 277, Failures: 0, Errors: 0, Skipped: 0',
+      '[INFO] BUILD SUCCESS',
+    ].join('\\n');
+    const run = sandbox.keel(['test', '--', 'bash', '-c', `printf '${output}\\n'`], { cwd: repo.path });
+    assert.equal(run.rc, 0, run.stderr);
+    assert.equal(summaryOf(run).count, 277);
+    assert.equal(sandbox.evidenceFiles('tests').length, 1);
+  });
+
   test('keelTest_writesEvidence_whenTheSummaryReportsZeroFailures', (t) => {
     const sandbox = new Sandbox(t);
     const repo = sandbox.clone('acme', 'app');

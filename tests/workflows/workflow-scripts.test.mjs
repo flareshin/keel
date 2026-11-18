@@ -72,7 +72,7 @@ test('reviewLenses_contractLensAsksForTheGradedSafetyFactInNotes_whenParsed', ()
   assert.ok(contract.prompt.includes(GRADED_SAFETY_FACT), contract.prompt)
 })
 
-const FLAKY_PATCH_RULE = 'Flaky-test patches are fake green too: a change that makes an intermittent test pass by adding a sleep, a fixed delay or a longer timeout, by wrapping it in a retry or turning retries on (a retry helper, jest.retryTimes, rerunFailingTestsCount, @RepeatedTest, a --retries flag), or by skipping, quarantining or deleting it, instead of removing what makes it nondeterministic. Waiting on the condition the test needs (polling until a state holds) removes the cause and is not a patch. Report such a patch with the nondeterminism it hides; when the change gives no root cause, the finding says to stop and ask the owner.'
+const FLAKY_PATCH_RULE = 'Flaky-test patches are fake green too: a change that makes an intermittent test pass by adding a sleep, a fixed delay or a longer timeout, by wrapping it in a retry or turning retries on (a retry helper, jest.retryTimes, rerunFailingTestsCount, @RetryingTest, pytest --reruns, a --retries flag), or by skipping, quarantining or deleting it, instead of removing what makes it nondeterministic. Waiting on the condition the test needs (polling until a state holds) removes the cause and is not a patch. Report such a patch with the nondeterminism it hides; when the change gives no root cause, the finding says to stop and ask the owner.'
 
 test('reviewLenses_testsLensReportsFlakyTestPatches_whenParsed', () => {
   const file = JSON.parse(readFileSync(join(WORKFLOWS_DIR, 'review-lenses.json'), 'utf8'))

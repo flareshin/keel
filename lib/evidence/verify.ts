@@ -18,6 +18,8 @@ import { NO_TEST_REASON } from './writers.ts';
 export const K1 = 'K1';
 export const K3 = 'K3';
 export const RISK = 'risk';
+const MIN_TREES_WORTH_ONE_QUERY = 2;
+const MAX_PROBED_PATHS = 32;
 const PASS = 'PASS';
 const LENS_REVIEW = 'lens-review';
 const GATE_SMOKE = 'smoke';
@@ -461,7 +463,27 @@ function noTestReason(chain: Chain | null): string | null {
 }
 
 function coveredBy(kind: string, outgoing: Outgoing, entries: PathEntry[]): boolean {
-  return store.load(kind, outgoing.repoKey).reverse().some((evidence) => covers(outgoing.repoRoot, evidence['tree'], entries));
+  const trees: string[] = store.load(kind, outgoing.repoKey).reverse().map((evidence) => evidence['tree']);
+  return treesThatMayCover(outgoing.repoRoot, trees, entries).some((tree) => covers(outgoing.repoRoot, tree, entries));
+}
+
+function treesThatMayCover(repoRoot: string, trees: string[], entries: PathEntry[]): string[] {
+  const probed = entries.filter((entry) => !gitcmd.isGitlink(entry) && gitcmd.isPlainPath(entry.path)).slice(0, MAX_PROBED_PATHS);
+  const probedTrees = [...new Set(trees)].filter(gitcmd.isObjectId);
+  if (probedTrees.length < MIN_TREES_WORTH_ONE_QUERY || probed.length === 0) return trees;
+  const current = currentObjects(repoRoot, probed);
+  const held = gitcmd.sizedObjectsAt(repoRoot, probedTrees.flatMap((tree) => probed.map((entry): [string, string] => [tree, entry.path])));
+  if (current === null || held === null) return trees;
+  const cannotCover = new Set(probedTrees.filter((_, treeIndex) => !probed.every((entry, entryIndex) =>
+    commentCleanup.couldMatchContent(entry.path, held[treeIndex * probed.length + entryIndex]!, current[entryIndex]!))));
+  return trees.filter((tree) => !cannotCover.has(tree));
+}
+
+function currentObjects(repoRoot: string, entries: PathEntry[]): Array<gitcmd.SizedObject | null> | null {
+  const kept = entries.filter((entry) => !gitcmd.isDeleted(entry));
+  const sized = gitcmd.sizedObjectsNamed(repoRoot, kept.map((entry) => entry.blob!));
+  if (sized === null || sized.includes(null)) return null;
+  return entries.map((entry) => (gitcmd.isDeleted(entry) ? null : sized[kept.indexOf(entry)]!));
 }
 
 function smokeReasons(outgoing: Outgoing, entries: PathEntry[]): Reason[] {

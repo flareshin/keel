@@ -1,0 +1,3 @@
+### Changed
+
+- ship-gate asks git once (`git cat-file --batch-check`) which blob and size every live tests or smoke evidence tree holds at up to 32 changed paths, and lists only the trees that could still cover the change: a tree is skipped when a changed path holds other content there that a comment deletion cannot explain (a path present on one side only, a file type comment cleanup does not judge, or a reviewed blob no larger than the current one). A push or Stop with no covering evidence no longer runs one `git ls-tree` per live evidence tree. Submodule paths, paths outside plain ASCII names and trees not named by a full id are left to the full check as before.

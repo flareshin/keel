@@ -30,6 +30,16 @@ export function matchesContent(repo: string, path: string, reviewed: Content | n
   return blobCommentDeletions(repo, path, reviewed[1]!, current[1]!);
 }
 
+export function couldMatchContent(path: string, reviewed: gitcmd.SizedObject | null, current: gitcmd.SizedObject | null): boolean {
+  if (reviewed === null || current === null) return reviewed === current;
+  if (reviewed.id === current.id) return true;
+  return hasSupportedSuffix(path) && sizesAllowCommentDeletions(reviewed.size, current.size);
+}
+
+function sizesAllowCommentDeletions(before: number, after: number): boolean {
+  return 0 < after && after < before && before <= MAX_SOURCE_BYTES;
+}
+
 function hasSupportedSuffix(path: string): boolean {
   return SUPPORTED_SUFFIXES.includes(posix.extname(path));
 }
@@ -52,7 +62,7 @@ function measureBlobs(repo: string, path: string, oldBlob: string, newBlob: stri
   try {
     const sizes = [oldBlob, newBlob].map((blob) => blobSize(repo, blob));
     if (sizes.some(Number.isNaN)) return false;
-    if (!(0 < sizes[1]! && sizes[1]! < sizes[0]! && sizes[0]! <= MAX_SOURCE_BYTES)) return false;
+    if (!sizesAllowCommentDeletions(sizes[0]!, sizes[1]!)) return false;
     const [before, after] = [oldBlob, newBlob].map((blob) => gitcmd.runOrThrow(repo, ['cat-file', 'blob', blob]).stdout);
     return onlyCommentDeletions(path, before!, after!);
   } catch (error) {
@@ -72,7 +82,7 @@ function blobSize(repo: string, blob: string): number {
 
 export function onlyCommentDeletions(path: string, before: Buffer, after: Buffer): boolean {
   const suffix = posix.extname(path);
-  if (!SUPPORTED_SUFFIXES.includes(suffix) || !(0 < after.length && after.length < before.length && before.length <= MAX_SOURCE_BYTES)) {
+  if (!SUPPORTED_SUFFIXES.includes(suffix) || !sizesAllowCommentDeletions(before.length, after.length)) {
     return false;
   }
   let old: string;

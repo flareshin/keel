@@ -51,7 +51,7 @@ bin/link --check
 - On an existing setup, `--write` refuses until you accept the settings it would replace; the refusal prints the command to run. See [`docs/install.md`](docs/install.md).
 - Start a new Claude Code session. Skills and workflows carry the `keel:` prefix, for example `/keel:lens-review`.
 
-keel is read from `~/git/keel` in place, so keep that checkout clean and move it only by merge or `git pull --ff-only`, then start new sessions. Once keel is installed, git-guard denies Claude Code writes in it.
+keel is read from `~/git/keel` in place, so keep that checkout clean and move it only by merge or `git pull --ff-only`, then start new sessions. To update, run `keel update` from your own terminal: it does that pull and prints the version it moved to. `claude plugin update keel@keel` only reads the folder, so it never fetches a newer keel. Once keel is installed, git-guard denies Claude Code writes in it.
 
 ## Gate a repo
 

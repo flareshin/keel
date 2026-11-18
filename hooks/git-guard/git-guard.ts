@@ -440,6 +440,9 @@ function checkKeelCommands(call: readonly Step[]): Violation[] {
     if (keelArgs[0] === "approve") {
       violations.push({ ruleId: K1, text: "`keel approve` is the user's act; it runs only in the user's own terminal." });
     }
+    if (keelArgs[0] === "update") {
+      violations.push({ ruleId: F_HOOKSKIP, text: `\`keel update\` ${INSTALL_CHANGE_TEXT}` });
+    }
     if (keelArgs[0] === "evidence" && keelArgs[1] === "write-review") {
       violations.push({ ruleId: K1, text: "Review evidence is written by report-gate from a reviewer's report, never by a command." });
     }

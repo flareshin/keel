@@ -75,6 +75,7 @@ const UNREADABLE_TEXT =
 const UNPARSED_EVENT = /"hook_event_name"\s*:\s*"(PreToolUse|SubagentStop)"/;
 const UNPARSED_HANDBACK_TOOL = /"tool_name"\s*:\s*"subagenthandback"/i;
 const UNPARSED_STOP_RETRY = /"stop_hook_active"\s*:\s*true/;
+const UNREADABLE_STATE_DETAIL = "turn state unreadable; judged as handed back";
 export const HANDBACK_TAIL = "Then hand back the corrected full report (SubagentHandback or your final message).";
 
 class TurnState {
@@ -82,6 +83,7 @@ class TurnState {
   flaggedPaths: string[] = [];
   evidenceDenied = false;
   handedBack = false;
+  unreadable = false;
 
   constructor(payload: Payload) {
     const sessionId = textField(payload, "session_id");
@@ -95,6 +97,7 @@ class TurnState {
     } catch (error) {
       if (!isReadFailure(error)) throw error;
       this.handedBack = true;
+      this.unreadable = true;
       return;
     }
     if (!isRecord(data)) throw new AttributeError(`'${pythonTypeName(data)}' object has no attribute 'get'`);
@@ -251,6 +254,7 @@ function judgeHandback(payload: Payload, fires: FireLog): number {
 function judgeStop(payload: Payload, fires: FireLog): number {
   const state = whileDeciding(() => new TurnState(payload));
   const handedBack = state.handedBack;
+  if (state.unreadable) fires.append("K2", "warn", { detail: UNREADABLE_STATE_DETAIL });
   if (state.evidenceDenied) {
     state.evidenceDenied = false;
     state.save();

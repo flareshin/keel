@@ -149,6 +149,23 @@ describe("HandbackEvidenceTest", () => {
 });
 
 describe("TurnStateFileTest", () => {
+  it("stop_passesAndWarns_whenStateFileIsCutShort", () => {
+    const state = join(sandbox.data, "state", "keel", "report-gate", `${SESSION_ID}-${AGENT_ID}.json`);
+    sandbox.write(state, '{"paths": [], "ev": fal');
+    const result = stop("Changed it.", { toolUses: [editIn(scope, "a.py")] });
+    assert.equal(result.code, 0);
+    assert.equal(result.stdout, "");
+    const [fire] = assertFired(sandbox, "K2", "warn", "report-gate");
+    assert.equal(fire?.detail, "turn state unreadable; judged as handed back");
+  });
+
+  it("stop_logsNoWarning_whenStateFileSaysTheReportWasHandedBack", () => {
+    const state = join(sandbox.data, "state", "keel", "report-gate", `${SESSION_ID}-${AGENT_ID}.json`);
+    sandbox.write(state, '{"paths": [], "ev": false, "hb": true}');
+    assert.equal(stop("Changed it.", { toolUses: [editIn(scope, "a.py")] }).code, 0);
+    assert.deepEqual(sandbox.fires().filter((fire) => fire.outcome === "warn"), []);
+  });
+
   it("handback_logsNoError_whenStateFileHoldsADictForPaths", () => {
     const state = join(sandbox.data, "state", "keel", "report-gate", `${SESSION_ID}-${AGENT_ID}.json`);
     sandbox.write(state, '{"paths": {"/old/a.py": 1, "/old/b.py": 2}, "ev": false, "hb": false}');

@@ -4,13 +4,15 @@ import { once } from 'node:events';
 import { closeSync, constants, mkdtempSync, openSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
+import { isFile, readUtf8, splitLines } from '../../measure/lib/measurekit/files.ts';
+import { parseJsonKeepingIntegers } from '../../measure/lib/measurekit/json.ts';
 import * as env from './env.ts';
 import * as gitcmd from './gitcmd.ts';
 import * as registry from './registry.ts';
 import { printErrorLine, writeStdout } from './stdio.ts';
 import * as store from './store.ts';
 import { returnCode } from './subprocess.ts';
-import { SPACE_EITHER_WAY } from './text.ts';
+import { SPACE_EITHER_WAY, isWhitespaceBothWays } from './text.ts';
 import { Usage } from './writers.ts';
 
 const NOT_WORD_AFTER = '(?![\\p{L}\\p{N}_])';
@@ -46,6 +48,7 @@ const CAT = '/bin/cat';
 const OUTPUT_STAYED_OPEN = 5;
 const DEFAULT_OUTPUT_IDLE_MS = 60_000;
 const MAX_TIMER_MS = 2_147_483_647;
+const TESTS_LOG = 'keel-tests.jsonl';
 
 export async function run(argv: string[], cwd: string): Promise<number> {
   if (argv.length === 0) throw new Usage('keel test -- <command…>');
@@ -70,8 +73,11 @@ export async function run(argv: string[], cwd: string): Promise<number> {
     evidenceId = evidence.evidence_id;
     submoduleEvidence = writeSubmoduleEvidence(testRecord, submodulesBefore, submodulesAfter);
   }
-  env.appendRecord('keel-tests.jsonl', {
+  const flakySignal = evidenceId === null ? null : earlierFailureOnSameTree(testRecord);
+  if (flakySignal !== null) printErrorLine(`keel test: [K3] warn: run ${flakySignal} of this command failed on this same tree and it passes now with no change; that is a flaky signal, so find what makes the test nondeterministic instead of rerunning it until it passes`);
+  env.appendRecord(TESTS_LOG, {
     ...testRecord, ts: env.iso(env.utcNow()), evidence_id: evidenceId, submodule_evidence: submoduleEvidence,
+    ...(flakySignal === null ? {} : { passed_after_failure: flakySignal }),
   });
   const failedDespiteExitZero = exitCode === 0 && failures > 0;
   if (failedDespiteExitZero) printErrorLine(`keel test: the output reports ${failures} failing test${failures === 1 ? '' : 's'} or test file${failures === 1 ? '' : 's'} although the command exited 0; no evidence written`);
@@ -81,6 +87,17 @@ export async function run(argv: string[], cwd: string): Promise<number> {
   if (failedDespiteExitZero) return FAILURES_RECOGNIZED;
   if (exitCode === 0 && count === 0) return NO_TESTS_RECOGNIZED;
   return exitCode;
+}
+
+function earlierFailureOnSameTree(run: { repo_root: string; tree: string; cmd: string[] }): string | null {
+  const path = join(env.logsDir(), TESTS_LOG);
+  if (!isFile(path)) return null;
+  const sameCommand = JSON.stringify(run.cmd);
+  const failure = splitLines(readUtf8(path))
+    .filter((line) => !isWhitespaceBothWays(line)).map((line) => parseJsonKeepingIntegers(line) as { [key: string]: any })
+    .findLast((earlier) => earlier.repo_root === run.repo_root && earlier.tree === run.tree
+      && JSON.stringify(earlier.cmd) === sameCommand && earlier.count > 0 && earlier.exit !== 0);
+  return failure?.run_id ?? null;
 }
 
 function submoduleSnapshots(repoRoot: string): Map<string, string> {

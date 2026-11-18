@@ -14,6 +14,15 @@ function summaryOf(run: Run): any {
   return JSON.parse(lastLine.slice(lastLine.indexOf(' ') + 1));
 }
 
+function failsOnceThenPasses(marker: string): string[] {
+  return ['bash', '-c', `if [ -e '${marker}' ]; then echo 'Ran 2 tests'; else touch '${marker}'; echo 'Ran 2 tests'; echo 'FAILED (failures=1)'; exit 1; fi`];
+}
+
+function testLogRecords(sandbox: Sandbox): any[] {
+  const log = readFileSync(join(sandbox.data, 'logs', 'keel-tests.jsonl'), 'utf8');
+  return log.trim().split('\n').map((line) => JSON.parse(line));
+}
+
 describe('KeelTestCommandTest', () => {
   test('keelTest_writesEvidence_whenGreenRunReportsTests', (t) => {
     const sandbox = new Sandbox(t);
@@ -80,6 +89,42 @@ describe('KeelTestCommandTest', () => {
     assert.equal(run.rc, 1);
     assert.doesNotMatch(run.stderr, /failing test/);
     assert.deepEqual(sandbox.evidenceFiles('tests'), []);
+  });
+
+  test('keelTest_warnsAndNamesTheFailedRun_whenTheSameCommandPassesOnTheTreeItFailedOn', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    const command = failsOnceThenPasses(join(sandbox.data, 'ran-once'));
+    const failed = sandbox.keel(['test', '--', ...command], { cwd: repo.path });
+    const passed = sandbox.keel(['test', '--', ...command], { cwd: repo.path });
+    assert.equal(failed.rc, 1, failed.stderr);
+    assert.equal(passed.rc, 0, passed.stderr);
+    assert.match(passed.stderr, new RegExp(`\\[K3\\] warn: run ${summaryOf(failed).run_id} of this command failed on this same tree`));
+    assert.equal(sandbox.evidenceFiles('tests').length, 1);
+    assert.equal(testLogRecords(sandbox).at(-1).passed_after_failure, summaryOf(failed).run_id);
+  });
+
+  test('keelTest_doesNotWarn_whenTheTreeChangedBetweenTheFailureAndThePass', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    const command = failsOnceThenPasses(join(sandbox.data, 'ran-once'));
+    sandbox.keel(['test', '--', ...command], { cwd: repo.path });
+    writeFileSync(join(repo.path, 'fix.txt'), 'fixed\n');
+    const passed = sandbox.keel(['test', '--', ...command], { cwd: repo.path });
+    assert.equal(passed.rc, 0, passed.stderr);
+    assert.doesNotMatch(passed.stderr, /\[K3\] warn/);
+    assert.equal('passed_after_failure' in testLogRecords(sandbox).at(-1), false);
+  });
+
+  test('keelTest_doesNotWarn_whenTheEarlierFailureRecognizedNoTests', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    const marker = join(sandbox.data, 'ran-once');
+    const command = ['bash', '-c', `if [ -e '${marker}' ]; then echo 'Ran 2 tests'; else touch '${marker}'; echo 'no JDK'; exit 1; fi`];
+    sandbox.keel(['test', '--', ...command], { cwd: repo.path });
+    const passed = sandbox.keel(['test', '--', ...command], { cwd: repo.path });
+    assert.equal(passed.rc, 0, passed.stderr);
+    assert.doesNotMatch(passed.stderr, /\[K3\] warn/);
   });
 
   test('keelTest_writesNoEvidence_whenCommandChangesTheTree', (t) => {

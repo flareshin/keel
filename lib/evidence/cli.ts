@@ -18,6 +18,7 @@ import * as registry from './registry.ts';
 import { printErrorLine, printLine, readStdinText } from './stdio.ts';
 import * as store from './store.ts';
 import * as testrun from './testrun.ts';
+import { describeUpdate, updateCheckout } from './update.ts';
 import * as verify from './verify.ts';
 import * as writers from './writers.ts';
 import type { JsonObject } from './writers.ts';
@@ -25,6 +26,7 @@ import type { JsonObject } from './writers.ts';
 const USAGE = `usage:
   keel test -- <command…>
   keel home                           (prints the keel checkout this CLI runs from)
+  keel update                         (fast-forwards that checkout from its remote; in your own terminal)
   keel approve <root_run_id> [--read]
   keel approve --promote <owner/repo> <sha>
   keel snapshot <repo>
@@ -80,7 +82,7 @@ export async function main(argv: string[]): Promise<number> {
 async function dispatch(argv: string[]): Promise<number> {
   if (argv.length === 0) throw new writers.Usage('missing command');
   const commands: Record<string, (rest: string[]) => number | Promise<number>> = {
-    test: runTest, home, approve, snapshot, evidence, review, precheck,
+    test: runTest, home, update, approve, snapshot, evidence, review, precheck,
   };
   const command = Object.hasOwn(commands, argv[0]!) ? commands[argv[0]!] : undefined;
   if (command === undefined) throw new writers.Usage('unknown command ' + argv[0]);
@@ -90,6 +92,14 @@ async function dispatch(argv: string[]): Promise<number> {
 function home(rest: string[]): number {
   if (rest.length > 0) throw new writers.Usage('keel home takes no arguments');
   printLine(env.keelHome());
+  return EXIT_OK;
+}
+
+function update(rest: string[]): number {
+  if (rest.length > 0) throw new writers.Usage('keel update takes no arguments');
+  const result = updateCheckout(env.keelHome());
+  seams.print({ ...result });
+  printErrorLine(describeUpdate(result));
   return EXIT_OK;
 }
 

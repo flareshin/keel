@@ -6,12 +6,14 @@ The README's [Install](../README.md#install) covers the common path. This page h
 
 `bin/link` and the plugin both read `~/git/keel` in place, so that checkout moves only by merge. Do not edit in it: once keel is installed, git-guard denies Claude Code writes there and asks for a worktree (`C-isolation`), and `bin/link --write` refuses to link from a linked worktree unless `--allow-worktree` is given.
 
-To update it:
+To update it, from your own terminal:
 
 ```bash
-git -C ~/git/keel pull --ff-only
+~/git/keel/bin/keel update
 ~/git/keel/bin/link --check
 ```
+
+`keel update` runs `git pull --ff-only` in the checkout the CLI runs from and prints the version and commit it moved from and to. It refuses, and leaves the checkout as it was, when the pull is no fast-forward (local commits, a checkout on no branch, no remote to reach). `claude plugin update keel@keel` cannot do this: the marketplace is that folder, so Claude Code reads whatever the folder holds and reports its version as the latest. git-guard denies `keel update` to an agent, as it does `bin/link --write`, because it changes the hooks every session runs. The full path works whether or not `~/.claude/bin` is on your `PATH`. A checkout older than the release that added `keel update` takes one `git -C ~/git/keel pull --ff-only` first.
 
 If `--check` reports drift, run `~/git/keel/bin/link --write` and check again. Start new Claude Code sessions after each update.
 

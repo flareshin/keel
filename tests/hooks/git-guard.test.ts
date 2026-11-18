@@ -967,6 +967,21 @@ describe("KeelCommandTest", () => {
     assertFired(sandbox, "K1", "deny", "git-guard");
   });
 
+  it("bash_deniedWithFHookskip_whenKeelUpdate", () => {
+    assertDenied(guard("keel update"), "F-hookskip");
+    assertDenied(guard("bash -c '~/.claude/bin/keel update'"), "F-hookskip");
+    assertDenied(guard("~/git/keel/bin/keel update"), "F-hookskip");
+    assertDenied(guard("node /x/bin/keel.ts update"), "F-hookskip");
+    assertDenied(guard('"${KEEL_DATA_DIR:-$HOME/.claude}/bin/keel" update'), "F-hookskip");
+    assertDenied(guard("python3 -I /x/bin/keel update"), "F-hookskip");
+    assertDenied(guard("KEEL_HOME=/x keel update"), "F-hookskip");
+    assertFired(sandbox, "F-hookskip", "deny", "git-guard");
+  });
+
+  it("bash_passes_whenKeelHome", () => {
+    assertPassed(guard("keel home"));
+  });
+
   it("bash_denied_whenKeelApproveByDataDirPath", () => {
     assertDenied(guard('"${KEEL_DATA_DIR:-$HOME/.claude}/bin/keel" approve rv-1 --read'), "K1");
   });

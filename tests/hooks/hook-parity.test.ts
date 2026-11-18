@@ -177,6 +177,7 @@ const RENAMED_NATIVE_TESTS: Record<string, string> = {
   commit_denied_whenIncludeWithPathspec: "commit_deniedWithTheSecret_whenIncludeWithPathspec",
   commit_denied_whenLongAllFlag: "commit_deniedWithTheSecret_whenLongAllFlag",
   commit_denied_whenPathspecOperand: "commit_deniedWithTheSecret_whenPathspecOperand",
+  dispatch_capsFableToOpus_whenAgentDispatch: "dispatch_passesUntouched_whenAgentDispatchNamesFable",
 };
 const GIT_GUARD_FIRE = '{"ts": "<ts>", "rule_id": "K1", "hook": "git-guard", "outcome": "deny", "session": "s", "detail": "reason"}\n';
 const BLOCKED = "[K1] git-guard: blocked\n- [K1] reason\n";

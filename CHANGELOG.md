@@ -8,6 +8,16 @@ All notable changes to keel are recorded here. The format follows
 
 New entries go in `changelog.d/`, one file per branch; `changelog.d/README.md` explains the format.
 
+## [1.1.3] - 2026-11-19
+
+### Added
+
+- `keel update`, run from your own terminal, fast-forwards the keel checkout from its remote (`git pull --ff-only`) and prints the version and commit it moved from and to. It refuses and leaves the checkout unchanged when the pull is no fast-forward. `claude plugin update keel@keel` reports the folder's own version as the latest, because the marketplace is that folder; `docs/install.md` now says so. git-guard denies `keel update` to an agent (`F-hookskip`).
+
+### Fixed
+
+- `keel test` no longer refuses a green Maven run with exit 6 because an application log line in the output ends in `N failed` (for example `[invoice-store] record 15 failed`). When a surefire `Tests run: …, Failures: F, Errors: E` summary is present it is the run's failure count, and the generic `N failed` pattern is not read. TAP `# fail N`, node spec `ℹ fail N`, unittest `FAILED (…)` and vitest `Test Files` / jest `Test Suites` failure lines still count beside it. Trade-off: a Maven build that also runs a runner known only by `N failed` (pytest, a jest `Tests:` line), with that runner's failing exit hidden behind exit 0, is no longer refused by that line.
+
 ## [1.1.2] - 2026-11-18
 
 ### Changed

@@ -1,3 +1,0 @@
-### Fixed
-
-- `keel test` no longer refuses a green Maven run with exit 6 because an application log line in the output ends in `N failed` (for example `[invoice-store] record 15 failed`). When a surefire `Tests run: …, Failures: F, Errors: E` summary is present it is the run's failure count, and the generic `N failed` pattern is not read. TAP `# fail N`, node spec `ℹ fail N`, unittest `FAILED (…)` and vitest `Test Files` / jest `Test Suites` failure lines still count beside it. Trade-off: a Maven build that also runs a runner known only by `N failed` (pytest, a jest `Tests:` line), with that runner's failing exit hidden behind exit 0, is no longer refused by that line.

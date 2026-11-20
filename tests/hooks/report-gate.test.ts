@@ -679,7 +679,7 @@ describe("SubagentStopTest", () => {
     delete payload["agent_type"];
     delete payload["agent_id"];
     sandbox.runHook(REPORT_GATE, { payload });
-    assert.match(contractMisses()[0]?.detail ?? "", /^contract-miss: missing agent_id,last_assistant_message; /);
+    assert.match(contractMisses()[0]?.detail ?? "", /^contract-miss: cc_version=9\.9\.9; missing agent_id,last_assistant_message; /);
   });
 
   it("stop_prefersThePayloadMessage_whenBothThePayloadAndTheTranscriptCarryFinalText", () => {

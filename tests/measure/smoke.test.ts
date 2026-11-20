@@ -173,7 +173,7 @@ describe("ledger checks", () => {
     keelRows(charterRow("K1"), ledgerRow("C-demo", { incidents: "-", grace_until: FUTURE }))
     harness.box.write("data/projects/p1/memory/slow-tests.md", "---\nname: slow-tests\nmetadata:\n  type: feedback\n---\n\nnote\n")
     harness.box.write("data/projects/p2/memory/no-mocks.md", "---\nname: no-mocks\ntype: feedback\n---\n\nnote\n")
-    harness.box.write("data/projects/p1/memory/feedback_named_project.md", "---\nname: x\nmetadata:\n  type: project\n---\n\nbody says type: feedback\n")
+    harness.box.write("data/projects/p1/memory/feedback_named_project.md", "---\nname: x\nmetadata:\n  type: project\n---\n\ntype: feedback\n")
     harness.box.write("data/projects/p1/memory/MEMORY.md", "- [Slow tests](slow-tests.md) — type: feedback\n")
     const item = assertStatus("rule-of-two", "keel", "GRACE", "incident candidates (feedback memories): slow-tests.md; no-mocks.md")
     assert.ok(!item.detail.includes("feedback_named_project.md"))

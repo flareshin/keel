@@ -108,6 +108,10 @@ describe('TestrunChaosTest', () => {
     assert.deepEqual(recognize('# 1 a, 2 passed in 1s'), [0, null]);
   });
 
+  test('aTapDiagnostic_endsAtACarriageReturn_soASummaryRedrawnAfterItCounts', () => {
+    assert.deepEqual(recognize('# 1 passed in 1s\r2 passed in 1s'), [2, 'passed']);
+  });
+
   test('aSummaryEndedByALoneCarriageReturn_stillCounts_asAProgressRedrawPrintsIt', () => {
     assert.deepEqual(recognize('4 passed in 0.12s\rredrawn progress'), [4, 'passed']);
     assert.equal(recognizeFailures('3 failed, 1 passed in 0.12s\rredrawn progress'), 3);

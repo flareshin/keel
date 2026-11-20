@@ -8,6 +8,12 @@ All notable changes to keel are recorded here. The format follows
 
 New entries go in `changelog.d/`, one file per branch; `changelog.d/README.md` explains the format.
 
+## [1.1.5] - 2026-11-20
+
+### Fixed
+
+- Smoke's rule-of-two note now picks a feedback memory by `type: feedback` in its frontmatter (top level or under `metadata`) instead of a `feedback_` file-name prefix. Claude Code's newer kebab-case memory names carry no prefix, so those feedback memories were left out of the incident-candidate list.
+
 ## [1.1.4] - 2026-11-20
 
 ### Added

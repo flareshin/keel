@@ -17,7 +17,12 @@ const LONG_LINES_WITH_NO_SUMMARY = {
   'equals signs': '= '.repeat(LONG_LINE_REPEATS),
   'jest heading': `Tests: ${'1 a, '.repeat(LONG_LINE_REPEATS)}`,
   'vitest heading': `Tests ${'1 a | '.repeat(LONG_LINE_REPEATS)}`,
+  'comma tallies before a pytest ending': `${'1 a, '.repeat(LONG_LINE_REPEATS)}x in 1s`,
+  'comma tallies before a jest ending': `${'1 a, '.repeat(LONG_LINE_REPEATS)}x, 5 total`,
+  'bar tallies before a vitest ending': `${'1 a | '.repeat(LONG_LINE_REPEATS)}x (3)`,
+  'a summary inside a TAP diagnostic': `# ${'1 a, '.repeat(LONG_LINE_REPEATS)}1 a in 1s`,
 };
+const LONG_TALLY_RUN_BEFORE_A_SUMMARY = `${'1 a, '.repeat(LONG_LINE_REPEATS)}x; 1 passed in 1s`;
 const OBSERVED_LOG_LINE = '13:32:04.186 WARN  [main] c.b.h.service.MaintenanceInvoiceFiling   : [invoice-store] record 15 failed';
 const AUTHORED_LOG_LINES = [
   'INFO sync: 3 failed retries recovered',
@@ -87,6 +92,24 @@ describe('TestrunChaosTest', () => {
       assert.deepEqual(read, [0, 0], shape);
       assert.ok(elapsedMs < LONG_LINE_BUDGET_MS, `${shape}: ${Math.round(elapsedMs)} ms`);
     }
+  });
+
+  test('aSummaryAfterALongTallyRun_isCountedInLinearTime', () => {
+    const started = performance.now();
+    const read = recognize(LONG_TALLY_RUN_BEFORE_A_SUMMARY);
+    const elapsedMs = performance.now() - started;
+    assert.deepEqual(read, [1, 'passed']);
+    assert.ok(elapsedMs < LONG_LINE_BUDGET_MS, `${Math.round(elapsedMs)} ms`);
+  });
+
+  test('aHashWithNoBlankAfterIt_hidesOnlyTheTallyRightAfterIt', () => {
+    assert.deepEqual(recognize('#1 passed in 1s'), [0, null]);
+    assert.deepEqual(recognize('#1 a, 2 passed in 1s'), [2, 'passed']);
+    assert.deepEqual(recognize('# 1 a, 2 passed in 1s'), [0, null]);
+  });
+
+  test('aTapDiagnostic_endsAtACarriageReturn_soASummaryRedrawnAfterItCounts', () => {
+    assert.deepEqual(recognize('# 1 passed in 1s\r2 passed in 1s'), [2, 'passed']);
   });
 
   test('aSummaryEndedByALoneCarriageReturn_stillCounts_asAProgressRedrawPrintsIt', () => {

@@ -89,6 +89,11 @@ describe('TestrunChaosTest', () => {
     }
   });
 
+  test('aSummaryEndedByALoneCarriageReturn_stillCounts_asAProgressRedrawPrintsIt', () => {
+    assert.deepEqual(recognize('4 passed in 0.12s\rredrawn progress'), [4, 'passed']);
+    assert.equal(recognizeFailures('3 failed, 1 passed in 0.12s\rredrawn progress'), 3);
+  });
+
   test('composedRunnerOutput_countsTests_wheneverAComposedRunPrintedAPassingCount', () => {
     const random = seededRandom(SEED);
     for (let round = 0; round < ROUNDS; round++) {

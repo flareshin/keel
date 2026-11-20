@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { afterEach, beforeEach, describe, it } from "node:test"
+import fs from "node:fs"
 import path from "node:path"
 
 import { FUTURE, PAST, MeasureSandbox, charterRow } from "./helpers.ts"
@@ -129,6 +130,35 @@ describe("weekly review_tokens", () => {
     givenReview("acme/svc", "e2", { rootRunId: "rv-e", since: "e1", verdict: "PASS", transcript: passed })
     givenReview("acme/svc", "e3", { rootRunId: "rv-e", since: "e1", verdict: "NEEDS_FIXES", transcript: newest })
     assert.deepEqual(weeklyReviewTokens().by_needs_fixes_rounds, { "2": { roots: 1, ...tokens(3, 0, 0, 700) } })
+  })
+
+  it("weekly_takesTheRoundsOfTheNewestChain_whenASupersededHeadHasMoreNeedsFixesLinks", () => {
+    const first = givenAgent("wf_e1", "report", [{ id: "m1", model: OPUS, usage: { input: 1, cacheCreation: 0, cacheRead: 0, output: 100 } }])
+    const superseded = givenAgent("wf_e2", "report", [{ id: "m2", model: OPUS, usage: { input: 1, cacheCreation: 0, cacheRead: 0, output: 200 } }])
+    const newest = givenAgent("wf_e3", "report", [{ id: "m3", model: OPUS, usage: { input: 1, cacheCreation: 0, cacheRead: 0, output: 400 } }])
+    givenReview("acme/svc", "e1", { rootRunId: "rv-e", verdict: "NEEDS_FIXES", transcript: first })
+    givenReview("acme/svc", "e2", { rootRunId: "rv-e", since: "e1", verdict: "NEEDS_FIXES", transcript: superseded })
+    givenReview("acme/svc", "e3", { rootRunId: "rv-e", since: "e1", verdict: "PASS", transcript: newest })
+    assert.deepEqual(weeklyReviewTokens().by_needs_fixes_rounds, { "1": { roots: 1, ...tokens(3, 0, 0, 700) } })
+  })
+
+  it("weekly_takesTheMostNeedsFixesRoundsOfAnyRepo_forARootReviewedInTwoRepos", () => {
+    const root = givenAgent("wf_root", "report", [{ id: "m1", model: OPUS, usage: { input: 1, cacheCreation: 0, cacheRead: 0, output: 100 } }])
+    const delta = givenAgent("wf_delta", "report", [{ id: "m2", model: OPUS, usage: { input: 1, cacheCreation: 0, cacheRead: 0, output: 200 } }])
+    givenReview("acme/a-fixed", "a1", { rootRunId: "rv-a", verdict: "NEEDS_FIXES", transcript: root })
+    givenReview("acme/a-fixed", "a2", { rootRunId: "rv-a", since: "a1", verdict: "PASS", transcript: delta })
+    givenReview("acme/z-clean", "z1", { rootRunId: "rv-a", verdict: "PASS", transcript: root })
+    assert.deepEqual(weeklyReviewTokens().by_needs_fixes_rounds, { "1": { roots: 1, ...tokens(2, 0, 0, 300) } })
+  })
+
+  it("weekly_leavesARootUnmeasured_whenAnAgentTranscriptOfItsRunCannotBeRead", () => {
+    const binary = givenAgent("wf_binary", "report", [{ id: "m1", model: OPUS, usage: { input: 1, cacheCreation: 0, cacheRead: 0, output: 100 } }])
+    fs.writeFileSync(path.join(box.data, "projects/p/s/subagents/workflows/wf_binary/agent-audit.jsonl"), Buffer.from([0x7b, 0x7d, 0x0a, 0xff, 0xfe, 0x0a]))
+    const folder = givenAgent("wf_folder", "report", [{ id: "m2", model: OPUS, usage: { input: 1, cacheCreation: 0, cacheRead: 0, output: 100 } }])
+    fs.mkdirSync(path.join(box.data, "projects/p/s/subagents/workflows/wf_folder/agent-audit.jsonl"))
+    givenReview("acme/app", "a1", { rootRunId: "rv-a", verdict: "PASS", transcript: binary })
+    givenReview("acme/app", "b1", { rootRunId: "rv-b", verdict: "PASS", transcript: folder })
+    assert.deepEqual(weeklyReviewTokens(), { roots: 0, unmeasured: 2, by_model: {}, by_needs_fixes_rounds: {} })
   })
 
   it("weekly_leavesARootUnmeasured_whenAnyOfItsReviewsHasNoWorkflowRunWithUsage", () => {

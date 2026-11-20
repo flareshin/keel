@@ -1,7 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 
-import { buildChains, countNeedsFixesLinks } from "../../../lib/evidence/chain.ts"
+import { buildChains, countNeedsFixesLinks, newestChainPerRoot } from "../../../lib/evidence/chain.ts"
 import * as store from "../../../lib/evidence/store.ts"
 import type { ReviewEvidence } from "../../../lib/evidence/store.ts"
 import { readJsonl } from "./datafiles.ts"
@@ -69,10 +69,7 @@ function liveRoots(): Root[] {
   const byRoot = new Map<string, Root>()
   for (const repoKey of store.repoKeys("review")) {
     const reviews = store.loadReviews(repoKey)
-    const newestChainSeen = new Set<string>()
-    for (const chain of buildChains(reviews)) {
-      if (newestChainSeen.has(chain.rootRunId)) continue
-      newestChainSeen.add(chain.rootRunId)
+    for (const chain of newestChainPerRoot(buildChains(reviews))) {
       const root = byRoot.get(chain.rootRunId) ?? { reviews: [], needsFixesRounds: 0 }
       root.needsFixesRounds = Math.max(root.needsFixesRounds, countNeedsFixesLinks(chain))
       byRoot.set(chain.rootRunId, root)

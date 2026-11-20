@@ -36,11 +36,15 @@ const TALLY = `[0-9]+ ${TALLY_WORDS}`;
 const TALLY_PARTS = new RegExp(`([0-9]+) (${TALLY_WORDS})`, 'gu');
 const LINE_END = '\\r?$';
 const PREFIXED = `${LINE_START}[^\\n]*?${NOT_WORD_BEFORE}${NOT_IN_TAP_DIAGNOSTIC}`;
-const RUNNER_SUMMARY_LINES = [
-  new RegExp(`${PREFIXED}(?:=+ )?(${TALLY}(?:, ${TALLY})*) in [0-9.]+s(?: \\([0-9:]+\\))?(?: =+)?${LINE_END}`, 'gmu'),
-  new RegExp(`${PREFIXED}Tests:[ \\t]+(${TALLY}(?:, ${TALLY})*), [0-9]+ total${LINE_END}`, 'gmu'),
-  new RegExp(`${PREFIXED}Tests[ \\t]+(${TALLY}(?: \\| ${TALLY})*) \\([0-9]+\\)${LINE_END}`, 'gmu'),
+const RUNNER_SUMMARY_SHAPES = [
+  { heading: '(?:=+ )?', tallies: `${TALLY}(?:, ${TALLY})*`, ending: ' in [0-9.]+s(?: \\([0-9:]+\\))?(?: =+)?' },
+  { heading: 'Tests:[ \\t]+', tallies: `${TALLY}(?:, ${TALLY})*`, ending: ', [0-9]+ total' },
+  { heading: 'Tests[ \\t]+', tallies: `${TALLY}(?: \\| ${TALLY})*`, ending: ' \\([0-9]+\\)' },
 ];
+const RUNNER_SUMMARY_LINES = RUNNER_SUMMARY_SHAPES.map((shape) => ({
+  ending: new RegExp(`${shape.ending}${LINE_END}`, 'mu'),
+  summary: new RegExp(`${PREFIXED}${shape.heading}(${shape.tallies})${shape.ending}${LINE_END}`, 'mu'),
+}));
 const SUMMARY_FRAMEWORK = 'passed';
 const PASSED_TALLIES = new Set(['passed']);
 const FAILED_TALLIES = new Set(['failed', 'error', 'errors']);
@@ -152,7 +156,9 @@ export function recognizeFailures(output: string): number {
 }
 
 function summaryTallies(output: string, outcomes: ReadonlySet<string>): number[] {
-  return RUNNER_SUMMARY_LINES.flatMap((pattern) => [...output.matchAll(pattern)])
+  const lines = output.split('\n');
+  return RUNNER_SUMMARY_LINES.flatMap(({ ending, summary }) => lines.filter((line) => ending.test(line)).map((line) => summary.exec(line)))
+    .filter((summary) => summary !== null)
     .flatMap((summary) => [...summary[1]!.matchAll(TALLY_PARTS)])
     .filter((tally) => outcomes.has(tally[2]!.split(' ').at(-1)!))
     .map((tally) => Number(tally[1]));

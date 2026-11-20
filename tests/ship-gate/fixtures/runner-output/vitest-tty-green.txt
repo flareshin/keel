@@ -1,0 +1,10 @@
+^D[?25l
+ RUN  v4.1.11 /work/app/vt
+
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  00:00:00
+   Duration  459ms (transform 27ms, setup 0ms, import 42ms, tests 5ms, environment 0ms)
+
+[?25h

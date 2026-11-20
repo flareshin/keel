@@ -1,0 +1,25 @@
+PASS ./green.test.js
+  ● Console
+
+    console.log green.test.js:1
+      sync: 3 failed retries recovered
+
+FAIL ./red.test.js
+  ● b
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 2
+    Received: 1
+
+    > 1 | test('a', () => expect(1).toBe(1)); test('b', () => expect(1).toBe(2));
+        |                                                               ^
+      2 |
+
+      at Object.<anonymous> (red.test.js:1:63)
+
+Test Suites: 1 failed, 1 passed, 2 total
+Tests:       1 failed, 3 passed, 4 total
+Snapshots:   0 total
+Time:        1.437s
+Ran all test suites.

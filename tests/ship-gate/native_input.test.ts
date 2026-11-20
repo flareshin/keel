@@ -363,15 +363,15 @@ describe('Codex rollouts and runner output at their edges', () => {
     for (const [output, expected] of cases) assert.equal(recognizeFailures(output), expected, output);
   });
 
-  test('a surefire summary is the only failure count of its run, so an application log line ending in N failed reports none', () => {
+  test('an application log line ending in N failed reports no failure, and a pytest summary beside a surefire one still reports its failures', () => {
     const logLine = '13:32:04.186 WARN  [main] c.b.h.service.MaintenanceInvoiceFiling   : [invoice-store] record 15 failed\n';
     const cases: Array<[string, number]> = [
       [`${logLine}[INFO] Tests run: 277, Failures: 0, Errors: 0, Skipped: 0\n[INFO] BUILD SUCCESS\n`, 0],
       [`${logLine}[ERROR] Tests run: 277, Failures: 2, Errors: 0, Skipped: 0\n[INFO] BUILD FAILURE\n`, 2],
-      ['[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0\n===== 3 failed in 0.20s =====\n', 0],
+      ['[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0\n===== 3 failed in 0.20s =====\n', 3],
       ['[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0\n Test Files  1 failed | 3 passed (4)\n', 1],
       ['[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0\n# pass 3\n# fail 2\n', 2],
-      [logLine, 15],
+      [logLine, 0],
     ];
     for (const [output, expected] of cases) assert.equal(recognizeFailures(output), expected, output);
   });
@@ -383,5 +383,34 @@ describe('Codex rollouts and runner output at their edges', () => {
 
   test('a runner summary relayed under a BuildKit step prefix is still counted', () => {
     assert.deepEqual(recognize('#12 0.532 ===== 5 passed in 0.12s =====\n'), [5, 'passed']);
+  });
+
+  test('a jest or vitest summary under a task prefix is counted, and one in a TAP diagnostic or glued to a word is not', () => {
+    const cases: Array<[string, [number, number]]> = [
+      ['app:test:       Tests  1 failed | 2 passed (3)\n', [2, 1]],
+      ['#7 1.204 Tests:       1 failed, 3 passed, 4 total\n', [3, 1]],
+      ['# Tests  3 failed | 1 passed (4)\n', [0, 0]],
+      ['fooTests  3 failed | 1 passed (4)\n', [0, 0]],
+    ];
+    for (const [output, expected] of cases) assert.deepEqual([recognize(output)[0], recognizeFailures(output)], expected, output);
+  });
+
+  test('a pytest summary that reports an error reports it as a failure', () => {
+    assert.equal(recognizeFailures('========================== 2 passed, 1 error in 0.03s ==========================\n'), 1);
+    assert.equal(recognizeFailures('3 passed, 2 errors in 0.10s\n'), 2);
+  });
+
+  test('a pytest summary is read with a long-run duration, a several-word plugin tally or a task prefix, and not inside a TAP diagnostic or glued to a word', () => {
+    const cases: Array<[string, [number, number]]> = [
+      ['===== 1 failed, 2 passed in 65.32s (0:01:05) =====\n', [2, 1]],
+      ['================ 1 failed, 1 passed, 2 subtests failed in 0.03s ================\nTests:       2 passed, 2 total\n', [3, 3]],
+      ['===== 2 passed, 1 subtests passed in 0.03s =====\n', [3, 0]],
+      ['# ===== 3 failed in 0.20s =====\n', [0, 0]],
+      ['app-1  | 1 failed, 2 passed in 0.10s\n', [2, 1]],
+      ['app:test: 3 passed in 0.10s\n', [3, 0]],
+      ['x1 failed in 0.10s\n', [0, 0]],
+      ['# 1 failed in 0.10s\n', [0, 0]],
+    ];
+    for (const [output, expected] of cases) assert.deepEqual([recognize(output)[0], recognizeFailures(output)], expected, output);
   });
 });

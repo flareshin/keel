@@ -1,0 +1,30 @@
+✔ a (0.348666ms)
+✖ b (0.42125ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 1
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 558.663792
+
+✖ failing tests:
+
+test at red.test.mjs:2:22
+✖ b (0.42125ms)
+  AssertionError [ERR_ASSERTION]: 1 == 2
+      at TestContext.<anonymous> (file:///work/app/node/red.test.mjs:2:45)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 2,
+    operator: '==',
+    diff: 'simple'
+  }

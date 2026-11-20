@@ -99,7 +99,7 @@ describe('KeelTestCommandTest', () => {
   test('keelTest_keepsTheCommandsExitCode_whenItFailsAndReportsFailures', (t) => {
     const sandbox = new Sandbox(t);
     const repo = sandbox.clone('acme', 'app');
-    const run = sandbox.keel(['test', '--', 'bash', '-c', "echo '1 failed, 2 passed'; exit 1"], { cwd: repo.path });
+    const run = sandbox.keel(['test', '--', 'bash', '-c', "echo '1 failed, 2 passed in 0.10s'; exit 1"], { cwd: repo.path });
     assert.equal(run.rc, 1);
     assert.doesNotMatch(run.stderr, /failing test/);
     assert.deepEqual(sandbox.evidenceFiles('tests'), []);
@@ -177,7 +177,7 @@ describe('KeelTestCommandTest', () => {
   test('keelTest_writesNoEvidence_whenCommandChangesTheTree', (t) => {
     const sandbox = new Sandbox(t);
     const repo = sandbox.clone('acme', 'app');
-    const run = sandbox.keel(['test', '--', 'bash', '-c', "echo changed > generated.txt; echo '4 passed'"], { cwd: repo.path });
+    const run = sandbox.keel(['test', '--', 'bash', '-c', "echo changed > generated.txt; echo '4 passed in 0.10s'"], { cwd: repo.path });
     assert.equal(run.rc, 0);
     assert.deepEqual(sandbox.evidenceFiles('tests'), []);
   });
@@ -200,7 +200,7 @@ describe('KeelTestCommandTest', () => {
   test('keelTest_writesNoSubmoduleEvidence_whenCommandChangesTheSubmodule', (t) => {
     const sandbox = new Sandbox(t);
     const [parent] = sandbox.cloneWithSubmodule();
-    const run = sandbox.keel(['test', '--', 'bash', '-c', "echo changed > lib/generated.txt; echo '4 passed'"], { cwd: parent.path });
+    const run = sandbox.keel(['test', '--', 'bash', '-c', "echo changed > lib/generated.txt; echo '4 passed in 0.10s'"], { cwd: parent.path });
     assert.equal(run.rc, 0, run.stderr);
     assert.deepEqual(sandbox.evidenceFiles('tests').map((path) => readJson(path).repo), ['acme/platform']);
   });

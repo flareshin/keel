@@ -1,0 +1,12 @@
+PASS ./green.test.js
+  ✓ a (49ms)
+  ✓ b
+
+  console.log green.test.js:1
+    sync: 3 failed retries recovered
+
+Test Suites: 1 passed, 1 total
+Tests:       2 passed, 2 total
+Snapshots:   0 total
+Time:        0.934s
+Ran all test suites matching /green/i.

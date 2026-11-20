@@ -132,7 +132,7 @@ describe("HarnessContractFixtureTest", () => {
 
   it("fixtures_eachCarryOneHarnessVersion", () => {
     assert.deepEqual([...FIXTURES.values()].map((recorded) => [recorded.name, recorded.version]), [
-      ["reporter-final-text", "2.1.309"], ["reporter-handback", "2.1.321"], ["worker-edits-final-text", "2.1.321"], ["worker-edits-handback", "2.1.325"],
+      ["reporter-final-text", "2.1.309"], ["reporter-handback", "2.1.326"], ["worker-edits-final-text", "2.1.321"], ["worker-edits-handback", "2.1.325"],
     ]);
   });
 

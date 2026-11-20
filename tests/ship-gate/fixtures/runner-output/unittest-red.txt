@@ -1,0 +1,15 @@
+F..
+======================================================================
+FAIL: test_bad (test_mix.T.test_bad)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/work/app/py/test_mix.py", line 8, in test_bad
+    def test_bad(self): self.assertEqual(1, 2)
+                        ~~~~~~~~~~~~~~~~^^^^^^
+AssertionError: 1 != 2
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.001s
+
+FAILED (failures=1)
+INFO sync: 3 failed retries recovered

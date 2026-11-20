@@ -1,0 +1,9 @@
+### Fixed
+
+- `keel test` reads `N passed` and `N failed` only from a runner summary line: pytest's `… in 0.12s` line (with or without its `=====` banner), jest's `Tests: … , N total` line and vitest's `Tests … (N)` line, with both numbers taken from that same line; a jest or vitest line may carry a task prefix such as `app:test:` or a BuildKit step, and a pytest line's `N error`/`N errors` counts as failures. Before, any line ending in `N passed` or `N failed` counted, so an application log line such as `batch: 12 passed, 2 failed upstream` added tests or refused a green run with exit 6, and a vitest per-file line `(2 tests | 1 failed)` counted its failure twice.
+- A failing pytest, jest or vitest summary beside a green Maven `Tests run:` summary in one exit-0 output is refused again with exit 6. 1.1.3 had stopped reading `N failed` whenever a surefire summary was present, so a failing runner whose exit a pipe hid passed.
+- `tests/ship-gate/testrun_chaos.test.ts` composes 20 captured runner outputs (jest, node spec and TAP, pytest, surefire, unittest, vitest, green and red) with log lines for 3,000 seeded rounds and checks that a round with a failing run reports a failure, a round of green runs reports none, and a round with a passing count counts tests.
+
+### Upgrading
+
+- A runner that prints `N passed` in no pytest, jest or vitest summary shape is no longer counted: Playwright's `5 passed (3.2s)`, cargo's `test result: ok. 5 passed; 0 failed` and a bare `echo '4 passed'`. Such a run now exits 4 with no evidence; wrap it in a runner keel recognizes, or report its summary in one of the shapes above. The 400 recorded `recognize` outcomes in `tests/fixtures/evidence/helper-outcomes.json` were re-recorded: 124 changed, every one through the `N passed` rule alone (the surefire, unittest, TAP and node spec counts are unchanged on all 400).

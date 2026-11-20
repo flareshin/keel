@@ -24,17 +24,24 @@ export const COUNT_PATTERNS: Array<[name: string, pattern: RegExp]> = [
   ['unittest', new RegExp(`${LINE_START}Ran ([0-9]+) tests?${NOT_WORD_AFTER}`, 'gu')],
   ['tap', new RegExp(`${LINE_START}# pass ([0-9]+)`, 'gu')],
   ['spec', new RegExp(`${LINE_START}\u2139 pass ([0-9]+)${NOT_WORD_AFTER}`, 'gu')],
-  ['passed', new RegExp(
-    `${LINE_START}(?!${TEST_FILES_LINE})[^\\n]*?${NOT_WORD_BEFORE}${NOT_IN_TAP_DIAGNOSTIC}([0-9]+) passed${NOT_WORD_AFTER}`, 'gu')],
 ];
 const FAILURE_PATTERNS: Array<[name: string, pattern: RegExp]> = [
   ['surefire', /Tests run: [0-9]+, Failures: ([0-9]+), Errors: ([0-9]+)/gu],
   ['unittest', new RegExp(`${LINE_START}FAILED \\((?:failures=([0-9]+))?(?:, )?(?:errors=([0-9]+))?`, 'gu')],
   ['tap', new RegExp(`${LINE_START}# fail ([0-9]+)${NOT_WORD_AFTER}`, 'gu')],
   ['spec', new RegExp(`${LINE_START}\u2139 fail ([0-9]+)${NOT_WORD_AFTER}`, 'gu')],
-  ['passed', new RegExp(
-    `${LINE_START}(?!${TEST_FILES_LINE})[^\\n]*?${NOT_WORD_BEFORE}${NOT_IN_TAP_DIAGNOSTIC}([0-9]+) failed${NOT_WORD_AFTER}`, 'gu')],
 ];
+const TALLY = '[0-9]+ [a-z]+';
+const LINE_END = '\\r?$';
+const PREFIXED = `${LINE_START}[^\\n]*?${NOT_WORD_BEFORE}${NOT_IN_TAP_DIAGNOSTIC}`;
+const RUNNER_SUMMARY_LINES = [
+  new RegExp(`${LINE_START}(?:[^\\n]*?${NOT_IN_TAP_DIAGNOSTIC}=+ )?(${TALLY}(?:, ${TALLY})*) in [0-9.]+s(?: \\([0-9:]+\\))?(?: =+)?${LINE_END}`, 'gmu'),
+  new RegExp(`${PREFIXED}Tests:[ \\t]+(${TALLY}(?:, ${TALLY})*), [0-9]+ total${LINE_END}`, 'gmu'),
+  new RegExp(`${PREFIXED}Tests[ \\t]+(${TALLY}(?: \\| ${TALLY})*) \\([0-9]+\\)${LINE_END}`, 'gmu'),
+];
+const SUMMARY_FRAMEWORK = 'passed';
+const PASSED_TALLIES = new Set(['passed']);
+const FAILED_TALLIES = new Set(['failed', 'error', 'errors']);
 const FILE_FAILURES = new RegExp(
   `${LINE_START}${TEST_FILES_LINE}[^\\n]*?${NOT_WORD_BEFORE}([0-9]+) failed${NOT_WORD_AFTER}`, 'gu');
 export const NO_TESTS_RECOGNIZED = 4;
@@ -123,21 +130,30 @@ export function recognize(output: string): [count: number, framework: string | n
     framework ??= name;
     total += name === 'surefire' ? counts.at(-1)! : counts.reduce((sum, item) => sum + item, 0);
   }
+  const passed = summaryTallies(output, PASSED_TALLIES);
+  if (passed.length > 0) {
+    framework ??= SUMMARY_FRAMEWORK;
+    total += passed.reduce((sum, item) => sum + item, 0);
+  }
   return [total, framework];
 }
 
 export function recognizeFailures(output: string): number {
-  let total = 0;
-  let surefireSummarized = false;
+  let total = summaryTallies(output, FAILED_TALLIES).reduce((sum, item) => sum + item, 0);
   for (const [name, pattern] of FAILURE_PATTERNS) {
-    if (name === 'passed' && surefireSummarized) continue;
     const counts = [...output.matchAll(pattern)].map((match) => failuresOf(name, match));
     if (counts.length === 0) continue;
-    surefireSummarized ||= name === 'surefire';
     total += name === 'surefire' ? Math.max(...counts) : counts.reduce((sum, item) => sum + item, 0);
   }
   const failedFiles = [...output.matchAll(FILE_FAILURES)].reduce((sum, match) => sum + Number(match[1]), 0);
   return Math.max(total, failedFiles);
+}
+
+function summaryTallies(output: string, outcomes: ReadonlySet<string>): number[] {
+  return RUNNER_SUMMARY_LINES.flatMap((pattern) => [...output.matchAll(pattern)])
+    .flatMap((summary) => [...summary[1]!.matchAll(/([0-9]+) ([a-z]+)/gu)])
+    .filter((tally) => outcomes.has(tally[2]!))
+    .map((tally) => Number(tally[1]));
 }
 
 function failuresOf(framework: string, match: RegExpMatchArray): number {

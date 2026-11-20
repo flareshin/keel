@@ -1,0 +1,23 @@
+{
+  "jest-green.txt": { "runner": "jest 24.9.0", "count": 2, "failures": 0, "noise": "authored" },
+  "jest-red.txt": { "runner": "jest 24.9.0", "count": 3, "failures": 1, "noise": "authored" },
+  "node-spec-green.txt": { "runner": "node --test spec", "count": 2, "failures": 0, "noise": "authored" },
+  "node-spec-red-noise.txt": { "runner": "node --test spec", "count": 1, "failures": 1, "noise": "authored" },
+  "node-spec-red.txt": { "runner": "node --test spec", "count": 1, "failures": 1, "noise": "none" },
+  "node-tap-green.txt": { "runner": "node --test tap", "count": 2, "failures": 0, "noise": "authored" },
+  "node-tap-red.txt": { "runner": "node --test tap", "count": 1, "failures": 1, "noise": "none" },
+  "pytest-error.txt": { "runner": "pytest 8.3.4", "count": 2, "failures": 1, "noise": "none" },
+  "pytest-green.txt": { "runner": "pytest 8.3.4", "count": 2, "failures": 0, "noise": "none" },
+  "pytest-q-red.txt": { "runner": "pytest 8.3.4 -q", "count": 2, "failures": 1, "noise": "none" },
+  "pytest-red.txt": { "runner": "pytest 8.3.4", "count": 2, "failures": 1, "noise": "none" },
+  "pytest-s-green.txt": { "runner": "pytest 8.3.4 -s", "count": 2, "failures": 0, "noise": "authored" },
+  "pytest-zero.txt": { "runner": "pytest 8.3.4", "count": 0, "failures": 0, "noise": "none" },
+  "surefire-green.txt": { "runner": "maven 3.10.0 surefire 3.2.5", "count": 2, "failures": 0, "noise": "authored" },
+  "surefire-q-green.txt": { "runner": "maven 3.10.0 surefire 3.2.5 -q", "count": 0, "failures": 0, "noise": "authored" },
+  "surefire-red.txt": { "runner": "maven 3.10.0 surefire 3.2.5", "count": 4, "failures": 1, "noise": "authored" },
+  "unittest-green.txt": { "runner": "python 3.11 unittest", "count": 2, "failures": 0, "noise": "authored" },
+  "unittest-red.txt": { "runner": "python 3.11 unittest", "count": 3, "failures": 1, "noise": "authored" },
+  "vitest-green.txt": { "runner": "vitest 4.1.11", "count": 2, "failures": 0, "noise": "none" },
+  "vitest-red.txt": { "runner": "vitest 4.1.11", "count": 3, "failures": 1, "noise": "none" },
+  "vitest-tty-green.txt": { "runner": "vitest 4.1.11 under a pty", "count": 2, "failures": 0, "noise": "none" }
+}

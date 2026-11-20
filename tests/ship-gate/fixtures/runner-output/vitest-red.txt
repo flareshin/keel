@@ -1,0 +1,31 @@
+
+ RUN  v4.1.11 /work/app/vt
+
+ ❯ red.test.js (2 tests | 1 failed) 32ms
+   × b 29ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  red.test.js > b
+AssertionError: expected 1 to be 2 // Object.is equality
+
+- Expected
++ Received
+
+- 2
++ 1
+
+ ❯ red.test.js:2:63
+      1| import { test, expect } from 'vitest';
+      2| test('a', () => expect(1).toBe(1)); test('b', () => expect(1).toBe(2));
+       |                                                               ^
+      3|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 3 passed (4)
+   Start at  00:00:00
+   Duration  342ms (transform 34ms, setup 0ms, import 87ms, tests 42ms, environment 1ms)
+

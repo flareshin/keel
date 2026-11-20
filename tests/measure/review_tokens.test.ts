@@ -23,17 +23,12 @@ const OPUS = "claude-opus-5-5"
 const SONNET = "claude-sonnet-5-5"
 const FABLE = "claude-fable-5-2"
 
-function usageFields(usage: Usage): object {
-  return {
-    input_tokens: usage.input,
-    cache_creation_input_tokens: usage.cacheCreation,
-    cache_read_input_tokens: usage.cacheRead,
-    output_tokens: usage.output,
-  }
+function tokens(input: number, cacheCreation: number, cacheRead: number, output: number): Record<string, number> {
+  return { input_tokens: input, cache_creation_input_tokens: cacheCreation, cache_read_input_tokens: cacheRead, output_tokens: output }
 }
 
-function tokens(input: number, cacheCreation: number, cacheRead: number, output: number): object {
-  return { input_tokens: input, cache_creation_input_tokens: cacheCreation, cache_read_input_tokens: cacheRead, output_tokens: output }
+function usageFields(usage: Usage): Record<string, number> {
+  return tokens(usage.input, usage.cacheCreation, usage.cacheRead, usage.output)
 }
 
 describe("weekly review_tokens", () => {

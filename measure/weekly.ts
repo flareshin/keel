@@ -13,6 +13,7 @@ import { collectMetricItems, defectRunnerNames, MetricError } from "./lib/measur
 import { buildExpiryProposals } from "./lib/measurekit/propose.ts"
 import { summarizeRecurringFindings } from "./lib/measurekit/recurring_findings.ts"
 import { summarizeReviewRounds } from "./lib/measurekit/review_rounds.ts"
+import { summarizeReviewTokens } from "./lib/measurekit/review_tokens.ts"
 import { SmokeContext } from "./lib/measurekit/smoke_context.ts"
 
 const COMMAND: CommandSpec = {
@@ -45,6 +46,7 @@ function buildWeeklyReport(ctx: SmokeContext): object {
     defects: collectDefects(ctx),
     proposals: buildExpiryProposals(rows, ctx.metricWindowStart, ctx.today),
     review_rounds: summarizeReviewRounds(),
+    review_tokens: summarizeReviewTokens(),
     harness_versions: summarizeHarnessVersions(ctx.keelHome),
     recurring_findings: summarizeRecurringFindings(),
   }

@@ -37,7 +37,7 @@ const TALLY_PARTS = new RegExp(`([0-9]+) (${TALLY_WORDS})`, 'gu');
 const LINE_END = '\\r?$';
 const PREFIXED = `${LINE_START}[^\\n]*?${NOT_WORD_BEFORE}${NOT_IN_TAP_DIAGNOSTIC}`;
 const RUNNER_SUMMARY_LINES = [
-  new RegExp(`${LINE_START}(?:[^\\n]*?${NOT_IN_TAP_DIAGNOSTIC}=+ )?(${TALLY}(?:, ${TALLY})*) in [0-9.]+s(?: \\([0-9:]+\\))?(?: =+)?${LINE_END}`, 'gmu'),
+  new RegExp(`${PREFIXED}(?:=+ )?(${TALLY}(?:, ${TALLY})*) in [0-9.]+s(?: \\([0-9:]+\\))?(?: =+)?${LINE_END}`, 'gmu'),
   new RegExp(`${PREFIXED}Tests:[ \\t]+(${TALLY}(?:, ${TALLY})*), [0-9]+ total${LINE_END}`, 'gmu'),
   new RegExp(`${PREFIXED}Tests[ \\t]+(${TALLY}(?: \\| ${TALLY})*) \\([0-9]+\\)${LINE_END}`, 'gmu'),
 ];

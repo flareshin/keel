@@ -85,11 +85,26 @@ function incidentCandidatesNote(dataDir: string): string {
   const names: string[] = []
   for (const project of listDirectory(projects).filter((name) => !name.startsWith("."))) {
     for (const file of listDirectory(path.join(projects, project, "memory"))) {
-      if (!file.startsWith(".") && file.startsWith("feedback_")) names.push(path.join(projects, project, "memory", file))
+      const memory = path.join(projects, project, "memory", file)
+      if (!file.startsWith(".") && isFeedbackMemory(memory)) names.push(memory)
     }
   }
   if (names.length === 0) return ""
   return ", incident candidates (feedback memories): " + firstItems(names.sort().map((name) => path.basename(name)))
+}
+
+const FRONTMATTER = /^---\n([\s\S]*?)\n---(?:\n|$)/
+const FEEDBACK_TYPE_LINE = /^\s*type:\s*feedback\s*$/m
+
+function isFeedbackMemory(file: string): boolean {
+  let text: string
+  try {
+    text = fs.readFileSync(file, "utf8")
+  } catch {
+    return false
+  }
+  const frontmatter = FRONTMATTER.exec(text)?.[1] ?? ""
+  return FEEDBACK_TYPE_LINE.test(frontmatter)
 }
 
 function listDirectory(directory: string): string[] {

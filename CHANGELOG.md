@@ -8,6 +8,12 @@ All notable changes to keel are recorded here. The format follows
 
 New entries go in `changelog.d/`, one file per branch; `changelog.d/README.md` explains the format.
 
+## [1.1.8] - 2026-11-20
+
+### Fixed
+
+- `npm run typecheck` passes again. 1.1.7 failed it with one error: `tests/measure/review_tokens.test.ts(52,13)` passed a token helper typed `object` where `Record<string, unknown>` is expected. The test helpers now return `Record<string, number>`. Only that test file changed, so plugin behavior is unchanged.
+
 ## [1.1.7] - 2026-11-20
 
 ### Fixed

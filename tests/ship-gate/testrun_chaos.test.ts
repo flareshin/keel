@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
 import { recognize, recognizeFailures } from '../../lib/evidence/testrun.ts';
+import { seededRandom } from '../fuzz.ts';
 
 const CORPUS_DIRECTORY = join(import.meta.dirname, 'fixtures', 'runner-output');
 const SEED = 20261120;
@@ -33,16 +34,6 @@ interface Round {
 
 const CORPUS: Capture[] = Object.entries(JSON.parse(readFileSync(join(CORPUS_DIRECTORY, 'manifest.json'), 'utf8')) as Record<string, { count: number; failures: number }>)
   .map(([name, truth]) => ({ name, output: readFileSync(join(CORPUS_DIRECTORY, name), 'utf8'), count: truth.count, failures: truth.failures }));
-
-function seededRandom(seed: number): () => number {
-  let state = seed >>> 0;
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0;
-    let mixed = Math.imul(state ^ (state >>> 15), 1 | state);
-    mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed);
-    return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 function pick<T>(random: () => number, items: readonly T[]): T {
   return items[Math.floor(random() * items.length)]!;

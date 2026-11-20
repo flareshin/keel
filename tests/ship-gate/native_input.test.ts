@@ -399,4 +399,14 @@ describe('Codex rollouts and runner output at their edges', () => {
     assert.equal(recognizeFailures('========================== 2 passed, 1 error in 0.03s ==========================\n'), 1);
     assert.equal(recognizeFailures('3 passed, 2 errors in 0.10s\n'), 2);
   });
+
+  test('a pytest summary is read with a long-run duration and a several-word plugin tally, and not inside a TAP diagnostic', () => {
+    const cases: Array<[string, [number, number]]> = [
+      ['===== 1 failed, 2 passed in 65.32s (0:01:05) =====\n', [2, 1]],
+      ['================ 1 failed, 1 passed, 2 subtests failed in 0.03s ================\nTests:       2 passed, 2 total\n', [3, 3]],
+      ['===== 2 passed, 1 subtests passed in 0.03s =====\n', [3, 0]],
+      ['# ===== 3 failed in 0.20s =====\n', [0, 0]],
+    ];
+    for (const [output, expected] of cases) assert.deepEqual([recognize(output)[0], recognizeFailures(output)], expected, output);
+  });
 });

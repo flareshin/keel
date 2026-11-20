@@ -35,15 +35,18 @@ const TALLY_WORDS = '[a-z]+(?: [a-z]+)*';
 const TALLY = `[0-9]+ ${TALLY_WORDS}`;
 const TALLY_PARTS = new RegExp(`([0-9]+) (${TALLY_WORDS})`, 'gu');
 const LINE_END = '\\r?$';
-const PREFIXED = `${LINE_START}[^\\n]*?${NOT_WORD_BEFORE}${NOT_IN_TAP_DIAGNOSTIC}`;
 const RUNNER_SUMMARY_SHAPES = [
   { heading: '(?:=+ )?', tallies: `${TALLY}(?:, ${TALLY})*`, ending: ' in [0-9.]+s(?: \\([0-9:]+\\))?(?: =+)?' },
   { heading: 'Tests:[ \\t]+', tallies: `${TALLY}(?:, ${TALLY})*`, ending: ', [0-9]+ total' },
   { heading: 'Tests[ \\t]+', tallies: `${TALLY}(?: \\| ${TALLY})*`, ending: ' \\([0-9]+\\)' },
 ];
+const OUTSIDE_TAP_DIAGNOSTIC = new RegExp(NOT_IN_TAP_DIAGNOSTIC, 'uy');
+const TAP_SEGMENT_END = /\r/gu;
 const RUNNER_SUMMARY_LINES = RUNNER_SUMMARY_SHAPES.map((shape) => ({
   ending: new RegExp(`${shape.ending}${LINE_END}`, 'mu'),
-  summary: new RegExp(`${PREFIXED}${shape.heading}(${shape.tallies})${shape.ending}${LINE_END}`, 'mu'),
+  start: new RegExp(`${NOT_WORD_BEFORE}(?=${shape.heading}[0-9])`, 'gu'),
+  run: new RegExp(`${shape.heading}${shape.tallies}`, 'uy'),
+  summary: new RegExp(`${shape.heading}(${shape.tallies})${shape.ending}${LINE_END}`, 'muy'),
 }));
 const SUMMARY_FRAMEWORK = 'passed';
 const PASSED_TALLIES = new Set(['passed']);
@@ -157,11 +160,39 @@ export function recognizeFailures(output: string): number {
 
 function summaryTallies(output: string, outcomes: ReadonlySet<string>): number[] {
   const lines = output.split('\n');
-  return RUNNER_SUMMARY_LINES.flatMap(({ ending, summary }) => lines.filter((line) => ending.test(line)).map((line) => summary.exec(line)))
+  return RUNNER_SUMMARY_LINES.flatMap((shape) => lines.filter((line) => shape.ending.test(line)).map((line) => firstSummary(line, shape)))
     .filter((summary) => summary !== null)
     .flatMap((summary) => [...summary[1]!.matchAll(TALLY_PARTS)])
     .filter((tally) => outcomes.has(tally[2]!.split(' ').at(-1)!))
     .map((tally) => Number(tally[1]));
+}
+
+function firstSummary(line: string, shape: (typeof RUNNER_SUMMARY_LINES)[number]): RegExpExecArray | null {
+  shape.start.lastIndex = 0;
+  for (let start = shape.start.exec(line); start !== null; start = shape.start.exec(line)) {
+    shape.summary.lastIndex = start.index;
+    const summary = shape.summary.exec(line);
+    if (summary === null) {
+      shape.run.lastIndex = start.index;
+      shape.run.exec(line);
+      shape.start.lastIndex = Math.max(shape.run.lastIndex, start.index + 1);
+    } else if (outsideTapDiagnostic(line, start.index)) {
+      return summary;
+    } else {
+      shape.start.lastIndex = outsideTapDiagnostic(line, start.index + 1) ? start.index + 1 : tapSegmentEnd(line, start.index);
+    }
+  }
+  return null;
+}
+
+function outsideTapDiagnostic(line: string, index: number): boolean {
+  OUTSIDE_TAP_DIAGNOSTIC.lastIndex = index;
+  return OUTSIDE_TAP_DIAGNOSTIC.test(line);
+}
+
+function tapSegmentEnd(line: string, index: number): number {
+  TAP_SEGMENT_END.lastIndex = index;
+  return TAP_SEGMENT_END.exec(line)?.index ?? line.length;
 }
 
 function failuresOf(framework: string, match: RegExpMatchArray): number {

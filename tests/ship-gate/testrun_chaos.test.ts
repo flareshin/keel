@@ -10,6 +10,14 @@ const SEED = 20261120;
 const ROUNDS = 3000;
 const MAX_RUNNERS_PER_ROUND = 3;
 const MAX_NOISE_LINES_PER_ROUND = 4;
+const LONG_LINE_REPEATS = 20000;
+const LONG_LINE_BUDGET_MS = 1000;
+const LONG_LINES_WITH_NO_SUMMARY = {
+  'comma tallies': '1 a, '.repeat(LONG_LINE_REPEATS),
+  'equals signs': '= '.repeat(LONG_LINE_REPEATS),
+  'jest heading': `Tests: ${'1 a, '.repeat(LONG_LINE_REPEATS)}`,
+  'vitest heading': `Tests ${'1 a | '.repeat(LONG_LINE_REPEATS)}`,
+};
 const OBSERVED_LOG_LINE = '13:32:04.186 WARN  [main] c.b.h.service.MaintenanceInvoiceFiling   : [invoice-store] record 15 failed';
 const AUTHORED_LOG_LINES = [
   'INFO sync: 3 failed retries recovered',
@@ -69,6 +77,21 @@ describe('TestrunChaosTest', () => {
       if (failed) assert.ok(failures > 0, `false pass: ${describeRound(round, composed)}`);
       else assert.equal(failures, 0, `false refusal: ${describeRound(round, composed)}`);
     }
+  });
+
+  test('aLongLineWithNoRunnerSummary_isReadInLinearTime_andCountsNothing', () => {
+    for (const [shape, line] of Object.entries(LONG_LINES_WITH_NO_SUMMARY)) {
+      const started = performance.now();
+      const read = [recognize(line)[0], recognizeFailures(line)];
+      const elapsedMs = performance.now() - started;
+      assert.deepEqual(read, [0, 0], shape);
+      assert.ok(elapsedMs < LONG_LINE_BUDGET_MS, `${shape}: ${Math.round(elapsedMs)} ms`);
+    }
+  });
+
+  test('aSummaryEndedByALoneCarriageReturn_stillCounts_asAProgressRedrawPrintsIt', () => {
+    assert.deepEqual(recognize('4 passed in 0.12s\rredrawn progress'), [4, 'passed']);
+    assert.equal(recognizeFailures('3 failed, 1 passed in 0.12s\rredrawn progress'), 3);
   });
 
   test('composedRunnerOutput_countsTests_wheneverAComposedRunPrintedAPassingCount', () => {

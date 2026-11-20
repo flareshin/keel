@@ -22,7 +22,7 @@ const DECODE_DETAIL_MASKED = "JsonSyntaxError: <JSON syntax error message>";
 const EVIDENCE_DECODE_DETAIL = /(unreadable evidence \S+?\.json): [^\n]*/g;
 const EVIDENCE_DECODE_DETAIL_MASKED = "$1: <JSON syntax error message>";
 const CC_VERSION_FILE = ".cc-version";
-const CC_VERSION_FIELD = /cc_version=[^"\\]*/g;
+const CC_VERSION_FIELD = /cc_version=[^;"\\]*/g;
 const CC_VERSION_PLACEHOLDER = "<version>";
 const CHECKOUT_REPO_TOKEN = "{{KEEL_REPO}}";
 const RECORDED_CHECKOUT_REPO_KEY = "flareshin/keel";

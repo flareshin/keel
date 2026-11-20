@@ -3,6 +3,7 @@ import { mkdirSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { join } from "node:path";
 import * as contract from "../../hooks/lib/hookkit/contract.ts";
+import { FireLog } from "../../hooks/lib/hookkit/fires.ts";
 import * as knownvalues from "../../hooks/lib/hookkit/knownvalues.ts";
 import { OverlayDataError, readTsv } from "../../hooks/lib/hookkit/overlay.ts";
 import * as protocol from "../../hooks/lib/hookkit/protocol.ts";
@@ -614,10 +615,28 @@ describe("ContractTest", () => {
     const path = sandbox.stubClaude("1.2.3");
     withEnv({ PATH: path, KEEL_DATA_DIR: sandbox.data }, () => {
       const detail = contract.missDetail({ session_id: "s1", cwd: "/x" }, ["prompt"]);
-      assert.equal(detail, "contract-miss: missing prompt; keys=cwd,session_id; cc_version=1.2.3");
+      assert.equal(detail, "contract-miss: cc_version=1.2.3; missing prompt; keys=cwd,session_id");
       unlinkSync(join(sandbox.root, "stubs", "claude"));
       assert.match(contract.missDetail({ session_id: "s1" }, ["prompt"]), /cc_version=1\.2\.3/);
     });
+  });
+
+  it("missDetail_keepsTheVersionInTheLoggedDetail_whenTheContextAndKeysRunPastTheDetailLimit", () => {
+    const path = sandbox.stubClaude("1.2.3");
+    const subagentStopKeys = [
+      "agent_id", "agent_transcript_path", "agent_type", "background_tasks", "cwd", "effort", "hook_event_name",
+      "permission_mode", "prompt_id", "scratchpad_dir", "session_crons", "session_id", "stop_hook_active", "transcript_path",
+    ];
+    const payload = Object.fromEntries(subagentStopKeys.map((key) => [key, "s1"]));
+    const longToolName = "mcp__1e974420-7e39-45e2-b98b-a4f913126142__notion-query-multiple-data-sources";
+    const context = ["agent_id=a454ca5bb3193c53e", "agent_type=keel:auditor", `last_tool=${longToolName}`];
+    withEnv({ PATH: path, KEEL_DATA_DIR: sandbox.data }, () => {
+      new FireLog("report-gate", "s1").append("K2", contract.OUTCOME, {
+        detail: contract.missDetail(payload, ["last_assistant_message"], context),
+      });
+    });
+    const fire = JSON.parse(readFileSync(join(sandbox.data, "logs", "keel-fires.jsonl"), "utf8")) as { detail: string };
+    assert.ok(fire.detail.includes("cc_version=1.2.3"), fire.detail);
   });
 
   it("ccVersion_returnsTheVersion_whenTheCacheCannotBeWritten", () => {

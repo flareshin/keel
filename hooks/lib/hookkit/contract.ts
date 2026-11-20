@@ -27,7 +27,7 @@ export function missingFields(payload: Payload, ...names: string[]): string[] {
 export function missDetail(payload: Payload, missing: readonly string[], context: readonly string[] = []): string {
   const keys = Object.keys(payload).sort(compareCodePoints).join(",");
   const leading = [`missing ${missing.join(",")}`, ...context].join("; ");
-  return `contract-miss: ${leading}; keys=${keys}; cc_version=${ccVersion(getField(payload, "session_id"))}`;
+  return `contract-miss: cc_version=${ccVersion(getField(payload, "session_id"))}; ${leading}; keys=${keys}`;
 }
 
 export function sessionStatePath(session: unknown, extension: string): string {

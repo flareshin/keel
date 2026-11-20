@@ -171,12 +171,17 @@ describe("ledger checks", () => {
 
   it("ruleOfTwo_reportsFeedbackMemories_asIncidentCandidates_whenARowLacksIncidents", () => {
     keelRows(charterRow("K1"), ledgerRow("C-demo", { incidents: "-", grace_until: FUTURE }))
-    harness.box.write("data/projects/p1/memory/feedback_slow_tests.md", "note\n")
-    assertStatus("rule-of-two", "keel", "GRACE", "incident candidates (feedback memories): feedback_slow_tests.md")
+    harness.box.write("data/projects/p1/memory/slow-tests.md", "---\nname: slow-tests\nmetadata:\n  type: feedback\n---\n\nnote\n")
+    harness.box.write("data/projects/p2/memory/no-mocks.md", "---\nname: no-mocks\ntype: feedback\n---\n\nnote\n")
+    harness.box.write("data/projects/p1/memory/feedback_named_project.md", "---\nname: x\nmetadata:\n  type: project\n---\n\nbody says type: feedback\n")
+    harness.box.write("data/projects/p1/memory/MEMORY.md", "- [Slow tests](slow-tests.md) — type: feedback\n")
+    const item = assertStatus("rule-of-two", "keel", "GRACE", "incident candidates (feedback memories): slow-tests.md; no-mocks.md")
+    assert.ok(!item.detail.includes("feedback_named_project.md"))
+    assert.ok(!item.detail.includes("MEMORY.md"))
   })
 
   it("ruleOfTwo_omitsFeedbackMemories_whenEveryRowHasItsIncidents", () => {
-    harness.box.write("data/projects/p1/memory/feedback_slow_tests.md", "note\n")
+    harness.box.write("data/projects/p1/memory/slow-tests.md", "---\nmetadata:\n  type: feedback\n---\n")
     const item = assertStatus("rule-of-two", "keel", "PASS")
     assert.ok(!item.detail.includes("incident candidates"))
   })

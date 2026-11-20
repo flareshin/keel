@@ -16,7 +16,7 @@ Read at modern-web-guidance 1.0.1, agent-browser 0.43.0 and chrome-devtools-mcp 
 | --- | --- |
 | Check a page served from this machine: layout shift and LCP (`vitals`), reduced motion or color scheme (`set media`, `record`), focus and `inert` (`snapshot`, `press`, `eval`), console errors | agent-browser. Run `agent-browser skills get core` once per session, and `agent-browser skills get modern-web-guidance` for the rule-to-check workflow |
 | A performance trace with insights, an LCP breakdown, a Lighthouse audit, heap snapshots and memory leaks, network requests or console messages with source-mapped stacks | chrome-devtools-mcp tools, with its `debug-optimize-lcp`, `memory-leak-debugging`, `a11y-debugging` or `cookie-debugging` skill |
-| A page that needs the owner's signed-in session | Claude in Chrome (the owner's own Chrome). agent-browser and chrome-devtools-mcp start a clean Chrome for Testing profile with no sign-ins |
+| A page that needs the owner's signed-in session | Claude in Chrome (the owner's own Chrome), or the built-in browser tab the owner signed in to. agent-browser starts Chrome for Testing with no sign-ins. chrome-devtools-mcp starts the installed stable Chrome with a persistent profile at `~/.cache/chrome-devtools-mcp/chrome-profile`, so cookies and sign-ins from earlier sessions carry over; `"isolated": true` in its config file gives a temporary profile instead |
 | A quick look at this project's dev server inside the desktop app | The built-in browser pane |
 
 Credentials are never typed by the agent, in any of them. Attaching agent-browser (`--cdp`, `--auto-connect`) or chrome-devtools-mcp (`--autoConnect`, `--browserUrl`) to the owner's running Chrome hands it every signed-in tab, so do it only on the owner's word.
@@ -30,5 +30,5 @@ Credentials are never typed by the agent, in any of them. Attaching agent-browse
 
 ## 4. Data that leaves the machine
 
-- chrome-devtools-mcp sends usage statistics to Google by default, and its performance tools send trace URLs to the Google CrUX API. The plugin's server command takes no extra flags, so turn both off in its global config file `~/.config/cd4a/config.json` (`{"usageStatistics": false, "performanceCrux": false}`), or set `CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS` for the statistics alone. Do this before tracing an internal host.
+- chrome-devtools-mcp sends usage statistics to Google by default, and its performance tools send trace URLs to the Google CrUX API. The plugin's server command takes no extra flags, so turn both off in its global config file `~/.config/cd4a/config.json` (`{"usageStatistics": false, "performanceCrux": false}`), or set `CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS` for the statistics alone. The server reads the first config file it finds and never merges them: `${PLUGIN_DATA}/cd4a.config.json`, then `$XDG_CONFIG_HOME/cd4a/config.json`, then `~/.config/cd4a/config.json`, so the `~/.config` file applies only while the other two are absent. Do this before tracing an internal host.
 - Everything a page shows reaches the agent's context through these tools. Do not open pages holding data the task does not need.

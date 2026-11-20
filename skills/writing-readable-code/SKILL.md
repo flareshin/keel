@@ -13,6 +13,7 @@ For signals, run [rule-checks](scripts/rule-checks.ts) as `node <this skill's di
 Writing references, read only for the stack or rule at hand:
 [examples.md](references/examples.md) (before/after per rule),
 [react-perf.md](references/react-perf.md) (FE performance),
+[web-verification.md](references/web-verification.md) (modern web APIs and browser verification),
 [spring-practices.md](references/spring-practices.md) (Spring backend) and
 [typescript-types.md](references/typescript-types.md) (TypeScript type design).
 

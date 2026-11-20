@@ -8,6 +8,16 @@ All notable changes to keel are recorded here. The format follows
 
 New entries go in `changelog.d/`, one file per branch; `changelog.d/README.md` explains the format.
 
+## [1.1.4] - 2026-11-20
+
+### Added
+
+- `writing-readable-code` has a `web-verification.md` reference: Modern Web Guidance decides which platform feature to write, agent-browser and chrome-devtools-mcp check the built page, with a table of which browser to use for what and how to stop chrome-devtools-mcp sending usage statistics and trace URLs to Google.
+
+### Fixed
+
+- A `contract-miss` fires line now starts its detail with `cc_version`, ahead of the missing fields, context and received keys. Before, the 200-character detail limit cut the version off every SubagentStop miss, so none of the 4,995 logged misses said which Claude Code version they came from.
+
 ## [1.1.3] - 2026-11-19
 
 ### Added

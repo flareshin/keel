@@ -8,6 +8,23 @@ All notable changes to keel are recorded here. The format follows
 
 New entries go in `changelog.d/`, one file per branch; `changelog.d/README.md` explains the format.
 
+## [1.1.6] - 2026-11-20
+
+### Added
+
+- `measure/weekly` reports `review_tokens`: the input, cache-creation, cache-read and output tokens the lens-review workflow runs of live review evidence spent, per model and per number of NEEDS_FIXES rounds of each root, read from the agent transcripts of the `wf_*` run each review's `source.agent_transcript_path` names. A streamed message counts once by its last line, an advisor iteration counts under its own model, and a root whose run cannot be read is counted as `unmeasured` instead of as cheap. Tokens only, no prices; authoring and fix work are not included.
+
+### Fixed
+
+- `keel test` reads `N passed` and `N failed` only from a runner summary line: pytest's `… in 0.12s` line (with or without its `=====` banner), jest's `Tests: … , N total` line and vitest's `Tests … (N)` line, with both numbers taken from that same line; each line may carry a task prefix such as docker compose's `app-1  | `, turbo's `app:test:` or a BuildKit step (not a TAP `#` diagnostic), a pytest line's `N error`/`N errors` counts as failures, and a plugin tally of several words such as `1 subtests passed` or `2 subtests failed` is read by its last word. Trade-off: a log line that ends exactly like a pytest summary still counts, adding tests (`job 12 passed in 1.5s`) or failures (`… 3 failed in 0.20s`, `… 2 errors in 0.30s`). Before, any line ending in `N passed` or `N failed` counted, so an application log line such as `batch: 12 passed, 2 failed upstream` added tests or refused a green run with exit 6, and a vitest per-file line `(2 tests | 1 failed)` counted its failure twice.
+- A failing pytest, jest or vitest summary beside a green Maven `Tests run:` summary in one exit-0 output is refused again with exit 6. 1.1.3 had stopped reading `N failed` whenever a surefire summary was present, so a failing runner whose exit a pipe hid passed.
+- `tests/ship-gate/testrun_chaos.test.ts` composes 21 captured runner outputs (jest, node spec and TAP, pytest, surefire, unittest, vitest, green and red) with log lines for 3,000 seeded rounds and checks that a round with a failing run reports a failure, a round of green runs reports none, and a round with a passing count counts tests.
+- `keel test` reads a runner summary in linear time on a long output line that carries no summary. The summary patterns now run only on lines that end in a summary ending, one line at a time, so a 20,000-tally comma list with no `in Ns` ending takes about 3 ms instead of 7.5 s. A long line that does end in a summary ending is still read by the full pattern.
+
+### Upgrading
+
+- A runner that prints `N passed` in no pytest, jest or vitest summary shape is no longer counted: Playwright's `5 passed (3.2s)`, cargo's `test result: ok. 5 passed; 0 failed` and a bare `echo '4 passed'`. Such a run now exits 4 with no evidence; wrap it in a runner keel recognizes, or report its summary in one of the shapes above. Its failures are no longer read either: a failing run of such a runner (cargo, Gradle `3 tests completed, 1 failed`, deno, Playwright) beside a green recognized summary in one exit-0 output, with the failing exit hidden by a pipe, now writes evidence where 1.1.3 refused it with exit 6. Run each runner under its own `keel test`. The 400 recorded `recognize` outcomes in `tests/fixtures/evidence/helper-outcomes.json` were re-recorded: 124 changed, every one through the `N passed` rule alone (the surefire, unittest, TAP and node spec counts are unchanged on all 400).
+
 ## [1.1.5] - 2026-11-20
 
 ### Fixed

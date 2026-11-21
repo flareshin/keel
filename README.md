@@ -139,7 +139,7 @@ hooks/         core hooks     plus hooks/lib/hookkit (shell parser, shared helpe
 lib/           evidence/, link/, changelog/
 measure/       run, smoke, propose, boundary, weekly, evals/
 githooks/      pre-commit, pre-push (boundary scan)
-settings/      core.json (hook registration), links.tsv (link manifest)
+settings/      core.json (hook registration, env), links.tsv (link manifest)
 stacks/        spring-maven/ (env-preflight hook, settings fragment)
 skills/        refining-requests/, writing-readable-code/, descending-findings/, improving-structure/, removing-comments/, authoring-agents/, improving-agents/, deepening-prompts/
 workflows/     lens-review.js, adversarial-audit.js, review-lenses.json

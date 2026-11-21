@@ -8,6 +8,16 @@ All notable changes to keel are recorded here. The format follows
 
 New entries go in `changelog.d/`, one file per branch; `changelog.d/README.md` explains the format.
 
+## [1.1.9] - 2026-11-20
+
+### Changed
+
+- `settings/core.json` sets `CLAUDE_CODE_EXPERIMENTAL_CODE_MODE` to `1`, so `bin/link --write` turns on Claude Code's experimental Code Mode in the user settings. Code Mode needs Claude Code 2.1.323 or later and works only in an interactive `claude` session in a terminal. The Desktop app, the VS Code panel and cloud sessions do not run it, and keel has not checked what they do with the variable set. The first terminal run asks to turn Code Mode on and then restarts. A Code Mode session cannot use Remote Control, Claude in Chrome or computer use, and code it runs in the foreground stops after ten minutes. Some plugins and mods that check tool calls do not yet work with Code Mode. In a terminal Code Mode session, git-guard's PreToolUse block on `bin/link --write` still fired; whether keel's Stop hooks run there is not yet checked. The keel plugin alone cannot set an environment variable, so a plugin install gets Code Mode only after `bin/link --write`.
+
+### Upgrading
+
+- To keep Code Mode off, set `CLAUDE_CODE_EXPERIMENTAL_CODE_MODE` to `"0"` in an overlay `settings/*.json` `env` block before `bin/link --write`. The overlay value wins, and `bin/link` prints a settings-conflict warning for it.
+
 ## [1.1.8] - 2026-11-20
 
 ### Fixed

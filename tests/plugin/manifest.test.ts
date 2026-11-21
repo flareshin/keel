@@ -2,6 +2,8 @@ import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 import fs from "node:fs"
 import path from "node:path"
+import { mergeFragments } from "../../lib/link/fragments.ts"
+import type { JsonObject } from "../../measure/lib/measurekit/json.ts"
 
 const KEEL_ROOT = path.resolve(import.meta.dirname, "..", "..")
 const LINK_PLACEHOLDER = "{{KEEL}}"
@@ -21,7 +23,14 @@ describe("plugin manifest", () => {
     const linkHooks = JSON.parse(readText("settings/core.json").replaceAll(LINK_PLACEHOLDER, PLUGIN_ROOT_VARIABLE))
     const pluginHooks = readJson("hooks/hooks.json")["hooks"] as Record<string, unknown>
     const sharedEvents = Object.fromEntries(Object.entries(pluginHooks).filter(([event]) => !PRINCIPLES_EVENTS.includes(event)))
-    assert.deepEqual({ hooks: sharedEvents }, linkHooks)
+    assert.deepEqual(sharedEvents, linkHooks.hooks)
+  })
+
+  it("coreFragment_turnsOnCodeMode_inTheMergedUserSettingsEnv", () => {
+    const core = readJson("settings/core.json") as JsonObject
+    const [merged, conflicts] = mergeFragments([["settings/core.json", core]])
+    assert.deepEqual(merged["env"], { CLAUDE_CODE_EXPERIMENTAL_CODE_MODE: "1" })
+    assert.deepEqual(conflicts, [])
   })
 
   it("pluginHooks_injectThePrinciplesAtSessionAndSubagentStart", () => {

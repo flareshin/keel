@@ -2,7 +2,7 @@
 
 keel is a Claude Code plugin that makes an agent prove its work before it ships. The agent that writes a change cannot declare it reviewed, tested or approved: a separate reviewer judges the diff, test runs leave evidence tied to the exact tree, and a hook refuses the push or merge until the review, the tests and the owner's approval all cover what is going out.
 
-keel is written almost entirely by AI agents and ships through its own gate. It is at release 1.1.8 ([`CHANGELOG.md`](CHANGELOG.md)) and licensed under the Apache License 2.0 ([`LICENSE`](LICENSE)); [`NOTICE`](NOTICE) carries the notices of the third-party material it adapts. The binding spec is [`docs/DESIGN.md`](docs/DESIGN.md); where this README and the spec disagree, the spec wins.
+keel is written almost entirely by AI agents and ships through its own gate. It is at release 1.1.9 ([`CHANGELOG.md`](CHANGELOG.md)) and licensed under the Apache License 2.0 ([`LICENSE`](LICENSE)); [`NOTICE`](NOTICE) carries the notices of the third-party material it adapts. The binding spec is [`docs/DESIGN.md`](docs/DESIGN.md); where this README and the spec disagree, the spec wins.
 
 ## Why
 
@@ -139,7 +139,7 @@ hooks/         core hooks     plus hooks/lib/hookkit (shell parser, shared helpe
 lib/           evidence/, link/, changelog/
 measure/       run, smoke, propose, boundary, weekly, evals/
 githooks/      pre-commit, pre-push (boundary scan)
-settings/      core.json (hook registration), links.tsv (link manifest)
+settings/      core.json (hook registration, env), links.tsv (link manifest)
 stacks/        spring-maven/ (env-preflight hook, settings fragment)
 skills/        refining-requests/, writing-readable-code/, descending-findings/, improving-structure/, removing-comments/, authoring-agents/, improving-agents/, deepening-prompts/
 workflows/     lens-review.js, adversarial-audit.js, review-lenses.json

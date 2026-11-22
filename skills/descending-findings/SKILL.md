@@ -22,7 +22,7 @@ The enforcement ladder is `repo` > `hook` > `skill` > `prose`. A finding reviewe
    - **decidable:** a regex, AST match, import graph or test can say yes or no with no judgment, and a false positive has a clean fix;
    - **owned:** one target repo (or one stack) owns the code it governs.
 
-   One or two descents a month is the pace; pick, finish, then pick again.
+   Descend one finding at a time: pick, finish, then pick again.
 
 2. **Choose the repo form**, using tooling the target repo already has (a new dependency needs the user's approval first). Take the first row that fits:
 

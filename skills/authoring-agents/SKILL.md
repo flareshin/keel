@@ -13,14 +13,14 @@ Take the first form that can hold the work. Each later one costs more to keep.
 
 | Form | Use it when | Cost |
 |---|---|---|
-| A brief to an existing agent (`general-purpose`, `worker-low`, `worker-high`, `Explore`) | one task, not recurring | nothing kept |
+| A brief to an existing agent (`general-purpose`, `worker`, `Explore`) | one task, not recurring | nothing kept |
 | A skill | a recurring situation with a recognisable trigger | its description is always loaded |
 | A script | a deterministic step agents hand-rolled and got wrong or slow | code and tests to keep |
 | A new agent definition | a bounded sub-task whose input is large and whose answer is small, or one that needs a fixed tool set, model or effort | a file to keep; it sees only its file and the brief |
 | A hook | a mechanical rule an agent must not be able to skip | runs on every matching call |
 | Always-on text (CLAUDE.md, ledger prose) | a short rule that applies to every run | paid on every turn; cut something to add it |
 
-A new agent is a bad trade when its output is as large as its input: the parent reads it all again. Pick `worker-low` for fully specified mechanical work and `worker-high` for hard, well-scoped implementation before writing a new definition.
+A new agent is a bad trade when its output is as large as its input: the parent reads it all again. Pick `worker` before writing a new definition, with `effort: low` for fully specified mechanical work and `effort: high` for hard, well-scoped implementation.
 
 Split delegated work by context, not by problem type or by team. Give an agent a piece that needs little from the rest of the run and returns a compact result; one agent per kind of problem passes the same facts through several handoffs and loses detail at each.
 
@@ -54,7 +54,7 @@ Adapted from Addy Osmani's "Which Claude model should you build with?" (claude.d
 
 - Start at the hook's default (`sonnet`, `medium`), and give the agent a check it can run on its own work: a test, a build or a script that calls the endpoint. A self-check usually costs less than more effort.
 - When the result is not good enough, change one thing at a time, in this order: give the agent that self-check, raise effort one level, then move to the next model up at a lower effort than the smaller model used. Past `high`, try the next model up before another effort level; effort does not add knowledge the model lacks.
-- When a grader or a test checks each item, run every item at `low` and rerun only the failures at `high`. On the post's SWE-bench Pro subset this passed about 97% of tasks at about $0.17 each, against 95.3% at $0.29 with every task at `high`.
+- When a grader or a test checks each item, run every item at `low` and rerun only the failures at `high`. In a published comparison this passed slightly more tasks than running every item at `high`, at under two thirds of the cost.
 - Put `haiku` only on work where a wrong answer is cheap to spot, such as finding files, running tests and reading logs. Code edits stay on `sonnet` or above, and a review or judgment dispatch either names `opus` or leaves `model` out and puts VERDICT, NEEDS_FIXES or review-lenses in its prompt, so the hook raises it to `opus`. The hook has no ceiling: a dispatch that names `fable`, or a tier released later, keeps that model even with a judgment marker, and the hook does not check that the name exists. A judgment marker raises only an omitted model, `haiku`, or a `haiku`, `sonnet` or `inherit` pin.
 
 ## Check it

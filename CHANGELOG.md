@@ -8,6 +8,14 @@ All notable changes to keel are recorded here. The format follows
 
 New entries go in `changelog.d/`, one file per branch; `changelog.d/README.md` explains the format.
 
+## [1.1.10] - 2026-11-21
+
+### Changed
+
+- `skills/authoring-agents` names the single `worker` agent, set by `effort: low` or `effort: high`, where it named `worker-low` and `worker-high`. The low-then-rerun advice no longer quotes benchmark figures and keeps only their direction: slightly more tasks pass than with every item at `high`, at under two thirds of the cost.
+- `skills/authoring-agents` adds a finishing-work paragraph for a dispatch that runs on `fable` at `low` or `medium` effort for multi-step work, whether the call names `fable` or the agent file pins it with `model:`. Dispatches on other models skip it, since it adds output tokens, and the model-assign hook never assigns `fable` itself.
+- `skills/descending-findings` drops the monthly pace and says to descend one finding at a time.
+
 ## [1.1.9] - 2026-11-20
 
 ### Changed

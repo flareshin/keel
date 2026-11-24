@@ -109,8 +109,8 @@ describe("frontmatter", () => {
     assert.deepEqual(emphaticWords(text), ["MUST", "IMPORTANT"]);
   });
 
-  it("test_frontmatter_parsesAsStrictYaml_forEverySkillAndAgent", () => {
-    for (const path of [...skillPaths(), ...agentPaths()]) assert.deepEqual(strictYamlProblems(read(path)), [], path);
+  it("test_frontmatter_parsesAsStrictYaml_forEverySkillAgentAndCodexSkill", () => {
+    for (const path of [...skillPaths(), ...agentPaths(), join(KEEL_HOME, "codex", "skills", "keel-review", "SKILL.md")]) assert.deepEqual(strictYamlProblems(read(path)), [], path);
   });
 
   it("test_strictYamlProblems_flagsPlainValuesStrictParsersReject", () => {

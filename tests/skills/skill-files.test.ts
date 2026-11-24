@@ -33,6 +33,22 @@ function parseFrontmatter(text: string): Record<string, string> | null {
   return fields;
 }
 
+const QUOTED_OR_BLOCK = /^["'|>]/;
+const YAML_INDICATOR_START = /^[-?:,[\]{}#&*!%@`]/;
+
+function strictYamlProblems(text: string): string[] {
+  const fields = parseFrontmatter(text) ?? {};
+  const problems: string[] = [];
+  for (const [key, value] of Object.entries(fields)) {
+    if (value === "" || QUOTED_OR_BLOCK.test(value)) continue;
+    if (value.includes(": ")) problems.push(`${key}: plain value contains ": "`);
+    if (value.includes(" #")) problems.push(`${key}: plain value contains " #"`);
+    if (value.endsWith(":")) problems.push(`${key}: plain value ends with ":"`);
+    if (YAML_INDICATOR_START.test(value)) problems.push(`${key}: plain value starts with a YAML indicator`);
+  }
+  return problems;
+}
+
 function fencedBlockAfter(text: string, labelLine: string): string | null {
   const escaped = labelLine.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`^${escaped}\\n\`\`\`\\n([\\s\\S]*?)^\`\`\``, "m").exec(text)?.[1] ?? null;
@@ -91,6 +107,21 @@ describe("frontmatter", () => {
   it("test_emphaticWords_findsCapsOutsideCode_butNotInFrontmatterOrCode", () => {
     const text = "---\ndescription: Do NOT use. MUST\n---\nit MUST fail; `NEVER` here\n```\nALWAYS\n```\nIMPORTANT\n";
     assert.deepEqual(emphaticWords(text), ["MUST", "IMPORTANT"]);
+  });
+
+  it("test_frontmatter_parsesAsStrictYaml_forEverySkillAndAgent", () => {
+    for (const path of [...skillPaths(), ...agentPaths()]) assert.deepEqual(strictYamlProblems(read(path)), [], path);
+  });
+
+  it("test_strictYamlProblems_flagsPlainValuesStrictParsersReject", () => {
+    const text = "---\nname: x\ndescription: Load it first: it sends a fork\nnote: a #tag\ntail: ends:\nlead: *star\nquoted: \"a: b\"\n---\n";
+    assert.deepEqual(strictYamlProblems(text), [
+      'description: plain value contains ": "',
+      'note: plain value contains " #"',
+      'tail: plain value ends with ":"',
+      "lead: plain value starts with a YAML indicator",
+    ]);
+    assert.deepEqual(strictYamlProblems("---\nname: x\ndescription: Trigger; a b, c (d). Do NOT use for e.\n---\n"), []);
   });
 
   it("test_parseFrontmatter_returnsNone_whenBlockMissingOrMalformed", () => {

@@ -101,13 +101,16 @@ describe("installation", () => {
     return source;
   }
 
-  it("links a renamed core skill under its new name and not its old one", () => {
+  it("moves an installed core skill's link to its new name when the skill is renamed", () => {
     const source = copySource("renamed-skill");
+    assert.equal(runSourceLink(source, "--write").status, 0);
     renameSync(join(source, "skills/refining-requests"), join(source, "skills/refining-asks"));
+    assert.equal(runSourceLink(source, "--check").status, 1);
     const run = runSourceLink(source, "--write");
     assert.equal(run.status, 0, run.stderr);
     assert.equal(realpathSync(join(home, ".agents/skills/refining-asks")), join(source, "skills/refining-asks"));
-    assert.equal(existsSync(join(home, ".agents/skills/refining-requests")), false);
+    assert.throws(() => lstatSync(join(home, ".agents/skills/refining-requests")), { code: "ENOENT" });
+    assert.equal(runSourceLink(source, "--check").status, 0);
   });
 
   function actionsOf(result: { stdout: string }): unknown {

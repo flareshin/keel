@@ -30,7 +30,9 @@ describe("eval cli", () => {
     assert.equal(completed.status, 0, completed.stderr)
     assert.deepEqual([report.eval_id, report.pass, report.written, report.model], ["K4", true, true, MODEL])
     const suite = linesOf("K4")
-    assert.deepEqual(suite, [{ ts: suite[0].ts, eval_id: "K4", rule_id: "K4", case: "suite train=2/2 holdout=2/2", pass: true, model: MODEL }])
+    const config = JSON.parse(fs.readFileSync(path.join(report.raw_dir, "config.json"), "utf8"))
+    const fingerprint = { link_mode: "full", claude_md_sha256: config.claude_md_sha256, principles_md_sha256: null, skill_md_sha256: config.skill_md_sha256 }
+    assert.deepEqual(suite, [{ ts: suite[0].ts, eval_id: "K4", rule_id: "K4", case: "suite train=2/2 holdout=2/2", pass: true, model: MODEL, ...fingerprint }])
     assert.deepEqual(linesOf("K4.case").map((line) => [line.case, line.pass]), [["a1", true], ["c1", true], ["h1", true], ["h2", true]])
   })
 
@@ -513,6 +515,7 @@ describe("eval cli", () => {
     assert.deepEqual(suite, [{
       ts: suite[0].ts, eval_id: "K4", rule_id: "K4", case: "suite train=2/2 holdout=2/2", pass: true,
       model: MODEL, regraded_from: "keel-eval-K4-old", grader: graderCommit(CHECKOUT),
+      link_mode: null, claude_md_sha256: null, principles_md_sha256: null, skill_md_sha256: null,
     }])
     assert.deepEqual(linesOf("K4.case").map((line) => [line.case, line.regraded_from]), ["a1", "c1", "h1", "h2"].map((name) => [name, "keel-eval-K4-old"]))
   })

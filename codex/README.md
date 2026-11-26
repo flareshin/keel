@@ -59,7 +59,7 @@ The hook is synchronous. As with Codex hooks generally, a runtime failure before
 that JSON is emitted may not stop the tool. Interactive `write_stdin`, hosted
 tools, or tool paths outside the registered matcher are not enforcement coverage.
 
-Claude's `report-gate`, `model-assign`, `handoff`, stack hooks, JS Workflow engine,
+Claude's `report-gate`, `model-assign`, stack hooks such as `env-preflight`, JS Workflow engine,
 `commands/ship1.md`, `commands/xrepo.md` and scheduled tasks are not ported or
 registered. Existing unrelated user skill links, including an older `ship1`, are
 left alone. This is not full Claude/Codex feature parity. A native review does

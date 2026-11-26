@@ -9,6 +9,7 @@ import { buildSkillLinks, main as runLink } from "../lib/install.ts";
 import { planSkills } from "../lib/skill_registry.ts";
 import { main as runHook, runGuard } from "../hooks/pre-tool-use.ts";
 import type { GuardRunner } from "../hooks/pre-tool-use.ts";
+import { ISOLATED_GIT_ENV } from "./git-env.ts";
 
 export const LINE_BREAKS = ["\r", "\v", "\f", "\u001c", "\u001d", "\u001e", "\u0085", " ", " "];
 export const UNICODE_SPACES = [
@@ -92,8 +93,7 @@ function makeSandbox(): Sandbox {
 function environmentOf(sandbox: Sandbox): Record<string, string | null> {
   return {
     HOME: sandbox.home, KEEL_CODEX_HOME: sandbox.profile, KEEL_AGENTS_HOME: sandbox.agents, KEEL_DATA_DIR: join(sandbox.root, "data"),
-    KEEL_OVERLAY_DIR: join(sandbox.root, "overlay"), CODEX_HOME: null, PYTHONUTF8: null, PYTHONIOENCODING: null, PYTHONCOERCECLOCALE: null,
-    LANG: null, LC_ALL: null, LC_CTYPE: null,
+    KEEL_OVERLAY_DIR: join(sandbox.root, "overlay"), CODEX_HOME: null, LANG: null, ...ISOLATED_GIT_ENV, LC_ALL: null, LC_CTYPE: null,
   };
 }
 

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
-  chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync,
+  chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, statSync, symlinkSync,
   utimesSync, writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import { run } from "../../hooks/lib/hookkit/subprocess.ts";
 import type { CompletedProcess } from "../../hooks/lib/hookkit/subprocess.ts";
 import { withEnv } from "../../tests/hooks/helpers.ts";
+import { isolatedGitEnv } from "./git-env.ts";
 import { carriesPrApprovalRule, dropPrRule, rewordPrRule } from "../../tests/link/helpers.ts";
 import { completeEdit, validateUpdate } from "../lib/config_policy.ts";
 import { digest, fingerprint } from "../lib/files.ts";
@@ -42,6 +43,16 @@ function readJsonFile(path: string): Record<string, any> {
 
 function referenceDigest(kind: string, content: Buffer): string {
   return createHash("sha256").update(kind).update("\0").update(content).digest("hex");
+}
+
+function ownerCommandRule(runtime: string): string {
+  const rules = runtime.split("\n").filter((line) => line.startsWith("- [K5] After every review") && line.includes("root_run_id") && line.includes("Never invent an approval ID"));
+  assert.equal(rules.length, 1, "codex/AGENTS.md must hold exactly one owner command rule");
+  return rules[0] ?? "";
+}
+
+function coreSkillNames(keel: string): string[] {
+  return readdirSync(join(keel, "skills")).filter((name) => existsSync(join(keel, "skills", name, "SKILL.md"))).sort();
 }
 
 function runNode(script: string, args: string[], env: NodeJS.ProcessEnv, input?: string) {
@@ -90,6 +101,15 @@ describe("installation", () => {
     return source;
   }
 
+  it("links a renamed core skill under its new name and not its old one", () => {
+    const source = copySource("renamed-skill");
+    renameSync(join(source, "skills/refining-requests"), join(source, "skills/refining-asks"));
+    const run = runSourceLink(source, "--write");
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(realpathSync(join(home, ".agents/skills/refining-asks")), join(source, "skills/refining-asks"));
+    assert.equal(existsSync(join(home, ".agents/skills/refining-requests")), false);
+  });
+
   function actionsOf(result: { stdout: string }): unknown {
     return (JSON.parse(result.stdout) as Record<string, unknown>)["actions"];
   }
@@ -123,13 +143,20 @@ describe("installation", () => {
     const run = runLink("--write");
     assert.equal(run.status, 0, run.stderr);
     const guidance = read(join(home, ".codex/AGENTS.md"));
-    assert.ok(guidance.includes("After every review, include a copyable zsh command in the final response."));
-    assert.ok(guidance.includes("Use the actual registered root_run_id"));
-    assert.ok(guidance.includes("Never invent an approval ID or offer a placeholder approval command."));
-    assert.ok(guidance.includes("provide a concrete permitted diagnostic command"));
+    assert.ok(guidance.split("\n").includes(ownerCommandRule(read(join(ADAPTER, "AGENTS.md")))));
     for (const source of ["docs/codex-review.md", "codex/skills/keel-review/SKILL.md"]) {
       assert.ok(read(join(KEEL, source)).includes("After every review"), source);
     }
+  });
+
+  it("loses the owner command rule from the generated guidance when the Codex runtime drops it", () => {
+    const source = copySource("dropped-owner-command");
+    const runtime = join(source, "codex/AGENTS.md");
+    const rule = ownerCommandRule(read(runtime));
+    writeFileSync(runtime, read(runtime).replace(`${rule}\n`, ""));
+    const run = runSourceLink(source, "--write");
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(read(join(home, ".codex/AGENTS.md")).split("\n").includes(rule), false);
   });
 
   it("test_install_isIdempotent_andUnlinksOwnedFiles", () => {
@@ -215,7 +242,9 @@ describe("installation", () => {
     assert.equal(claude.status, 0, claude.stdout + claude.stderr);
     assert.equal(runLink("--write").status, 0);
 
-    for (const name of ["writing-readable-code", "improving-structure", "descending-findings", "refining-requests", "removing-comments", "authoring-agents", "improving-agents", "deepening-prompts"]) {
+    const coreSkills = coreSkillNames(KEEL);
+    assert.ok(coreSkills.includes("writing-readable-code"), coreSkills.join(", "));
+    for (const name of coreSkills) {
       const claudeSkill = join(home, "data/skills", name);
       const codexSkill = join(home, ".agents/skills", name);
       assert.equal(realpathSync(claudeSkill), realpathSync(codexSkill), name);
@@ -570,7 +599,7 @@ describe("shared skill registry", () => {
 });
 
 describe("ownership digests", () => {
-  it("hash the kind, a NUL byte and the UTF-8 content, as the Python installer records them", () => {
+  it("hash the kind, a NUL byte and the UTF-8 content, so state files written by earlier installs still match", () => {
     assert.equal(digest("file", "x"), "24e5fa83ea3d78ba97ff36665723f0df9e3d179e110965a34b679ad5ad27eaab");
     assert.equal(digest("link", "/a/b"), "8f4a147acc2778b4d17f7113578e7ff8fd04c72279c09865028f0d5257d1e4c7");
     assert.equal(digest("file", "\u00e9"), "5eb5e24ec91d24caac54c01428c2f2c8bf2c4c6f65817ff1c2db9405c6fa7765");
@@ -840,8 +869,8 @@ describe("guard", () => {
   });
 
   it("test_realGuard_blocksForcePush_andAllowsRead", () => {
-    spawnSync("git", ["init", "-q", temp], { stdio: "ignore" });
-    const env = { ...process.env, KEEL_DATA_DIR: temp, KEEL_OVERLAY_DIR: temp };
+    const env = { ...isolatedGitEnv(), KEEL_DATA_DIR: temp, KEEL_OVERLAY_DIR: temp };
+    spawnSync("git", ["init", "-q", temp], { stdio: "ignore", env });
     for (const [command, denied] of [["git push --force origin main", true], ["git status", false]] as const) {
       const input = JSON.stringify({ ...payload("Bash", { command }), cwd: temp });
       const run = runNode(HOOK, [], env, input);

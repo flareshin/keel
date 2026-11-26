@@ -9,6 +9,7 @@ import type { CompletedProcess } from "../../hooks/lib/hookkit/subprocess.ts";
 import { withEnv } from "../../tests/hooks/helpers.ts";
 import { main as runHook } from "../hooks/pre-tool-use.ts";
 import type { GuardRunner } from "../hooks/pre-tool-use.ts";
+import { ISOLATED_GIT_ENV, isolatedGitEnv } from "./git-env.ts";
 import { EXPECTED_DEPTH_DENY_REASON, JSON_DEPTH_BOUND } from "./json-depth-policy.ts";
 
 const GUARD_TIMEOUT_SECONDS = 35;
@@ -24,13 +25,13 @@ describe("git-guard JSON depth bound", () => {
 
   beforeEach(() => {
     temp = realpathSync(mkdtempSync(join(realpathSync(tmpdir()), "keel-guard-depth-")));
-    spawnSync("git", ["init", "-q", temp], { stdio: "ignore" });
+    spawnSync("git", ["init", "-q", temp], { stdio: "ignore", env: isolatedGitEnv() });
   });
 
   afterEach(() => rmSync(temp, { recursive: true, force: true }));
 
   const sandboxEnv = (): Record<string, string> => ({
-    HOME: temp, KEEL_CODEX_HOME: join(temp, "profile"), KEEL_AGENTS_HOME: join(temp, "agents"), KEEL_DATA_DIR: join(temp, "data"), KEEL_OVERLAY_DIR: join(temp, "overlay"),
+    ...ISOLATED_GIT_ENV, HOME: temp, KEEL_CODEX_HOME: join(temp, "profile"), KEEL_AGENTS_HOME: join(temp, "agents"), KEEL_DATA_DIR: join(temp, "data"), KEEL_OVERLAY_DIR: join(temp, "overlay"),
   });
 
   const typescriptGuard: GuardRunner = (command, input): CompletedProcess => run(command, GUARD_TIMEOUT_SECONDS, { input });

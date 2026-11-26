@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { withEnv } from "../../tests/hooks/helpers.ts";
+import { ISOLATED_GIT_ENV, isolatedGitEnv } from "./git-env.ts";
 import { INVALID_UTF8 } from "./boundary-table.ts";
 import type { CompletedProcess } from "../../hooks/lib/hookkit/subprocess.ts";
 import { main as runHook } from "../hooks/pre-tool-use.ts";
@@ -12,10 +13,8 @@ import type { GuardRunner } from "../hooks/pre-tool-use.ts";
 
 const HOOK = join(import.meta.dirname, "..", "hooks", "pre-tool-use.ts");
 const NOT_UTF8_REASON = "keel Codex guard: stdin is not valid UTF-8";
-const PYTHON_TEXT_SETTINGS: Array<Record<string, string>> = [
-  {}, { PYTHONUTF8: "0" }, { PYTHONUTF8: "1" }, { PYTHONUTF8: "2" }, { PYTHONUTF8: "bogus", PYTHONIOENCODING: "utf-8" },
-  { PYTHONIOENCODING: "utf-16" }, { PYTHONIOENCODING: "bogus" }, { PYTHONIOENCODING: "ascii:strict" }, { PYTHONIOENCODING: "utf-8-sig" },
-  { PYTHONIOENCODING: "latin-1:replace" }, { PYTHONIOENCODING: "hex" }, { PYTHONUTF8: "0", LC_ALL: "C" }, { PYTHONUTF8: "0", LANG: "ko_KR.eucKR" },
+const LOCALE_SETTINGS: Array<Record<string, string>> = [
+  {}, { LC_ALL: "C" }, { LANG: "ko_KR.eucKR" }, { LC_ALL: "en_US.ISO8859-1" }, { LC_CTYPE: "C", LANG: "C" },
 ];
 const INVALID_SEQUENCES: Record<string, number[]> = { ...INVALID_UTF8, "latin-1 e acute": [0xe9] };
 
@@ -25,8 +24,8 @@ describe("hook stdin", () => {
 
   before(() => {
     temp = realpathSync(mkdtempSync(join(realpathSync(tmpdir()), "keel-hook-stdin-")));
-    spawnSync("git", ["init", "-q", temp], { stdio: "ignore" });
-    environment = { HOME: temp, KEEL_CODEX_HOME: join(temp, "profile"), KEEL_AGENTS_HOME: join(temp, "agents"), KEEL_DATA_DIR: join(temp, "data"), KEEL_OVERLAY_DIR: join(temp, "overlay") };
+    spawnSync("git", ["init", "-q", temp], { stdio: "ignore", env: isolatedGitEnv() });
+    environment = { ...ISOLATED_GIT_ENV, HOME: temp, KEEL_CODEX_HOME: join(temp, "profile"), KEEL_AGENTS_HOME: join(temp, "agents"), KEEL_DATA_DIR: join(temp, "data"), KEEL_OVERLAY_DIR: join(temp, "overlay") };
   });
 
   after(() => rmSync(temp, { recursive: true, force: true }));
@@ -54,10 +53,10 @@ describe("hook stdin", () => {
     });
   }
 
-  it("main_decodesTheSameWayUnderEveryPythonTextSetting", () => {
+  it("main_decodesTheSameWayUnderEveryLocale", () => {
     const valid = payload("echo héllo \u{1f600}");
     const invalid = Buffer.concat([valid.subarray(0, 40), Buffer.from([0xff]), valid.subarray(40)]);
-    for (const settings of PYTHON_TEXT_SETTINGS) {
+    for (const settings of LOCALE_SETTINGS) {
       assert.deepEqual(guardsSeen(valid, settings), { code: 0, stdout: "", guards: 2 }, JSON.stringify(settings));
       const denied = guardsSeen(invalid, settings);
       assert.equal(denied.guards, 0, JSON.stringify(settings));
@@ -70,9 +69,9 @@ describe("hook stdin", () => {
     for (const stdin of [withByteOrderMark, withByteOrderMark.subarray(0, 2), Buffer.from([0xef])]) assert.equal(JSON.parse(guardsSeen(stdin).stdout).hookSpecificOutput.permissionDecision, "deny");
   });
 
-  it("hookProcess_exitsZeroWithAJsonDenial_andNothingOnStderr_forInvalidUtf8UnderAnyPythonSetting", () => {
+  it("hookProcess_exitsZeroWithAJsonDenial_andNothingOnStderr_forInvalidUtf8UnderAnyLocale", () => {
     const stdin = Buffer.concat([Buffer.from('{"tool_name": "Bash", "tool_input": {"command": "echo '), Buffer.from([0xff]), Buffer.from('"}}')]);
-    for (const settings of PYTHON_TEXT_SETTINGS) {
+    for (const settings of LOCALE_SETTINGS) {
       const run = spawnSync(process.execPath, [HOOK], { input: stdin, env: { ...process.env, ...environment, ...settings }, encoding: "utf8" });
       assert.equal(run.status, 0, JSON.stringify(settings));
       assert.equal(run.stderr, "", JSON.stringify(settings));
@@ -80,11 +79,11 @@ describe("hook stdin", () => {
     }
   });
 
-  it("hookProcess_passesAValidPayloadSilently_andWritesNoByteOrderMark_underUtf8Sig", () => {
-    const run = spawnSync(process.execPath, [HOOK], { input: payload("git status"), env: { ...process.env, ...environment, PYTHONIOENCODING: "utf-8-sig" }, encoding: "buffer" });
+  it("hookProcess_passesAValidPayloadSilently_andWritesNoByteOrderMark", () => {
+    const run = spawnSync(process.execPath, [HOOK], { input: payload("git status"), env: { ...process.env, ...environment }, encoding: "buffer" });
     assert.equal(run.status, 0);
     assert.equal(run.stdout.length, 0);
-    const denied = spawnSync(process.execPath, [HOOK], { input: payload("git push --force origin main"), env: { ...process.env, ...environment, PYTHONIOENCODING: "utf-8-sig" }, encoding: "buffer" });
+    const denied = spawnSync(process.execPath, [HOOK], { input: payload("git push --force origin main"), env: { ...process.env, ...environment }, encoding: "buffer" });
     assert.notDeepEqual([...denied.stdout.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
     assert.equal(JSON.parse(denied.stdout.toString("utf8")).hookSpecificOutput.permissionDecision, "deny");
   });

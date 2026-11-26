@@ -226,14 +226,14 @@ describe("shipped settings", () => {
     assert.deepEqual(blocking, [["Bash", "ship-gate.ts"], ["Bash|Edit|Write|NotebookEdit", "git-guard.ts"]])
   })
 
-  it("shippedFragments_startEveryNodeHookWithTheCompileCache", () => {
+  it("shippedFragments_preloadTheCompileCacheInEveryNodeHook", () => {
     const commands = ["settings/core.json", "stacks/spring-maven/settings.json"].flatMap((relative) =>
       Object.values<{ hooks: { command: string }[] }[]>(JSON.parse(readFile(path.join(KEEL_ROOT, relative))).hooks).flatMap((entries) =>
         entries.flatMap((entry) => entry.hooks.map((hook) => hook.command)),
       ),
     )
     assert.equal(commands.length, 7)
-    const uncached = commands.filter((command) => !command.startsWith('NODE_COMPILE_CACHE="${KEEL_DATA_DIR:-$HOME/.claude}/state/keel/node-compile-cache" node '))
+    const uncached = commands.filter((command) => !command.startsWith("node --import={{KEEL}}/hooks/lib/hookkit/compile-cache.ts {{KEEL}}/"))
     assert.deepEqual(uncached, [])
   })
 

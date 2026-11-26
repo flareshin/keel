@@ -15,7 +15,13 @@ describe("hook registration", () => {
   })
 
   it("script_skipsLeadingEnvironmentAssignments", () => {
-    const hook = registration('NODE_COMPILE_CACHE="${KEEL_DATA_DIR:-$HOME/.claude}/state/keel/node-compile-cache" A=1 node /keel/hooks/ship-gate/ship-gate.ts')
+    const hook = registration("A=1 B=2 node /keel/hooks/ship-gate/ship-gate.ts")
+    assert.equal(hook.script, "/keel/hooks/ship-gate/ship-gate.ts")
+    assert.equal(hook.hookName, "ship-gate")
+  })
+
+  it("script_skipsInterpreterOptions_beforeTheScript", () => {
+    const hook = registration("node --import=/keel/hooks/lib/hookkit/compile-cache.ts /keel/hooks/ship-gate/ship-gate.ts")
     assert.equal(hook.script, "/keel/hooks/ship-gate/ship-gate.ts")
     assert.equal(hook.hookName, "ship-gate")
   })

@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { dataDir } from "../lib/hookkit/env.ts";
-import { FireLog, utcNow } from "../lib/hookkit/fires.ts";
+import { utcNow } from "../lib/hookkit/fires.ts";
 import * as protocol from "../lib/hookkit/protocol.ts";
 import { basename, joinPath } from "../lib/hookkit/paths.ts";
 import { dumpsAscii } from "../lib/hookkit/jsonout.ts";
@@ -10,8 +10,6 @@ import { printLine, writeStderr } from "../lib/hookkit/stdio.ts";
 import { splitlines, trimCharacters, trimSpace } from "../lib/hookkit/text.ts";
 import { findToplevel, findUpstream, gitOutputOrNull } from "../lib/hookkit/repo.ts";
 
-const HOOK = "handoff";
-const RULE = "C-handoff";
 const RESUME_HEADING = "## Resume point";
 const LOCATION_HEADING = "## Location";
 const NOT_GIVEN_PREFIX = "(not given";
@@ -19,6 +17,14 @@ const EMPTY_NOTE = "(not given — pass the resume point as an argument)";
 const SUBMODULE_GIT_DIR_RE = /\/\.git\/(worktrees\/[^/]+\/)?modules\//;
 const NON_ALPHANUMERIC = /[^A-Za-z0-9]/gu;
 const EXIT_USAGE = 1;
+const HELP_MODES: ReadonlySet<string> = new Set(["--help", "-h"]);
+const USAGE = [
+  "usage: handoff.ts <resume note…>   record the resume point and the repo's state",
+  "       handoff.ts --read           print the recorded handoff",
+  "       handoff.ts --status         print {path, hasResumePoint} as JSON",
+  "       handoff.ts --path           print where the handoff is kept",
+  "       handoff.ts --clear          delete the handoff once you have resumed",
+].join("\n");
 
 class RepoPlace {
   readonly toplevel: string;
@@ -41,6 +47,10 @@ class RepoPlace {
 
 function main(argv: string[]): number {
   const mode = argv[0] ?? "";
+  if (HELP_MODES.has(mode)) {
+    printLine(USAGE);
+    return protocol.EXIT_PASS;
+  }
   const toplevel = findToplevel(process.cwd());
   if (toplevel === null) {
     writeStderr(`handoff: run this inside a git repo (currently: ${process.cwd()})\n`);
@@ -65,7 +75,6 @@ function main(argv: string[]): number {
 function writeHandoff(place: RepoPlace, note: string): void {
   mkdirSync(dirname(place.file), { recursive: true });
   writeFileSync(place.file, renderHandoff(place, note), "utf8");
-  new FireLog(HOOK, null).append(RULE, "record", { detail: `snapshot ${basename(place.file)}` });
   printLine(`handoff recorded: ${place.file}`);
 }
 

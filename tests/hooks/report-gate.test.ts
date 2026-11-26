@@ -765,3 +765,25 @@ function tooDeep(fields: string): string {
   const nesting = "[".repeat(MAX_JSON_DEPTH + 1) + "]".repeat(MAX_JSON_DEPTH + 1);
   return `{${fields}, "deep": ${nesting}}`;
 }
+
+describe("ScratchWriteReviewEvidenceTest", () => {
+  it("handback_writesEvidence_whenTheReviewerWroteItsNotesWithTheWriteToolUnderTmp", () => {
+    handback(PASS_REPORT, { toolUses: [["Write", { file_path: "/tmp/review-notes.md", content: "notes" }]] });
+    assert.equal(sandbox.stubCalls("keel").length, 1);
+  });
+
+  it("handback_refusesEvidence_whenTheWriteToolPathClimbsOutOfTmp", () => {
+    handback(PASS_REPORT, { toolUses: [["Write", { file_path: `/tmp/../${scope}/a.py`, content: "x" }]] });
+    assert.deepEqual(sandbox.stubCalls("keel"), []);
+  });
+
+  it("handback_refusesEvidence_whenABashRedirectClimbsOutOfTmp", () => {
+    handback(PASS_REPORT, { toolUses: [["Bash", { command: `echo x > /tmp/../${scope}/a.py` }]] });
+    assert.deepEqual(sandbox.stubCalls("keel"), []);
+  });
+
+  it("handback_refusesEvidence_whenTheReviewerEditedARepoFileBesidesItsScratchNotes", () => {
+    handback(PASS_REPORT, { toolUses: [["Write", { file_path: "/tmp/review-notes.md", content: "notes" }], editIn(scope, "a.py")] });
+    assert.deepEqual(sandbox.stubCalls("keel"), []);
+  });
+});

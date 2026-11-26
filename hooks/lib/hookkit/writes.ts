@@ -1,4 +1,4 @@
-import { basename, expandUser, expandVars, joinPath } from "./paths.ts";
+import { basename, expandUser, expandVars, joinPath, normalizePath } from "./paths.ts";
 import { isDigits, partition, rstripChar, SPACE_CHARS, WORD_CHARS } from "./text.ts";
 import { unwrap } from "./commands.ts";
 import type { Redirect, SimpleCommand } from "./commands.ts";
@@ -70,7 +70,7 @@ export function commandWritesFiles(text: string, exceptUnder: readonly string[] 
   if (INLINE_WRITE_RE.test(text)) return true;
   for (const command of parseCommands(text)) {
     const targets = writeTargets(command);
-    const expanded = [...targets.written, ...targets.removed].map((path) => expandUser(expandVars(path)));
+    const expanded = [...targets.written, ...targets.removed].map((path) => normalizePath(expandUser(expandVars(path))));
     if (targets.unknown || expanded.some((path) => !exceptUnder.some((prefix) => path.startsWith(prefix)))) return true;
   }
   return false;

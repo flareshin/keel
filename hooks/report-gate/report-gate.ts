@@ -173,13 +173,17 @@ class AgentTranscript {
     const command = name === "bash" ? textField(toolArgs, "command") : "";
     const edits = protocol.FILE_EDIT_TOOLS.has(name);
     if (edits || commandWritesFiles(command)) this.needsEvidence = true;
-    if (edits || commandWritesFiles(command, SCRATCH_PREFIXES)) this.editedFiles = true;
     const target = edits ? editedPath(toolArgs) : "";
+    if (edits ? !isScratchPath(target) : commandWritesFiles(command, SCRATCH_PREFIXES)) this.editedFiles = true;
     if (target !== "" && this.scopes.length > 0 && !inScope(target, this.scopes)
         && !this.outOfScope.includes(normalize(target))) {
       this.outOfScope.push(normalize(target));
     }
   }
+}
+
+function isScratchPath(path: string): boolean {
+  return path !== "" && SCRATCH_PREFIXES.some((prefix) => normalize(path).startsWith(prefix));
 }
 
 function readAgentTranscript(path: string | null): AgentTranscript {

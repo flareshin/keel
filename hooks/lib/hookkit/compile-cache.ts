@@ -1,5 +1,4 @@
 import { enableCompileCache } from "node:module";
-import { dataDir } from "./env.ts";
-import { joinPath } from "./paths.ts";
+import { compileCacheDir } from "../../../lib/evidence/compile-cache.ts";
 
-enableCompileCache(joinPath(dataDir(), "state", "keel", "node-compile-cache"));
+enableCompileCache(compileCacheDir());

@@ -10,6 +10,7 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { run } from "../../hooks/lib/hookkit/subprocess.ts";
 import type { CompletedProcess } from "../../hooks/lib/hookkit/subprocess.ts";
+import { compileCacheDir } from "../../lib/evidence/compile-cache.ts";
 import { withEnv } from "../../tests/hooks/helpers.ts";
 import { carriesPrApprovalRule, dropPrRule, rewordPrRule } from "../../tests/link/helpers.ts";
 import { completeEdit, validateUpdate } from "../lib/config_policy.ts";
@@ -490,11 +491,18 @@ describe("installation", () => {
       return words[words.length - 2] as string;
     }
 
-    function homebrewNode(version: string): string {
-      const binary = join(home, "brew/Cellar/node", version, "bin/node");
+    function homebrewNode(version: string, formula: string = "node"): string {
+      const binary = join(home, "brew/Cellar", formula, version, "bin/node");
       mkdirSync(dirname(binary), { recursive: true });
       writeFileSync(binary, "");
       return binary;
+    }
+
+    function homebrewOptTo(formula: string, version: string): string {
+      const opt = join(home, "brew/opt", formula);
+      mkdirSync(dirname(opt), { recursive: true });
+      symlinkSync(`../Cellar/${formula}/${version}`, opt);
+      return join(opt, "bin/node");
     }
 
     function homebrewLauncherTo(version: string): string {
@@ -513,6 +521,22 @@ describe("installation", () => {
       assert.equal(installedCommand("/usr/bin:/bin"), withLauncher);
     });
 
+    it("installs a command that runs the TypeScript hook under a minimal PATH and denies a protected write", () => {
+      const command = installedCommand(process.env["PATH"] ?? "");
+      const write = { tool_name: "Write", tool_input: { file_path: `${home}/.codex/hooks.json`, content: "x" }, cwd: home, session_id: "link-test" };
+      const run = spawnSync("sh", ["-c", command], { input: JSON.stringify(write), encoding: "utf8", env: { ...PAYLOAD_ENV, HOME: home } });
+      assert.equal(run.status, 0, run.stderr);
+      const decision = (JSON.parse(run.stdout) as Record<string, any>)["hookSpecificOutput"];
+      assert.equal(decision["permissionDecision"], "deny");
+      assert.equal(decision["permissionDecisionReason"], `keel Codex guard: generated Codex configuration must be changed through codex/bin/link: ${home}/.codex/hooks.json`);
+    });
+
+    it("points NODE_COMPILE_CACHE at the compile cache the Claude Code hooks use", () => {
+      const assignment = installedCommand(process.env["PATH"] ?? "").split(" ")[0] as string;
+      const expected = withEnv({ KEEL_DATA_DIR: join(home, "data") }, compileCacheDir);
+      assert.equal(assignment, `NODE_COMPILE_CACHE=${expected}`);
+    });
+
     it("writes the paths, the compile cache and a runtime that is the installing node", () => {
       assert.match(home, /^[A-Za-z0-9_\/.-]+$/);
       const command = installedCommand(process.env["PATH"] ?? "");
@@ -528,6 +552,26 @@ describe("installation", () => {
       const binary = homebrewNode("9.9.9");
       const launcher = homebrewLauncherTo("9.9.9");
       assert.equal(hookRuntime(binary), launcher);
+    });
+
+    it("writes the opt launcher of a versioned formula that has no bin/node link", () => {
+      const binary = homebrewNode("22.11.0", "node@22");
+      const launcher = homebrewOptTo("node@22", "22.11.0");
+      assert.equal(hookRuntime(binary), launcher);
+    });
+
+    it("prefers the bin/node launcher over the opt link when both reach the running node", () => {
+      const binary = homebrewNode("9.9.9");
+      const launcher = homebrewLauncherTo("9.9.9");
+      homebrewOptTo("node", "9.9.9");
+      assert.equal(hookRuntime(binary), launcher);
+    });
+
+    it("keeps the Cellar path when the opt link points at another keg", () => {
+      const binary = homebrewNode("22.11.0", "node@22");
+      homebrewNode("22.12.0", "node@22");
+      homebrewOptTo("node@22", "22.12.0");
+      assert.equal(hookRuntime(binary), binary);
     });
 
     it("keeps the Cellar path when the Homebrew launcher points at another node version", () => {

@@ -34,7 +34,7 @@ export function isKeelLive(configDir: string, keelHome: string, skill: string): 
   return linksInto(skillLink, keelHome) && isGenerated(path.join(configDir, "CLAUDE.md"))
 }
 
-export function linkMode(configDir: string, keelHome: string): LinkMode {
+function linkMode(configDir: string, keelHome: string): LinkMode {
   return readRecordedMode({ keelHome, overlayDir: env.overlayDir(), dataDir: configDir })
 }
 

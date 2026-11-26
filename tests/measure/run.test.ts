@@ -94,12 +94,21 @@ describe("measure run", () => {
     assert.deepEqual([completed.status, result.status], [1, "FAIL"])
   })
 
-  it("run_countsOnlyPassingEvals_forEvalsMetric", () => {
+  it("run_countsNothing_forEvalsMetric_whenTheNewestLineFailsAfterAnOlderPass", () => {
     givenKeelRows(ledgerRow("C-demo", { metric: "evals:demo" }))
-    box.appendLog("keel-evals.jsonl", { ts: NOW_TS, eval_id: "demo", rule_id: "C-demo", case: "a", pass: true, model: "m" })
-    box.appendLog("keel-evals.jsonl", { ts: NOW_TS, eval_id: "demo", rule_id: "C-demo", case: "b", pass: false, model: "m" })
-    const [, result] = box.runJson("run", ["C-demo"])
-    assert.deepEqual([result.count, result.status], [1, "PASS"])
+    box.appendLog("keel-evals.jsonl", { ts: "2026-11-02T10:00:00Z", eval_id: "demo", rule_id: "C-demo", case: "b", pass: false, model: "m" })
+    box.appendLog("keel-evals.jsonl", { ts: "2026-11-01T10:00:00Z", eval_id: "demo", rule_id: "C-demo", case: "a", pass: true, model: "m" })
+    const [completed, result] = box.runJson("run", ["C-demo", "--since", "2026-10-01"])
+    assert.deepEqual([completed.status, result.count, result.status], [1, 0, "FAIL"])
+  })
+
+  it("run_countsOneItem_forEvalsMetric_whenTheNewestOfManyLinesPasses", () => {
+    givenKeelRows(ledgerRow("C-demo", { metric: "evals:demo" }))
+    box.appendLog("keel-evals.jsonl", { ts: "2026-11-03T10:00:00Z", eval_id: "demo", rule_id: "C-demo", case: "c", pass: true, model: "m" })
+    box.appendLog("keel-evals.jsonl", { ts: "2026-11-01T10:00:00Z", eval_id: "demo", rule_id: "C-demo", case: "a", pass: true, model: "m" })
+    box.appendLog("keel-evals.jsonl", { ts: "2026-11-02T10:00:00Z", eval_id: "demo", rule_id: "C-demo", case: "b", pass: false, model: "m" })
+    const [, result] = box.runJson("run", ["C-demo", "--since", "2026-10-01"])
+    assert.deepEqual([result.count, result.items.map((item: { case: string }) => item.case), result.status], [1, ["c"], "PASS"])
   })
 
   it("run_usesOverlayRunner_whenKeelHasNone", () => {

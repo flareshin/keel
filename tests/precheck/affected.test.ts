@@ -260,6 +260,25 @@ describe("keel test --affected", () => {
     assert.equal(keel(root, ["--base", "-x"], dataDir).status, 2)
     const unknownBase = keel(root, ["--base", "no-such-ref"], dataDir)
     assert.equal(unknownBase.status, 3)
-    assert.match(unknownBase.stderr, /no-such-ref has no merge base with HEAD/)
+    assert.match(unknownBase.stderr, /no-such-ref does not resolve to a commit/)
+  })
+
+  it("keelTestAffected_withoutOriginHead_namesTheMissingRefAndHowToSetIt", () => {
+    const root = remoteRepo()
+
+    const completed = keel(root, [], scratchDir("keel-data-"))
+
+    assert.equal(completed.status, 3)
+    assert.match(completed.stderr, /origin\/HEAD does not resolve to a commit; run `git remote set-head origin --auto` or pass --base <ref>/)
+  })
+
+  it("keelTestAffected_withABaseOfUnrelatedHistory_saysItHasNoMergeBase", () => {
+    const root = remoteRepo()
+    const unrelated = git(root, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit-tree", "4b825dc642cb6eb9a060e54bf8d69288fbee4904", "-m", "unrelated")
+
+    const completed = keel(root, ["--base", unrelated], scratchDir("keel-data-"))
+
+    assert.equal(completed.status, 3)
+    assert.match(completed.stderr, new RegExp(`${unrelated} has no merge base with HEAD`))
   })
 })

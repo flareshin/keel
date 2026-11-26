@@ -10,6 +10,7 @@ const PUSH_VALUE_OPTIONS: ReadonlySet<string> = new Set(["--push-option", "--rec
 const PUSH_OPTION_LETTER = "o";
 const PUSH_REPO_OPTION = "--repo";
 const WHOLE_REPO_PUSH_OPTIONS: ReadonlySet<string> = new Set(["--all", "--branches", "--mirror"]);
+const MATCHING_REFSPEC = ":";
 export const GH_REPO_OPTIONS: ReadonlySet<string> = new Set(["-R", "--repo"]);
 const GH_SUBCOMMAND_DEPTH = 2;
 const CONFIG_READ_SUBCOMMANDS: ReadonlySet<string> = new Set(["get", "list"]);
@@ -116,6 +117,7 @@ export interface PushInterpretation {
   options: PushArguments;
   refspecs: PushedRefspec[];
   deletes: boolean;
+  wholeRepo: boolean;
 }
 
 export function interpretPush(args: readonly string[]): PushInterpretation {
@@ -123,10 +125,12 @@ export function interpretPush(args: readonly string[]): PushInterpretation {
   const refspecs = options.refspecs.map((word): PushedRefspec => {
     const spec = lstripChar(word, "+");
     const [source, , destination] = partition(spec, ":");
-    return { source, destination: destination || null, forced: word.startsWith("+"), deletesDestination: spec.startsWith(":") };
+    const deletesDestination = spec.startsWith(":") && spec !== MATCHING_REFSPEC;
+    return { source, destination: destination || null, forced: word.startsWith("+"), deletesDestination };
   });
   const deletes = options.longOptions.includes("--delete") || options.shortFlags.includes("d");
-  return { options, refspecs, deletes };
+  const pushesMatchingBranches = options.refspecs.some((word) => lstripChar(word, "+") === MATCHING_REFSPEC);
+  return { options, refspecs, deletes, wholeRepo: options.wholeRepo || pushesMatchingBranches };
 }
 
 export function isConfigRead(args: readonly string[]): boolean {

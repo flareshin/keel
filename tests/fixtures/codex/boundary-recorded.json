@@ -821,5 +821,9 @@
  "command line/link file equals": "exit 2",
  "command line/config file equals": "exit 3",
  "command line/link file empty": "exit 2",
- "command line/config file empty": "exit 3"
+ "command line/config file empty": "exit 3",
+ "command line/link allow worktree alone": "exit 0",
+ "command line/config allow worktree alone": "exit 2",
+ "command line/link allow worktree equals value": "exit 2",
+ "command line/config allow worktree equals value": "exit 2"
 }

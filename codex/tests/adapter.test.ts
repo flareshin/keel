@@ -8,13 +8,14 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { run } from "../../hooks/lib/hookkit/subprocess.ts";
+import { OSError, run } from "../../hooks/lib/hookkit/subprocess.ts";
+import { TimeoutExpired } from "../../measure/lib/measurekit/timeout.ts";
 import type { CompletedProcess } from "../../hooks/lib/hookkit/subprocess.ts";
 import { withEnv } from "../../tests/hooks/helpers.ts";
 import { carriesPrApprovalRule, dropPrRule, rewordPrRule } from "../../tests/link/helpers.ts";
 import { completeEdit, validateUpdate } from "../lib/config_policy.ts";
 import { digest, fingerprint } from "../lib/files.ts";
-import { buildFiles, buildSkillLinks, reconcile } from "../lib/install.ts";
+import { buildFiles, buildSkillLinks, linkedWorktreeProblems, reconcile } from "../lib/install.ts";
 import { Refusal } from "../lib/refusal.ts";
 import { applySkillPlan, lockIsStale, planSkills, realSkillFiles, replaceLink } from "../lib/skill_registry.ts";
 import type { SkillFiles } from "../lib/skill_registry.ts";
@@ -64,7 +65,7 @@ describe("installation", () => {
   afterEach(() => rmSync(temp, { recursive: true, force: true }));
 
   function runLink(...args: string[]) {
-    return runNode(LINK, ["--home", home, ...args], env);
+    return runNode(LINK, ["--home", home, "--allow-worktree", ...args], env);
   }
 
   function runSourceLink(source: string, ...args: string[]) {
@@ -93,6 +94,100 @@ describe("installation", () => {
   function actionsOf(result: { stdout: string }): unknown {
     return (JSON.parse(result.stdout) as Record<string, unknown>)["actions"];
   }
+
+  describe("linked worktree source", () => {
+    const LINKED_WORKTREE_PROBLEM = /linked worktree.*--allow-worktree/;
+
+    function git(cwd: string, ...args: string[]): void {
+      const isolated = { ...env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
+      const result = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8", env: isolated });
+      assert.equal(result.status, 0, result.stderr);
+    }
+
+    function linkedWorktreeOf(main: string): string {
+      git(main, "init", "-q");
+      git(main, "add", "-A");
+      git(main, "-c", "user.name=keel-test", "-c", "user.email=keel-test@example.invalid", "commit", "-q", "-m", "source");
+      const worktree = join(home, "linked-worktree");
+      git(main, "worktree", "add", "-q", worktree);
+      return worktree;
+    }
+
+    function problemsOf(result: { stdout: string }): string[] {
+      return (JSON.parse(result.stdout) as Record<string, string[]>)["problems"] ?? [];
+    }
+
+    it("refuses --write from a linked worktree and writes nothing", () => {
+      const refused = runSourceLink(linkedWorktreeOf(copySource("main-checkout")), "--write");
+
+      assert.equal(refused.status, 3, refused.stdout + refused.stderr);
+      assert.ok(problemsOf(refused).some((problem) => LINKED_WORKTREE_PROBLEM.test(problem)), refused.stdout);
+      assert.equal(existsSync(join(home, ".codex")), false);
+      assert.equal(existsSync(join(home, ".agents/skills")), false);
+    });
+
+    it("reports a linked worktree source as a problem in --check", () => {
+      const checked = runSourceLink(linkedWorktreeOf(copySource("main-checkout")), "--check");
+
+      assert.equal(checked.status, 1, checked.stdout + checked.stderr);
+      assert.ok(problemsOf(checked).some((problem) => LINKED_WORKTREE_PROBLEM.test(problem)), checked.stdout);
+    });
+
+    it("lists a linked worktree source as a problem in a dry run and writes nothing", () => {
+      const dryRun = runSourceLink(linkedWorktreeOf(copySource("main-checkout")));
+
+      assert.equal(dryRun.status, 0, dryRun.stdout + dryRun.stderr);
+      assert.ok(problemsOf(dryRun).some((problem) => LINKED_WORKTREE_PROBLEM.test(problem)), dryRun.stdout);
+      assert.equal(existsSync(join(home, ".codex")), false);
+      assert.equal(existsSync(join(home, ".agents/skills")), false);
+    });
+
+    it("reports a git that timed out as a problem, since it cannot rule out a worktree", () => {
+      const timedOut = () => { throw new TimeoutExpired("Command 'git' timed out after 10 seconds", 10); };
+
+      const problems = linkedWorktreeProblems("/keel", timedOut);
+
+      assert.equal(problems.length, 1);
+      assert.match(problems[0] ?? "", /git.*timed out.*--allow-worktree/);
+    });
+
+    it("treats a missing git as not a worktree", () => {
+      const missing = () => { throw new OSError("spawnSync git ENOENT", "ENOENT"); };
+
+      assert.deepEqual(linkedWorktreeProblems("/keel", missing), []);
+    });
+
+    it("installs from a linked worktree when --allow-worktree is given", () => {
+      const worktree = linkedWorktreeOf(copySource("main-checkout"));
+
+      const installed = runSourceLink(worktree, "--write", "--allow-worktree");
+
+      assert.equal(installed.status, 0, installed.stdout + installed.stderr);
+      assert.equal(realpathSync(join(home, ".agents/skills/writing-readable-code")), join(worktree, "skills/writing-readable-code"));
+      assert.equal(runSourceLink(worktree, "--check", "--allow-worktree").status, 0);
+    });
+
+    it("installs from the main checkout of a repository without --allow-worktree", () => {
+      const main = copySource("main-checkout");
+      linkedWorktreeOf(main);
+
+      const installed = runSourceLink(main, "--write");
+
+      assert.equal(installed.status, 0, installed.stdout + installed.stderr);
+      assert.equal(runSourceLink(main, "--check").status, 0);
+    });
+
+    it("unlinks from a linked worktree without --allow-worktree", () => {
+      const main = copySource("main-checkout");
+      const worktree = linkedWorktreeOf(main);
+      assert.equal(runSourceLink(main, "--write").status, 0);
+
+      const unlinked = runSourceLink(worktree, "--unlink");
+
+      assert.equal(unlinked.status, 0, unlinked.stdout + unlinked.stderr);
+      assert.equal(existsSync(join(home, ".codex/AGENTS.md")), false);
+    });
+  });
 
   it("test_dryRun_doesNotWrite_home", () => {
     const run = runLink();
@@ -435,7 +530,7 @@ describe("installation", () => {
   it("test_concurrentProfiles_keepBothReferences", async () => {
     const profiles = [join(home, "a"), join(home, "b")];
     const runs = profiles.map((profile) => new Promise<{ status: number | null; stderr: string }>((resolve) => {
-      const child = spawn(process.execPath, [LINK, "--home", home, "--write"], { env: { ...env, CODEX_HOME: profile } });
+      const child = spawn(process.execPath, [LINK, "--home", home, "--allow-worktree", "--write"], { env: { ...env, CODEX_HOME: profile } });
       let stderr = "";
       child.stderr.on("data", (chunk) => { stderr += chunk; });
       child.stdout.resume();
@@ -525,7 +620,7 @@ describe("installation", () => {
     }
 
     function installedCommand(searchPath: string): string {
-      const run = spawnSync(process.execPath, [LINK, "--home", home, "--write"], { env: { ...env, PATH: searchPath }, encoding: "utf8" });
+      const run = spawnSync(process.execPath, [LINK, "--home", home, "--allow-worktree", "--write"], { env: { ...env, PATH: searchPath }, encoding: "utf8" });
       assert.equal(run.status, 0, run.stderr);
       return readJsonFile(join(home, ".codex/hooks.json"))["hooks"]["PreToolUse"][0]["hooks"][0]["command"];
     }

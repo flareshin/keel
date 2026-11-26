@@ -1,13 +1,3 @@
-# Push and merge spellings and what ship-gate must do with each, run through the one shared parser.
-# expect: gate = judged against evidence (denied unreviewed, passed with a bundle, scanned by git-guard);
-#         pass = never a gated action (a tag, a deletion, a dry run, or not a push at all);
-#         deny = cannot be attributed to one repo and branch, so refused with the user-run command.
-# Placeholders: {repo} = the clone, {tmp} = a directory outside any repo, {head} = the feature commit;
-# a literal \n in the command is a newline. The fixture repo is on branch `feature` and holds tag `tmp`
-# at the feature commit.
-# clone (optional): gated (default) = a clone of the gated acme/app; fork = a clone of the ungated fork
-# me/app whose `upstream` remote is acme/app and whose branch `feature` pushes to upstream; fork-origin =
-# another clone of that fork whose branch `feature` pushes to origin.
 command	expect	note	clone
 git push origin feature	gate	plain
 git -c color.ui=never push origin feature	gate	an unrelated config override
@@ -125,6 +115,8 @@ gh pr -R=acme/app merge 7 --squash	deny	repo flag with =value between pr and mer
 git push --all origin	deny	every branch
 git push --mirror origin	deny	mirror
 git push --branches origin	deny	every branch, --branches spelling
+git push origin :	deny	matching refspec: every branch on both sides
+git push origin +:	deny	forced matching refspec
 git push upstream feature	deny	a gated upstream named from a fork clone	fork
 git push	deny	the branch's push remote is a gated upstream	fork
 git push --repo=upstream	deny	a gated upstream named by the --repo option	fork-origin

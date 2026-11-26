@@ -106,6 +106,8 @@ describe("fullSuitePaths", () => {
 })
 
 describe("keel test --affected", () => {
+  const lastTestsLogRecord = (dataDir: string) =>
+    JSON.parse(readFileSync(join(dataDir, "logs", "keel-tests.jsonl"), "utf8").trim().split("\n").at(-1)!)
   const { NODE_TEST_CONTEXT: _parentRunner, NODE_COMPILE_CACHE: _parentCache, ...standaloneEnv } = process.env
   const keel = (root: string, args: string[], dataDir: string, extraEnv: Record<string, string> = {}) =>
     spawnSync(KEEL, ["test", "--affected", ...args], { cwd: root, encoding: "utf8", env: { ...standaloneEnv, ...extraEnv, KEEL_DATA_DIR: dataDir } })
@@ -133,6 +135,28 @@ describe("keel test --affected", () => {
     assert.match(completed.stderr, /^KEEL-TEST \{"run_id":"[^"]+","count":1,"exit":0,"evidence_id":"[^"]+"/m)
     const evidenceFiles = readdirSync(join(dataDir, "state", "keel", "evidence", "tests"), { recursive: true }).filter((name) => String(name).endsWith(".json"))
     assert.equal(evidenceFiles.length, 1)
+  })
+
+  it("keelTestAffected_logsItsRunAsAnAffectedSelection", () => {
+    const root = remoteRepo()
+    writeFiles(root, { "lib/a.ts": "export const a = 2\n" })
+    const dataDir = scratchDir("keel-data-")
+
+    const completed = keel(root, ["--base", "trunk"], dataDir)
+
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.equal(lastTestsLogRecord(dataDir).selection, "affected")
+  })
+
+  it("keelTestAffected_withReplays_logsItsRunAsAnAffectedWithReplaysSelection", () => {
+    const root = remoteRepo(Object.fromEntries(REPLAY_TESTS.map((test) => [test, PASSING_TEST("node:path")])))
+    writeFiles(root, { "lib/a.ts": "export const a = 2\n" })
+    const dataDir = scratchDir("keel-data-")
+
+    const completed = keel(root, ["--with-replays", "--base", "trunk"], dataDir)
+
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.equal(lastTestsLogRecord(dataDir).selection, "affected_with_replays")
   })
 
   it("keelTestAffected_namesTheReplayRunWhenAChangedPathIsCodeAHookRuns", () => {
@@ -236,6 +260,25 @@ describe("keel test --affected", () => {
     assert.equal(keel(root, ["--base", "-x"], dataDir).status, 2)
     const unknownBase = keel(root, ["--base", "no-such-ref"], dataDir)
     assert.equal(unknownBase.status, 3)
-    assert.match(unknownBase.stderr, /no-such-ref has no merge base with HEAD/)
+    assert.match(unknownBase.stderr, /no-such-ref does not resolve to a commit/)
+  })
+
+  it("keelTestAffected_withoutOriginHead_namesTheMissingRefAndHowToSetIt", () => {
+    const root = remoteRepo()
+
+    const completed = keel(root, [], scratchDir("keel-data-"))
+
+    assert.equal(completed.status, 3)
+    assert.match(completed.stderr, /origin\/HEAD does not resolve to a commit; run `git remote set-head origin --auto` or pass --base <ref>/)
+  })
+
+  it("keelTestAffected_withABaseOfUnrelatedHistory_saysItHasNoMergeBase", () => {
+    const root = remoteRepo()
+    const unrelated = git(root, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit-tree", "4b825dc642cb6eb9a060e54bf8d69288fbee4904", "-m", "unrelated")
+
+    const completed = keel(root, ["--base", unrelated], scratchDir("keel-data-"))
+
+    assert.equal(completed.status, 3)
+    assert.match(completed.stderr, new RegExp(`${unrelated} has no merge base with HEAD`))
   })
 })

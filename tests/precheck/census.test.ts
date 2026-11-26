@@ -361,7 +361,7 @@ describe("keel precheck run", { skip: typescriptInstalled ? false : "typescript 
     assert.equal(keel(["--repo", root, "--base", "-x"], dataDir).status, 2)
     const unknownBase = keel(["--repo", root, "--base", "no-such-ref"], dataDir)
     assert.equal(unknownBase.status, 3)
-    assert.match(unknownBase.stderr, /no-such-ref has no merge base with HEAD/)
+    assert.match(unknownBase.stderr, /no-such-ref does not resolve to a commit/)
   })
 
   it("keelPrecheckRun_refusesWithTheNpmCiHint_fromACheckoutWithoutNodeModules", () => {

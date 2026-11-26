@@ -179,7 +179,7 @@ describe('KeelTestCommandTest', () => {
     const sandbox = new Sandbox(t);
     const repo = sandbox.clone('acme', 'app');
     const run = sandbox.keel(['test', '--', 'bash', '-c', "echo changed > generated.txt; echo '4 passed in 0.10s'"], { cwd: repo.path });
-    assert.equal(run.rc, 0);
+    assert.equal(run.rc, 7);
     assert.deepEqual(sandbox.evidenceFiles('tests'), []);
   });
 
@@ -298,7 +298,7 @@ describe('KeelTestCommandTest', () => {
     const started = Date.now();
     const run = sandbox.keel(['test', '--', 'bash', '-c', "echo 'Ran 3 tests'; sleep 20 & exit 0"], { cwd: repo.path });
     assert.ok(Date.now() - started < loadScaledMs(10000, 20000), `took ${Date.now() - started} ms`);
-    assert.equal(run.rc, 5, run.stderr);
+    assert.equal(run.rc, 8, run.stderr);
     assert.match(run.stderr, /keel test: the command exited but its output stayed open and silent for 500 ms; no evidence written\n/);
     assert.equal(run.stdout, 'Ran 3 tests\n');
     assert.deepEqual(sandbox.evidenceFiles('tests'), []);

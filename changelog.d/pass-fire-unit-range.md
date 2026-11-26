@@ -1,0 +1,1 @@
+ship-gate: every judged `pass` or `deny` fire line now carries `base`, the merge-base the judgment diffed from, so `base..head` names the shipped unit and later fixes can be tied to the ship they fix without reconstructing units from reflogs.

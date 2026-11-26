@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
+import { createHash } from "node:crypto"
 import { afterEach, beforeEach, describe, it } from "node:test"
 import fs from "node:fs"
 import os from "node:os"
@@ -7,7 +8,7 @@ import path from "node:path"
 
 import { AMBIGUOUS, CLEAR_ANSWER, CLEAR_CHANGE, Case, GRADED_CHANGE, READABLE_CHANGE, splitGaps } from "../../measure/evals/lib/evalkit/cases.ts"
 import { faultReason, graderCommit, runPasses, textAnswers, textAsks } from "../../measure/evals/lib/evalkit/grade.ts"
-import { GENERATED_CLAUDE_MD_HEADER, isKeelLive, projectDirFor, suiteEvalId } from "../../measure/evals/lib/evalkit/liveconfig.ts"
+import { GENERATED_CLAUDE_MD_HEADER, configFingerprint, isKeelLive, projectDirFor, suiteEvalId } from "../../measure/evals/lib/evalkit/liveconfig.ts"
 import { QUESTION_PROTOCOL, claudeCommand } from "../../measure/evals/lib/evalkit/runner.ts"
 import { RunFacts, summarizeStream } from "../../measure/evals/lib/evalkit/stream.ts"
 import type { JsonObject } from "../../measure/lib/measurekit/json.ts"
@@ -401,6 +402,69 @@ describe("live config", () => {
     fs.symlinkSync(config, configAlias)
     fs.symlinkSync(keel, keelAlias)
     assert.equal(isKeelLive(configAlias, keelAlias, "refining-requests"), true)
+  })
+
+  const recordMode = (mode: string) => {
+    fs.mkdirSync(path.join(config, "state", "keel"), { recursive: true })
+    fs.writeFileSync(path.join(config, "state", "keel", "link-state.json"), JSON.stringify({ schema: 1, mode }))
+  }
+  const enableKeelPlugin = (enabled: boolean) => fs.writeFileSync(path.join(config, "settings.json"), JSON.stringify({ enabledPlugins: { "keel@keel": enabled } }))
+  const writeKeelSkill = () => fs.writeFileSync(path.join(keel, "skills", "refining-requests", "SKILL.md"), "# refining-requests\n")
+  const writePrinciples = () => fs.writeFileSync(path.join(keel, "PRINCIPLES.md"), "# keel principles\n")
+
+  it("isKeelLive_true_inPluginMode_whenThePluginIsEnabledAndServesTheSkillAndPrinciples", () => {
+    recordMode("plugin")
+    enableKeelPlugin(true)
+    writeKeelSkill()
+    writePrinciples()
+    assert.equal(isKeelLive(config, keel, "refining-requests"), true)
+  })
+
+  it("isKeelLive_false_inPluginMode_whenTheKeelPluginIsDisabled", () => {
+    recordMode("plugin")
+    enableKeelPlugin(false)
+    writeKeelSkill()
+    writePrinciples()
+    assert.equal(isKeelLive(config, keel, "refining-requests"), false)
+  })
+
+  it("isKeelLive_false_inPluginMode_whenTheKeelCheckoutHasNoSuchSkill", () => {
+    recordMode("plugin")
+    enableKeelPlugin(true)
+    writePrinciples()
+    assert.equal(isKeelLive(config, keel, "refining-requests"), false)
+  })
+
+  it("isKeelLive_false_inPluginMode_evenWithALeftoverLinkInstall_whenThePluginIsNotEnabled", () => {
+    recordMode("plugin")
+    linkSkill()
+    writeClaudeMd(GENERATED_CLAUDE_MD_HEADER)
+    assert.equal(isKeelLive(config, keel, "refining-requests"), false)
+  })
+
+  it("isKeelLive_throws_whenTheLinkStateRecordsAnUnknownMode", () => {
+    recordMode("half")
+    assert.throws(() => isKeelLive(config, keel, "refining-requests"), /mode must be "full" or "plugin"/)
+  })
+
+  it("configFingerprint_inPluginMode_hashesTheSkillAndPrinciplesTheKeelCheckoutServes", () => {
+    recordMode("plugin")
+    writeKeelSkill()
+    writePrinciples()
+    const sha = (text: string) => createHash("sha256").update(text).digest("hex")
+    assert.deepEqual(configFingerprint(config, keel, "refining-requests"), {
+      link_mode: "plugin", claude_md_sha256: null, principles_md_sha256: sha("# keel principles\n"), skill_md_sha256: sha("# refining-requests\n"),
+    })
+  })
+
+  it("configFingerprint_inFullMode_hashesTheGeneratedClaudeMdAndTheLinkedSkill", () => {
+    linkSkill()
+    writeKeelSkill()
+    writeClaudeMd(GENERATED_CLAUDE_MD_HEADER)
+    const fingerprint = configFingerprint(config, keel, "refining-requests")
+    assert.deepEqual([fingerprint.link_mode, fingerprint.principles_md_sha256], ["full", null])
+    assert.equal(fingerprint.skill_md_sha256, createHash("sha256").update("# refining-requests\n").digest("hex"))
+    assert.equal(fingerprint.claude_md_sha256?.length, 64)
   })
 
   it("suiteEvalId_addsBaselineSuffix_whenKeelIsNotLive", () => {

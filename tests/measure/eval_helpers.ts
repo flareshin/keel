@@ -122,6 +122,13 @@ export class EvalSandbox extends MeasureSandbox {
     this.write("data/CLAUDE.md", GENERATED_HEADER + "\n# Principles\n")
   }
 
+  installKeelPlugin(): void {
+    this.write(`keel/skills/${SKILL}/SKILL.md`, "# skill\n")
+    this.write("keel/PRINCIPLES.md", "# Principles\n")
+    this.write("data/state/keel/link-state.json", JSON.stringify({ schema: 1, mode: "plugin" }))
+    this.write("data/settings.json", JSON.stringify({ enabledPlugins: { "keel@keel": true } }))
+  }
+
   writeRawDir(name: string, runs: RawRun[], options: { summaryEvalId?: string; repeat?: number; keelLive?: boolean; cases?: string[]; evalId?: string } = {}): string {
     const { summaryEvalId = EVAL_ID, repeat = 1, keelLive = true, evalId = EVAL_ID } = options
     const raw = `data/logs/keel-eval-${name}`

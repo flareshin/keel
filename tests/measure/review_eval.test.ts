@@ -400,6 +400,16 @@ describe("review-eval cli", () => {
     assert.deepEqual([report.reviewer, summaryLines()[0].reviewer], [expected, expected])
   })
 
+  it("reviewerFingerprint_inPluginMode_hashesTheWorkflowsOfTheKeelCheckout", () => {
+    box.write("data/state/keel/link-state.json", JSON.stringify({ schema: 1, mode: "plugin" }))
+    box.write("keel/workflows/lens-review.js", "export const meta = {}\n")
+    play([{ result: result() }])
+    const [completed, report] = runEval("--repeat", "1")
+    assert.equal(completed.status, 0, completed.stderr)
+    const expected = { "lens-review.js": createHash("sha256").update("export const meta = {}\n").digest("hex"), "adversarial-audit.js": null }
+    assert.deepEqual(report.reviewer, expected)
+  })
+
   it("dryRun_buildsEveryCaseAndCallsNothing", () => {
     const [completed, plan] = runEval("--dry-run")
     assert.equal(completed.status, 0, completed.stderr)

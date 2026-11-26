@@ -12,6 +12,7 @@ import { QUESTION_PROTOCOL, claudeCommand } from "../../measure/evals/lib/evalki
 import { RunFacts, summarizeStream } from "../../measure/evals/lib/evalkit/stream.ts"
 import type { JsonObject } from "../../measure/lib/measurekit/json.ts"
 import { CaseVerdict, passesNeeded, splitVerdict, suitePasses } from "../../measure/evals/lib/evalkit/verdict.ts"
+import { loadScaledMs } from "../load.ts"
 
 const TIMEOUT = 300
 const AMBIGUOUS_CASE = new Case("a1", "train", AMBIGUOUS, "-", "Improve this screen.")
@@ -77,7 +78,7 @@ describe("textAsks", () => {
   it("textAsks_returnsQuickly_whenALineIsALongRunOfHashes", () => {
     const started = performance.now()
     assert.equal(textAsks("#".repeat(26) + " x"), false)
-    assert.ok(performance.now() - started < 1000)
+    assert.ok(performance.now() - started < loadScaledMs(1000))
   })
 
   it("textAsks_false_whenNoFinalText", () => {

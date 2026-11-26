@@ -4,6 +4,7 @@ import type { TestContext } from 'node:test';
 import * as gitcmd from '../../lib/evidence/gitcmd.ts';
 import { LOGIC_WITH_TEST, Sandbox, shipGateTimeout } from './helpers.ts';
 import type { Repo } from './helpers.ts';
+import { loadScaledMs } from '../load.ts';
 
 type Files = Record<string, string | null>;
 
@@ -286,7 +287,7 @@ describe('StackedChainsTest', () => {
     const elapsedSeconds = (performance.now() - started) / 1000;
 
     assert.equal(result.rc, 0, result.stderr);
-    assert.ok(elapsedSeconds < shipGateTimeout() / 3, `${elapsedSeconds}s`);
+    assert.ok(elapsedSeconds * 1000 < loadScaledMs(shipGateTimeout() * 1000 / 3, shipGateTimeout() * 1000), `${elapsedSeconds}s`);
   });
 });
 

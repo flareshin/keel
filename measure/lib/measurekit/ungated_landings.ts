@@ -5,6 +5,7 @@ import { readJsonl } from "./datafiles.ts"
 import * as env from "./env.ts"
 import { InvalidUtf8Error, isSystemError } from "./files.ts"
 import { FIRES_LOG, isSyntheticSession } from "./fireslog.ts"
+import { isWithinWindow } from "./metrics.ts"
 import { GitError, repoKey, runGitOrThrow } from "./gitutil.ts"
 import type { JsonObject } from "./json.ts"
 
@@ -15,7 +16,6 @@ const WARN = "warn"
 const EXAMPLES = 5
 const SHORT_SHA = 12
 const REFLOG_TIME = /@\{(\d+)\}$/
-const ISO_DATE_LENGTH = 10
 
 type Bucket = "covered" | "after_pass" | "denied_only" | "warned_only" | "no_fire"
 const REPORTED_EXAMPLES: Bucket[] = ["after_pass", "denied_only", "warned_only", "no_fire"]
@@ -71,10 +71,10 @@ export function summarizeUngatedLandings(checkouts: string[], since: string): Re
 
 export function classifyLandings(checkout: string, integrationBase: string, key: string, fires: JsonObject[], since: string): RepoLandings {
   const outcomesByHead = shipGateOutcomes(fires, key)
-  const result: RepoLandings = { updates: 0, commits: 0, covered: 0, after_pass: 0, denied_only: 0, warned_only: 0, no_fire: 0, examples: {} }
+  const landings: RepoLandings = { updates: 0, commits: 0, covered: 0, after_pass: 0, denied_only: 0, warned_only: 0, no_fire: 0, examples: {} }
   const seen = new Set<string>()
   for (const update of originUpdates(checkout, "refs/remotes/origin/" + integrationBase, since)) {
-    result.updates++
+    landings.updates++
     const headsHere = revList(checkout, [update.tip, "--not", update.previous]).filter((sha) => outcomesByHead.has(sha))
     const headsWith = (outcome: string) => headsHere.filter((sha) => outcomesByHead.get(sha)!.has(outcome))
     const reached = (heads: string[]) => new Set(heads.flatMap((head) => revList(checkout, ["--no-merges", head, "--not", update.previous])))
@@ -89,15 +89,15 @@ export function classifyLandings(checkout: string, integrationBase: string, key:
       if (seen.has(sha)) continue
       seen.add(sha)
       const bucket: Bucket = ranges.find(([, commits]) => commits.has(sha))?.[0] ?? "no_fire"
-      result.commits++
-      result[bucket]++
+      landings.commits++
+      landings[bucket]++
       if (REPORTED_EXAMPLES.includes(bucket)) {
-        const examples = (result.examples[bucket] ??= [])
+        const examples = (landings.examples[bucket] ??= [])
         if (examples.length < EXAMPLES) examples.push(sha.slice(0, SHORT_SHA))
       }
     }
   }
-  return result
+  return landings
 }
 
 function shipGateOutcomes(fires: JsonObject[], key: string): Map<string, Set<string>> {
@@ -106,11 +106,16 @@ function shipGateOutcomes(fires: JsonObject[], key: string): Map<string, Set<str
     if (fire["hook"] !== SHIP_GATE || isSyntheticSession(fire["session"])) continue
     if (typeof fire["repo"] !== "string" || fire["repo"].toLowerCase() !== key) continue
     if (typeof fire["head"] !== "string" || typeof fire["outcome"] !== "string") continue
+    if (fire["outcome"] === PASS && !isJudged(fire)) continue
     let outcomes = outcomesByHead.get(fire["head"])
     if (!outcomes) outcomesByHead.set(fire["head"], (outcomes = new Set()))
     outcomes.add(fire["outcome"])
   }
   return outcomesByHead
+}
+
+function isJudged(fire: JsonObject): boolean {
+  return "risk" in fire
 }
 
 function originUpdates(checkout: string, ref: string, since: string): OriginUpdate[] {
@@ -124,11 +129,11 @@ function originUpdates(checkout: string, ref: string, since: string): OriginUpda
   const tips = log.split("\n").filter((line) => line !== "").map((line) => {
     const [sha, selector] = line.split(" ") as [string, string]
     const seconds = Number(REFLOG_TIME.exec(selector)?.[1] ?? 0)
-    return { sha, day: new Date(seconds * 1000).toISOString().slice(0, ISO_DATE_LENGTH) }
+    return { sha, ts: new Date(seconds * 1000).toISOString() }
   }).reverse()
   const updates: OriginUpdate[] = []
   for (let index = 1; index < tips.length; index++) {
-    if (tips[index]!.day >= since) updates.push({ previous: tips[index - 1]!.sha, tip: tips[index]!.sha })
+    if (isWithinWindow({ ts: tips[index]!.ts }, since)) updates.push({ previous: tips[index - 1]!.sha, tip: tips[index]!.sha })
   }
   return updates
 }

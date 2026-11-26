@@ -39,7 +39,8 @@ describe("ungated_landings", () => {
   }
 
   function fire(head: string, outcome: string, extra: JsonObject = {}): void {
-    fires.push({ hook: "ship-gate", repo: REPO, head, outcome, rule_id: "K1", session: SESSION, ...extra })
+    const judged: JsonObject = outcome === "pass" ? { risk: "standard" } : {}
+    fires.push({ hook: "ship-gate", repo: REPO, head, outcome, rule_id: "K1", session: SESSION, ...judged, ...extra })
   }
 
   it("classifyLandings_sortsEachLandedCommitByTheShipGateFiresOfItsOriginUpdate", () => {
@@ -99,6 +100,19 @@ describe("ungated_landings", () => {
     const result = classifyLandings(box.keel, "main", REPO, fires, BEFORE_COMMITS)
 
     assert.deepEqual(result.examples, { denied_only: [a1.slice(0, 12)], no_fire: [b1.slice(0, 12)] })
+  })
+
+  it("classifyLandings_ignoresAPassThatJudgedNothing_whenTheHeadWasDenied", () => {
+    land(commit("base"))
+    const d1 = commit("d1")
+    fire(d1, "deny", { risk: "heavy" })
+    fires.push({ hook: "ship-gate", repo: REPO, head: d1, outcome: "pass", rule_id: "K1", session: SESSION })
+    land(d1)
+
+    const result = classifyLandings(box.keel, "main", REPO, fires, BEFORE_COMMITS)
+
+    assert.equal(result.covered, 0)
+    assert.equal(result.denied_only, 1)
   })
 
   it("classifyLandings_ignoresFiresOfAnotherRepoAndOfSyntheticSessions", () => {

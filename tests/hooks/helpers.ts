@@ -229,6 +229,13 @@ export function bash(command: string, cwd: string): Record<string, unknown> {
   return preToolUse("Bash", { command, description: "test" }, cwd);
 }
 
+export function skillShellCommand(command: string, cwd: string): Record<string, unknown> {
+  return {
+    ...basePayload("PreSkillShellCommand", cwd, "/dev/null", false), tool_name: "Bash", tool_input: { command },
+    tool_use_id: "toolu_01:inner:preamble-0", command_name: "probe", command_source: "projectSettings", invoked_by: "user",
+  };
+}
+
 export function subagentStop(cwd: string, transcriptPath: string, agentTranscriptPath: string, message: string | null, stopHookActive = false): Record<string, unknown> {
   const payload = basePayload("SubagentStop", cwd, transcriptPath, true);
   Object.assign(payload, { agent_transcript_path: agentTranscriptPath, stop_hook_active: stopHookActive });

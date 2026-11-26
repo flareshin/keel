@@ -232,7 +232,7 @@ describe("shipped settings", () => {
         entries.flatMap((entry) => entry.hooks.map((hook) => hook.command)),
       ),
     )
-    assert.equal(commands.length, 7)
+    assert.equal(commands.length, 9)
     const uncached = commands.filter((command) => !command.startsWith('NODE_COMPILE_CACHE="${KEEL_DATA_DIR:-$HOME/.claude}/state/keel/node-compile-cache" node '))
     assert.deepEqual(uncached, [])
   })
@@ -247,11 +247,11 @@ describe("shipped settings", () => {
     assert.deepEqual(["git status", "npm test", "ls"].filter((command) => pattern.test(command)), [])
   })
 
-  it("shippedCore_registersShipGateOnPreToolUseBashAndStopOnly", () => {
+  it("shippedCore_registersShipGateOnBashToolAndSkillShellCommandsAndStopOnly", () => {
     const hooks: Record<string, { matcher?: string; hooks: { command?: string }[] }[]> = JSON.parse(readFile(path.join(KEEL_ROOT, "settings", "core.json"))).hooks
     const shipGate = Object.entries(hooks).flatMap(([event, entries]) =>
       entries.flatMap((entry) => entry.hooks.filter((hook) => (hook.command ?? "").includes("ship-gate")).map(() => [event, entry.matcher ?? ""])),
     )
-    assert.deepEqual(shipGate, [["PreToolUse", "Bash"], ["Stop", ""]])
+    assert.deepEqual(shipGate, [["PreToolUse", "Bash"], ["PreSkillShellCommand", "Bash"], ["Stop", ""]])
   })
 })

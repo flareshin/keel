@@ -38,6 +38,7 @@ import { judgeStop } from "./stop-turn.ts";
 const HOOK = "ship-gate";
 const FIRES_DETAIL_LIMIT = 200;
 const F_IRREVERSIBLE = "F-irreversible";
+const BASH_GUARD_EVENTS: ReadonlySet<string> = new Set(["PreToolUse", "PreSkillShellCommand"]);
 const DECISION_HINT = new RegExp(`${WORD_BOUNDARY}(git|gh|push|merge)${WORD_BOUNDARY}`, "u");
 const PUSH_OR_MERGE_WORD = new RegExp(`${WORD_BOUNDARY}(push|merge)${WORD_BOUNDARY}`, "u");
 const PUSH_OR_MERGE_WORDS: ReadonlySet<string> = new Set(["push", "merge"]);
@@ -246,8 +247,13 @@ function dispatch(payload: unknown): number {
   const event = typeof eventField === "string" ? eventField : "";
   if (event === "Stop") return judgeStop(payload);
   const report = new Report(payload, event);
-  if (event === "PreToolUse" && getField(payload, "tool_name") === "Bash") guardBash(payload, report);
+  if (isBashToGuard(payload)) guardBash(payload, report);
   return report.emit();
+}
+
+function isBashToGuard(payload: Payload): boolean {
+  const event = getField(payload, "hook_event_name");
+  return typeof event === "string" && BASH_GUARD_EVENTS.has(event) && getField(payload, "tool_name") === "Bash";
 }
 
 export function isRecursionError(error: unknown): boolean {
@@ -284,7 +290,7 @@ function bashCommandOf(raw: string): string {
     throw error;
   }
   if (!isRecord(payload)) return "";
-  if (getField(payload, "hook_event_name") !== "PreToolUse" || getField(payload, "tool_name") !== "Bash") return "";
+  if (!isBashToGuard(payload)) return "";
   const command = getField(protocol.toolInput(payload), "command");
   if (command === null) return "";
   return typeof command === "string" ? command : raw;

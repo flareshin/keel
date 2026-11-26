@@ -26,6 +26,16 @@ describe("plugin manifest", () => {
     assert.deepEqual(sharedEvents, linkHooks.hooks)
   })
 
+  it("coreFragment_runsTheBashGuardsOnSkillShellCommands_failingClosed", () => {
+    const core = readJson("settings/core.json") as { hooks: Record<string, Array<{ matcher?: string; hooks: Array<{ command: string; onFailure?: string }> }>> }
+    const bashGuards = (event: string) => (core.hooks[event] ?? [])
+      .filter((group) => (group.matcher ?? "").split("|").includes("Bash"))
+      .flatMap((group) => group.hooks)
+      .filter((hook) => hook.onFailure === "block")
+      .map((hook) => hook.command)
+    assert.deepEqual(bashGuards("PreSkillShellCommand"), bashGuards("PreToolUse"))
+  })
+
   it("coreFragment_turnsOnCodeMode_inTheMergedUserSettingsEnv", () => {
     const core = readJson("settings/core.json") as JsonObject
     const [merged, conflicts] = mergeFragments([["settings/core.json", core]])

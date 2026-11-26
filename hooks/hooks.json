@@ -44,6 +44,30 @@
         ]
       }
     ],
+    "PreSkillShellCommand": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "NODE_COMPILE_CACHE=\"${KEEL_DATA_DIR:-$HOME/.claude}/state/keel/node-compile-cache\" node ${CLAUDE_PLUGIN_ROOT}/hooks/ship-gate/ship-gate.ts",
+            "timeout": 60,
+            "onFailure": "block"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "NODE_COMPILE_CACHE=\"${KEEL_DATA_DIR:-$HOME/.claude}/state/keel/node-compile-cache\" node ${CLAUDE_PLUGIN_ROOT}/hooks/git-guard/git-guard.ts",
+            "timeout": 10,
+            "onFailure": "block"
+          }
+        ]
+      }
+    ],
     "SubagentStop": [
       {
         "hooks": [

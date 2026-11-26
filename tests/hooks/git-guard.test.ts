@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import {
-  assertBulletIdsSeeded, assertFired, bash, GIT_GUARD, HookSandbox, KEEL_HOME, preToolUse, withEnv,
+  assertBulletIdsSeeded, assertFired, bash, GIT_GUARD, HookSandbox, KEEL_HOME, preToolUse, skillShellCommand, withEnv,
 } from "./helpers.ts";
 import type { HookResult } from "./helpers.ts";
 import { BOUNDARY_TIMEOUT_SECONDS, DROP_COMMENTS, GuardError, scanStagedSecrets, WRITE_MESSAGE_FILE } from "../../hooks/git-guard/git-guard.ts";
@@ -206,6 +206,12 @@ describe("HookSkipTest", () => {
 
   it("commit_passes_whenNIsAMessageValue", () => {
     assertPassed(guard("git commit -mn", repo));
+  });
+
+  it("skillShellCommand_deniedWithFHookskip_whenNoVerify", () => {
+    const result = sandbox.runHook(GIT_GUARD, { payload: skillShellCommand("git commit --no-verify -m wip", repo) });
+    assertDenied(result, "F-hookskip");
+    assertFired(sandbox, "F-hookskip", "deny", "git-guard");
   });
 
   it("pushAndMerge_denied_whenNoVerify", () => {

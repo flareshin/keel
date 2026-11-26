@@ -792,6 +792,30 @@ describe("StructuredReportEvidenceTest", () => {
     assert.equal(handback("[]", { toolUses: [editIn(scope, "a.py")] }).code, 2);
   });
 
+  const UNUSABLE_FINDINGS = [
+    ["ALineOfZero", '[{"file": "src/a.py", "line": 0}]'],
+    ["ANegativeLine", '[{"file": "src/a.py", "line": -4}]'],
+    ["ALineWrittenAsText", '[{"file": "src/a.py", "line": "12"}]'],
+    ["AFractionalLine", '[{"file": "src/a.py", "line": 1.5}]'],
+    ["ABlankFile", '[{"file": "  ", "line": 12}]'],
+  ] as const;
+
+  for (const [flaw, report] of UNUSABLE_FINDINGS) {
+    it(`handback_deniesWithK2_whenTheOnlyJsonFindingHas${flaw}`, () => {
+      assert.equal(handback(report, { toolUses: [editIn(scope, "a.py")] }).code, 2);
+    });
+  }
+
+  it("handback_deniesWithK2_whenAJsonReportCarriesAVerdictAndTheAgentWroteNothing", () => {
+    const result = handback('{"verdict": "PASS"}');
+    assert.equal(result.code, 2);
+    assert.ok(result.stderr.startsWith("[K2] report-gate: "), result.stderr);
+  });
+
+  it("handback_passes_whenAJsonFindingHasABlankFileButAPathAndALine", () => {
+    assert.equal(handback('[{"file": "", "path": "src/a.py", "line": 3}]', { toolUses: [editIn(scope, "a.py")] }).code, 0);
+  });
+
   it("handback_passesWithK2Pass_whenAJsonFindingCarriesAFileAndALineNumber", () => {
     const result = handback('[{"file": "src/a.py", "line": 12, "summary": "dead branch"}]', { toolUses: [editIn(scope, "a.py")] });
     assert.equal(result.code, 0);

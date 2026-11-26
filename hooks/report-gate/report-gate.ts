@@ -507,6 +507,8 @@ function lacksEvidence(report: string, needsEvidence: boolean, fires: FireLog): 
   return !hasToken;
 }
 
+const FINDING_FILE_KEYS = ["file", "path"] as const;
+
 function jsonCitesFileAndLine(report: string): boolean {
   let parsed: unknown;
   try {
@@ -521,10 +523,13 @@ function jsonCitesFileAndLine(report: string): boolean {
 function holdsFileAndLine(value: unknown): boolean {
   if (Array.isArray(value)) return value.some(holdsFileAndLine);
   if (!isRecord(value)) return false;
-  const file = getField(value, "file") ?? getField(value, "path");
   const line = getField(value, "line");
-  if (typeof file === "string" && trimSpace(file) !== "" && Number.isInteger(line) && (line as number) > 0) return true;
+  if (FINDING_FILE_KEYS.some((key) => isNonBlankText(getField(value, key))) && Number.isInteger(line) && (line as number) > 0) return true;
   return Object.values(value).some(holdsFileAndLine);
+}
+
+function isNonBlankText(value: unknown): boolean {
+  return typeof value === "string" && trimSpace(value) !== "";
 }
 
 function evidenceDenyDetail(report: string): string {

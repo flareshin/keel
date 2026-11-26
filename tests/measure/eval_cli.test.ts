@@ -619,6 +619,7 @@ describe("eval cli", () => {
     const raw = box.writeRawDir("K4-uncommitted", suiteRuns())
     const code = path.join(box.root, "code")
     fs.cpSync(path.join(CHECKOUT, "measure"), path.join(code, "measure"), { recursive: true, dereference: true })
+    fs.cpSync(path.join(CHECKOUT, "lib"), path.join(code, "lib"), { recursive: true, dereference: true })
     fs.copyFileSync(path.join(CHECKOUT, "package.json"), path.join(code, "package.json"))
     const completed = spawnSync(process.execPath, [path.join(code, "measure", "evals", "eval.ts"), "K4", "--regrade", raw], { encoding: "utf8", env: box.env, cwd: box.root })
     assert.equal(completed.status, 2, completed.stderr)

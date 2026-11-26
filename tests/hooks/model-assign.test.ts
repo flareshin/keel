@@ -267,7 +267,8 @@ describe("AgentFileLocationTest", () => {
     assert.equal(updated(dispatchFrom(sandbox.root, { subagent_type: "acme:developer", effort: "high" }))["model"], "sonnet");
   });
 
-  for (const [label, text] of [["WrongShape", "{\"plugins\": [1]}"], ["NotJson", "{plugins"]]) {
+  const unreadableRecords: Array<[string, string]> = [["WrongShape", "{\"plugins\": [1]}"], ["NotJson", "{plugins"]];
+  for (const [label, text] of unreadableRecords) {
     it(`dispatch_assignsSonnet_whenThePluginRecordIs_${label}`, () => {
       sandbox.write(join(sandbox.data, "plugins", "installed_plugins.json"), text);
       assert.equal(updated(dispatchFrom(sandbox.root, { subagent_type: "acme:developer", effort: "high" }))["model"], "sonnet");

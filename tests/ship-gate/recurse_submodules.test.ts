@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
+import { unlinkSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, test } from 'node:test';
 import { Sandbox } from './helpers.ts';
 import type { Repo } from './helpers.ts';
 
 const BOTH_GATED = ['acme/lib\tcode\tmain\tacme\trequired', 'acme/platform\tcode\tmain\tacme\trequired'];
 const ONLY_LIB_GATED = ['acme/lib\tcode\tmain\tacme\trequired'];
+const ONLY_PLATFORM_GATED = ['acme/platform\tcode\tmain\tacme\trequired'];
+const NEITHER_GATED = ['acme/other\tcode\tmain\tacme\trequired'];
 const TEST = 'def test_it(): assert True\n';
 const SUBMODULE_PUSH_DENY = '- [F-irreversible] git push --recurse-submodules=on-demand/only';
 
@@ -90,6 +94,29 @@ describe('RecurseSubmodulesPushTest', () => {
     const parent = parentWithUnpushedSubmoduleCommit(sandbox);
     assertSubmodulePushDenied(sandbox, parent, 'git push --recurse-submodules=on-demand origin feature');
     assert.equal(sandbox.push(parent, 'git push origin feature').rc, 0);
+  });
+
+  test('gatedParent_deniesAndNamesItself_whenNoSubmoduleIsGated', (t) => {
+    const sandbox = new Sandbox(t, ONLY_PLATFORM_GATED);
+    const parent = parentWithUnpushedSubmoduleCommit(sandbox);
+    const run = sandbox.push(parent, 'git push --recurse-submodules=on-demand origin feature');
+    assert.equal(run.rc, 2, run.stderr);
+    assert.ok(run.stderr.includes('push into submodules of acme/platform denied'), run.stderr);
+  });
+
+  test('neitherParentNorSubmoduleGated_recursivePushPasses', (t) => {
+    const sandbox = new Sandbox(t, NEITHER_GATED);
+    const parent = parentWithUnpushedSubmoduleCommit(sandbox);
+    const run = sandbox.push(parent, 'git push --recurse-submodules=on-demand origin feature');
+    assert.equal(run.rc, 0, run.stderr);
+  });
+
+  test('noRegistry_recursivePushPasses', (t) => {
+    const sandbox = new Sandbox(t, BOTH_GATED);
+    const parent = parentWithUnpushedSubmoduleCommit(sandbox);
+    unlinkSync(join(sandbox.overlay, 'gated-repos.tsv'));
+    const run = sandbox.push(parent, 'git push --recurse-submodules=on-demand origin feature');
+    assert.equal(run.rc, 0, run.stderr);
   });
 
   test('dryRun_passes', (t) => {

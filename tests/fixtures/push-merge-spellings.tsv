@@ -109,6 +109,28 @@ gh api graphql -f query='mutation { createRef(input: {}) { clientMutationId } }'
 gh api graphql -f query='mutation { mergeBranch(input: {}) { clientMutationId } }'	deny	GraphQL branch merge
 gh api graphql -f query='mutation { enablePullRequestAutoMerge(input: {}) { clientMutationId } }'	deny	GraphQL auto-merge
 gh api graphql -f query='mutation { updateRefs(input: {repositoryId: "R_1", refUpdates: []}) { clientMutationId } }'	deny	GraphQL ref update
+gh api -X PUT repos/acme/app/contents/src/a.py -f message=x -f content=eA== -f branch=main	deny	REST contents write commits to a gated branch
+gh api graphql -f query='mutation { createCommitOnBranch(input: {}) { commit { oid } } }'	deny	GraphQL commit onto a branch
+gh api -X POST repos/acme/app/merge-upstream -f branch=main	deny	REST fork sync merges upstream into a branch
+gh api -X PUT 'repos/acme/app/pulls/7/merge?merge_method=squash'	deny	REST merge with a query string
+gh api -X PUT /repos/ACME/App/contents/a.py -f branch=main	deny	leading slash and mixed-case repo name
+gh api -X PUT https://api.github.com/repos/acme/app/contents/a.py -f branch=main	deny	full API URL
+gh api -X PUT 'repos/acme/app/contents/a.py?ref=main#top' -f branch=main	deny	query string and fragment stripped
+gh api -X PATCH repos/:owner/:repo -f default_branch=feature	deny	colon placeholders resolve to the gated clone
+gh api -X POST repositories/123/merge-upstream -f branch=main	deny	a repo named by id cannot be looked up
+gh api -X DELETE repos/acme/app/branches/main/protection	deny	a settings write outside the allow-list
+gh api -X POST repos/acme/app/pulls/7/update-branch	deny	update-branch merges the base into the head
+gh api -X POST repos/acme/app/statuses/{head} -f state=success	deny	a commit status can satisfy a required check
+gh api -X POST repos/acme/app/actions/workflows/ci.yml/dispatches -f ref=main	deny	a workflow dispatch can deploy
+gh api graphql -F query=@mutation.graphql	deny	a query read from a file the gate cannot see
+gh api graphql --input body.json	deny	a request body read from a file the gate cannot see
+gh api graphql -f query='mutation { addComment(input: {}) { clientMutationId } createCommitOnBranch(input: {}) { clientMutationId } }'	deny	one allowed and one unlisted mutation field
+gh api graphql -f query='mutation M { c: createCommitOnBranch(input: {}) { clientMutationId } }'	deny	an aliased unlisted mutation field
+cd {tmp} && gh api -X PUT repos/acme/app/contents/a.py -f branch=main	deny	a literal gated repo written from outside any clone
+xargs gh api -X PUT repos/acme/app/contents/a.py -f branch=main < /dev/null	deny	xargs forwards a contents write
+env --chdir=/ gh api -X PUT repos/acme/app/contents/a.py -f branch=main	deny	a wrapper option the parser cannot attribute
+GH=gh; $GH api -X PUT repos/acme/app/contents/a.py -f branch=main	deny	a run-time gh making a contents write
+gh api -X PUT repos/:owner/:repo/contents/a.py -f branch=main	deny	placeholders in a clone whose remotes name a gated and an ungated repo	fork
 gh pr merge 7 --squash	deny	merge without --match-head-commit
 gh pr -R acme/app merge 7 --squash	deny	repo flag between pr and merge, no head pinned
 gh pr -R=acme/app merge 7 --squash	deny	repo flag with =value between pr and merge, no head pinned
@@ -212,6 +234,16 @@ gh api -H"$H" repos/acme/app/pulls/7	pass	a run-time header value attached to it
 gh api --jq="$J" repos/acme/app/pulls/7	pass	a run-time jq filter attached to its long option
 gh api -H"$H" "$E"	pass	a run-time header value on a read from a run-time endpoint
 T=x; gh api -f title="$T" -X POST repos/acme/app/issues	pass	a run-time body value before a literal non-branch endpoint
+gh api -X POST repos/acme/app/issues/7/comments -f body=hi	pass	an issue comment is on the allow-list
+gh api -X POST 'https://api.github.com/repos/acme/app/issues/7/comments?x=1' -f body=hi	pass	an allow-listed comment through a full URL with a query
+gh api -X POST repos/acme/app/issues/7/labels -f 'labels[]=bug'	pass	a label write is on the allow-list
+gh api -X PUT repos/acme/other/contents/a.py -f branch=main	pass	a contents write to an ungated repo
+cd {tmp} && gh api -X PUT repos/acme/other/contents/a.py -f branch=main	pass	an ungated literal repo written from outside any clone
+gh api repos/acme/app/contents/a.py	pass	a contents read
+gh api -X POST gists -f description=x	pass	an endpoint outside any repo
+gh api graphql -f query='query { repository(owner: "acme", name: "app") { id } }'	pass	a GraphQL read
+gh api graphql -f query='mutation { addComment(input: {}) { clientMutationId } }'	pass	an allow-listed GraphQL mutation
+gh api -X PUT repos/me/app/contents/a.py -f branch=main	pass	a contents write to the ungated fork	fork
 GH=gh; $GH api repos/acme/app/pulls/7	pass	a run-time gh reading through gh api
 keel="${KEEL_DATA_DIR:-$HOME/.claude}/bin/keel"; python3 "$keel" test -- ./mvnw test -Dtest='*Merge*'	pass	the overlay's keel test step through python3, test names holding merge
 cd {repo} && pat=$(git diff main...HEAD --no-renames --diff-filter=D --name-only | sort -u) && [ -n "$pat" ] && git grep -nE "$pat" HEAD -- '*.md'	pass	the overlay's pinned-head deletion grep without xargs

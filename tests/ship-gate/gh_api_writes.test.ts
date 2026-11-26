@@ -35,7 +35,8 @@ describe('GhApiWriteParseTest', () => {
 
   test('unnamedRepo_isUnknown_forAnIdAPartialPlaceholderOrAMutation', () => {
     for (const command of ['gh api -X POST repositories/123/merge-upstream',
-      'gh api -X PUT repos/{owner}/app/contents/a.py', 'gh api -X PATCH repos/acme -f a=b',
+      'gh api -X PUT repos/{owner}/app/contents/a.py', 'gh api -X PUT repos/acme/{repo}/contents/a.py',
+      'gh api -X PATCH repos/acme -f a=b',
       "gh api graphql -f query='mutation { createCommitOnBranch(input: {}) { commit { oid } } }'",
       "gh api graphql -f query='mutation M { a: addComment(input: {subjectId: 1}) { clientMutationId } x: createCommitOnBranch(input: {}) { clientMutationId } }'",
       "gh api https://api.github.com/graphql -f query='mutation { createCommitOnBranch(input: {}) { clientMutationId } }'",
@@ -71,7 +72,9 @@ describe('GhApiWriteParseTest', () => {
       "gh api graphql -f query='query { viewer { login } }'",
       "gh api graphql -f query='{ viewer { login } }'",
       "gh api graphql -f query='mutation { addComment(input: {}) { clientMutationId } addReaction(input: {}) { clientMutationId } }'",
-      "gh api graphql -f query='mutation { a: addLabelsToLabelable(input: {}) { clientMutationId } }'"]) {
+      "gh api graphql -f query='mutation { a: addLabelsToLabelable(input: {}) { clientMutationId } }'",
+      "gh api graphql -F owner=@vars.txt -f query='mutation { addComment(input: {}) { clientMutationId } }'",
+      "gh api graphql -H 'query=mutation { createCommitOnBranch }' -f query='mutation { addComment(input: {}) { clientMutationId } }'"]) {
       assert.deepEqual(callActions(command, '/work'), [], command);
     }
   });
@@ -92,6 +95,7 @@ describe('GhApiWriteParseTest', () => {
     for (const command of ['xargs gh api -X PUT repos/acme/app/contents/a.py -f branch=main < /dev/null',
       "echo '-X PUT repos/acme/app/contents/a.py' | xargs gh api",
       'A=api; gh $A -X PUT repos/acme/app/contents/a.py',
+      'A=pr; gh $A merge 7',
       'gh repo set-default acme/app; gh api -X PUT repos/{owner}/{repo}/contents/a.py',
       'env --chdir=/ gh api -X PUT repos/acme/app/contents/a.py -f branch=main',
       'GH=gh; $GH api -X PUT repos/acme/app/contents/a.py -f branch=main']) {

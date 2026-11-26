@@ -69,8 +69,23 @@ describe('GhApiWriteParseTest', () => {
     }
   });
 
+  test('dotOrEncodedSegment_isUnknown_soAWildcardCannotSwallowIt', () => {
+    for (const command of ['gh api -X DELETE repos/acme/app/issues/..',
+      'gh api -X PATCH repos/acme/app/labels/.. -f default_branch=x',
+      'gh api -X PUT repos/acme/other/../app/contents/a.py',
+      'gh api -X PUT gists/../repos/acme/app/contents/a.py',
+      'gh api -X PUT repos/acme/app/./contents/a.py',
+      'gh api -X PUT repos/acme/app/issues/%2e%2e/contents/a.py',
+      "gh api ./graphql -f query='mutation { createCommitOnBranch(input: {}) { clientMutationId } }'"]) {
+      assert.equal(onlyWrite(command).target.kind, 'unknown', command);
+    }
+  });
+
   test('forwardedOrWrappedWrite_isUnattributable', () => {
     for (const command of ['xargs gh api -X PUT repos/acme/app/contents/a.py -f branch=main < /dev/null',
+      "echo '-X PUT repos/acme/app/contents/a.py' | xargs gh api",
+      'A=api; gh $A -X PUT repos/acme/app/contents/a.py',
+      'gh repo set-default acme/app; gh api -X PUT repos/{owner}/{repo}/contents/a.py',
       'env --chdir=/ gh api -X PUT repos/acme/app/contents/a.py -f branch=main',
       'GH=gh; $GH api -X PUT repos/acme/app/contents/a.py -f branch=main']) {
       const found = callActions(command, '/work');

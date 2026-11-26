@@ -68,6 +68,7 @@ const REPO_SCOPE = "repos";
 const REPO_ID_SCOPE = "repositories";
 const OWNER_REPO_PLACEHOLDERS: readonly string[][] = [["{owner}", "{repo}"], [":owner", ":repo"]];
 const PLACEHOLDER_SIGN = /^:|[{}]/u;
+const UNREADABLE_SEGMENT = /^\.{1,2}$|%/u;
 const ANY_SEGMENT = "*";
 const DISCUSSION_ENDPOINTS: readonly string[][] = [
   "issues", "issues/*", "issues/*/comments", "issues/comments/*", "issues/*/labels", "issues/*/labels/*",
@@ -408,6 +409,9 @@ export function actionsOf(step: Step, call: string = "", callCwd: string = ""): 
 }
 
 function ghActions(words: string[], workdir: string, environment: Environment, call: string, callCwd: string): Action[] {
+  if (RUN_TIME_WORD_RE.test(words[1] ?? "") && (ghApiWrites(words.slice(2)) || spellsPushOrMerge(call))) {
+    return [resolvedAtRunTime(workdir, words, "the `gh` subcommand is resolved only at run time", call, callCwd)];
+  }
   if (arraysEqual(words.slice(1, 3), ["pr", "merge"])) {
     const merge = parseMerge(words, workdir, environment.get("GH_REPO") ?? null);
     const namesRepo = repoNamingSources(merge).some(([, name]) => name);
@@ -429,6 +433,10 @@ function ghActions(words: string[], workdir: string, environment: Environment, c
   const [options, operands] = readGhApi(args);
   const endpoint = operands[0] ?? "";
   const target = ghApiWriteTarget(endpointSegments(endpoint), options, args, environment);
+  const redirected = target?.kind === "ghDefault" ? ghDefaultChangeIn(call, callCwd) : null;
+  if (redirected) {
+    return [resolvedAtRunTime(workdir, words, `\`${redirected}\` changes the repo gh fills the placeholders from`, call, callCwd)];
+  }
   return target ? [{ kind: "ghApiWrite", workdir, words, endpoint, target }] : [];
 }
 
@@ -441,6 +449,9 @@ function endpointSegments(endpoint: string): string[] {
 function ghApiWriteTarget(segments: string[], options: GhApiOption[], args: string[], environment: Environment): GhApiTarget | null {
   if (GRAPHQL_ENDPOINTS.some((graphql) => arraysEqual(segments, graphql))) return graphqlWriteTarget(options);
   if (!ghApiWrites(args)) return null;
+  if (segments.some((segment) => UNREADABLE_SEGMENT.test(segment))) {
+    return unknownTarget("its endpoint holds a dot or percent-encoded segment");
+  }
   const [scope, owner, repo, ...path] = segments;
   if (scope === REPO_ID_SCOPE) return isDiscussionEndpoint(segments.slice(2)) ? null : unknownTarget("it names the repo by id");
   if (scope !== REPO_SCOPE || isDiscussionEndpoint(path)) return null;
@@ -578,13 +589,13 @@ function hidesPushOrMerge(step: Step, call: string): boolean {
   const forwarded = step.command.argv.slice(1);
   const runsOpaque = forwarded.some((word) =>
     PROGRAMS_THAT_MAY_PUSH.has(basename(word)) || dashedGitSubcommand(word) !== null || RUN_TIME_WORD_RE.test(word));
-  const forwardsPushOrMerge = forwarded.some((word) => PUSH_OR_MERGE_WORDS.has(word)) || forwardsAGhApiWrite(forwarded);
+  const forwardsPushOrMerge = forwarded.some((word) => PUSH_OR_MERGE_WORDS.has(word)) || forwardsAGhApiWrite(forwarded, keptForwarder);
   return runsOpaque && (spellsPushOrMerge(call) || forwardsPushOrMerge);
 }
 
-function forwardsAGhApiWrite(words: string[]): boolean {
+function forwardsAGhApiWrite(words: string[], appendsArguments: boolean): boolean {
   const gh = words.findIndex((word) => basename(word) === "gh");
-  return gh >= 0 && words[gh + 1] === "api" && ghApiWrites(words.slice(gh + 2));
+  return gh >= 0 && words[gh + 1] === "api" && (appendsArguments || ghApiWrites(words.slice(gh + 2)));
 }
 
 function gitActions(step: Step, call: string, callCwd: string): Action[] {

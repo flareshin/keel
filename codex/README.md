@@ -21,6 +21,9 @@ evidence locations with `KEEL_OVERLAY_DIR` and `KEEL_DATA_DIR`. Defaults are
 `~/git/keel-overlay` and `~/.claude`; the latter intentionally shares existing
 keel evidence. `--home <temporary directory>` isolates a test installation;
 unset `CODEX_HOME` when testing the default home layout.
+Run it from the checkout that moves only by merge: `--write` refuses when keel is
+a linked worktree, and the dry run and `--check` report it, unless
+`--allow-worktree` is given. `--unlink` works from any checkout.
 
 Existing equivalent skill links are preserved and remain outside adapter
 ownership. Conflicting files cause a refusal before writes. Existing

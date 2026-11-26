@@ -208,7 +208,8 @@ describe("InterpretPushTest", () => {
       ["++a", { source: "a", destination: null, forced: true, deletesDestination: false }],
       [":old", { source: "", destination: "old", forced: false, deletesDestination: true }],
       ["+:old", { source: "", destination: "old", forced: true, deletesDestination: true }],
-      [":", { source: "", destination: null, forced: false, deletesDestination: true }],
+      [":", { source: "", destination: null, forced: false, deletesDestination: false }],
+      ["+:", { source: "", destination: null, forced: true, deletesDestination: false }],
       ["", { source: "", destination: null, forced: false, deletesDestination: false }],
     ];
     for (const [word, expected] of cases) {
@@ -223,6 +224,12 @@ describe("InterpretPushTest", () => {
       assert.deepEqual(push.options, readPushArguments(args), args.join(" "));
     }
     assert.equal(interpretPush(["-u", "origin", "old"]).deletes, false);
+  });
+
+  it("interpretPush_readsTheMatchingRefspec_asAWholeRepoPush", () => {
+    for (const spec of [":", "+:"]) assert.equal(interpretPush(["origin", spec]).wholeRepo, true, spec);
+    for (const spec of [":old", "topic"]) assert.equal(interpretPush(["origin", spec]).wholeRepo, false, spec);
+    assert.equal(interpretPush(["--all", "origin"]).wholeRepo, true);
   });
 });
 

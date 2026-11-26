@@ -52,6 +52,7 @@ describe('PushScenarioTest', () => {
     assert.equal(line.risk, 'standard');
     assert.equal(line.root_run_id, 'rv-root-0001');
     assert.equal(line.head, repo.head());
+    assert.equal(line.base, repo.git('merge-base', 'origin/main', 'HEAD').trim());
   });
 
   test('push_deniesK3_whenTestsEvidenceMissing', (t) => {
@@ -60,6 +61,7 @@ describe('PushScenarioTest', () => {
     sandbox.approve('rv-root-0001');
     assertDenied(sandbox.push(repo, PUSH_FEATURE), 'K3', 'no tests evidence');
     assert.equal(sandbox.fires('K3', 'deny')[0].risk, 'standard');
+    assert.equal(sandbox.fires('K3', 'deny')[0].base, repo.git('merge-base', 'origin/main', 'HEAD').trim());
   });
 
   test('push_passesWithoutApproval_whenReviewAndTestsCoverTheChange', (t) => {

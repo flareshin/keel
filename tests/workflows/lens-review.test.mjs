@@ -381,6 +381,15 @@ test('lensReview_needsFixes_whenARootDeltaVerifierCrashesOnAMedium', async () =>
   assert.deepEqual(result.unverified.map((f) => f.id), ['c1'])
 })
 
+test('lensReview_passesWithTheMediumListedNotVerified_whenARootVerifierCrashesOnAMediumWithoutRepro', async () => {
+  const audits = { contract: { findings: [{ ...finding('c1', 'medium'), repro: '' }] } }
+  const rt = createRuntime({ respond: responder({ audits, verdicts: { c1: verifierCrash } }) })
+  const result = await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
+  assert.equal(result.verdict, 'PASS')
+  assert.deepEqual(result.unverified, [])
+  assert.match(result.report, /Non-blocking \(1\):\n- \[medium, not verified, no repro\] contract\/c1/)
+})
+
 test('lensReview_marksTheEvidenceAsAFixDelta_onlyWhenPriorFindingsAreGiven', async () => {
   const [fix] = await runDelta({ impact: 'low', priorFindings: ['a.py:3 drops the null check'] })
   assert.equal(fix.evidence[0].fix_delta, true)

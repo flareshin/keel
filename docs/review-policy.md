@@ -22,7 +22,9 @@ source audit with medium or high findings gets separate verification of those
 findings together. That verifier checks the cited evidence, reproduction and
 relevant callers; it does not repeat the full audit. Every medium or high finding
 needs an individual evidenced decision. Missing, duplicate or unavailable
-decisions cannot establish a clean result.
+decisions cannot establish a clean result for a finding that could block this
+review (blocking impact plus a repro); one that could not, such as a medium in a
+fix delta, is listed non-blocking and `not verified`.
 
 A trivial diff is a root review (no `since`) whose `git diff --shortstat`
 from the review base shows at most 2 files and at most 10 changed lines

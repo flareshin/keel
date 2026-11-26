@@ -46,7 +46,7 @@ describe("PushReadersDisagreementTest", () => {
   });
 
   it("colonRefspec_bothDropItFromTheNamedRefs_gateCountsItTowardDeletesOnly", () => {
-    for (const spec of [":old", "+:old", ":"]) {
+    for (const spec of [":old", "+:old"]) {
       const guard = guardReads("origin", spec);
       assert.deepEqual([guard.sources, guard.destinations], [[], []], spec);
       const gate = gateReads("origin", spec);
@@ -109,5 +109,16 @@ describe("PushReadersDisagreementTest", () => {
     }
     assert.equal(guardReads("origin", "topic").wholeRepo, false);
     assert.equal(gateReads("origin", "topic").wholeRepo, false);
+  });
+
+  it("matchingRefspec_bothReadEveryMatchingBranch_notADeletion", () => {
+    for (const args of [["origin", ":"], ["origin", "+:"], ["origin", "topic", ":"]]) {
+      assert.equal(guardReads(...args).wholeRepo, true, args.join(" "));
+      const gate = gateReads(...args);
+      assert.equal(gate.wholeRepo, true, args.join(" "));
+      assert.equal(gate.deletesOnly, false, args.join(" "));
+    }
+    assert.equal(guardReads("origin", "+:").force, true);
+    assert.equal(guardReads("origin", ":").force, false);
   });
 });

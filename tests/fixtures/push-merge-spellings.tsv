@@ -125,6 +125,8 @@ gh pr -R=acme/app merge 7 --squash	deny	repo flag with =value between pr and mer
 git push --all origin	deny	every branch
 git push --mirror origin	deny	mirror
 git push --branches origin	deny	every branch, --branches spelling
+git push origin :	deny	matching refspec: every branch on both sides
+git push origin +:	deny	forced matching refspec
 git push upstream feature	deny	a gated upstream named from a fork clone	fork
 git push	deny	the branch's push remote is a gated upstream	fork
 git push --repo=upstream	deny	a gated upstream named by the --repo option	fork-origin

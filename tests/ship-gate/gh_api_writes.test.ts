@@ -35,7 +35,7 @@ describe('GhApiWriteParseTest', () => {
 
   test('unnamedRepo_isUnknown_forAnIdAPartialPlaceholderOrAMutation', () => {
     for (const command of ['gh api -X POST repositories/123/merge-upstream',
-      'gh api -X PUT repos/{owner}/app/contents/a.py',
+      'gh api -X PUT repos/{owner}/app/contents/a.py', 'gh api -X PATCH repos/acme -f a=b',
       "gh api graphql -f query='mutation { createCommitOnBranch(input: {}) { commit { oid } } }'",
       "gh api graphql -f query='mutation M { a: addComment(input: {subjectId: 1}) { clientMutationId } x: createCommitOnBranch(input: {}) { clientMutationId } }'",
       "gh api https://api.github.com/graphql -f query='mutation { createCommitOnBranch(input: {}) { clientMutationId } }'",

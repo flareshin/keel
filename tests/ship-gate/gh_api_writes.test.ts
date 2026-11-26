@@ -43,6 +43,7 @@ describe('GhApiWriteParseTest', () => {
       "gh api graphql -f query='mutation { addComment(input: {subjectId: \"\"\"A\\\"\"\"B\"\"\"}) { clientMutationId } createCommitOnBranch(input: {}) { clientMutationId } addReaction(input: {content: \"\"\"C\"\"\"}) { clientMutationId } }'",
       "gh api graphql -f query='mutation query { createCommitOnBranch(input: {}) { clientMutationId } }'",
       "gh api graphql -f query='mutation { addComment(input: {body: \"x}) { clientMutationId } }'",
+      "gh api graphql -f query='mutation { addComment(input: {}) { clientMutationId } #\r createCommitOnBranch(input: {}) { clientMutationId }\n}'",
       "gh api https://ghe.example.invalid/api/graphql -f query='mutation { createCommitOnBranch(input: {}) { clientMutationId } }'",
       'gh api graphql -F query=@mutation.graphql', 'gh api graphql -F query=@-', 'gh api graphql --input body.json']) {
       assert.equal(onlyWrite(command).target.kind, 'unknown', command);

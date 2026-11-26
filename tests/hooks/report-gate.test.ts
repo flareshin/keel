@@ -782,6 +782,12 @@ describe("ScratchWriteReviewEvidenceTest", () => {
     assert.deepEqual(sandbox.stubCalls("keel"), []);
   });
 
+  it("handback_refusesEvidence_whenTheWriteToolTargetIsEmptyAndTmpdirIsTheWorkingDirectory", () => {
+    sandbox.env["TMPDIR"] = ".";
+    handback(PASS_REPORT, { toolUses: [["Write", { file_path: "", content: "x" }]] });
+    assert.deepEqual(sandbox.stubCalls("keel"), []);
+  });
+
   it("handback_refusesEvidence_whenTheReviewerEditedARepoFileBesidesItsScratchNotes", () => {
     handback(PASS_REPORT, { toolUses: [["Write", { file_path: "/tmp/review-notes.md", content: "notes" }], editIn(scope, "a.py")] });
     assert.deepEqual(sandbox.stubCalls("keel"), []);

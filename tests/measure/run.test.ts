@@ -119,6 +119,13 @@ describe("measure run", () => {
     assert.deepEqual([completed.status, result.count, result.status], [1, 0, "FAIL"])
   })
 
+  it("run_countsNothing_forEvalsMetric_whenTheOnlyPassingLineIsBeforeSince", () => {
+    givenKeelRows(ledgerRow("C-demo", { metric: "evals:demo", grace_until: PAST }))
+    box.appendLog("keel-evals.jsonl", { ts: "2026-09-01T10:00:00Z", eval_id: "demo", rule_id: "C-demo", case: "a", pass: true, model: "m" })
+    const [completed, result] = box.runJson("run", ["C-demo", "--since", "2026-10-01"])
+    assert.deepEqual([completed.status, result.count, result.status], [1, 0, "FAIL"])
+  })
+
   it("run_usesOverlayRunner_whenKeelHasNone", () => {
     givenKeelRows(ledgerRow("C-demo", { metric: "run:demo-runner" }))
     box.write("overlay/measure/metrics/demo-runner", '#!/bin/bash\necho \'{"count": 2, "items": ["a", "b"]}\'\n', true)

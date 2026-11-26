@@ -28,6 +28,8 @@ const RULE_CHECKS_KEY = 'rule-checks'
 const TESTS_LENS_KEY = 'tests'
 const BLOCKING_IMPACT = ['high', 'medium']
 const FIX_DELTA_BLOCKING_IMPACT = ['high']
+const UNVERIFIED_NON_BLOCKING = { verdict: 'UNVERIFIED', evidence: 'not verified: the verifier failed, and this finding cannot block this review' }
+const NOT_VERIFIED_VERDICTS = ['UNVERIFIED_LOW', UNVERIFIED_NON_BLOCKING.verdict]
 const PRE_EXISTING = 'pre-existing'
 const NEEDS_FIXES_ROUND_CAP = 3
 const AUTHOR_TEXT_ARGS = ['readingGuide', 'guardrails', 'precheck']
@@ -116,7 +118,7 @@ const audit = await runAudit(reviewed, lensSet, effort, precheck)
 if (audit.error) return failed(audit.error)
 
 const outcome = judge(audit, lensSet, reviewed.length, priorNeedsFixesRounds, PRIOR_FINDINGS ? FIX_DELTA_BLOCKING_IMPACT : BLOCKING_IMPACT)
-log(`${outcome.verdict}: ${outcome.blocking.length} merge-blocking, ${outcome.nonBlocking.length} non-blocking, ${audit.unverified.length} unverified, ${outcome.failedLenses.length} lens(es) not run, ${audit.refuted.length} refuted`)
+log(`${outcome.verdict}: ${outcome.blocking.length} merge-blocking, ${outcome.nonBlocking.length} non-blocking, ${outcome.unverified.length} unverified, ${outcome.failedLenses.length} lens(es) not run, ${audit.refuted.length} refuted`)
 const evidenceLines = reviewed.map((target) => buildEvidenceLine(target, runId, rootRunId, findNoTestReason(audit, target)))
 const expectedReport = buildReport(outcome, audit, reviewed, evidenceLines, precheck)
 
@@ -138,7 +140,7 @@ return {
   preExisting: outcome.preExisting,
   needsFixesRound: outcome.needsFixesRound,
   effort,
-  unverified: audit.unverified,
+  unverified: outcome.unverified,
   refutedCount: audit.refuted.length,
   precheck,
 }
@@ -512,8 +514,10 @@ function judge(audit, lensSet, repoCount, priorNeedsFixesRounds, blockingImpact)
   const preExisting = audit.confirmed.filter(isPreExisting)
   const introduced = audit.confirmed.filter((f) => !isPreExisting(f))
   const blocking = introduced.filter((f) => isMergeBlocking(f, blockingImpact))
-  const nonBlocking = introduced.filter((f) => !isMergeBlocking(f, blockingImpact))
-  const isIncomplete = audit.unverified.length > 0 || failedLenses.length > 0
+  const unverified = audit.unverified.filter((f) => isMergeBlocking(f, blockingImpact))
+  const unverifiedNonBlocking = audit.unverified.filter((f) => !isMergeBlocking(f, blockingImpact)).map((f) => ({ ...f, verdict: UNVERIFIED_NON_BLOCKING }))
+  const nonBlocking = [...introduced.filter((f) => !isMergeBlocking(f, blockingImpact)), ...unverifiedNonBlocking]
+  const isIncomplete = unverified.length > 0 || failedLenses.length > 0
   const verdict = blocking.length || isIncomplete ? 'NEEDS_FIXES' : 'PASS'
   return {
     verdict,
@@ -524,6 +528,7 @@ function judge(audit, lensSet, repoCount, priorNeedsFixesRounds, blockingImpact)
     blocking,
     nonBlocking,
     preExisting,
+    unverified,
   }
 }
 
@@ -581,7 +586,7 @@ function buildReport(outcome, audit, reviewed, evidenceLines, precheck) {
     describeFindings('Merge-blocking', outcome.blocking),
     describeFindings('Non-blocking', outcome.nonBlocking),
     describeFindings('Pre-existing (present at the review base; not merge-blocking)', outcome.preExisting),
-    describeFindings('Unverified (the verifier failed; re-verify before any PASS)', audit.unverified),
+    describeFindings('Unverified (the verifier failed; re-verify before any PASS)', outcome.unverified),
     `Lenses that did not run (re-run the review): ${outcome.failedLenses.length ? toOneLine(outcome.failedLenses.join(', ')) : 'none'}`,
     `Refuted: ${audit.refuted.length}`,
     ...(outcome.needsFixesRound >= NEEDS_FIXES_ROUND_CAP && outcome.verdict === 'NEEDS_FIXES' ? [describeStepBack(outcome.needsFixesRound)] : []),
@@ -595,7 +600,7 @@ function describeFindings(title, findings) {
   if (findings.length === 0) return `${title}: none`
   const items = findings.map((f) => {
     const adjusted = f.verdict && f.verdict.verdict === 'ADJUSTED' ? ', ADJUSTED' : ''
-    const notVerified = f.verdict && f.verdict.verdict === 'UNVERIFIED_LOW' ? ', not verified' : ''
+    const notVerified = NOT_VERIFIED_VERDICTS.includes(f.verdict?.verdict) ? ', not verified' : ''
     const unreproduced = BLOCKING_IMPACT.includes(f.impact) && !hasRepro(f) ? ', no repro' : ''
     return `- [${toOneLine(f.impact)}${adjusted}${notVerified}${unreproduced}] ${toOneLine(f.lens)}/${toOneLine(f.id)}: ${toOneLine(f.summary)}\n  At: ${toOneLine(f.file)} - ${toOneLine(f.quote)}\n  Repro: ${hasRepro(f) ? toOneLine(f.repro) : 'none'}\n  Fix: ${toOneLine(f.proposal)}`
   })

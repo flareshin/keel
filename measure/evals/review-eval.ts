@@ -16,7 +16,7 @@ import { isFile, readUtf8 } from "../lib/measurekit/files.ts"
 import { displayText, isJsonObject, JSON_INDENT, parseJson, stringifySorted } from "../lib/measurekit/json.ts"
 import type { JsonObject } from "../lib/measurekit/json.ts"
 import { CaseError, SPLITS } from "./lib/evalkit/cases.ts"
-import { cliConfigDir } from "./lib/evalkit/liveconfig.ts"
+import { cliConfigDir, linkMode } from "./lib/evalkit/liveconfig.ts"
 import { loadReviewCases, selectReviewCases } from "./lib/evalkit/reviewcases.ts"
 import type { ReviewCase } from "./lib/evalkit/reviewcases.ts"
 import { gradeResult, suiteNumbers } from "./lib/evalkit/reviewgrade.ts"
@@ -156,9 +156,11 @@ function runConfig(args: ReviewEvalArgs, cases: ReviewCase[]): RunConfig {
 }
 
 function reviewerFingerprint(configDir: string): { [file: string]: string | null } {
+  const keelHome = env.keelHome()
+  const workflowsRoot = linkMode(configDir, keelHome) === "plugin" ? keelHome : configDir
   const fingerprint: { [file: string]: string | null } = {}
   for (const name of REVIEWER_FILES) {
-    const workflowPath = path.join(configDir, "workflows", name)
+    const workflowPath = path.join(workflowsRoot, "workflows", name)
     fingerprint[name] = isFile(workflowPath) ? createHash("sha256").update(fs.readFileSync(workflowPath)).digest("hex") : null
   }
   return fingerprint

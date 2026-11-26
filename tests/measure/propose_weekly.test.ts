@@ -92,7 +92,7 @@ describe("weekly", () => {
     box.write("data/projects/b/memory/MEMORY.md", "z".repeat(20))
     const [completed, report] = box.runJson("weekly")
     assert.equal(completed.status, 0, completed.stderr)
-    assert.deepEqual(Object.keys(report).sort(), ["always_loaded", "core_size", "defects", "harness_versions", "proposals", "recurring_findings", "repo_layer_rules", "review_rounds", "review_tokens"])
+    assert.deepEqual(Object.keys(report).sort(), ["always_loaded", "core_size", "defects", "harness_versions", "proposals", "recurring_findings", "repo_layer_rules", "review_rounds", "review_tokens", "ungated_landings"])
     assert.deepEqual(report.repo_layer_rules, { count: 1, ids: ["C-repo"] })
     assert.deepEqual(report.always_loaded, { claude_md: 100, memory_indexes: 50 })
     assert.deepEqual(report.proposals.map((p: { id: string; action: string }) => [p.id, p.action]), [["C-late", "demote"]])

@@ -308,8 +308,10 @@ function evidence(rest: string[]): number {
       throw new writers.Usage('promote-plan requires --repo, --base and --head');
     }
     seams.print(promotePlan(options['--repo']!, options['--base']!, options['--head']!));
-  } else {
+  } else if (subcommand === 'gc') {
     seams.print({ deleted: gc.collect() });
+  } else {
+    throw new writers.Usage('unknown evidence subcommand ' + subcommand);
   }
   return EXIT_OK;
 }

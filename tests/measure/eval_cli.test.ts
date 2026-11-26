@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
+import { createHash } from "node:crypto"
 import { afterEach, beforeEach, describe, it } from "node:test"
 import fs from "node:fs"
 import path from "node:path"
@@ -31,6 +32,16 @@ describe("eval cli", () => {
     const suite = linesOf("K4")
     assert.deepEqual(suite, [{ ts: suite[0].ts, eval_id: "K4", rule_id: "K4", case: "suite train=2/2 holdout=2/2", pass: true, model: MODEL }])
     assert.deepEqual(linesOf("K4.case").map((line) => [line.case, line.pass]), [["a1", true], ["c1", true], ["h1", true], ["h2", true]])
+  })
+
+  it("fullRun_writesTheK4SuiteLine_andFingerprintsThePluginFiles_underThePluginInstall", () => {
+    box.installKeelPlugin()
+    box.seedSuite(box.askScenario(), box.editScenario())
+    const [completed, report] = box.runEvalJson("K4", "--model", MODEL, ...RUN_ONCE)
+    assert.deepEqual([completed.status, report.eval_id], [0, "K4"], completed.stderr)
+    const config = readJson(path.join(report.raw_dir as string, "config.json"))
+    assert.deepEqual([config.keel_live, config.link_mode, config.claude_md_sha256], [true, "plugin", null])
+    assert.equal(config.skill_md_sha256, createHash("sha256").update("# skill\n").digest("hex"))
   })
 
   it("fullRun_writesV1BaselineLine_whenKeelIsNotLinked", () => {
@@ -608,6 +619,7 @@ describe("eval cli", () => {
     const raw = box.writeRawDir("K4-uncommitted", suiteRuns())
     const code = path.join(box.root, "code")
     fs.cpSync(path.join(CHECKOUT, "measure"), path.join(code, "measure"), { recursive: true, dereference: true })
+    fs.cpSync(path.join(CHECKOUT, "lib"), path.join(code, "lib"), { recursive: true, dereference: true })
     fs.copyFileSync(path.join(CHECKOUT, "package.json"), path.join(code, "package.json"))
     const completed = spawnSync(process.execPath, [path.join(code, "measure", "evals", "eval.ts"), "K4", "--regrade", raw], { encoding: "utf8", env: box.env, cwd: box.root })
     assert.equal(completed.status, 2, completed.stderr)

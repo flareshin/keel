@@ -302,7 +302,7 @@ describe("keel precheck rerun", () => {
     const rerun = spawnSync(KEEL, ["precheck", "rerun", "--repo", root, "--base", "no-such-ref", "--census", censusFile], { encoding: "utf8", env: { ...process.env, KEEL_DATA_DIR: scratch } })
 
     assert.equal(rerun.status, 3, rerun.stdout)
-    assert.match(rerun.stderr, /no-such-ref has no merge base with HEAD/u)
+    assert.match(rerun.stderr, /no-such-ref does not resolve to a commit/u)
   })
 
   it("rerun_printsItsUsage_outsideAGitRepository", () => {

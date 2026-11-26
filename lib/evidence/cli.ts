@@ -25,6 +25,7 @@ import type { JsonObject } from './writers.ts';
 
 const USAGE = `usage:
   keel test -- <command…>
+  keel test --affected [--with-replays] [--base <ref>]
   keel home                           (prints the keel checkout this CLI runs from)
   keel update                         (fast-forwards that checkout from its remote; in your own terminal)
   keel approve <root_run_id> [--read]
@@ -48,14 +49,27 @@ const EXIT_NOT_READY = 1;
 const EXIT_USAGE = 2;
 const EXIT_REFUSED = 3;
 const EXIT_INTERNAL = 70;
-const EVIDENCE_OPTIONS = new Set(['--repo', '--run', '--root', '--audits', '--verifiers', '--base', '--head']);
-const PROMOTE_PLAN_OPTIONS = ['--repo', '--base', '--head'];
+const EVIDENCE_SUBCOMMAND_OPTIONS: Record<string, Set<string>> = {
+  'write-review': new Set(),
+  'write-smoke': new Set(['--repo', '--run']),
+  show: new Set(['--repo', '--root']),
+  check: new Set(['--repo']),
+  'record-codex': new Set(['--repo', '--audits', '--verifiers']),
+  'promote-plan': new Set(['--repo', '--base', '--head']),
+  gc: new Set(),
+};
+const EVIDENCE_USAGE = `keel evidence <${Object.keys(EVIDENCE_SUBCOMMAND_OPTIONS).join('|')}>`;
+const PRECHECK_SUBCOMMANDS: Record<string, (rest: string[]) => number | Promise<number>> = {
+  run: precheckRun, rerun: precheckRerun, bind: precheckBind, required: precheckRequired,
+};
+const PRECHECK_USAGE = `keel precheck <${Object.keys(PRECHECK_SUBCOMMANDS).join('|')}>`;
 const PRECHECK_BIND_OPTIONS = new Set(['--repo', '--base', '--end', '--tree']);
 const PRECHECK_REQUIRED_OPTIONS = new Set(['--repo', '--base', '--end']);
 const PRECHECK_RUN_OPTIONS = new Set(['--repo', '--base']);
 const PRECHECK_RERUN_OPTIONS = new Set(['--repo', '--base', '--census']);
 const TEST_AFFECTED_OPTIONS = new Set(['--base']);
 const DEFAULT_AFFECTED_BASE = 'origin/HEAD';
+const SET_ORIGIN_HEAD_HINT = '; run `git remote set-head origin --auto` or pass --base <ref>';
 const WITH_REPLAYS = '--with-replays';
 const PRECHECK_LOG = 'keel-precheck.jsonl';
 const MODULE_NOT_FOUND = 'ERR_MODULE_NOT_FOUND';
@@ -111,12 +125,12 @@ function runTest(rest: string[]): Promise<number> {
 
 async function runAffectedTests(rest: string[]): Promise<number> {
   const withReplays = rest.includes(WITH_REPLAYS);
-  const base = parseOptions(rest.filter((arg) => arg !== WITH_REPLAYS), TEST_AFFECTED_OPTIONS)['--base'] ?? DEFAULT_AFFECTED_BASE;
+  const givenBase = parseOptions(rest.filter((arg) => arg !== WITH_REPLAYS), TEST_AFFECTED_OPTIONS)['--base'];
+  const base = givenBase ?? DEFAULT_AFFECTED_BASE;
   if (base.startsWith('-')) throw new writers.Usage(`keel test --affected [${WITH_REPLAYS}] [--base <ref>]`);
   const repoRoot = gitcmd.toplevel(process.cwd());
   if (repoRoot === null) throw new writers.Usage('keel test must run inside a git repository');
-  const mergeBase = gitcmd.mergeBase(repoRoot, base, 'HEAD');
-  if (mergeBase === null) throw new writers.Refused(`${base} has no merge base with HEAD`);
+  const mergeBase = requireMergeBase(repoRoot, base, givenBase === undefined ? SET_ORIGIN_HEAD_HINT : '');
   const missingReplays = withReplays ? affected.missingReplayTests(repoRoot) : [];
   if (missingReplays.length > 0) {
     throw new writers.Refused(`${counted(missingReplays.length, 'replay test file')} ${missingReplays.length === 1 ? 'is' : 'are'} missing from this repo: ${missingReplays.join(', ')}`);
@@ -137,7 +151,7 @@ async function runAffectedTests(rest: string[]): Promise<number> {
     printErrorLine(`keel test --affected: code a hook runs changed (${hookCode.join(', ')}); also run \`keel test --affected ${WITH_REPLAYS}\` once, in the background alongside the root review`);
   }
   process.env['NODE_COMPILE_CACHE'] ||= compileCache.compileCacheDir();
-  return testrun.run([process.execPath, '--test', '--test-reporter=tap', ...tests], repoRoot);
+  return testrun.run([process.execPath, '--test', '--test-reporter=tap', ...tests], repoRoot, withReplays ? 'affected_with_replays' : 'affected');
 }
 
 function counted(count: number, noun: string): string {
@@ -151,10 +165,13 @@ function review(rest: string[]): number {
 }
 
 function precheck(rest: string[]): number | Promise<number> {
-  if (rest[0] === 'run') return precheckRun(rest.slice(1));
-  if (rest[0] === 'rerun') return precheckRerun(rest.slice(1));
-  if (rest[0] === 'required') return precheckRequired(rest.slice(1));
-  const options = rest[0] === 'bind' ? parseOptions(rest.slice(1), PRECHECK_BIND_OPTIONS) : {};
+  if (rest.length === 0) throw new writers.Usage(PRECHECK_USAGE);
+  if (!Object.hasOwn(PRECHECK_SUBCOMMANDS, rest[0]!)) throw new writers.Usage('unknown precheck subcommand ' + rest[0]);
+  return PRECHECK_SUBCOMMANDS[rest[0]!]!(rest.slice(1));
+}
+
+function precheckBind(rest: string[]): number {
+  const options = parseOptions(rest, PRECHECK_BIND_OPTIONS);
   if (Object.keys(options).length !== PRECHECK_BIND_OPTIONS.size) throw new writers.Usage('keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>');
   const repoRoot = gitcmd.toplevel(options['--repo']!);
   if (repoRoot === null) throw new writers.Usage(`${options['--repo']} is not inside a git repository`);
@@ -212,9 +229,14 @@ function resolvePrecheckTarget(rest: string[], allowed: Set<string>, usage: stri
   if (Object.keys(options).length !== allowed.size || base!.startsWith('-')) throw new writers.Usage(usage);
   const repoRoot = gitcmd.toplevel(options['--repo']!);
   if (repoRoot === null) throw new writers.Usage(`${options['--repo']} is not inside a git repository`);
-  const reviewBase = gitcmd.mergeBase(repoRoot, base!, 'HEAD');
-  if (reviewBase === null) throw new writers.Refused(`${base} has no merge base with HEAD`);
-  return { options, base: base!, repoRoot, reviewBase };
+  return { options, base: base!, repoRoot, reviewBase: requireMergeBase(repoRoot, base!, '') };
+}
+
+function requireMergeBase(repoRoot: string, base: string, unresolvedHint: string): string {
+  if (gitcmd.commitSha(repoRoot, base) === null) throw new writers.Refused(`${base} does not resolve to a commit${unresolvedHint}`);
+  const mergeBase = gitcmd.mergeBase(repoRoot, base, 'HEAD');
+  if (mergeBase === null) throw new writers.Refused(`${base} has no merge base with HEAD`);
+  return mergeBase;
 }
 
 function requireTypecheck(repoRoot: string): void {
@@ -264,13 +286,12 @@ function snapshot(rest: string[]): number {
 }
 
 function evidence(rest: string[]): number {
-  if (rest.length === 0) throw new writers.Usage('keel evidence <write-review|write-smoke|show|gc>');
+  if (rest.length === 0) throw new writers.Usage(EVIDENCE_USAGE);
   const subcommand = rest[0]!;
-  const options = parseOptions(rest.slice(1), EVIDENCE_OPTIONS);
-  const optionNames = Object.keys(options);
+  if (!Object.hasOwn(EVIDENCE_SUBCOMMAND_OPTIONS, subcommand)) throw new writers.Usage('unknown evidence subcommand ' + subcommand);
+  const options = parseOptions(rest.slice(1), EVIDENCE_SUBCOMMAND_OPTIONS[subcommand]!);
   if (subcommand === 'record-codex') {
-    const allowed = ['--repo', '--audits', '--verifiers'];
-    if (!('--repo' in options) || !('--audits' in options) || optionNames.some((name) => !allowed.includes(name))) {
+    if (!('--repo' in options) || !('--audits' in options)) {
       throw new writers.Usage('registration requires --repo, --audits and optional --verifiers');
     }
     const verifiers = '--verifiers' in options ? options['--verifiers']!.split(',') : [];
@@ -280,14 +301,14 @@ function evidence(rest: string[]): number {
   } else if (subcommand === 'write-smoke') {
     seams.print(writers.writeSmoke(options['--repo'] || process.cwd(), options['--run'] ?? null));
   } else if (subcommand === 'check') {
-    if (optionNames.length !== 1 || !('--repo' in options)) throw new writers.Usage('check requires --repo and takes no other option');
+    if (!('--repo' in options)) throw new writers.Usage('check requires --repo and takes no other option');
     const readiness = pushReadiness(options['--repo']!);
     seams.print(readiness);
     return readiness.ok ? EXIT_OK : EXIT_NOT_READY;
   } else if (subcommand === 'show') {
     seams.print(show(options['--repo'] || process.cwd(), options['--root'] ?? null));
   } else if (subcommand === 'promote-plan') {
-    if (optionNames.length !== PROMOTE_PLAN_OPTIONS.length || !PROMOTE_PLAN_OPTIONS.every((name) => name in options)) {
+    if (Object.keys(options).length !== EVIDENCE_SUBCOMMAND_OPTIONS['promote-plan']!.size) {
       throw new writers.Usage('promote-plan requires --repo, --base and --head');
     }
     seams.print(promotePlan(options['--repo']!, options['--base']!, options['--head']!));

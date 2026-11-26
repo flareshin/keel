@@ -10,7 +10,6 @@ import { runGitOrThrow } from "./lib/measurekit/gitutil.ts"
 import type { JsonValue } from "./lib/measurekit/json.ts"
 import { summarizeHarnessVersions } from "./lib/measurekit/harness_versions.ts"
 import { collectMetricItems, defectRunnerNames, MetricError } from "./lib/measurekit/metrics.ts"
-import { buildExpiryProposals } from "./lib/measurekit/propose.ts"
 import { summarizeRecurringFindings } from "./lib/measurekit/recurring_findings.ts"
 import { summarizeReviewRounds } from "./lib/measurekit/review_rounds.ts"
 import { summarizeReviewTokens } from "./lib/measurekit/review_tokens.ts"
@@ -45,7 +44,6 @@ function buildWeeklyReport(ctx: SmokeContext): object {
     },
     core_size: measureCoreSize(ctx.keelHome),
     defects: collectDefects(ctx),
-    proposals: buildExpiryProposals(rows, ctx.metricWindowStart, ctx.today),
     review_rounds: summarizeReviewRounds(),
     review_tokens: summarizeReviewTokens(),
     harness_versions: summarizeHarnessVersions(ctx.keelHome),

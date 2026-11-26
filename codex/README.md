@@ -35,6 +35,13 @@ Shared skill ownership is recorded in `~/.agents/keel-codex-skills.json` under a
 The installer preflights conflicts; an OS failure during writing can still leave
 a partial installation. Keep its output and reconcile affected paths before retrying.
 
+`--check` is the drift check: it exits 1 when the installed instructions, hooks
+or skill links no longer match this checkout, for example after a merge changed
+`PRINCIPLES.md`. Its JSON also lists `notices` that do not change the exit code:
+each dangling link in `~/.agents/skills`, whoever created it. A user-owned skill
+whose source is gone shows as `forget <path>`: the registry drops its record and
+the link stays.
+
 Start a new Codex session after installation. Open `/hooks` in the Codex CLI,
 review the generated command and trust its exact definition. This adapter never
 changes trust records or bypasses the trust check. Re-review after the hook
@@ -62,7 +69,7 @@ The hook is synchronous. As with Codex hooks generally, a runtime failure before
 that JSON is emitted may not stop the tool. Interactive `write_stdin`, hosted
 tools, or tool paths outside the registered matcher are not enforcement coverage.
 
-Claude's `report-gate`, `model-assign`, `handoff`, stack hooks, JS Workflow engine,
+Claude's `report-gate`, `model-assign`, stack hooks such as `env-preflight`, JS Workflow engine,
 `commands/ship1.md`, `commands/xrepo.md` and scheduled tasks are not ported or
 registered. Existing unrelated user skill links, including an older `ship1`, are
 left alone. This is not full Claude/Codex feature parity. A native review does

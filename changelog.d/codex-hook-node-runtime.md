@@ -1,0 +1,3 @@
+### Changed
+
+- The Codex hook command `codex/bin/link` writes no longer depends on the `PATH` of the shell that ran it. It names the node that ran the install. A Homebrew Cellar node is named by its `<prefix>/bin/node` launcher, or else by its `<prefix>/opt/<formula>/bin/node` link, when that path resolves to the same binary, so a `brew upgrade` of a linked or opt-linked formula keeps the hook runnable; a Cellar node with neither stays pinned to its version path. The command also sets `NODE_COMPILE_CACHE` to `$KEEL_DATA_DIR/state/keel/node-compile-cache`, as the Claude Code hooks do. Run `codex/bin/link --write` once after updating, then re-trust the changed hook in Codex `/hooks`.

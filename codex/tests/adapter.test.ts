@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
-  chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync,
+  chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, statSync, symlinkSync,
   utimesSync, writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -11,11 +11,13 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import { OSError, run } from "../../hooks/lib/hookkit/subprocess.ts";
 import { TimeoutExpired } from "../../measure/lib/measurekit/timeout.ts";
 import type { CompletedProcess } from "../../hooks/lib/hookkit/subprocess.ts";
+import { compileCacheDir } from "../../lib/evidence/compile-cache.ts";
 import { withEnv } from "../../tests/hooks/helpers.ts";
+import { isolatedGitEnv } from "./git-env.ts";
 import { carriesPrApprovalRule, dropPrRule, rewordPrRule } from "../../tests/link/helpers.ts";
 import { completeEdit, validateUpdate } from "../lib/config_policy.ts";
 import { digest, fingerprint } from "../lib/files.ts";
-import { buildFiles, buildSkillLinks, linkedWorktreeProblems, reconcile } from "../lib/install.ts";
+import { buildFiles, buildSkillLinks, hookRuntime, linkedWorktreeProblems, reconcile } from "../lib/install.ts";
 import { Refusal } from "../lib/refusal.ts";
 import { applySkillPlan, lockIsStale, planSkills, realSkillFiles, replaceLink } from "../lib/skill_registry.ts";
 import type { SkillFiles } from "../lib/skill_registry.ts";
@@ -45,6 +47,16 @@ function referenceDigest(kind: string, content: Buffer): string {
   return createHash("sha256").update(kind).update("\0").update(content).digest("hex");
 }
 
+function ownerCommandRule(runtime: string): string {
+  const rules = runtime.split("\n").filter((line) => line.startsWith("- [K5] After every review") && line.includes("root_run_id") && line.includes("Never invent an approval ID"));
+  assert.equal(rules.length, 1, "codex/AGENTS.md must hold exactly one owner command rule");
+  return rules[0] ?? "";
+}
+
+function coreSkillNames(keel: string): string[] {
+  return readdirSync(join(keel, "skills")).filter((name) => existsSync(join(keel, "skills", name, "SKILL.md"))).sort();
+}
+
 function runNode(script: string, args: string[], env: NodeJS.ProcessEnv, input?: string) {
   const result = spawnSync(process.execPath, [script, ...args], { encoding: "utf8", env, input });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
@@ -58,7 +70,7 @@ describe("installation", () => {
   beforeEach(() => {
     temp = temporaryDirectory();
     home = temp;
-    env = { ...process.env, HOME: home, KEEL_OVERLAY_DIR: join(home, "overlay"), KEEL_DATA_DIR: join(home, "data") };
+    env = { ...isolatedGitEnv(), HOME: home, KEEL_OVERLAY_DIR: join(home, "overlay"), KEEL_DATA_DIR: join(home, "data") };
     delete env["CODEX_HOME"];
   });
 
@@ -91,6 +103,18 @@ describe("installation", () => {
     return source;
   }
 
+  it("moves an installed core skill's link to its new name when the skill is renamed", () => {
+    const source = copySource("renamed-skill");
+    assert.equal(runSourceLink(source, "--write").status, 0);
+    renameSync(join(source, "skills/refining-requests"), join(source, "skills/refining-asks"));
+    assert.equal(runSourceLink(source, "--check").status, 1);
+    const run = runSourceLink(source, "--write");
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(realpathSync(join(home, ".agents/skills/refining-asks")), join(source, "skills/refining-asks"));
+    assert.throws(() => lstatSync(join(home, ".agents/skills/refining-requests")), { code: "ENOENT" });
+    assert.equal(runSourceLink(source, "--check").status, 0);
+  });
+
   function actionsOf(result: { stdout: string }): unknown {
     return (JSON.parse(result.stdout) as Record<string, unknown>)["actions"];
   }
@@ -99,8 +123,7 @@ describe("installation", () => {
     const LINKED_WORKTREE_PROBLEM = /linked worktree.*--allow-worktree/;
 
     function git(cwd: string, ...args: string[]): void {
-      const isolated = { ...env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
-      const result = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8", env: isolated });
+      const result = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8", env });
       assert.equal(result.status, 0, result.stderr);
     }
 
@@ -218,13 +241,20 @@ describe("installation", () => {
     const run = runLink("--write");
     assert.equal(run.status, 0, run.stderr);
     const guidance = read(join(home, ".codex/AGENTS.md"));
-    assert.ok(guidance.includes("After every review, include a copyable zsh command in the final response."));
-    assert.ok(guidance.includes("Use the actual registered root_run_id"));
-    assert.ok(guidance.includes("Never invent an approval ID or offer a placeholder approval command."));
-    assert.ok(guidance.includes("provide a concrete permitted diagnostic command"));
+    assert.ok(guidance.split("\n").includes(ownerCommandRule(read(join(ADAPTER, "AGENTS.md")))));
     for (const source of ["docs/codex-review.md", "codex/skills/keel-review/SKILL.md"]) {
       assert.ok(read(join(KEEL, source)).includes("After every review"), source);
     }
+  });
+
+  it("loses the owner command rule from the generated guidance when the Codex runtime drops it", () => {
+    const source = copySource("dropped-owner-command");
+    const runtime = join(source, "codex/AGENTS.md");
+    const rule = ownerCommandRule(read(runtime));
+    writeFileSync(runtime, read(runtime).replace(`${rule}\n`, ""));
+    const run = runSourceLink(source, "--write");
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(read(join(home, ".codex/AGENTS.md")).split("\n").includes(rule), false);
   });
 
   it("test_install_isIdempotent_andUnlinksOwnedFiles", () => {
@@ -264,6 +294,51 @@ describe("installation", () => {
     assert.equal(runLink("--write").status, 0);
     assert.equal(runLink("--unlink").status, 0);
     assert.ok(lstatSync(skill).isSymbolicLink());
+  });
+
+  it("reports forgetting an unowned skill whose source is gone, and leaves its link in place", () => {
+    const skill = join(home, ".agents/skills/writing-readable-code");
+    mkdirSync(dirname(skill), { recursive: true });
+    symlinkSync(join(KEEL, "skills/writing-readable-code"), skill);
+    assert.equal(runLink("--write").status, 0);
+    const source = copySource("without-the-skill");
+    rmSync(join(source, "skills/writing-readable-code"), { recursive: true });
+
+    const checked = runSourceLink(source, "--check");
+    const written = runSourceLink(source, "--write");
+
+    assert.equal(checked.status, 1, checked.stdout);
+    assert.ok((actionsOf(checked) as string[]).includes(`forget ${skill}`), checked.stdout);
+    assert.equal(written.status, 0, written.stdout + written.stderr);
+    assert.ok(lstatSync(skill).isSymbolicLink());
+    const records = readJsonFile(join(home, ".agents/keel-codex-skills.json"))["skills"];
+    assert.equal(Object.hasOwn(records, "writing-readable-code"), false);
+  });
+
+  it("lists a dangling link in the shared skills directory as a notice without failing --check", () => {
+    assert.equal(runLink("--write").status, 0);
+    const dangling = join(home, ".agents/skills/moved-away");
+    const missing = join(home, "missing/moved-away");
+    symlinkSync(missing, dangling);
+
+    const checked = runLink("--check");
+
+    assert.equal(checked.status, 0, checked.stdout);
+    assert.deepEqual(JSON.parse(checked.stdout), { actions: [], problems: [], notices: [`dangling skill link: ${dangling} -> ${missing}`] });
+  });
+
+  it("lists no dangling link after --write that the same write removed", () => {
+    const source = copySource("losing-a-skill");
+    assert.equal(runSourceLink(source, "--write").status, 0);
+    const link = join(home, ".agents/skills/writing-readable-code");
+    rmSync(join(source, "skills/writing-readable-code"), { recursive: true });
+
+    const written = runSourceLink(source, "--write");
+
+    assert.equal(written.status, 0, written.stdout + written.stderr);
+    assert.ok((actionsOf(written) as string[]).includes(`remove ${link}`), written.stdout);
+    assert.deepEqual(JSON.parse(written.stdout)["notices"], []);
+    assert.equal(existsSync(link) || isSymlink(link), false);
   });
 
   it("test_existingEquivalentGeneratedFiles_remainUnownedAndSurviveUnlink", () => {
@@ -310,7 +385,9 @@ describe("installation", () => {
     assert.equal(claude.status, 0, claude.stdout + claude.stderr);
     assert.equal(runLink("--write").status, 0);
 
-    for (const name of ["writing-readable-code", "improving-structure", "descending-findings", "refining-requests", "removing-comments", "authoring-agents", "improving-agents", "deepening-prompts"]) {
+    const coreSkills = coreSkillNames(KEEL);
+    assert.ok(coreSkills.includes("writing-readable-code"), coreSkills.join(", "));
+    for (const name of coreSkills) {
       const claudeSkill = join(home, "data/skills", name);
       const codexSkill = join(home, ".agents/skills", name);
       assert.equal(realpathSync(claudeSkill), realpathSync(codexSkill), name);
@@ -580,22 +657,43 @@ describe("installation", () => {
       return readJsonFile(join(home, ".codex/hooks.json"))["hooks"]["PreToolUse"][0]["hooks"][0]["command"];
     }
 
-    function commandFor(runtime: string): string {
-      return [
-        `KEEL_HOME=${KEEL}`, `KEEL_OVERLAY_DIR=${home}/overlay`, `KEEL_DATA_DIR=${home}/data`, `KEEL_CODEX_HOME=${home}/.codex`,
-        `KEEL_AGENTS_HOME=${home}/.agents`, runtime, `${KEEL}/codex/hooks/pre-tool-use.ts`,
-      ].join(" ");
+    function runtimeOf(command: string): string {
+      const words = command.split(" ");
+      return words[words.length - 2] as string;
     }
 
-    it("writes the PATH launcher of the running node, not its version-specific install path", () => {
-      assert.match(home, /^[A-Za-z0-9_\/.-]+$/);
+    function homebrewNode(version: string, formula: string = "node"): string {
+      const binary = join(home, "brew/Cellar", formula, version, "bin/node");
+      mkdirSync(dirname(binary), { recursive: true });
+      writeFileSync(binary, "");
+      return binary;
+    }
+
+    function homebrewOptTo(formula: string, version: string): string {
+      const opt = join(home, "brew/opt", formula);
+      mkdirSync(dirname(opt), { recursive: true });
+      symlinkSync(`../Cellar/${formula}/${version}`, opt);
+      return join(opt, "bin/node");
+    }
+
+    function homebrewLauncherTo(version: string): string {
+      const launcher = join(home, "brew/bin/node");
+      mkdirSync(dirname(launcher), { recursive: true });
+      symlinkSync(`../Cellar/node/${version}/bin/node`, launcher);
+      return launcher;
+    }
+
+    it("writes the same runtime whatever PATH the installing shell has", () => {
       const launcher = nodeLauncher("launcher");
-      assert.equal(installedCommand(`${launcher}:${process.env["PATH"]}`), commandFor(`${launcher}/node`));
+      const withLauncher = installedCommand(`${launcher}:${process.env["PATH"]}`);
+      rmSync(join(home, ".codex"), { recursive: true });
+      rmSync(join(home, ".agents"), { recursive: true });
+
+      assert.equal(installedCommand("/usr/bin:/bin"), withLauncher);
     });
 
-    it("installs a command that runs the TypeScript hook and denies a protected write", () => {
-      const launcher = nodeLauncher("launcher");
-      const command = installedCommand(`${launcher}:${process.env["PATH"]}`);
+    it("installs a command that runs the TypeScript hook under a minimal PATH and denies a protected write", () => {
+      const command = installedCommand(process.env["PATH"] ?? "");
       const write = { tool_name: "Write", tool_input: { file_path: `${home}/.codex/hooks.json`, content: "x" }, cwd: home, session_id: "link-test" };
       const run = spawnSync("sh", ["-c", command], { input: JSON.stringify(write), encoding: "utf8", env: { ...PAYLOAD_ENV, HOME: home } });
       assert.equal(run.status, 0, run.stderr);
@@ -604,12 +702,63 @@ describe("installation", () => {
       assert.equal(decision["permissionDecisionReason"], `keel Codex guard: generated Codex configuration must be changed through codex/bin/link: ${home}/.codex/hooks.json`);
     });
 
-    it("falls back to the binary path when no PATH entry is the running node", () => {
-      const impostor = join(home, "impostor");
-      mkdirSync(impostor);
-      writeFileSync(join(impostor, "node"), "#!/bin/sh\n");
-      chmodSync(join(impostor, "node"), 0o755);
-      assert.equal(installedCommand(`${impostor}:${join(home, "missing")}:relative/bin::`), commandFor(process.execPath));
+    it("points NODE_COMPILE_CACHE at the compile cache the Claude Code hooks use", () => {
+      const assignment = installedCommand(process.env["PATH"] ?? "").split(" ")[0] as string;
+      const expected = withEnv({ KEEL_DATA_DIR: join(home, "data") }, compileCacheDir);
+      assert.equal(assignment, `NODE_COMPILE_CACHE=${expected}`);
+    });
+
+    it("writes the paths, the compile cache and a runtime that is the installing node", () => {
+      assert.match(home, /^[A-Za-z0-9_\/.-]+$/);
+      const command = installedCommand(process.env["PATH"] ?? "");
+      const runtime = runtimeOf(command);
+      assert.equal(command, [
+        `NODE_COMPILE_CACHE=${home}/data/state/keel/node-compile-cache`, `KEEL_HOME=${KEEL}`, `KEEL_OVERLAY_DIR=${home}/overlay`,
+        `KEEL_DATA_DIR=${home}/data`, `KEEL_CODEX_HOME=${home}/.codex`, `KEEL_AGENTS_HOME=${home}/.agents`, runtime, `${KEEL}/codex/hooks/pre-tool-use.ts`,
+      ].join(" "));
+      assert.equal(realpathSync(runtime), realpathSync(process.execPath));
+    });
+
+    it("writes the Homebrew launcher of a Cellar node, which survives a node upgrade", () => {
+      const binary = homebrewNode("9.9.9");
+      const launcher = homebrewLauncherTo("9.9.9");
+      assert.equal(hookRuntime(binary), launcher);
+    });
+
+    it("writes the opt launcher of a versioned formula that has no bin/node link", () => {
+      const binary = homebrewNode("22.11.0", "node@22");
+      const launcher = homebrewOptTo("node@22", "22.11.0");
+      assert.equal(hookRuntime(binary), launcher);
+    });
+
+    it("prefers the bin/node launcher over the opt link when both reach the running node", () => {
+      const binary = homebrewNode("9.9.9");
+      const launcher = homebrewLauncherTo("9.9.9");
+      homebrewOptTo("node", "9.9.9");
+      assert.equal(hookRuntime(binary), launcher);
+    });
+
+    it("keeps the Cellar path when the opt link points at another keg", () => {
+      const binary = homebrewNode("22.11.0", "node@22");
+      homebrewNode("22.12.0", "node@22");
+      homebrewOptTo("node@22", "22.12.0");
+      assert.equal(hookRuntime(binary), binary);
+    });
+
+    it("keeps the Cellar path when the Homebrew launcher points at another node version", () => {
+      const binary = homebrewNode("9.9.9");
+      homebrewNode("10.0.0");
+      homebrewLauncherTo("10.0.0");
+      assert.equal(hookRuntime(binary), binary);
+    });
+
+    it("keeps a Cellar path that has no Homebrew launcher, and a node outside any Cellar", () => {
+      const binary = homebrewNode("9.9.9");
+      const plain = join(home, "usr/local/bin/node");
+      mkdirSync(dirname(plain), { recursive: true });
+      writeFileSync(plain, "");
+      assert.equal(hookRuntime(binary), binary);
+      assert.equal(hookRuntime(plain), plain);
     });
   });
 
@@ -634,7 +783,7 @@ describe("installation", () => {
     writeFileSync(statePath, JSON.stringify(state));
     const check = runLink("--check");
     assert.equal(check.status, 0, check.stdout);
-    assert.deepEqual(JSON.parse(check.stdout), { actions: [], problems: [] });
+    assert.deepEqual(JSON.parse(check.stdout), { actions: [], problems: [], notices: [] });
   });
 });
 
@@ -665,7 +814,7 @@ describe("shared skill registry", () => {
 });
 
 describe("ownership digests", () => {
-  it("hash the kind, a NUL byte and the UTF-8 content, as the Python installer records them", () => {
+  it("hash the kind, a NUL byte and the UTF-8 content, so state files written by earlier installs still match", () => {
     assert.equal(digest("file", "x"), "24e5fa83ea3d78ba97ff36665723f0df9e3d179e110965a34b679ad5ad27eaab");
     assert.equal(digest("link", "/a/b"), "8f4a147acc2778b4d17f7113578e7ff8fd04c72279c09865028f0d5257d1e4c7");
     assert.equal(digest("file", "\u00e9"), "5eb5e24ec91d24caac54c01428c2f2c8bf2c4c6f65817ff1c2db9405c6fa7765");
@@ -935,8 +1084,8 @@ describe("guard", () => {
   });
 
   it("test_realGuard_blocksForcePush_andAllowsRead", () => {
-    spawnSync("git", ["init", "-q", temp], { stdio: "ignore" });
-    const env = { ...process.env, KEEL_DATA_DIR: temp, KEEL_OVERLAY_DIR: temp };
+    const env = { ...isolatedGitEnv(), KEEL_DATA_DIR: temp, KEEL_OVERLAY_DIR: temp };
+    spawnSync("git", ["init", "-q", temp], { stdio: "ignore", env });
     for (const [command, denied] of [["git push --force origin main", true], ["git status", false]] as const) {
       const input = JSON.stringify({ ...payload("Bash", { command }), cwd: temp });
       const run = runNode(HOOK, [], env, input);
@@ -953,7 +1102,7 @@ describe("guard", () => {
 
   it("test_realGuard_blocksPatchToEvidenceStore", () => {
     const target = join(temp, "state/keel/evidence/forged.json");
-    const env = { ...process.env, KEEL_DATA_DIR: temp, KEEL_OVERLAY_DIR: temp };
+    const env = { ...isolatedGitEnv(), KEEL_DATA_DIR: temp, KEEL_OVERLAY_DIR: temp };
     const input = JSON.stringify(payload("apply_patch", { command: `*** Begin Patch\n*** Add File: ${target}\n+fake\n*** End Patch` }));
     const run = runNode(HOOK, [], env, input);
     assert.equal((JSON.parse(run.stdout) as Record<string, any>)["hookSpecificOutput"]["permissionDecision"], "deny");

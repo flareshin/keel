@@ -146,6 +146,16 @@ describe("risk runner", () => {
     assert.deepEqual([result.count, result.items, result.status], [0, [], "GRACE"])
   })
 
+  it("reviewToApproval_takesTheMedianOfTheUnroundedWaits_thenRoundsItToATenthOfAMinute", () => {
+    givenPass({ rootRunId: "rv-a", head: "a".repeat(40) })
+    givenPass({ rootRunId: "rv-b", head: "b".repeat(40) })
+    givenReview("review-a", { createdAt: daysAgo(3, "08:00:00Z") })
+    givenReview("review-b", { createdAt: daysAgo(3, "08:00:00Z") })
+    givenApproval("approval-a", "rv-a", daysAgo(3, "08:01:10Z"), "review-a")
+    givenApproval("approval-b", "rv-b", daysAgo(3, "08:01:20Z"), "review-b")
+    assert.deepEqual(itemFor(runMetric(), "light")["review_to_approval"], { approved_ships: 2, no_approval_evidence: 0, median_minutes: 1.3 })
+  })
+
   it("reviewToApproval_usesTheFirstApprovalOfTheRun_andTheMedianOfTheApprovedShips", () => {
     givenPass({ rootRunId: "rv-a", head: "a".repeat(40) })
     givenPass({ rootRunId: "rv-b", head: "b".repeat(40) })

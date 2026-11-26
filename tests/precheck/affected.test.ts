@@ -261,6 +261,7 @@ describe("keel test --affected", () => {
     const unknownBase = keel(root, ["--base", "no-such-ref"], dataDir)
     assert.equal(unknownBase.status, 3)
     assert.match(unknownBase.stderr, /no-such-ref does not resolve to a commit/)
+    assert.doesNotMatch(unknownBase.stderr, /set-head/)
   })
 
   it("keelTestAffected_withoutOriginHead_namesTheMissingRefAndHowToSetIt", () => {

@@ -11,11 +11,12 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import { OSError, run } from "../../hooks/lib/hookkit/subprocess.ts";
 import { TimeoutExpired } from "../../measure/lib/measurekit/timeout.ts";
 import type { CompletedProcess } from "../../hooks/lib/hookkit/subprocess.ts";
+import { compileCacheDir } from "../../lib/evidence/compile-cache.ts";
 import { withEnv } from "../../tests/hooks/helpers.ts";
 import { carriesPrApprovalRule, dropPrRule, rewordPrRule } from "../../tests/link/helpers.ts";
 import { completeEdit, validateUpdate } from "../lib/config_policy.ts";
 import { digest, fingerprint } from "../lib/files.ts";
-import { buildFiles, buildSkillLinks, linkedWorktreeProblems, reconcile } from "../lib/install.ts";
+import { buildFiles, buildSkillLinks, hookRuntime, linkedWorktreeProblems, reconcile } from "../lib/install.ts";
 import { Refusal } from "../lib/refusal.ts";
 import { applySkillPlan, lockIsStale, planSkills, realSkillFiles, replaceLink } from "../lib/skill_registry.ts";
 import type { SkillFiles } from "../lib/skill_registry.ts";
@@ -625,22 +626,43 @@ describe("installation", () => {
       return readJsonFile(join(home, ".codex/hooks.json"))["hooks"]["PreToolUse"][0]["hooks"][0]["command"];
     }
 
-    function commandFor(runtime: string): string {
-      return [
-        `KEEL_HOME=${KEEL}`, `KEEL_OVERLAY_DIR=${home}/overlay`, `KEEL_DATA_DIR=${home}/data`, `KEEL_CODEX_HOME=${home}/.codex`,
-        `KEEL_AGENTS_HOME=${home}/.agents`, runtime, `${KEEL}/codex/hooks/pre-tool-use.ts`,
-      ].join(" ");
+    function runtimeOf(command: string): string {
+      const words = command.split(" ");
+      return words[words.length - 2] as string;
     }
 
-    it("writes the PATH launcher of the running node, not its version-specific install path", () => {
-      assert.match(home, /^[A-Za-z0-9_\/.-]+$/);
+    function homebrewNode(version: string, formula: string = "node"): string {
+      const binary = join(home, "brew/Cellar", formula, version, "bin/node");
+      mkdirSync(dirname(binary), { recursive: true });
+      writeFileSync(binary, "");
+      return binary;
+    }
+
+    function homebrewOptTo(formula: string, version: string): string {
+      const opt = join(home, "brew/opt", formula);
+      mkdirSync(dirname(opt), { recursive: true });
+      symlinkSync(`../Cellar/${formula}/${version}`, opt);
+      return join(opt, "bin/node");
+    }
+
+    function homebrewLauncherTo(version: string): string {
+      const launcher = join(home, "brew/bin/node");
+      mkdirSync(dirname(launcher), { recursive: true });
+      symlinkSync(`../Cellar/node/${version}/bin/node`, launcher);
+      return launcher;
+    }
+
+    it("writes the same runtime whatever PATH the installing shell has", () => {
       const launcher = nodeLauncher("launcher");
-      assert.equal(installedCommand(`${launcher}:${process.env["PATH"]}`), commandFor(`${launcher}/node`));
+      const withLauncher = installedCommand(`${launcher}:${process.env["PATH"]}`);
+      rmSync(join(home, ".codex"), { recursive: true });
+      rmSync(join(home, ".agents"), { recursive: true });
+
+      assert.equal(installedCommand("/usr/bin:/bin"), withLauncher);
     });
 
-    it("installs a command that runs the TypeScript hook and denies a protected write", () => {
-      const launcher = nodeLauncher("launcher");
-      const command = installedCommand(`${launcher}:${process.env["PATH"]}`);
+    it("installs a command that runs the TypeScript hook under a minimal PATH and denies a protected write", () => {
+      const command = installedCommand(process.env["PATH"] ?? "");
       const write = { tool_name: "Write", tool_input: { file_path: `${home}/.codex/hooks.json`, content: "x" }, cwd: home, session_id: "link-test" };
       const run = spawnSync("sh", ["-c", command], { input: JSON.stringify(write), encoding: "utf8", env: { ...PAYLOAD_ENV, HOME: home } });
       assert.equal(run.status, 0, run.stderr);
@@ -649,12 +671,63 @@ describe("installation", () => {
       assert.equal(decision["permissionDecisionReason"], `keel Codex guard: generated Codex configuration must be changed through codex/bin/link: ${home}/.codex/hooks.json`);
     });
 
-    it("falls back to the binary path when no PATH entry is the running node", () => {
-      const impostor = join(home, "impostor");
-      mkdirSync(impostor);
-      writeFileSync(join(impostor, "node"), "#!/bin/sh\n");
-      chmodSync(join(impostor, "node"), 0o755);
-      assert.equal(installedCommand(`${impostor}:${join(home, "missing")}:relative/bin::`), commandFor(process.execPath));
+    it("points NODE_COMPILE_CACHE at the compile cache the Claude Code hooks use", () => {
+      const assignment = installedCommand(process.env["PATH"] ?? "").split(" ")[0] as string;
+      const expected = withEnv({ KEEL_DATA_DIR: join(home, "data") }, compileCacheDir);
+      assert.equal(assignment, `NODE_COMPILE_CACHE=${expected}`);
+    });
+
+    it("writes the paths, the compile cache and a runtime that is the installing node", () => {
+      assert.match(home, /^[A-Za-z0-9_\/.-]+$/);
+      const command = installedCommand(process.env["PATH"] ?? "");
+      const runtime = runtimeOf(command);
+      assert.equal(command, [
+        `NODE_COMPILE_CACHE=${home}/data/state/keel/node-compile-cache`, `KEEL_HOME=${KEEL}`, `KEEL_OVERLAY_DIR=${home}/overlay`,
+        `KEEL_DATA_DIR=${home}/data`, `KEEL_CODEX_HOME=${home}/.codex`, `KEEL_AGENTS_HOME=${home}/.agents`, runtime, `${KEEL}/codex/hooks/pre-tool-use.ts`,
+      ].join(" "));
+      assert.equal(realpathSync(runtime), realpathSync(process.execPath));
+    });
+
+    it("writes the Homebrew launcher of a Cellar node, which survives a node upgrade", () => {
+      const binary = homebrewNode("9.9.9");
+      const launcher = homebrewLauncherTo("9.9.9");
+      assert.equal(hookRuntime(binary), launcher);
+    });
+
+    it("writes the opt launcher of a versioned formula that has no bin/node link", () => {
+      const binary = homebrewNode("22.11.0", "node@22");
+      const launcher = homebrewOptTo("node@22", "22.11.0");
+      assert.equal(hookRuntime(binary), launcher);
+    });
+
+    it("prefers the bin/node launcher over the opt link when both reach the running node", () => {
+      const binary = homebrewNode("9.9.9");
+      const launcher = homebrewLauncherTo("9.9.9");
+      homebrewOptTo("node", "9.9.9");
+      assert.equal(hookRuntime(binary), launcher);
+    });
+
+    it("keeps the Cellar path when the opt link points at another keg", () => {
+      const binary = homebrewNode("22.11.0", "node@22");
+      homebrewNode("22.12.0", "node@22");
+      homebrewOptTo("node@22", "22.12.0");
+      assert.equal(hookRuntime(binary), binary);
+    });
+
+    it("keeps the Cellar path when the Homebrew launcher points at another node version", () => {
+      const binary = homebrewNode("9.9.9");
+      homebrewNode("10.0.0");
+      homebrewLauncherTo("10.0.0");
+      assert.equal(hookRuntime(binary), binary);
+    });
+
+    it("keeps a Cellar path that has no Homebrew launcher, and a node outside any Cellar", () => {
+      const binary = homebrewNode("9.9.9");
+      const plain = join(home, "usr/local/bin/node");
+      mkdirSync(dirname(plain), { recursive: true });
+      writeFileSync(plain, "");
+      assert.equal(hookRuntime(binary), binary);
+      assert.equal(hookRuntime(plain), plain);
     });
   });
 

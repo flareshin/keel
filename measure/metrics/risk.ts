@@ -3,7 +3,9 @@ import path from "node:path"
 
 import { stateDir } from "../../lib/evidence/env.ts"
 import { writeTextAtomic } from "../../lib/link/atomic.ts"
+import { diffStats, GitError as EvidenceGitError } from "../../lib/evidence/gitcmd.ts"
 import * as store from "../../lib/evidence/store.ts"
+import { EvidenceError, EvidenceTooDeepError } from "../../lib/evidence/store.ts"
 import * as env from "../lib/measurekit/env.ts"
 import { addDays } from "../lib/measurekit/dates.ts"
 import { dateOption, parseCommandLine, printJson, runMain, stringOption, EXIT_OK } from "../lib/measurekit/cli.ts"
@@ -39,16 +41,22 @@ const REWORK_CACHE_FILE = path.join("metrics", "risk-rework.json")
 const PRIVATE_FILE_MODE = 0o600
 const UNREADABLE_CACHE_CODES = new Set(["EACCES", "EISDIR"])
 
+interface DiffStat {
+  files: number
+  lines: number
+}
+
 interface Ship {
   repo: string
   head: string | null
   rootRunId: string | null
   riskClass: string
   shippedAt: string
+  diffStat: DiffStat | null
 }
 
 type Rework =
-  | { state: "decided"; shipped: number; reworked: number }
+  | { state: "decided"; base: string; shipped: number; reworked: number }
   | { state: "pending" }
   | { state: "not computable"; reason: string }
 
@@ -78,15 +86,29 @@ interface ReviewRecord {
   repoRoot: string | null
 }
 
+interface EvidenceRead {
+  readable: JsonObject[]
+  unreadable: number
+}
+
+interface DefaultBranchFetches {
+  tipMs: number
+  originFetchLine: string | null
+  fetchHeads: { mtimeMs: number; lines: string[] }[]
+}
+
+type ShipBase = { base: string } | { reason: string }
+
 function main(argv: string[]): number {
   const since = dateOption(COMMAND, "--since", stringOption(parseCommandLine(COMMAND, argv), "since")) ?? "0000-00-00"
   const allShips = shipsSince("0000-00-00")
   const ships = allShips.filter((ship) => isWithinWindow({ ts: ship.shippedAt }, since))
-  const reviews = reviewRecords()
-  const firstApprovals = firstApprovalByRootRun()
+  const reviewEvidence = readEvidence("review")
+  const approvalEvidence = readEvidence("approval")
+  const reviews = reviewRecords(reviewEvidence.readable)
+  const firstApprovals = firstApprovalByRootRun(approvalEvidence.readable)
   const now = new Date()
   const cache = readReworkCache()
-  const cachedShips = cache.size
   const defectSources = readDefectSources(since)
   const traces = defectSources.defects.map((defect) => traceDefect(defect, allShips, reviews))
   const items = classesPresent(ships).map((riskClass) => {
@@ -100,12 +122,12 @@ function main(argv: string[]): number {
       baseline: BASELINE_DEFERRED,
     }
   })
-  if (cache.size > cachedShips) writeReworkCache(cache)
   printJson({
     count: ships.filter((ship) => ship.riskClass !== UNCLASSIFIED).length,
     items,
     defect_sources: defectSources.statuses,
     untraced_defects: untracedDefectsOf(traces),
+    unreadable_evidence: reviewEvidence.unreadable + approvalEvidence.unreadable,
   })
   return EXIT_OK
 }
@@ -126,6 +148,7 @@ function shipsSince(since: string): Ship[] {
       rootRunId: typeof record["root_run_id"] === "string" ? record["root_run_id"] : null,
       riskClass: typeof record["risk"] === "string" ? record["risk"] : UNCLASSIFIED,
       shippedAt: record["ts"] as string,
+      diffStat: Number.isInteger(record["files"]) && Number.isInteger(record["lines"]) ? { files: record["files"] as number, lines: record["lines"] as number } : null,
     })
   }
   return [...ships.values()]
@@ -209,8 +232,21 @@ function classesPresent(ships: Ship[]): string[] {
   return [...known, ...other, ...(present.has(UNCLASSIFIED) ? [UNCLASSIFIED] : [])]
 }
 
-function reviewRecords(): ReviewRecord[] {
-  return store.repoKeys("review").flatMap((repoKey) => store.listFiles("review", repoKey).map((file) => store.readFile(file) as JsonObject))
+function readEvidence(kind: string): EvidenceRead {
+  const files = kind === "review" ? store.repoKeys(kind).flatMap((repoKey) => store.listFiles(kind, repoKey)) : store.listFiles(kind)
+  const readable: JsonObject[] = []
+  for (const file of files) {
+    try {
+      readable.push(store.readFile(file) as JsonObject)
+    } catch (error) {
+      if (!(error instanceof EvidenceError || error instanceof EvidenceTooDeepError)) throw error
+    }
+  }
+  return { readable, unreadable: files.length - readable.length }
+}
+
+function reviewRecords(evidence: JsonObject[]): ReviewRecord[] {
+  return evidence
     .filter((review) => typeof review["evidence_id"] === "string" && typeof review["repo"] === "string")
     .map((review) => ({
       evidenceId: review["evidence_id"] as string,
@@ -220,8 +256,8 @@ function reviewRecords(): ReviewRecord[] {
     }))
 }
 
-function firstApprovalByRootRun(): Map<string, JsonObject> {
-  const approvals = store.listFiles("approval").map((file) => store.readFile(file) as JsonObject)
+function firstApprovalByRootRun(evidence: JsonObject[]): Map<string, JsonObject> {
+  const approvals = evidence
     .filter((approval) => typeof approval["root_run_id"] === "string" && typeof approval["created_at"] === "string")
     .sort((left, right) => compareCodePoints(left["created_at"] as string, right["created_at"] as string))
   const first = new Map<string, JsonObject>()
@@ -280,7 +316,10 @@ function cachedRework(ship: Ship, cache: Map<string, DecidedRework>, compute: ()
   const cached = key === null ? undefined : cache.get(key)
   if (cached !== undefined) return cached
   const rework = compute()
-  if (key !== null && rework.state === "decided") cache.set(key, rework)
+  if (key !== null && rework.state === "decided") {
+    cache.set(key, rework)
+    writeReworkCache(cache)
+  }
   return rework
 }
 
@@ -297,15 +336,15 @@ function readReworkCache(): Map<string, DecidedRework> {
   if (!isJsonObject(parsed)) return new Map()
   const cache = new Map<string, DecidedRework>()
   for (const [key, entry] of Object.entries(parsed)) {
-    if (isJsonObject(entry) && Number.isInteger(entry["shipped"]) && Number.isInteger(entry["reworked"])) {
-      cache.set(key, { state: "decided", shipped: entry["shipped"] as number, reworked: entry["reworked"] as number })
+    if (isJsonObject(entry) && typeof entry["base"] === "string" && FULL_SHA.test(entry["base"]) && Number.isInteger(entry["shipped"]) && Number.isInteger(entry["reworked"])) {
+      cache.set(key, { state: "decided", base: entry["base"], shipped: entry["shipped"] as number, reworked: entry["reworked"] as number })
     }
   }
   return cache
 }
 
 function writeReworkCache(cache: Map<string, DecidedRework>): void {
-  const entries = Object.fromEntries([...cache].map(([key, rework]) => [key, { shipped: rework.shipped, reworked: rework.reworked }]))
+  const entries = Object.fromEntries([...cache].map(([key, rework]) => [key, { base: rework.base, shipped: rework.shipped, reworked: rework.reworked }]))
   writeTextAtomic(path.join(stateDir(), REWORK_CACHE_FILE), stringifySorted(entries) + "\n", PRIVATE_FILE_MODE)
 }
 
@@ -320,9 +359,9 @@ function reworkOf(ship: Ship, allShips: Ship[], reviews: ReviewRecord[], now: Da
     .sort((left, right) => compareCodePoints(right.shippedAt, left.shippedAt))
     .map((other) => other.head as string)
   try {
-    return reworkInCheckout(checkout, ship.head, earlierHeads, horizonDate)
+    return reworkInCheckout(checkout, ship, earlierHeads, horizonDate)
   } catch (error) {
-    if (error instanceof GitError) return { state: "not computable", reason: "git could not read the ship" }
+    if (error instanceof GitError || error instanceof EvidenceGitError) return { state: "not computable", reason: "git could not read the ship" }
     throw error
   }
 }
@@ -331,7 +370,15 @@ function sameRepo(left: string, right: string): boolean {
   return left.toLowerCase() === right.toLowerCase()
 }
 
+const checkoutByShipHead = new Map<string, string | null>()
+
 function checkoutHolding(repo: string, head: string, reviews: ReviewRecord[]): string | null {
+  const key = shipKey(repo, head)
+  if (!checkoutByShipHead.has(key)) checkoutByShipHead.set(key, findCheckoutHolding(repo, head, reviews))
+  return checkoutByShipHead.get(key) as string | null
+}
+
+function findCheckoutHolding(repo: string, head: string, reviews: ReviewRecord[]): string | null {
   const roots = new Set(reviews.filter((review) => sameRepo(review.repo, repo) && review.repoRoot !== null).map((review) => review.repoRoot as string))
   for (const root of roots) {
     if (fs.existsSync(root) && gitSucceeds(root, ["cat-file", "-e", `${head}^{commit}`])) return root
@@ -339,14 +386,16 @@ function checkoutHolding(repo: string, head: string, reviews: ReviewRecord[]): s
   return null
 }
 
-function reworkInCheckout(checkout: string, head: string, earlierHeads: string[], horizonDate: string): Rework {
-  if (!gitSucceeds(checkout, ["rev-parse", "--verify", "--quiet", DEFAULT_BRANCH_REF])) return { state: "not computable", reason: "no origin/HEAD" }
+function reworkInCheckout(checkout: string, ship: Ship, earlierHeads: string[], horizonDate: string): Rework {
+  const head = ship.head as string
+  if (!hasOriginHead(checkout)) return { state: "not computable", reason: "no origin/HEAD" }
   if (!isAncestor(checkout, head, DEFAULT_BRANCH_REF)) return { state: "not computable", reason: "head not on the default branch" }
   if (!defaultBranchSeenPast(checkout, horizonDate)) return { state: "not computable", reason: "default branch not fetched past the horizon" }
   const horizon = runGitOrThrow(checkout, ["rev-list", "-1", "--first-parent", `--before=${horizonDate}`, DEFAULT_BRANCH_REF]).trim()
   if (horizon === "" || !isAncestor(checkout, head, horizon)) return { state: "not computable", reason: "head reached the default branch after the horizon" }
-  const base = shipBase(checkout, head, earlierHeads)
-  if (base === null) return { state: "not computable", reason: "no earlier ship bounds a fast-forwarded head" }
+  const shipBaseResult = shipBase(checkout, ship, earlierHeads)
+  if ("reason" in shipBaseResult) return { state: "not computable", reason: shipBaseResult.reason }
+  const base = shipBaseResult.base
   const shipCommits = new Set(lines(runGitOrThrow(checkout, ["rev-list", "--first-parent", `${base}..${head}`])))
   const refactorCommits = refactorOnlyCommits(checkout, head, horizon)
   const renames = renamesBetween(checkout, head, horizon)
@@ -357,20 +406,47 @@ function reworkInCheckout(checkout: string, head: string, earlierHeads: string[]
     const later = renames.get(file) ?? file
     survived += gitSucceeds(checkout, ["cat-file", "-e", `${horizon}:${later}`]) ? blamedToShip(checkout, horizon, later, shipCommits, refactorCommits) : 0
   }
-  return { state: "decided", shipped, reworked: Math.max(shipped - survived, 0) }
+  return { state: "decided", base, shipped, reworked: Math.max(shipped - survived, 0) }
+}
+
+const originHeadByCheckout = new Map<string, boolean>()
+
+function hasOriginHead(checkout: string): boolean {
+  if (!originHeadByCheckout.has(checkout)) {
+    originHeadByCheckout.set(checkout, gitSucceeds(checkout, ["rev-parse", "--verify", "--quiet", DEFAULT_BRANCH_REF]))
+  }
+  return originHeadByCheckout.get(checkout) as boolean
 }
 
 function defaultBranchSeenPast(checkout: string, horizonDate: string): boolean {
   const horizon = Date.parse(horizonDate)
+  const fetches = defaultBranchFetches(checkout)
+  if (fetches.tipMs >= horizon) return true
+  const originFetch = fetches.originFetchLine
+  if (originFetch === null) return false
+  return fetches.fetchHeads.some((fetchHead) => fetchHead.mtimeMs >= horizon && fetchHead.lines.some((line) => line.endsWith(originFetch)))
+}
+
+const fetchesByCheckout = new Map<string, DefaultBranchFetches>()
+
+function defaultBranchFetches(checkout: string): DefaultBranchFetches {
+  const known = fetchesByCheckout.get(checkout)
+  if (known !== undefined) return known
   const tipDate = runGitOrThrow(checkout, ["log", "-1", "--format=%cI", DEFAULT_BRANCH_REF]).trim()
-  if (Date.parse(tipDate) >= horizon) return true
-  if (!gitSucceeds(checkout, ["symbolic-ref", "-q", DEFAULT_BRANCH_REF])) return false
-  if (!gitSucceeds(checkout, ["remote", "get-url", "origin"])) return false
+  const fetches: DefaultBranchFetches = {
+    tipMs: Date.parse(tipDate),
+    originFetchLine: originFetchLine(checkout),
+    fetchHeads: fetchHeadsOfRepo(checkout).map((fetchHead) => ({ mtimeMs: fs.statSync(fetchHead).mtimeMs, lines: fs.readFileSync(fetchHead, "utf8").split("\n") })),
+  }
+  fetchesByCheckout.set(checkout, fetches)
+  return fetches
+}
+
+function originFetchLine(checkout: string): string | null {
+  if (!gitSucceeds(checkout, ["symbolic-ref", "-q", DEFAULT_BRANCH_REF])) return null
+  if (!gitSucceeds(checkout, ["remote", "get-url", "origin"])) return null
   const branch = runGitOrThrow(checkout, ["symbolic-ref", DEFAULT_BRANCH_REF]).trim().slice(ORIGIN_BRANCH_PREFIX.length)
-  const originFetch = `\tbranch '${branch}' of ${asFetchHeadUrl(runGitOrThrow(checkout, ["remote", "get-url", "origin"]).trim())}`
-  return fetchHeadsOfRepo(checkout)
-    .filter((fetchHead) => fs.statSync(fetchHead).mtimeMs >= horizon)
-    .some((fetchHead) => fs.readFileSync(fetchHead, "utf8").split("\n").some((line) => line.endsWith(originFetch)))
+  return `\tbranch '${branch}' of ${asFetchHeadUrl(runGitOrThrow(checkout, ["remote", "get-url", "origin"]).trim())}`
 }
 
 function fetchHeadsOfRepo(checkout: string): string[] {
@@ -389,12 +465,29 @@ function isAncestor(checkout: string, ancestor: string, descendant: string): boo
   return gitSucceeds(checkout, ["merge-base", "--is-ancestor", ancestor, descendant])
 }
 
-function shipBase(checkout: string, head: string, earlierHeads: string[]): string | null {
+function shipBase(checkout: string, ship: Ship, earlierHeads: string[]): ShipBase {
+  const head = ship.head as string
   const landing = lines(runGitOrThrow(checkout, ["rev-list", "--first-parent", "--ancestry-path", `${head}..${DEFAULT_BRANCH_REF}`])).at(-1)
   const landedByMerge = landing !== undefined && runGitOrThrow(checkout, ["rev-parse", `${landing}^1`]).trim() !== head
-  if (landedByMerge) return runGitOrThrow(checkout, ["merge-base", head, `${landing}^1`]).trim()
-  const firstParentChain = new Set(lines(runGitOrThrow(checkout, ["rev-list", "--first-parent", head])))
-  return earlierHeads.find((earlier) => firstParentChain.has(earlier)) ?? null
+  if (landedByMerge) return { base: runGitOrThrow(checkout, ["merge-base", head, `${landing}^1`]).trim() }
+  const firstParentChain = lines(runGitOrThrow(checkout, ["rev-list", "--first-parent", head]))
+  const onChain = new Set(firstParentChain)
+  const earlierShip = earlierHeads.find((earlier) => onChain.has(earlier))
+  if (earlierShip === undefined) return { reason: "no earlier ship bounds a fast-forwarded head" }
+  const shipStat = ship.diffStat
+  if (shipStat === null) return { base: earlierShip }
+  const candidates = firstParentChain.slice(1, firstParentChain.indexOf(earlierShip) + 1)
+  const base = candidates.find((candidate) => sameDiffStat(diffStatBetween(checkout, candidate, head), shipStat))
+  return base === undefined ? { reason: "no base on the first-parent chain matches the pass line's diff stat" } : { base }
+}
+
+function diffStatBetween(checkout: string, base: string, head: string): DiffStat {
+  const stats = [...diffStats(checkout, base, head).values()]
+  return { files: stats.length, lines: stats.reduce((sum, stat) => sum + stat.added + stat.deleted, 0) }
+}
+
+function sameDiffStat(left: DiffStat, right: DiffStat): boolean {
+  return left.files === right.files && left.lines === right.lines
 }
 
 function refactorOnlyCommits(checkout: string, head: string, horizon: string): string[] {

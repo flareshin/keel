@@ -55,7 +55,7 @@ describe("eval cli", () => {
     assert.equal(completed.status, 0, completed.stderr)
     const fingerprintOf = (line: any) => ({ link_mode: line.link_mode, claude_md_sha256: line.claude_md_sha256, principles_md_sha256: line.principles_md_sha256, skill_md_sha256: line.skill_md_sha256 })
     assert.deepEqual(linesOf("K4").map(fingerprintOf), [fingerprint, fingerprint])
-    assert.deepEqual(linesOf("K4.case").map(fingerprintOf), [fingerprint, fingerprint, fingerprint, fingerprint])
+    assert.deepEqual(linesOf("K4.case").map(fingerprintOf), Array(8).fill(fingerprint))
   })
 
   it("fullRun_writesV1BaselineLine_whenKeelIsNotLinked", () => {

@@ -73,8 +73,8 @@ describe("assembleRelease", () => {
 })
 
 describe("bin/changelog", () => {
-  function scratchRepo(): string {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "keel-changelog-"))
+  function scratchRepo(prefix = "keel-changelog-"): string {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
     fs.mkdirSync(path.join(root, "bin"))
     fs.mkdirSync(path.join(root, "changelog.d"))
     fs.writeFileSync(path.join(root, "CHANGELOG.md"), CHANGELOG)
@@ -100,6 +100,18 @@ describe("bin/changelog", () => {
       assert.equal(completed.stdout, "## [1.1.0] - 2026-11-12\n\n### Added\n\n- x\n")
       assert.equal(fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8"), CHANGELOG)
       assert.deepEqual(fs.readdirSync(path.join(root, "changelog.d")).sort(), ["README.md", "notes.txt", "x.md"])
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("changelog_fromACheckoutWhosePathHasASpace_readsItsOwnFragments", () => {
+    const root = scratchRepo("keel changelog-")
+    try {
+      const completed = run(root, "1.1.0", "2026-11-12")
+
+      assert.equal(completed.status, 0, completed.stderr)
+      assert.equal(completed.stdout, "## [1.1.0] - 2026-11-12\n\n### Added\n\n- x\n")
     } finally {
       fs.rmSync(root, { recursive: true, force: true })
     }

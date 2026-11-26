@@ -777,11 +777,27 @@ describe("EvidenceDeadlineTest", () => {
     assert.equal(cliTimeoutSeconds(EVIDENCE_DEADLINE_SECONDS - 7), 7);
   });
 
+  it("cliTimeoutSeconds_roundsDownToWholeSeconds_whenWhatIsLeftIsFractional", () => {
+    assert.equal(cliTimeoutSeconds(EVIDENCE_DEADLINE_SECONDS - 7.4), 7);
+  });
+
   it("cliTimeoutSeconds_skipsTheCall_whenLessThanASecondOfTheDeadlineIsLeft", () => {
     assert.equal(cliTimeoutSeconds(EVIDENCE_DEADLINE_SECONDS - 0.5), null);
   });
 
   it("cliTimeoutSeconds_skipsTheCall_whenTheDeadlineHasPassed", () => {
     assert.equal(cliTimeoutSeconds(EVIDENCE_DEADLINE_SECONDS + 3), null);
+  });
+
+  it("handback_stopsCallingTheCli_whenHangingWriteReviewCallsUseUpTheSharedDeadline", () => {
+    sandbox.env["KEEL_CLI"] = sandbox.stub("keel", { stdout: CLI_RESPONSE, hangSeconds: 120 });
+    const lines = ["/work/app", "/work/lib", "/work/docs"].map((repo) => KEEL_EVIDENCE_LINE.replace("/work/app", repo));
+    const report = "VERDICT: PASS\nNo findings. 3 files changed, 40 insertions(+).\n" + lines.join("\n");
+
+    const result = handback(report);
+
+    assert.equal(result.code, 0);
+    assert.equal(sandbox.stubCalls("keel").length, 2);
+    assert.ok(sandbox.fires().some((fire) => fire.rule_id === "K1" && fire.outcome === "warn" && fire.detail?.includes("write-review skipped")));
   });
 });

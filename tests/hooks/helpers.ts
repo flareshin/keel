@@ -74,9 +74,10 @@ export const KEEL_EVIDENCE_LINE =
 const HOOK_TIMEOUT_MS = 60_000;
 const FIXED_COMMIT_DATES = { GIT_AUTHOR_DATE: "2026-01-01T00:00:00Z", GIT_COMMITTER_DATE: "2026-01-01T00:00:00Z" };
 const GIT_CONFIG = "[user]\n\tname = Test User\n\temail = test@example.invalid\n[init]\n\tdefaultBranch = main\n[commit]\n\tgpgsign = false\n";
-const STUB_SOURCE = (record: string, stdout: string, exitCode: number) =>
+const STUB_SOURCE = (record: string, stdout: string, exitCode: number, hangSeconds: number) =>
   `#!${process.execPath}\nconst { appendFileSync, readFileSync } = require("node:fs");\n` +
   `appendFileSync(${JSON.stringify(record)}, JSON.stringify({ argv: process.argv.slice(2), stdin: readFileSync(0, "utf8") }) + "\\n");\n` +
+  `Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ${hangSeconds * 1000});\n` +
   `process.stdout.write(${JSON.stringify(stdout)});\nprocess.exitCode = ${exitCode};\n`;
 
 export interface Fire {
@@ -154,9 +155,9 @@ export class HookSandbox extends Sandbox {
     copyFileSync(join(EXAMPLES, relative), target);
   }
 
-    stub(name: string, options: { stdout?: string; exitCode?: number } = {}): string {
+    stub(name: string, options: { stdout?: string; exitCode?: number; hangSeconds?: number } = {}): string {
     const path = join(this.root, "stubs", name);
-    this.write(path, STUB_SOURCE(path + ".calls", options.stdout ?? "", options.exitCode ?? 0));
+    this.write(path, STUB_SOURCE(path + ".calls", options.stdout ?? "", options.exitCode ?? 0, options.hangSeconds ?? 0));
     chmodSync(path, 0o755);
     return path;
   }

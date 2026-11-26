@@ -470,7 +470,7 @@ function sendToCli(evidenceLine: string, verdict: string, source: Record<string,
 
 export function cliTimeoutSeconds(elapsedSeconds: number): number | null {
   const remaining = EVIDENCE_DEADLINE_SECONDS - elapsedSeconds;
-  return remaining < MIN_CLI_SECONDS ? null : Math.min(CLI_TIMEOUT_SECONDS, remaining);
+  return remaining < MIN_CLI_SECONDS ? null : Math.min(CLI_TIMEOUT_SECONDS, Math.floor(remaining));
 }
 
 function evidenceIdOf(stdout: string): string {

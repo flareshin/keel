@@ -15,6 +15,7 @@ import { summarizeRecurringFindings } from "./lib/measurekit/recurring_findings.
 import { summarizeReviewRounds } from "./lib/measurekit/review_rounds.ts"
 import { summarizeReviewTokens } from "./lib/measurekit/review_tokens.ts"
 import { SmokeContext } from "./lib/measurekit/smoke_context.ts"
+import { summarizeUngatedLandings } from "./lib/measurekit/ungated_landings.ts"
 
 const COMMAND: CommandSpec = {
   prog: "measure/weekly",
@@ -49,6 +50,7 @@ function buildWeeklyReport(ctx: SmokeContext): object {
     review_tokens: summarizeReviewTokens(),
     harness_versions: summarizeHarnessVersions(ctx.keelHome),
     recurring_findings: summarizeRecurringFindings(),
+    ungated_landings: summarizeUngatedLandings([ctx.keelHome, ctx.overlayDir], ctx.metricWindowStart),
   }
 }
 

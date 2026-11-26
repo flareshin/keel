@@ -25,7 +25,7 @@ export const COUNT_PATTERNS: Array<[name: string, pattern: RegExp]> = [
   ['tap', new RegExp(`${LINE_START}# pass ([0-9]+)`, 'gu')],
   ['spec', new RegExp(`${LINE_START}\u2139 pass ([0-9]+)${NOT_WORD_AFTER}`, 'gu')],
 ];
-const SUREFIRE_RESULTS_HEADING = new RegExp(`${LINE_START}(?:\\[[A-Z]+\\] )?Results:\\r?$`, 'gmu');
+const SUREFIRE_RESULTS_HEADING = new RegExp(`${LINE_START}(?:\\[[A-Z]+\\] )?Results ?:\\r?$`, 'gmu');
 const FAILURE_PATTERNS: Array<[name: string, pattern: RegExp]> = [
   ['surefire', /Tests run: [0-9]+, Failures: ([0-9]+), Errors: ([0-9]+)/gu],
   ['unittest', new RegExp(`${LINE_START}FAILED \\((?:failures=([0-9]+))?(?:, )?(?:errors=([0-9]+))?`, 'gu')],

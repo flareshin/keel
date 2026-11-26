@@ -48,6 +48,15 @@ describe('TestrunRecognizeTest', () => {
     assert.deepEqual(recognize(output), [6, 'surefire']);
   });
 
+  test('twoResultsHeadingsBeforeOneTotal_countThatTotalOnce', () => {
+    assert.deepEqual(recognize('Results:\nResults:\nTests run: 5, Failures: 0\n'), [5, 'surefire']);
+  });
+
+  test('anOlderSurefiresSpacedResultsHeading_countsEveryModulesResultsTotal', () => {
+    const output = 'Tests run: 2, Failures: 0\n\nResults :\n\nTests run: 2, Failures: 0\nTests run: 3, Failures: 0\n\nResults :\n\nTests run: 3, Failures: 0\n';
+    assert.deepEqual(recognize(output), [5, 'surefire']);
+  });
+
   test('aSurefireRunWithoutAResultsHeading_countsItsLastTestsRunLine', () => {
     assert.deepEqual(recognize('Tests run: 3, Failures: 0\nTests run: 5, Failures: 0\n'), [5, 'surefire']);
   });

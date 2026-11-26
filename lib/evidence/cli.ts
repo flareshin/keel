@@ -59,7 +59,10 @@ const EVIDENCE_SUBCOMMAND_OPTIONS: Record<string, Set<string>> = {
   gc: new Set(),
 };
 const EVIDENCE_USAGE = `keel evidence <${Object.keys(EVIDENCE_SUBCOMMAND_OPTIONS).join('|')}>`;
-const PRECHECK_USAGE = 'keel precheck <run|rerun|bind|required>';
+const PRECHECK_SUBCOMMANDS: Record<string, (rest: string[]) => number | Promise<number>> = {
+  run: precheckRun, rerun: precheckRerun, bind: precheckBind, required: precheckRequired,
+};
+const PRECHECK_USAGE = `keel precheck <${Object.keys(PRECHECK_SUBCOMMANDS).join('|')}>`;
 const PRECHECK_BIND_OPTIONS = new Set(['--repo', '--base', '--end', '--tree']);
 const PRECHECK_REQUIRED_OPTIONS = new Set(['--repo', '--base', '--end']);
 const PRECHECK_RUN_OPTIONS = new Set(['--repo', '--base']);
@@ -162,12 +165,13 @@ function review(rest: string[]): number {
 }
 
 function precheck(rest: string[]): number | Promise<number> {
-  if (rest[0] === 'run') return precheckRun(rest.slice(1));
-  if (rest[0] === 'rerun') return precheckRerun(rest.slice(1));
-  if (rest[0] === 'required') return precheckRequired(rest.slice(1));
   if (rest.length === 0) throw new writers.Usage(PRECHECK_USAGE);
-  if (rest[0] !== 'bind') throw new writers.Usage('unknown precheck subcommand ' + rest[0]);
-  const options = parseOptions(rest.slice(1), PRECHECK_BIND_OPTIONS);
+  if (!Object.hasOwn(PRECHECK_SUBCOMMANDS, rest[0]!)) throw new writers.Usage('unknown precheck subcommand ' + rest[0]);
+  return PRECHECK_SUBCOMMANDS[rest[0]!]!(rest.slice(1));
+}
+
+function precheckBind(rest: string[]): number {
+  const options = parseOptions(rest, PRECHECK_BIND_OPTIONS);
   if (Object.keys(options).length !== PRECHECK_BIND_OPTIONS.size) throw new writers.Usage('keel precheck bind --repo <path> --base <sha> --end <sha> --tree <precheck tree>');
   const repoRoot = gitcmd.toplevel(options['--repo']!);
   if (repoRoot === null) throw new writers.Usage(`${options['--repo']} is not inside a git repository`);

@@ -49,16 +49,17 @@ const EXIT_NOT_READY = 1;
 const EXIT_USAGE = 2;
 const EXIT_REFUSED = 3;
 const EXIT_INTERNAL = 70;
-const EVIDENCE_SUBCOMMAND_OPTIONS: Record<string, Set<string>> = {
-  'write-review': new Set(),
-  'write-smoke': new Set(['--repo', '--run']),
-  show: new Set(['--repo', '--root']),
-  check: new Set(['--repo']),
-  'record-codex': new Set(['--repo', '--audits', '--verifiers']),
-  'promote-plan': new Set(['--repo', '--base', '--head']),
-  gc: new Set(),
+type EvidenceSubcommand = { options: Set<string>; run: (options: Record<string, string>) => number };
+const EVIDENCE_SUBCOMMANDS: Record<string, EvidenceSubcommand> = {
+  'write-review': { options: new Set(), run: evidenceWriteReview },
+  'write-smoke': { options: new Set(['--repo', '--run']), run: evidenceWriteSmoke },
+  show: { options: new Set(['--repo', '--root']), run: evidenceShow },
+  check: { options: new Set(['--repo']), run: evidenceCheck },
+  'record-codex': { options: new Set(['--repo', '--audits', '--verifiers']), run: evidenceRecordCodex },
+  'promote-plan': { options: new Set(['--repo', '--base', '--head']), run: evidencePromotePlan },
+  gc: { options: new Set(), run: evidenceGc },
 };
-const EVIDENCE_USAGE = `keel evidence <${Object.keys(EVIDENCE_SUBCOMMAND_OPTIONS).join('|')}>`;
+const EVIDENCE_USAGE = `keel evidence <${Object.keys(EVIDENCE_SUBCOMMANDS).join('|')}>`;
 const PRECHECK_SUBCOMMANDS: Record<string, (rest: string[]) => number | Promise<number>> = {
   run: precheckRun, rerun: precheckRerun, bind: precheckBind, required: precheckRequired,
 };
@@ -288,35 +289,52 @@ function snapshot(rest: string[]): number {
 function evidence(rest: string[]): number {
   if (rest.length === 0) throw new writers.Usage(EVIDENCE_USAGE);
   const subcommand = rest[0]!;
-  if (!Object.hasOwn(EVIDENCE_SUBCOMMAND_OPTIONS, subcommand)) throw new writers.Usage('unknown evidence subcommand ' + subcommand);
-  const options = parseOptions(rest.slice(1), EVIDENCE_SUBCOMMAND_OPTIONS[subcommand]!);
-  if (subcommand === 'record-codex') {
-    if (!('--repo' in options) || !('--audits' in options)) {
-      throw new writers.Usage('registration requires --repo, --audits and optional --verifiers');
-    }
-    const verifiers = '--verifiers' in options ? options['--verifiers']!.split(',') : [];
-    seams.print(codexLenses.register(options['--repo']!, options['--audits']!.split(','), verifiers));
-  } else if (subcommand === 'write-review') {
-    seams.print(writers.writeReview(stdinJson()));
-  } else if (subcommand === 'write-smoke') {
-    seams.print(writers.writeSmoke(options['--repo'] || process.cwd(), options['--run'] ?? null));
-  } else if (subcommand === 'check') {
-    if (!('--repo' in options)) throw new writers.Usage('check requires --repo and takes no other option');
-    const readiness = pushReadiness(options['--repo']!);
-    seams.print(readiness);
-    return readiness.ok ? EXIT_OK : EXIT_NOT_READY;
-  } else if (subcommand === 'show') {
-    seams.print(show(options['--repo'] || process.cwd(), options['--root'] ?? null));
-  } else if (subcommand === 'promote-plan') {
-    if (Object.keys(options).length !== EVIDENCE_SUBCOMMAND_OPTIONS['promote-plan']!.size) {
-      throw new writers.Usage('promote-plan requires --repo, --base and --head');
-    }
-    seams.print(promotePlan(options['--repo']!, options['--base']!, options['--head']!));
-  } else if (subcommand === 'gc') {
-    seams.print({ deleted: gc.collect() });
-  } else {
-    throw new writers.Usage('unknown evidence subcommand ' + subcommand);
+  if (!Object.hasOwn(EVIDENCE_SUBCOMMANDS, subcommand)) throw new writers.Usage('unknown evidence subcommand ' + subcommand);
+  const { options, run } = EVIDENCE_SUBCOMMANDS[subcommand]!;
+  return run(parseOptions(rest.slice(1), options));
+}
+
+function evidenceRecordCodex(options: Record<string, string>): number {
+  if (!('--repo' in options) || !('--audits' in options)) {
+    throw new writers.Usage('registration requires --repo, --audits and optional --verifiers');
   }
+  const verifiers = '--verifiers' in options ? options['--verifiers']!.split(',') : [];
+  seams.print(codexLenses.register(options['--repo']!, options['--audits']!.split(','), verifiers));
+  return EXIT_OK;
+}
+
+function evidenceWriteReview(): number {
+  seams.print(writers.writeReview(stdinJson()));
+  return EXIT_OK;
+}
+
+function evidenceWriteSmoke(options: Record<string, string>): number {
+  seams.print(writers.writeSmoke(options['--repo'] || process.cwd(), options['--run'] ?? null));
+  return EXIT_OK;
+}
+
+function evidenceCheck(options: Record<string, string>): number {
+  if (!('--repo' in options)) throw new writers.Usage('check requires --repo and takes no other option');
+  const readiness = pushReadiness(options['--repo']!);
+  seams.print(readiness);
+  return readiness.ok ? EXIT_OK : EXIT_NOT_READY;
+}
+
+function evidenceShow(options: Record<string, string>): number {
+  seams.print(show(options['--repo'] || process.cwd(), options['--root'] ?? null));
+  return EXIT_OK;
+}
+
+function evidencePromotePlan(options: Record<string, string>): number {
+  if (!('--repo' in options) || !('--base' in options) || !('--head' in options)) {
+    throw new writers.Usage('promote-plan requires --repo, --base and --head');
+  }
+  seams.print(promotePlan(options['--repo']!, options['--base']!, options['--head']!));
+  return EXIT_OK;
+}
+
+function evidenceGc(): number {
+  seams.print({ deleted: gc.collect() });
   return EXIT_OK;
 }
 

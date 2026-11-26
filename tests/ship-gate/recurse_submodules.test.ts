@@ -53,10 +53,23 @@ describe('RecurseSubmodulesPushTest', () => {
     assertSubmodulePushDenied(sandbox, parent, 'git push origin feature');
     assertNotASubmodulePushDeny(sandbox, parent, 'git push --recurse-submodules=check origin feature');
     parent.git('config', 'push.recurseSubmodules', 'check');
-    parent.git('config', 'submodule.recurse', 'true');
     assertNotASubmodulePushDeny(sandbox, parent, 'git push origin feature');
+    parent.git('config', 'submodule.recurse', 'true');
+    assertSubmodulePushDenied(sandbox, parent, 'git push origin feature');
     parent.git('config', '--unset', 'push.recurseSubmodules');
     assertSubmodulePushDenied(sandbox, parent, 'git push origin feature');
+    assertNotASubmodulePushDeny(sandbox, parent, 'git push --no-recurse-submodules origin feature');
+  });
+
+  test('repoWithoutSubmodules_recurseOption_isJudgedAsAPlainPush', (t) => {
+    const sandbox = new Sandbox(t, BOTH_GATED);
+    const platform = sandbox.clone('acme', 'platform');
+    platform.branch('feature');
+    platform.commit({ 'src/a.py': 'a\n' }, 'work');
+    const run = sandbox.push(platform, 'git push --recurse-submodules=on-demand origin feature');
+    assert.equal(run.rc, 2, run.stderr);
+    assert.ok(!run.stderr.includes(SUBMODULE_PUSH_DENY), run.stderr);
+    assert.ok(run.stderr.includes('no review evidence'), run.stderr);
   });
 
   test('inCallConfig_submoduleRecurse_deniesAsRunTimeConfig', (t) => {

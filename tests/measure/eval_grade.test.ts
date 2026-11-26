@@ -435,6 +435,13 @@ describe("live config", () => {
     assert.equal(isKeelLive(config, keel, "refining-requests"), false)
   })
 
+  it("isKeelLive_false_inPluginMode_whenTheKeelCheckoutHasNoPrinciples", () => {
+    recordMode("plugin")
+    enableKeelPlugin(true)
+    writeKeelSkill()
+    assert.equal(isKeelLive(config, keel, "refining-requests"), false)
+  })
+
   it("isKeelLive_false_inPluginMode_evenWithALeftoverLinkInstall_whenThePluginIsNotEnabled", () => {
     recordMode("plugin")
     linkSkill()

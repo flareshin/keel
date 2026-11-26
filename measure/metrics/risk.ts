@@ -38,6 +38,7 @@ const ESCAPED_DEFECTS_NO_SOURCE = "no source"
 const FULL_SHA = /^[0-9a-f]{40}$/
 const BASELINE_DEFERRED = "deferred"
 const REWORK_CACHE_FILE = path.join("metrics", "risk-rework.json")
+const REWORK_CACHE_VERSION = 2
 const PRIVATE_FILE_MODE = 0o600
 const UNREADABLE_CACHE_CODES = new Set(["EACCES", "EISDIR"])
 
@@ -56,7 +57,7 @@ interface Ship {
 }
 
 type Rework =
-  | { state: "decided"; base: string; shipped: number; reworked: number }
+  | { state: "decided"; shipped: number; reworked: number }
   | { state: "pending" }
   | { state: "not computable"; reason: string }
 
@@ -333,19 +334,20 @@ function readReworkCache(): Map<string, DecidedRework> {
     if (error instanceof SyntaxError || UNREADABLE_CACHE_CODES.has((error as NodeJS.ErrnoException).code ?? "")) return new Map()
     throw error
   }
-  if (!isJsonObject(parsed)) return new Map()
+  const ships = isJsonObject(parsed) && parsed["version"] === REWORK_CACHE_VERSION ? parsed["ships"] : undefined
+  if (!isJsonObject(ships)) return new Map()
   const cache = new Map<string, DecidedRework>()
-  for (const [key, entry] of Object.entries(parsed)) {
-    if (isJsonObject(entry) && typeof entry["base"] === "string" && FULL_SHA.test(entry["base"]) && Number.isInteger(entry["shipped"]) && Number.isInteger(entry["reworked"])) {
-      cache.set(key, { state: "decided", base: entry["base"], shipped: entry["shipped"] as number, reworked: entry["reworked"] as number })
+  for (const [key, entry] of Object.entries(ships)) {
+    if (isJsonObject(entry) && Number.isInteger(entry["shipped"]) && Number.isInteger(entry["reworked"])) {
+      cache.set(key, { state: "decided", shipped: entry["shipped"] as number, reworked: entry["reworked"] as number })
     }
   }
   return cache
 }
 
 function writeReworkCache(cache: Map<string, DecidedRework>): void {
-  const entries = Object.fromEntries([...cache].map(([key, rework]) => [key, { base: rework.base, shipped: rework.shipped, reworked: rework.reworked }]))
-  writeTextAtomic(path.join(stateDir(), REWORK_CACHE_FILE), stringifySorted(entries) + "\n", PRIVATE_FILE_MODE)
+  const ships = Object.fromEntries([...cache].map(([key, rework]) => [key, { shipped: rework.shipped, reworked: rework.reworked }]))
+  writeTextAtomic(path.join(stateDir(), REWORK_CACHE_FILE), stringifySorted({ version: REWORK_CACHE_VERSION, ships }) + "\n", PRIVATE_FILE_MODE)
 }
 
 function reworkOf(ship: Ship, allShips: Ship[], reviews: ReviewRecord[], now: Date): Rework {
@@ -406,7 +408,7 @@ function reworkInCheckout(checkout: string, ship: Ship, earlierHeads: string[], 
     const later = renames.get(file) ?? file
     survived += gitSucceeds(checkout, ["cat-file", "-e", `${horizon}:${later}`]) ? blamedToShip(checkout, horizon, later, shipCommits, refactorCommits) : 0
   }
-  return { state: "decided", base, shipped, reworked: Math.max(shipped - survived, 0) }
+  return { state: "decided", shipped, reworked: Math.max(shipped - survived, 0) }
 }
 
 const originHeadByCheckout = new Map<string, boolean>()

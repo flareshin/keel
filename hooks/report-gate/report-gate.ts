@@ -500,12 +500,36 @@ function hasEvidenceLine(report: string): boolean {
 
 function lacksEvidence(report: string, needsEvidence: boolean, fires: FireLog): boolean {
   const stripped = trimSpace(report);
-  const exempt = !(needsEvidence || VERDICT_RE.test(stripped)) || stripped.startsWith("{") || stripped.startsWith("[");
-  if (exempt) return false;
-  const hasToken = hasEvidenceToken(stripped);
+  if (!needsEvidence && !VERDICT_RE.test(stripped)) return false;
+  const hasToken = hasEvidenceToken(stripped) || jsonCitesFileAndLine(stripped);
   if (hasToken) fires.append("K2", "pass");
   else fires.append("K2", "deny", { detail: evidenceDenyDetail(stripped) });
   return !hasToken;
+}
+
+const FINDING_FILE_KEYS = ["file", "path"] as const;
+
+function jsonCitesFileAndLine(report: string): boolean {
+  let parsed: unknown;
+  try {
+    parsed = parseJson(report);
+  } catch (error) {
+    if (error instanceof ValueError || error instanceof RecursionError) return false;
+    throw error;
+  }
+  return holdsFileAndLine(parsed);
+}
+
+function holdsFileAndLine(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(holdsFileAndLine);
+  if (!isRecord(value)) return false;
+  const line = getField(value, "line");
+  if (FINDING_FILE_KEYS.some((key) => isNonBlankText(getField(value, key))) && Number.isInteger(line) && (line as number) > 0) return true;
+  return Object.values(value).some(holdsFileAndLine);
+}
+
+function isNonBlankText(value: unknown): boolean {
+  return typeof value === "string" && trimSpace(value) !== "";
 }
 
 function evidenceDenyDetail(report: string): string {

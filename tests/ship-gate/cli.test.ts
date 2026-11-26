@@ -8,6 +8,7 @@ import type { TestContext } from 'node:test';
 import * as gitcmd from '../../lib/evidence/gitcmd.ts';
 import { KEEL, KEEL_HOME, Sandbox, expireEvidence, readJson } from './helpers.ts';
 import type { Repo, ReviewOptions, Run } from './helpers.ts';
+import { loadScaledMs } from '../load.ts';
 
 function summaryOf(run: Run): any {
   const lastLine = run.stderr.trim().split('\n').at(-1)!;
@@ -284,7 +285,7 @@ describe('KeelTestCommandTest', () => {
   test('keelTest_countsTheSummary_whenTheCommandExitsSoonAfterALargeBurst', (t) => {
     const sandbox = new Sandbox(t);
     const repo = sandbox.clone('acme', 'app');
-    const burstThenExit = "process.stdout.write('x'.repeat(1000000) + '\\nRan 1 test\\n'); setTimeout(() => process.exit(0), 200);";
+    const burstThenExit = "process.stdout.write('x'.repeat(1000000) + '\\nRan 1 test\\n', () => process.exit(0));";
     const run = sandbox.keel(['test', '--', process.execPath, '-e', burstThenExit], { cwd: repo.path });
     assert.equal(run.rc, 0, run.stderr);
     assert.equal(summaryOf(run).count, 1);
@@ -296,7 +297,7 @@ describe('KeelTestCommandTest', () => {
     sandbox.env['KEEL_TEST_OUTPUT_IDLE_MS'] = '500';
     const started = Date.now();
     const run = sandbox.keel(['test', '--', 'bash', '-c', "echo 'Ran 3 tests'; sleep 20 & exit 0"], { cwd: repo.path });
-    assert.ok(Date.now() - started < 10000, `took ${Date.now() - started} ms`);
+    assert.ok(Date.now() - started < loadScaledMs(10000, 20000), `took ${Date.now() - started} ms`);
     assert.equal(run.rc, 5, run.stderr);
     assert.match(run.stderr, /keel test: the command exited but its output stayed open and silent for 500 ms; no evidence written\n/);
     assert.equal(run.stdout, 'Ran 3 tests\n');

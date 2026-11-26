@@ -1,12 +1,13 @@
 import { dataDir, keelHome } from "../lib/hookkit/env.ts";
 import { FireLog } from "../lib/hookkit/fires.ts";
-import { getField, isNonEmptyString, textField } from "../lib/hookkit/fields.ts";
+import { getField, isNonEmptyString, isRecord, textField } from "../lib/hookkit/fields.ts";
 import { joinPath } from "../lib/hookkit/paths.ts";
 import { SPACE_CHARS, WORD_CHARS } from "../lib/hookkit/text.ts";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { isFile, isSystemError } from "../lib/hookkit/files.ts";
-import { parsePayload } from "../lib/hookkit/json.ts";
+import { isFile, isSystemError, tryReadText } from "../lib/hookkit/files.ts";
+import { parseJson, parsePayload } from "../lib/hookkit/json.ts";
+import { findToplevel } from "../lib/hookkit/repo.ts";
 import { describeError, RecursionError, ValueError } from "../lib/hookkit/errors.ts";
 import { readStdin } from "../lib/hookkit/stdio.ts";
 import * as protocol from "../lib/hookkit/protocol.ts";
@@ -74,7 +75,7 @@ function assignDispatch(payload: Payload, fires: FireLog): number {
   if (name !== "agent" && name !== "task") return protocol.EXIT_PASS;
   const agentType = textField(toolArgs, "subagent_type").toLowerCase();
   const judgment = JUDGMENT_RE.test(`${textField(toolArgs, "prompt")} ${textField(toolArgs, "description")}`);
-  const agentFile = readAgentFile(agentType);
+  const agentFile = readAgentFile(agentType, textField(payload, "cwd"));
   const namedModel = textField(toolArgs, "model");
   const modelChoice = namedModel === "" && agentFile.model !== ""
     ? resolvePinnedModel(agentFile, judgment)
@@ -163,9 +164,9 @@ function checkWorkflowScript(toolArgs: Payload, fires: FireLog): number {
   return protocol.deny(protocol.formatMessage(HOOK, "workflow agents need a model and an effort", [[RULE, text]]));
 }
 
-function readAgentFile(agentType: string): AgentFile {
-  const path = agentFilePath(agentType);
-  if (!agentType || !isFile(path)) return NO_AGENT_FILE;
+function readAgentFile(agentType: string, cwd: string): AgentFile {
+  const path = agentType ? agentFilePath(agentType, cwd) : null;
+  if (path === null) return NO_AGENT_FILE;
   const frontmatter = FRONTMATTER_RE.exec(readFileSync(path, "utf8"))?.[1];
   if (frontmatter === undefined) return NO_AGENT_FILE;
   return {
@@ -175,11 +176,41 @@ function readAgentFile(agentType: string): AgentFile {
   };
 }
 
-function agentFilePath(agentType: string): string {
+function agentFilePath(agentType: string, cwd: string): string | null {
   if (agentType.startsWith(KEEL_PLUGIN_PREFIX)) {
-    return joinPath(keelHome(), "agents", `${agentType.slice(KEEL_PLUGIN_PREFIX.length)}.md`);
+    return existingFile([joinPath(keelHome(), "agents", `${agentType.slice(KEEL_PLUGIN_PREFIX.length)}.md`)]);
   }
-  return joinPath(dataDir(), "agents", `${agentType}.md`);
+  const separator = agentType.indexOf(":");
+  if (separator !== -1) {
+    const agentName = agentType.slice(separator + 1);
+    return existingFile(pluginInstallPaths(agentType.slice(0, separator)).map((root) => joinPath(root, "agents", `${agentName}.md`)));
+  }
+  const toplevel = cwd === "" ? null : findToplevel(cwd);
+  const projectAgents = toplevel === null ? [] : [joinPath(toplevel, ".claude", "agents", `${agentType}.md`)];
+  return existingFile([...projectAgents, joinPath(dataDir(), "agents", `${agentType}.md`)]);
+}
+
+function pluginInstallPaths(plugin: string): string[] {
+  const text = tryReadText(joinPath(dataDir(), "plugins", "installed_plugins.json"));
+  if (text === null) return [];
+  let record: unknown;
+  try {
+    record = parseJson(text);
+  } catch (error) {
+    if (error instanceof ValueError || error instanceof RecursionError) return [];
+    throw error;
+  }
+  const plugins = isRecord(record) ? getField(record, "plugins") : null;
+  if (!isRecord(plugins)) return [];
+  return Object.entries(plugins)
+    .filter(([key]) => key.split("@")[0] === plugin)
+    .flatMap(([, installs]) => (Array.isArray(installs) ? installs : []))
+    .map((install) => (isRecord(install) ? getField(install, "installPath") : null))
+    .filter(isNonEmptyString);
+}
+
+function existingFile(paths: readonly string[]): string | null {
+  return paths.find(isFile) ?? null;
 }
 
 function toolsCanEdit(tools: string | null): boolean {

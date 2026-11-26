@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { runCaptured } from '../evidence/subprocess.ts';
 import type { Completed } from '../evidence/subprocess.ts';
@@ -8,12 +9,13 @@ export type Typecheck = { ok: true } | { ok: false; head: string };
 const KEEL_ROOT = join(import.meta.dirname, '..', '..');
 const RULE_CHECKS = join(KEEL_ROOT, 'skills', 'writing-readable-code', 'scripts', 'rule-checks.ts');
 const TSC_HEAD_LINES = 20;
+const TSC_SCRIPT = 'typescript/bin/tsc';
 const REVIEW_SUMMARY_PREFIX = /^summary /;
 const PRECHECK_SUMMARY_PREFIX = 'totals ';
 
 export function typecheck(repo: string): Typecheck {
   if (!existsSync(join(repo, 'tsconfig.json'))) return { ok: true };
-  const completed = runCaptured([tscPath(repo), '--noEmit', '-p', repo], { cwd: repo });
+  const completed = runCaptured([...tscCommand(repo), '--noEmit', '-p', repo], { cwd: repo });
   if (completed.returncode === 0) return { ok: true };
   return { ok: false, head: nonEmptyLines(`${completed.stdout}${completed.stderr}`).slice(0, TSC_HEAD_LINES).join('\n') };
 }
@@ -28,9 +30,9 @@ export function ruleCheckOutputLines(completed: Completed): string[] {
   return [...scanned, ...exit].map((line) => `rule-checks ${line}`);
 }
 
-function tscPath(repo: string): string {
+function tscCommand(repo: string): string[] {
   const repoTsc = join(repo, 'node_modules', '.bin', 'tsc');
-  return existsSync(repoTsc) ? repoTsc : join(KEEL_ROOT, 'node_modules', '.bin', 'tsc');
+  return existsSync(repoTsc) ? [repoTsc] : [process.execPath, createRequire(join(KEEL_ROOT, 'package.json')).resolve(TSC_SCRIPT)];
 }
 
 function nonEmptyLines(text: string): string[] {

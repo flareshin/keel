@@ -8,13 +8,14 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { run } from "../../hooks/lib/hookkit/subprocess.ts";
+import { OSError, run } from "../../hooks/lib/hookkit/subprocess.ts";
+import { TimeoutExpired } from "../../measure/lib/measurekit/timeout.ts";
 import type { CompletedProcess } from "../../hooks/lib/hookkit/subprocess.ts";
 import { withEnv } from "../../tests/hooks/helpers.ts";
 import { carriesPrApprovalRule, dropPrRule, rewordPrRule } from "../../tests/link/helpers.ts";
 import { completeEdit, validateUpdate } from "../lib/config_policy.ts";
 import { digest, fingerprint } from "../lib/files.ts";
-import { buildFiles, buildSkillLinks, reconcile } from "../lib/install.ts";
+import { buildFiles, buildSkillLinks, linkedWorktreeProblems, reconcile } from "../lib/install.ts";
 import { Refusal } from "../lib/refusal.ts";
 import { applySkillPlan, lockIsStale, planSkills, realSkillFiles, replaceLink } from "../lib/skill_registry.ts";
 import type { SkillFiles } from "../lib/skill_registry.ts";
@@ -130,6 +131,30 @@ describe("installation", () => {
 
       assert.equal(checked.status, 1, checked.stdout + checked.stderr);
       assert.ok(problemsOf(checked).some((problem) => LINKED_WORKTREE_PROBLEM.test(problem)), checked.stdout);
+    });
+
+    it("lists a linked worktree source as a problem in a dry run and writes nothing", () => {
+      const dryRun = runSourceLink(linkedWorktreeOf(copySource("main-checkout")));
+
+      assert.equal(dryRun.status, 0, dryRun.stdout + dryRun.stderr);
+      assert.ok(problemsOf(dryRun).some((problem) => LINKED_WORKTREE_PROBLEM.test(problem)), dryRun.stdout);
+      assert.equal(existsSync(join(home, ".codex")), false);
+      assert.equal(existsSync(join(home, ".agents/skills")), false);
+    });
+
+    it("reports a git that timed out as a problem, since it cannot rule out a worktree", () => {
+      const timedOut = () => { throw new TimeoutExpired("Command 'git' timed out after 10 seconds", 10); };
+
+      const problems = linkedWorktreeProblems("/keel", timedOut);
+
+      assert.equal(problems.length, 1);
+      assert.match(problems[0] ?? "", /git.*timed out.*--allow-worktree/);
+    });
+
+    it("treats a missing git as not a worktree", () => {
+      const missing = () => { throw new OSError("spawnSync git ENOENT", "ENOENT"); };
+
+      assert.deepEqual(linkedWorktreeProblems("/keel", missing), []);
     });
 
     it("installs from a linked worktree when --allow-worktree is given", () => {

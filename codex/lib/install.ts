@@ -3,10 +3,12 @@ import { basename, dirname } from "node:path";
 import { expandUser } from "../../hooks/lib/hookkit/paths.ts";
 import { isSystemError } from "../../hooks/lib/hookkit/files.ts";
 import { OSError, run } from "../../hooks/lib/hookkit/subprocess.ts";
+import type { CompletedProcess } from "../../hooks/lib/hookkit/subprocess.ts";
 import { compareCodePoints } from "../../measure/lib/measurekit/json.ts";
 import { noPositionals, parseCommandLine, usageError } from "../../measure/lib/measurekit/cli.ts";
 import type { CommandSpec } from "../../measure/lib/measurekit/cli.ts";
 import { shlexQuote } from "../../measure/lib/measurekit/shlex.ts";
+import { TimeoutExpired } from "../../measure/lib/measurekit/timeout.ts";
 import { isCommandResult, parseOrExit, refuseEndOfOptions } from "./command.ts";
 import type { CommandResult } from "./command.ts";
 import { digest, fingerprint, readJson, readText, writeAtomic } from "./files.ts";
@@ -106,14 +108,17 @@ export function main(argv: readonly string[]): CommandResult {
   }
 }
 
-function linkedWorktreeProblems(keelRoot: string): string[] {
+type GitRunner = (command: readonly string[], timeoutSeconds: number) => CompletedProcess;
+
+export function linkedWorktreeProblems(keelRoot: string, runGit: GitRunner = run): string[] {
   let output: string;
   try {
-    const result = run(["git", "-C", keelRoot, "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"], GIT_TIMEOUT_SECONDS);
+    const result = runGit(["git", "-C", keelRoot, "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"], GIT_TIMEOUT_SECONDS);
     if (result.returncode !== 0) return [];
     output = result.stdout;
   } catch (error) {
     if (error instanceof OSError) return [];
+    if (error instanceof TimeoutExpired) return [`linked worktree: git timed out checking whether ${keelRoot} is a linked worktree of keel; retry, or pass --allow-worktree`];
     throw error;
   }
   const [gitDirectory, commonDirectory] = output.split("\n");

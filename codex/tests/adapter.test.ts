@@ -202,6 +202,20 @@ describe("installation", () => {
     assert.deepEqual(JSON.parse(checked.stdout), { actions: [], problems: [], notices: [`dangling skill link: ${dangling} -> ${missing}`] });
   });
 
+  it("lists no dangling link after --write that the same write removed", () => {
+    const source = copySource("losing-a-skill");
+    assert.equal(runSourceLink(source, "--write").status, 0);
+    const link = join(home, ".agents/skills/writing-readable-code");
+    rmSync(join(source, "skills/writing-readable-code"), { recursive: true });
+
+    const written = runSourceLink(source, "--write");
+
+    assert.equal(written.status, 0, written.stdout + written.stderr);
+    assert.ok((actionsOf(written) as string[]).includes(`remove ${link}`), written.stdout);
+    assert.deepEqual(JSON.parse(written.stdout)["notices"], []);
+    assert.equal(existsSync(link) || isSymlink(link), false);
+  });
+
   it("test_existingEquivalentGeneratedFiles_remainUnownedAndSurviveUnlink", () => {
     const profile = join(home, ".codex");
     const desired = buildFiles(profile, join(home, "overlay"), join(home, "data"), join(home, ".agents"));

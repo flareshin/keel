@@ -146,8 +146,8 @@ export function reconcile(
   const actions = [...changes, ...skillPlan.create.keys(), ...Array.from(skillPlan.replace.keys(), (path) => `retarget ${path}`),
     ...skillPlan.remove.map((path) => `remove ${path}`), ...skillPlan.forget.map((path) => `forget ${path}`)];
   if (skillPlan.changed) actions.push("update shared skill references");
-  const notices = mode.unlink ? [] : danglingSkillLinks(agentsHome);
   if (problems.length > 0) {
+    const notices = mode.unlink ? [] : danglingSkillLinks(agentsHome);
     const stdout = JSON.stringify({ actions, problems, notices, written: 0 }) + "\n";
     return { code: mode.write || mode.unlink ? REFUSED_EXIT_CODE : mode.check ? CHECK_PENDING_EXIT_CODE : 0, stdout, stderr: "" };
   }
@@ -158,6 +158,7 @@ export function reconcile(
     return { code: 0, stdout: JSON.stringify({ removed: owned.size + skillPlan.remove.length }) + "\n", stderr: "" };
   }
   if (mode.write) writeAll(desired, changes, skillPlan, owned, agentsHome, statePath, files);
+  const notices = danglingSkillLinks(agentsHome);
   const stdout = JSON.stringify({ actions, problems: [], notices }) + "\n";
   return { code: mode.check && actions.length > 0 ? CHECK_PENDING_EXIT_CODE : 0, stdout, stderr: "" };
 }

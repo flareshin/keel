@@ -63,6 +63,8 @@ describe('RecurseSubmodulesPushTest', () => {
     parent.git('config', '--unset', 'push.recurseSubmodules');
     assertSubmodulePushDenied(sandbox, parent, 'git push origin feature');
     assertNotASubmodulePushDeny(sandbox, parent, 'git push --no-recurse-submodules origin feature');
+    parent.git('config', 'submodule.recurse', 'yes');
+    assertSubmodulePushDenied(sandbox, parent, 'git push origin feature');
   });
 
   test('repoWithoutSubmodules_recurseOption_isJudgedAsAPlainPush', (t) => {

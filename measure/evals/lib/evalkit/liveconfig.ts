@@ -22,6 +22,8 @@ export interface ConfigFingerprint {
   skill_md_sha256: string | null
 }
 
+export const CONFIG_FINGERPRINT_KEYS = ["link_mode", "claude_md_sha256", "principles_md_sha256", "skill_md_sha256"] as const satisfies readonly (keyof ConfigFingerprint)[]
+
 export function cliConfigDir(): string {
   return process.env["CLAUDE_CONFIG_DIR"] || expandHome("~/.claude")
 }

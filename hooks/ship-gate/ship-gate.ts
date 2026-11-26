@@ -791,7 +791,7 @@ function judgePush(push: Push, repoRoot: string, repoKey: string | null, row: Ga
 function gatedReposASubmodulePushReaches(push: Push, repoRoot: string, repoKey: string | null, row: GatedRepo | null): string[] {
   if (!pushRecursesIntoSubmodules(push, repoRoot)) return [];
   const submoduleKeys = gitcmd.submoduleRoots(repoRoot).map((root) => registry.originKey(root));
-  if (submoduleKeys.length === 0 || !isFile(registry.registryPath())) return [];
+  if (submoduleKeys.length === 0) return [];
   const gatedSubmodules = submoduleKeys.filter((key): key is string => key !== null && registry.isGated(registry.lookup(key)));
   return registry.isGated(row) ? [repoKey!, ...gatedSubmodules] : gatedSubmodules;
 }

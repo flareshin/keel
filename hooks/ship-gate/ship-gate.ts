@@ -84,7 +84,6 @@ const RECURSE_SUBMODULES_OPTION = "--recurse-submodules";
 const NO_RECURSE_SUBMODULES_OPTION = "--no-recurse-submodules";
 const RECURSION_LEAVING_SUBMODULES_UNPUSHED: ReadonlySet<string> = new Set(["check", "no", "false", "off", "0"]);
 const NO_RECURSION = "no";
-const SUBMODULE_RECURSE_DEFAULT = "on-demand";
 const GIT_CONFIG_KEY_MISSING = 1;
 const CONFIG_VARIABLE_PREFIX = "GIT_CONFIG";
 const REMOTE_EDITS: ReadonlySet<string> = new Set(["set-url", "add", "rename"]);
@@ -798,9 +797,14 @@ function gatedReposASubmodulePushReaches(push: Push, repoRoot: string, repoKey: 
 }
 
 function pushRecursesIntoSubmodules(push: Push, repoRoot: string): boolean {
-  const recursion = push.recurseSubmodules ?? storedConfig(repoRoot, ["push.recurseSubmodules"])
-    ?? (storedConfig(repoRoot, ["--type=bool", "submodule.recurse"]) === "true" ? SUBMODULE_RECURSE_DEFAULT : null);
-  return recursion !== null && !RECURSION_LEAVING_SUBMODULES_UNPUSHED.has(recursion.toLowerCase());
+  if (push.recurseSubmodules !== null) return recursesIntoSubmodules(push.recurseSubmodules);
+  const stored = storedConfig(repoRoot, ["push.recurseSubmodules"]);
+  const submoduleRecurse = storedConfig(repoRoot, ["--type=bool", "submodule.recurse"]) === "true";
+  return (stored !== null && recursesIntoSubmodules(stored)) || submoduleRecurse;
+}
+
+function recursesIntoSubmodules(recursion: string): boolean {
+  return !RECURSION_LEAVING_SUBMODULES_UNPUSHED.has(recursion.toLowerCase());
 }
 
 function storedConfig(repoRoot: string, keyArgs: string[]): string | null {

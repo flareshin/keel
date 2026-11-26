@@ -194,6 +194,66 @@ describe("AgentDispatchTest", () => {
   });
 });
 
+const OPUS_PIN = "---\nname: developer\nmodel: opus\n---\nBody\n";
+
+function dispatchFrom(cwd: string, toolInput: Record<string, unknown>, permissionMode = "default"): HookResult {
+  const input = { description: "Build it", prompt: "Add the flag to parse().", ...toolInput };
+  return sandbox.runHook(MODEL_ASSIGN, { payload: { ...preToolUse("Agent", input, cwd), permission_mode: permissionMode }, cwd });
+}
+
+function installPlugin(key: string, installPath: string): void {
+  const record = { version: 2, plugins: { [key]: [{ scope: "user", installPath, version: "1.0.0" }] } };
+  sandbox.write(join(sandbox.data, "plugins", "installed_plugins.json"), JSON.stringify(record));
+}
+
+describe("AgentFileLocationTest", () => {
+  it("dispatch_keepsTheProjectAgentPin_whenCwdIsInsideTheRepository", () => {
+    const repo = sandbox.makeRepo("acme", "app");
+    sandbox.write(join(repo, ".claude", "agents", "developer.md"), OPUS_PIN);
+    sandbox.write(join(repo, "src", "keep.txt"), "");
+    const result = dispatchFrom(join(repo, "src"), { subagent_type: "developer" });
+    assert.equal(updated(result)["model"], undefined);
+    assert.equal(updated(result)["effort"], "medium");
+  });
+
+  it("dispatch_leavesTheProjectAgentPinOutOfTheDeny_whenAutoMode", () => {
+    const repo = sandbox.makeRepo("acme", "app");
+    sandbox.write(join(repo, ".claude", "agents", "developer.md"), OPUS_PIN);
+    const result = dispatchFrom(repo, { subagent_type: "developer" }, "auto");
+    assert.equal(result.code, 2);
+    assert.match(result.stderr, /with effort: "medium" set/);
+    assert.doesNotMatch(result.stderr, /sonnet/);
+  });
+
+  it("dispatch_prefersTheProjectAgentFile_whenTheUserDirectoryHasTheSameName", () => {
+    const repo = sandbox.makeRepo("acme", "app");
+    sandbox.write(join(repo, ".claude", "agents", "developer.md"), OPUS_PIN);
+    sandbox.write(join(sandbox.data, "agents", "developer.md"), "---\nname: developer\nmodel: haiku\n---\nBody\n");
+    assert.equal(dispatchFrom(repo, { subagent_type: "developer", effort: "high" }).stdout, "");
+  });
+
+  it("dispatch_keepsAnotherPluginsAgentPin_whenItIsInstalled", () => {
+    const installPath = join(sandbox.root, "cache", "acme", "1.0.0");
+    installPlugin("acme@market", installPath);
+    sandbox.write(join(installPath, "agents", "developer.md"), OPUS_PIN);
+    assert.equal(dispatchFrom(sandbox.root, { subagent_type: "acme:developer", effort: "high" }).stdout, "");
+  });
+
+  it("dispatch_assignsSonnet_whenThePluginIsNotInstalled", () => {
+    const installPath = join(sandbox.root, "cache", "acme", "1.0.0");
+    installPlugin("other@market", installPath);
+    sandbox.write(join(installPath, "agents", "developer.md"), OPUS_PIN);
+    assert.equal(updated(dispatchFrom(sandbox.root, { subagent_type: "acme:developer", effort: "high" }))["model"], "sonnet");
+  });
+
+  for (const [label, text] of [["WrongShape", "{\"plugins\": [1]}"], ["NotJson", "{plugins"]]) {
+    it(`dispatch_assignsSonnet_whenThePluginRecordIs_${label}`, () => {
+      sandbox.write(join(sandbox.data, "plugins", "installed_plugins.json"), text);
+      assert.equal(updated(dispatchFrom(sandbox.root, { subagent_type: "acme:developer", effort: "high" }))["model"], "sonnet");
+    });
+  }
+});
+
 const LONG_BRIEF = "Update the parser so every caller passes the new flag. ".repeat(10);
 const SHORT_BRIEF = "Find every caller of parse(), then list each file with its line number. ".repeat(8).slice(0, 499);
 

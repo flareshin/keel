@@ -8,7 +8,9 @@ import {
 } from "./helpers.ts";
 import type { Fire, HookResult } from "./helpers.ts";
 import { MAX_JSON_DEPTH } from "../../measure/lib/measurekit/json.ts";
-import { evidenceMessage, hasEvidenceToken, REPORT_END, REPORT_START, withoutReportMarkers } from "../../hooks/report-gate/report-gate.ts";
+import {
+  cliTimeoutSeconds, EVIDENCE_DEADLINE_SECONDS, evidenceMessage, hasEvidenceToken, REPORT_END, REPORT_START, withoutReportMarkers,
+} from "../../hooks/report-gate/report-gate.ts";
 
 const PASS_REPORT = "VERDICT: PASS\nNo findings. 3 files changed, 40 insertions(+).\n" + KEEL_EVIDENCE_LINE;
 const FRAMED_PASS_REPORT = `<<<KEEL-REPORT\n${PASS_REPORT}\nKEEL-REPORT>>>`;
@@ -765,3 +767,21 @@ function tooDeep(fields: string): string {
   const nesting = "[".repeat(MAX_JSON_DEPTH + 1) + "]".repeat(MAX_JSON_DEPTH + 1);
   return `{${fields}, "deep": ${nesting}}`;
 }
+
+describe("EvidenceDeadlineTest", () => {
+  it("cliTimeoutSeconds_givesTheFullPerCallTimeout_whenTheHookHasJustStarted", () => {
+    assert.equal(cliTimeoutSeconds(0), 20);
+  });
+
+  it("cliTimeoutSeconds_givesOnlyWhatIsLeftOfTheSharedDeadline_whenEarlierCallsUsedPartOfIt", () => {
+    assert.equal(cliTimeoutSeconds(EVIDENCE_DEADLINE_SECONDS - 7), 7);
+  });
+
+  it("cliTimeoutSeconds_skipsTheCall_whenLessThanASecondOfTheDeadlineIsLeft", () => {
+    assert.equal(cliTimeoutSeconds(EVIDENCE_DEADLINE_SECONDS - 0.5), null);
+  });
+
+  it("cliTimeoutSeconds_skipsTheCall_whenTheDeadlineHasPassed", () => {
+    assert.equal(cliTimeoutSeconds(EVIDENCE_DEADLINE_SECONDS + 3), null);
+  });
+});

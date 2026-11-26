@@ -23,6 +23,8 @@ import { contentOf, iterEntries, roleOf, textOf, toolUses } from "../lib/hookkit
 
 const HOOK = "report-gate";
 const CLI_TIMEOUT_SECONDS = 20;
+export const EVIDENCE_DEADLINE_SECONDS = 25;
+const MIN_CLI_SECONDS = 1;
 const TRANSCRIPT_REREADS = 15;
 const TRANSCRIPT_REREAD_MS = 100;
 const DIGIT = "\\p{Nd}";
@@ -444,9 +446,14 @@ function sendToCli(evidenceLine: string, verdict: string, source: Record<string,
     fires.append("K1", "warn", { detail: "KEEL-EVIDENCE line is not JSON" });
     return;
   }
+  const timeoutSeconds = cliTimeoutSeconds(process.uptime());
+  if (timeoutSeconds === null) {
+    fires.append("K1", "warn", { detail: `keel evidence write-review skipped: the hook's ${EVIDENCE_DEADLINE_SECONDS} s evidence deadline passed` });
+    return;
+  }
   let result: CompletedProcess;
   try {
-    result = run([keelCli(), "evidence", "write-review"], CLI_TIMEOUT_SECONDS, { input: request });
+    result = run([keelCli(), "evidence", "write-review"], timeoutSeconds, { input: request });
   } catch (error) {
     if (!(error instanceof OSError || error instanceof TimeoutExpired)) throw error;
     fires.append("K1", "warn", { detail: `keel evidence write-review did not run: ${errorName(error)}` });
@@ -459,6 +466,11 @@ function sendToCli(evidenceLine: string, verdict: string, source: Record<string,
   fires.append("K1", "record", { detail: `review evidence ${evidenceIdOf(result.stdout)}` });
   const findingsError = responseField(result.stdout, "findings_error");
   if (findingsError !== null) fires.append("K1", "warn", { detail: `findings log not written: ${findingsError}` });
+}
+
+export function cliTimeoutSeconds(elapsedSeconds: number): number | null {
+  const remaining = EVIDENCE_DEADLINE_SECONDS - elapsedSeconds;
+  return remaining < MIN_CLI_SECONDS ? null : Math.min(CLI_TIMEOUT_SECONDS, remaining);
 }
 
 function evidenceIdOf(stdout: string): string {

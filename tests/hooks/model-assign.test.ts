@@ -246,10 +246,12 @@ describe("AgentFileLocationTest", () => {
     assert.equal(updated(dispatchFrom(sandbox.root, { subagent_type: "acme:developer", effort: "high" }))["model"], "sonnet");
   });
 
-  it("dispatch_assignsSonnet_whenThePluginRecordIsMalformed", () => {
-    sandbox.write(join(sandbox.data, "plugins", "installed_plugins.json"), "{\"plugins\": [1]}");
-    assert.equal(updated(dispatchFrom(sandbox.root, { subagent_type: "acme:developer", effort: "high" }))["model"], "sonnet");
-  });
+  for (const [label, text] of [["WrongShape", "{\"plugins\": [1]}"], ["NotJson", "{plugins"]]) {
+    it(`dispatch_assignsSonnet_whenThePluginRecordIs_${label}`, () => {
+      sandbox.write(join(sandbox.data, "plugins", "installed_plugins.json"), text);
+      assert.equal(updated(dispatchFrom(sandbox.root, { subagent_type: "acme:developer", effort: "high" }))["model"], "sonnet");
+    });
+  }
 });
 
 const LONG_BRIEF = "Update the parser so every caller passes the new flag. ".repeat(10);

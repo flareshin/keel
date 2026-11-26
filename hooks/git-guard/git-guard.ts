@@ -993,13 +993,13 @@ interface PushRequest {
 }
 
 export function readPush(args: readonly string[], branch: string | null): PushRequest {
-  const { options, refspecs, deletes } = interpretPush(args);
+  const { options, refspecs, deletes, wholeRepo } = interpretPush(args);
   const push: PushRequest = {
     sources: [],
     destinations: new Set(),
     force: options.longOptions.includes("--force") || options.shortFlags.includes("f") || refspecs.some((spec) => spec.forced),
     forceWithLease: options.longOptions.some((option) => option.startsWith("--force-with-lease")),
-    wholeRepo: options.wholeRepo,
+    wholeRepo,
   };
   if (refspecs.length === 0 && !deletes) {
     push.sources = ["HEAD"];

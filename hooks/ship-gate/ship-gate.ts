@@ -562,14 +562,14 @@ function routesPushes(key: string): boolean {
 }
 
 export function parsePush(words: string[], args: string[], workdir: string): Push {
-  const { options, refspecs: given, deletes } = interpretPush(args);
+  const { options, refspecs: given, deletes, wholeRepo } = interpretPush(args);
   const refspecs = given.filter((spec) => !spec.deletesDestination)
     .map((spec): Refspec => ({ source: spec.source, destination: spec.destination }));
   return {
     kind: "push", workdir, words, remote: options.remote, refspecs,
     deletesOnly: deletes || (given.length > 0 && refspecs.length === 0),
     tagsOnly: options.longOptions.includes("--tags") && given.length === 0,
-    wholeRepo: options.wholeRepo,
+    wholeRepo,
     dryRun: options.longOptions.includes("--dry-run") || options.shortFlags.includes("n"),
   };
 }

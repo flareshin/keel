@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, lstatSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, lstatSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { missDetail, missingFields, OUTCOME } from "../lib/hookkit/contract.ts";
 import { dataDir, keelCli } from "../lib/hookkit/env.ts";
@@ -19,7 +19,8 @@ import { KEEL_EVIDENCE_LINE } from "../../lib/evidence/findings.ts";
 import { OSError, run } from "../lib/hookkit/subprocess.ts";
 import type { CompletedProcess } from "../lib/hookkit/subprocess.ts";
 import { commandWritesFiles } from "../lib/hookkit/writes.ts";
-import { contentOf, iterEntries, roleOf, textOf, toolUses } from "../lib/hookkit/transcript.ts";
+import { contentOf, iterEntries, roleOf, textOf, toolUses, withText } from "../lib/hookkit/transcript.ts";
+import { isDirectory } from "../lib/hookkit/files.ts";
 
 const HOOK = "report-gate";
 const CLI_TIMEOUT_SECONDS = 20;
@@ -149,14 +150,9 @@ class AgentTranscript {
           this.readToolUse(this.lastToolName.toLowerCase(), getField(block, "input"));
         }
         if (blocks.length > 0) this.finalText = null;
-        else this.appendFinalText(textOf(contentOf(entry)));
+        else this.finalText = withText(this.finalText, textOf(contentOf(entry)));
       }
     }
-  }
-
-  private appendFinalText(text: string | null): void {
-    if (text === null || trimSpace(text) === "") return;
-    this.finalText = this.finalText === null ? text : `${this.finalText}\n${text}`;
   }
 
   private readBrief(brief: string): void {
@@ -396,7 +392,7 @@ function filesNamedUnder(directory: string, fileName: string): string[] {
   }
   for (const name of names) {
     const child = joinPath(directory, name);
-    if (!name.startsWith(".") && isDirectoryEntry(child)) found.push(...filesNamedUnder(child, fileName));
+    if (!name.startsWith(".") && isDirectory(child)) found.push(...filesNamedUnder(child, fileName));
   }
   return found;
 }
@@ -405,14 +401,6 @@ function lexists(path: string): boolean {
   try {
     lstatSync(path);
     return true;
-  } catch {
-    return false;
-  }
-}
-
-function isDirectoryEntry(path: string): boolean {
-  try {
-    return statSync(path).isDirectory();
   } catch {
     return false;
   }

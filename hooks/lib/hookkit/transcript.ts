@@ -77,7 +77,7 @@ export function finalReport(path: string): string | null {
   return finalText ?? handback;
 }
 
-function withText(finalText: string | null, text: string | null): string | null {
+export function withText(finalText: string | null, text: string | null): string | null {
   if (text === null || trimSpace(text) === "") return finalText;
   return finalText === null ? text : `${finalText}\n${text}`;
 }

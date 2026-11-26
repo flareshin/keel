@@ -42,6 +42,7 @@ const GATED_TOOLS: Record<string, string[]> = {
   "ship-gate": ["Bash"],
   "git-guard": ["Bash", "Edit", "Write", "NotebookEdit"],
 }
+const GATED_EVENTS: ReadonlySet<string> = new Set(["PreToolUse", "PreSkillShellCommand"])
 
 export class CalledProcessError extends Error {}
 
@@ -246,7 +247,7 @@ function checkHookWiring(plan: Plan, paths: KeelPaths, fragments: SourcedFragmen
   }
   for (const [registration, source] of registrations) {
     if (isGate(registration) && !failsClosed(registration.hook)) {
-      const detail = `PreToolUse[${registration.matcher}] ${registration.hookName}: needs "onFailure": "${FAIL_CLOSED}" and a numeric "timeout"`
+      const detail = `${registration.event}[${registration.matcher}] ${registration.hookName}: needs "onFailure": "${FAIL_CLOSED}" and a numeric "timeout"`
       addProblem(plan, "gate-onfailure-missing", source, detail)
     }
   }
@@ -258,7 +259,7 @@ function sourcedFrom(source: string, registrations: Registration[]): [Registrati
 
 function isGate(registration: Registration): boolean {
   const tools = Object.hasOwn(GATED_TOOLS, registration.hookName) ? (GATED_TOOLS[registration.hookName] as string[]) : []
-  return registration.event === "PreToolUse" && tools.some((tool) => registration.coversTool(tool))
+  return GATED_EVENTS.has(registration.event) && tools.some((tool) => registration.coversTool(tool))
 }
 
 function failsClosed(hook: JsonObject): boolean {

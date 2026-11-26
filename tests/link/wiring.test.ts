@@ -126,6 +126,13 @@ describe("link gate on failure", () => {
     assert.deepEqual(gates.map((problem: any) => problem.path), [`${box.keel}/settings/core.json`, `${box.overlay}/settings/gate.json`])
   })
 
+  it("check_reportsGateOnFailureMissing_onASkillShellCommandGateRegistration", () => {
+    const shipGate = { type: "command", command: "node {{KEEL}}/hooks/ship-gate/ship-gate.ts", timeout: 60 }
+    box.writeKeel("settings/core.json", JSON.stringify({ hooks: { PreSkillShellCommand: [{ matcher: "Bash", hooks: [shipGate] }] } }))
+    const gates = box.runLink("--check").json.problems.filter((problem: any) => problem.kind === "gate-onfailure-missing")
+    assert.deepEqual(gates.map((problem: any) => problem.detail), ['PreSkillShellCommand[Bash] ship-gate: needs "onFailure": "block" and a numeric "timeout"'])
+  })
+
   it("check_reportsGateOnFailureMissing_whenAGateRegistrationHasNoTimeout", () => {
     writeCoreHook("Edit", without(GATE_HOOK, "timeout"))
     assert.ok(problemKinds(box.runLink("--check")).includes("gate-onfailure-missing"))

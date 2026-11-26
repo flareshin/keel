@@ -5,7 +5,7 @@ import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { after, describe, it } from "node:test"
-import { ruleCheckOutputLines } from "../../lib/precheck/author.ts"
+import { ruleCheckOutputLines, typecheck } from "../../lib/precheck/author.ts"
 import { writeFiles } from "./fixture.ts"
 
 const KEEL_ROOT = join(import.meta.dirname, "..", "..")
@@ -27,6 +27,13 @@ describe("typecheck", () => {
     const result = JSON.parse(completed.stdout)
     assert.equal(result.ok, false)
     assert.match(result.head, /broken\.ts.*TS2322/)
+  })
+
+  it("runsTheRepositorysOwnTypescript_whenTheRepositoryHasItInNodeModules", () => {
+    const repo = join(scratch, "repo-with-typescript")
+    writeFiles(repo, { "tsconfig.json": "{}", "node_modules/typescript/bin/tsc": "console.log('the repository tsc ran'); process.exit(1)\n" })
+
+    assert.deepEqual(typecheck(repo), { ok: false, head: "the repository tsc ran" })
   })
 })
 

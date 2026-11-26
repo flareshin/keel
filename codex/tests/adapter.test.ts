@@ -68,7 +68,7 @@ describe("installation", () => {
   beforeEach(() => {
     temp = temporaryDirectory();
     home = temp;
-    env = { ...process.env, HOME: home, KEEL_OVERLAY_DIR: join(home, "overlay"), KEEL_DATA_DIR: join(home, "data") };
+    env = { ...isolatedGitEnv(), HOME: home, KEEL_OVERLAY_DIR: join(home, "overlay"), KEEL_DATA_DIR: join(home, "data") };
     delete env["CODEX_HOME"];
   });
 
@@ -890,7 +890,7 @@ describe("guard", () => {
 
   it("test_realGuard_blocksPatchToEvidenceStore", () => {
     const target = join(temp, "state/keel/evidence/forged.json");
-    const env = { ...process.env, KEEL_DATA_DIR: temp, KEEL_OVERLAY_DIR: temp };
+    const env = { ...isolatedGitEnv(), KEEL_DATA_DIR: temp, KEEL_OVERLAY_DIR: temp };
     const input = JSON.stringify(payload("apply_patch", { command: `*** Begin Patch\n*** Add File: ${target}\n+fake\n*** End Patch` }));
     const run = runNode(HOOK, [], env, input);
     assert.equal((JSON.parse(run.stdout) as Record<string, any>)["hookSpecificOutput"]["permissionDecision"], "deny");

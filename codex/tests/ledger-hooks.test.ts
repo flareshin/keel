@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { countedRows, loadLedger } from "../../measure/lib/measurekit/ledger.ts";
@@ -40,8 +40,15 @@ function unregisteredList(): string {
   return match[1];
 }
 
+function stackHookExists(word: string): boolean {
+  const stacks = join(KEEL, "stacks");
+  return existsSync(stacks) && readdirSync(stacks).some((stack) => existsSync(join(stacks, stack, "hooks", `${word}.ts`)));
+}
+
 function hookDirectoriesNamedIn(text: string): string[] {
-  return text.split(/[\s,]+/).filter((word) => word !== "" && existsSync(join(KEEL, "hooks", word, `${word}.ts`)));
+  return text
+    .split(/[\s,]+/)
+    .filter((word) => word !== "" && (existsSync(join(KEEL, "hooks", word, `${word}.ts`)) || stackHookExists(word)));
 }
 
 describe("ledger hook rows and the Codex guard", () => {

@@ -17,7 +17,7 @@ import { Usage } from './writers.ts';
 const NOT_WORD_AFTER = '(?![\\p{L}\\p{N}_])';
 const NOT_WORD_BEFORE = '(?<![\\p{L}\\p{N}_])';
 const LINE_START = '(?<![^\\n])';
-const NOT_IN_TAP_DIAGNOSTIC = '(?<!(?<![^\\r\\n])[ \\t]*#(?:[ \\t][^\\r\\n]*)?)';
+const NOT_IN_TAP_LINE = '(?<!(?<![^\\r\\n])[ \\t]*(?:#|(?:not )?ok)(?:[ \\t][^\\r\\n]*)?)';
 const TEST_FILES_LINE = `${SPACE_EITHER_WAY}*Test (?:Files|Suites)${NOT_WORD_AFTER}`;
 export const COUNT_PATTERNS: Array<[name: string, pattern: RegExp]> = [
   ['surefire', /Tests run: ([0-9]+)/gu],
@@ -25,6 +25,7 @@ export const COUNT_PATTERNS: Array<[name: string, pattern: RegExp]> = [
   ['tap', new RegExp(`${LINE_START}# pass ([0-9]+)`, 'gu')],
   ['spec', new RegExp(`${LINE_START}\u2139 pass ([0-9]+)${NOT_WORD_AFTER}`, 'gu')],
 ];
+const SUREFIRE_RESULTS_HEADING = new RegExp(`${LINE_START}(?:\\[[A-Z]+\\] )?Results ?:\\r?$`, 'gmu');
 const FAILURE_PATTERNS: Array<[name: string, pattern: RegExp]> = [
   ['surefire', /Tests run: [0-9]+, Failures: ([0-9]+), Errors: ([0-9]+)/gu],
   ['unittest', new RegExp(`${LINE_START}FAILED \\((?:failures=([0-9]+))?(?:, )?(?:errors=([0-9]+))?`, 'gu')],
@@ -40,7 +41,7 @@ const RUNNER_SUMMARY_SHAPES = [
   { heading: 'Tests:[ \\t]+', tallies: `${TALLY}(?:, ${TALLY})*`, ending: ', [0-9]+ total' },
   { heading: 'Tests[ \\t]+', tallies: `${TALLY}(?: \\| ${TALLY})*`, ending: ' \\([0-9]+\\)' },
 ];
-const OUTSIDE_TAP_DIAGNOSTIC = new RegExp(NOT_IN_TAP_DIAGNOSTIC, 'uy');
+const OUTSIDE_TAP_LINE = new RegExp(NOT_IN_TAP_LINE, 'uy');
 const TAP_SEGMENT_END = /\r/gu;
 const RUNNER_SUMMARY_LINES = RUNNER_SUMMARY_SHAPES.map((shape) => ({
   ending: new RegExp(`${shape.ending}${LINE_END}`, 'mu'),
@@ -148,10 +149,10 @@ export function recognize(output: string): [count: number, framework: string | n
   let total = 0;
   let framework: string | null = null;
   for (const [name, pattern] of COUNT_PATTERNS) {
-    const counts = [...output.matchAll(pattern)].map((match) => Number(match[1]));
-    if (counts.length === 0) continue;
+    const lines = [...output.matchAll(pattern)];
+    if (lines.length === 0) continue;
     framework ??= name;
-    total += name === 'surefire' ? counts.at(-1)! : counts.reduce((sum, item) => sum + item, 0);
+    total += name === 'surefire' ? surefireTotal(output, lines) : lines.reduce((sum, line) => sum + Number(line[1]), 0);
   }
   const passed = summaryTallies(output, PASSED_TALLIES);
   if (passed.length > 0) {
@@ -159,6 +160,14 @@ export function recognize(output: string): [count: number, framework: string | n
     total += passed.reduce((sum, item) => sum + item, 0);
   }
   return [total, framework];
+}
+
+function surefireTotal(output: string, testsRunLines: RegExpExecArray[]): number {
+  const resultsTotals = new Set([...output.matchAll(SUREFIRE_RESULTS_HEADING)]
+    .map((heading) => testsRunLines.find((line) => line.index > heading.index))
+    .filter((line) => line !== undefined));
+  const totals = resultsTotals.size > 0 ? [...resultsTotals] : [testsRunLines.at(-1)!];
+  return totals.reduce((sum, line) => sum + Number(line[1]), 0);
 }
 
 export function recognizeFailures(output: string): number {
@@ -190,18 +199,18 @@ function firstSummary(line: string, shape: (typeof RUNNER_SUMMARY_LINES)[number]
       shape.run.lastIndex = start.index;
       shape.run.exec(line);
       shape.start.lastIndex = Math.max(shape.run.lastIndex, start.index + 1);
-    } else if (outsideTapDiagnostic(line, start.index)) {
+    } else if (outsideTapLine(line, start.index)) {
       return summary;
     } else {
-      shape.start.lastIndex = outsideTapDiagnostic(line, start.index + 1) ? start.index + 1 : tapSegmentEnd(line, start.index);
+      shape.start.lastIndex = outsideTapLine(line, start.index + 1) ? start.index + 1 : tapSegmentEnd(line, start.index);
     }
   }
   return null;
 }
 
-function outsideTapDiagnostic(line: string, index: number): boolean {
-  OUTSIDE_TAP_DIAGNOSTIC.lastIndex = index;
-  return OUTSIDE_TAP_DIAGNOSTIC.test(line);
+function outsideTapLine(line: string, index: number): boolean {
+  OUTSIDE_TAP_LINE.lastIndex = index;
+  return OUTSIDE_TAP_LINE.test(line);
 }
 
 function tapSegmentEnd(line: string, index: number): number {

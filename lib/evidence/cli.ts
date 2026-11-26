@@ -137,7 +137,7 @@ async function runAffectedTests(rest: string[]): Promise<number> {
     printErrorLine(`keel test --affected: code a hook runs changed (${hookCode.join(', ')}); also run \`keel test --affected ${WITH_REPLAYS}\` once, in the background alongside the root review`);
   }
   process.env['NODE_COMPILE_CACHE'] ||= compileCache.compileCacheDir();
-  return testrun.run([process.execPath, '--test', '--test-reporter=tap', ...tests], repoRoot);
+  return testrun.run([process.execPath, '--test', '--test-reporter=tap', ...tests], repoRoot, withReplays ? 'affected_with_replays' : 'affected');
 }
 
 function counted(count: number, noun: string): string {

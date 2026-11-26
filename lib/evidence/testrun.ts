@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { readJsonl } from '../../measure/lib/measurekit/datafiles.ts';
 import * as env from './env.ts';
+import { failedTests } from './failed_tests.ts';
 import * as gitcmd from './gitcmd.ts';
 import * as registry from './registry.ts';
 import { printErrorLine, writeStdout } from './stdio.ts';
@@ -66,8 +67,9 @@ const CAT = '/bin/cat';
 const DEFAULT_OUTPUT_IDLE_MS = 60_000;
 const MAX_TIMER_MS = 2_147_483_647;
 const TESTS_LOG = 'keel-tests.jsonl';
+export type TestSelection = 'command' | 'affected' | 'affected_with_replays';
 
-export async function run(argv: string[], cwd: string): Promise<number> {
+export async function run(argv: string[], cwd: string, selection: TestSelection = 'command'): Promise<number> {
   if (argv.length === 0) throw new Usage('keel test -- <command…>');
   const repoRoot = gitcmd.toplevel(cwd);
   if (repoRoot === null) throw new Usage('keel test must run inside a git repository');
@@ -96,6 +98,7 @@ export async function run(argv: string[], cwd: string): Promise<number> {
   if (flakySignal !== null) printErrorLine(`keel test: [K3] warn: run ${flakySignal} of this command failed on this same tree and it passes now with no change; that is a flaky signal, so find what makes the test nondeterministic instead of rerunning it until it passes`);
   env.appendRecord(TESTS_LOG, {
     ...testRecord, keel_exit: keelExit, ts: env.iso(env.utcNow()), evidence_id: evidenceId, submodule_evidence: submoduleEvidence,
+    failed_tests: failedTests(output), selection,
     ...(flakySignal === null ? {} : { passed_after_failure: flakySignal }),
   });
   if (outcome === 'failures_recognized') printErrorLine(`keel test: the output reports ${failures} failing test${failures === 1 ? '' : 's'} or test file${failures === 1 ? '' : 's'} although the command exited 0; no evidence written`);

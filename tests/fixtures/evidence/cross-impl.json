@@ -42,7 +42,7 @@
    ],
    [
     "logs/keel-tests.jsonl",
-    "{\"cmd\":[\"bash\",\"-c\",\"echo 'Ran 3 tests'; echo OK\"],\"count\":3,\"evidence_id\":\"<EVIDENCE_ID>\",\"exit\":0,\"framework\":\"unittest\",\"keel_exit\":0,\"repo\":\"acme/app\",\"repo_root\":\"{{ROOT}}/repos/app\",\"run_id\":\"<RUN_ID>\",\"submodule_evidence\":{},\"tree\":\"98731e2cb1e03db51c293866b69550a35afea73b\",\"ts\":\"<TIME>\"}\n"
+    "{\"cmd\":[\"bash\",\"-c\",\"echo 'Ran 3 tests'; echo OK\"],\"count\":3,\"evidence_id\":\"<EVIDENCE_ID>\",\"exit\":0,\"failed_tests\":[],\"framework\":\"unittest\",\"keel_exit\":0,\"repo\":\"acme/app\",\"repo_root\":\"{{ROOT}}/repos/app\",\"run_id\":\"<RUN_ID>\",\"selection\":\"command\",\"submodule_evidence\":{},\"tree\":\"98731e2cb1e03db51c293866b69550a35afea73b\",\"ts\":\"<TIME>\"}\n"
    ]
   ]
  },
@@ -980,7 +980,7 @@
   "logs": [
    [
     "logs/keel-tests.jsonl",
-    "{\"cmd\":[\"bash\",\"-c\",\"(sleep 1; echo 'Ran 3 tests') &\"],\"count\":3,\"evidence_id\":\"<EVIDENCE_ID>\",\"exit\":0,\"framework\":\"unittest\",\"keel_exit\":0,\"repo\":\"acme/app\",\"repo_root\":\"{{ROOT}}/repos/app\",\"run_id\":\"<RUN_ID>\",\"submodule_evidence\":{},\"tree\":\"6f42876c1f1b0d32b43cb9d9bd54ffb5f06d813d\",\"ts\":\"<TIME>\"}\n{\"cmd\":[\"bash\",\"-c\",\"(sleep 1; echo 'Ran 3 tests') & exit 3\"],\"count\":3,\"evidence_id\":null,\"exit\":3,\"framework\":\"unittest\",\"keel_exit\":3,\"repo\":\"acme/app\",\"repo_root\":\"{{ROOT}}/repos/app\",\"run_id\":\"<RUN_ID>\",\"submodule_evidence\":{},\"tree\":\"6f42876c1f1b0d32b43cb9d9bd54ffb5f06d813d\",\"ts\":\"<TIME>\"}\n{\"cmd\":[\"bash\",\"-c\",\"(sleep 1; echo 'Ran 3 tests' >&2) & echo foreground; exit 0\"],\"count\":3,\"evidence_id\":\"<EVIDENCE_ID>\",\"exit\":0,\"framework\":\"unittest\",\"keel_exit\":0,\"repo\":\"acme/app\",\"repo_root\":\"{{ROOT}}/repos/app\",\"run_id\":\"<RUN_ID>\",\"submodule_evidence\":{},\"tree\":\"6f42876c1f1b0d32b43cb9d9bd54ffb5f06d813d\",\"ts\":\"<TIME>\"}\n"
+    "{\"cmd\":[\"bash\",\"-c\",\"(sleep 1; echo 'Ran 3 tests') &\"],\"count\":3,\"evidence_id\":\"<EVIDENCE_ID>\",\"exit\":0,\"failed_tests\":[],\"framework\":\"unittest\",\"keel_exit\":0,\"repo\":\"acme/app\",\"repo_root\":\"{{ROOT}}/repos/app\",\"run_id\":\"<RUN_ID>\",\"selection\":\"command\",\"submodule_evidence\":{},\"tree\":\"6f42876c1f1b0d32b43cb9d9bd54ffb5f06d813d\",\"ts\":\"<TIME>\"}\n{\"cmd\":[\"bash\",\"-c\",\"(sleep 1; echo 'Ran 3 tests') & exit 3\"],\"count\":3,\"evidence_id\":null,\"exit\":3,\"failed_tests\":[],\"framework\":\"unittest\",\"keel_exit\":3,\"repo\":\"acme/app\",\"repo_root\":\"{{ROOT}}/repos/app\",\"run_id\":\"<RUN_ID>\",\"selection\":\"command\",\"submodule_evidence\":{},\"tree\":\"6f42876c1f1b0d32b43cb9d9bd54ffb5f06d813d\",\"ts\":\"<TIME>\"}\n{\"cmd\":[\"bash\",\"-c\",\"(sleep 1; echo 'Ran 3 tests' >&2) & echo foreground; exit 0\"],\"count\":3,\"evidence_id\":\"<EVIDENCE_ID>\",\"exit\":0,\"failed_tests\":[],\"framework\":\"unittest\",\"keel_exit\":0,\"repo\":\"acme/app\",\"repo_root\":\"{{ROOT}}/repos/app\",\"run_id\":\"<RUN_ID>\",\"selection\":\"command\",\"submodule_evidence\":{},\"tree\":\"6f42876c1f1b0d32b43cb9d9bd54ffb5f06d813d\",\"ts\":\"<TIME>\"}\n"
    ]
   ]
  },

@@ -270,18 +270,23 @@ function firstApprovalByRootRun(evidence: JsonObject[]): Map<string, JsonObject>
 }
 
 function summarizeApprovalWait(ships: Ship[], reviews: ReviewRecord[], firstApprovals: Map<string, JsonObject>) {
-  const waits = ships.map((ship) => approvalWaitMinutes(ship, reviews, firstApprovals)).filter((wait): wait is number => wait !== null)
-  return { approved_ships: waits.length, no_approval_evidence: ships.length - waits.length, median_minutes: median(waits) }
+  const waits = ships.map((ship) => approvalWaitMs(ship, reviews, firstApprovals)).filter((wait): wait is number => wait !== null)
+  const medianMs = median(waits)
+  return { approved_ships: waits.length, no_approval_evidence: ships.length - waits.length, median_minutes: medianMs === null ? null : roundToTenth(medianMs / MS_PER_MINUTE) }
 }
 
-function approvalWaitMinutes(ship: Ship, reviews: ReviewRecord[], firstApprovals: Map<string, JsonObject>): number | null {
+function approvalWaitMs(ship: Ship, reviews: ReviewRecord[], firstApprovals: Map<string, JsonObject>): number | null {
   const approval = ship.rootRunId === null ? undefined : firstApprovals.get(ship.rootRunId)
   const heads = approval?.["heads"]
   if (approval === undefined || !isJsonObject(heads)) return null
   const headEvidenceId = Object.entries(heads).find(([repo]) => sameRepo(repo, ship.repo))?.[1]
   const headReview = reviews.find((review) => review.evidenceId === headEvidenceId)
   if (headReview === undefined) return null
-  return Math.round((Date.parse(approval["created_at"] as string) - Date.parse(headReview.createdAt)) / MS_PER_MINUTE)
+  return Date.parse(approval["created_at"] as string) - Date.parse(headReview.createdAt)
+}
+
+function roundToTenth(value: number): number {
+  return Math.round(value * 10) / 10
 }
 
 function median(values: number[]): number | null {
@@ -302,7 +307,7 @@ function summarizeRework(results: Rework[]) {
     not_computable: countReasons(notComputable.map((result) => result.reason)),
     shipped_lines: shippedLines,
     reworked_lines: reworkedLines,
-    rate_percent: shippedLines === 0 ? null : Math.round((reworkedLines / shippedLines) * PERCENT * 10) / 10,
+    rate_percent: shippedLines === 0 ? null : roundToTenth((reworkedLines / shippedLines) * PERCENT),
   }
 }
 

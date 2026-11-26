@@ -33,7 +33,7 @@ export class Registration {
     }
     const firstCommandWord = words.findIndex((word) => !ENV_ASSIGNMENT_RE.test(word))
     if (firstCommandWord === -1) return this.command
-    return words.slice(firstCommandWord).find((word) => !SCRIPT_INTERPRETERS.has(path.basename(word))) ?? this.command
+    return words.slice(firstCommandWord).find((word) => !word.startsWith("-") && !SCRIPT_INTERPRETERS.has(path.basename(word))) ?? this.command
   }
 
   get hookName(): string {

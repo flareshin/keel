@@ -171,6 +171,37 @@ describe("installation", () => {
     assert.ok(lstatSync(skill).isSymbolicLink());
   });
 
+  it("reports forgetting an unowned skill whose source is gone, and leaves its link in place", () => {
+    const skill = join(home, ".agents/skills/writing-readable-code");
+    mkdirSync(dirname(skill), { recursive: true });
+    symlinkSync(join(KEEL, "skills/writing-readable-code"), skill);
+    assert.equal(runLink("--write").status, 0);
+    const source = copySource("without-the-skill");
+    rmSync(join(source, "skills/writing-readable-code"), { recursive: true });
+
+    const checked = runSourceLink(source, "--check");
+    const written = runSourceLink(source, "--write");
+
+    assert.equal(checked.status, 1, checked.stdout);
+    assert.ok((actionsOf(checked) as string[]).includes(`forget ${skill}`), checked.stdout);
+    assert.equal(written.status, 0, written.stdout + written.stderr);
+    assert.ok(lstatSync(skill).isSymbolicLink());
+    const records = readJsonFile(join(home, ".agents/keel-codex-skills.json"))["skills"];
+    assert.equal(Object.hasOwn(records, "writing-readable-code"), false);
+  });
+
+  it("lists a dangling link in the shared skills directory as a notice without failing --check", () => {
+    assert.equal(runLink("--write").status, 0);
+    const dangling = join(home, ".agents/skills/moved-away");
+    const missing = join(home, "missing/moved-away");
+    symlinkSync(missing, dangling);
+
+    const checked = runLink("--check");
+
+    assert.equal(checked.status, 0, checked.stdout);
+    assert.deepEqual(JSON.parse(checked.stdout), { actions: [], problems: [], notices: [`dangling skill link: ${dangling} -> ${missing}`] });
+  });
+
   it("test_existingEquivalentGeneratedFiles_remainUnownedAndSurviveUnlink", () => {
     const profile = join(home, ".codex");
     const desired = buildFiles(profile, join(home, "overlay"), join(home, "data"), join(home, ".agents"));
@@ -539,7 +570,7 @@ describe("installation", () => {
     writeFileSync(statePath, JSON.stringify(state));
     const check = runLink("--check");
     assert.equal(check.status, 0, check.stdout);
-    assert.deepEqual(JSON.parse(check.stdout), { actions: [], problems: [] });
+    assert.deepEqual(JSON.parse(check.stdout), { actions: [], problems: [], notices: [] });
   });
 });
 

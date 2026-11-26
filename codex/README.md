@@ -32,6 +32,13 @@ Shared skill ownership is recorded in `~/.agents/keel-codex-skills.json` under a
 The installer preflights conflicts; an OS failure during writing can still leave
 a partial installation. Keep its output and reconcile affected paths before retrying.
 
+`--check` is the drift check: it exits 1 when the installed instructions, hooks
+or skill links no longer match this checkout, for example after a merge changed
+`PRINCIPLES.md`. Its JSON also lists `notices` that do not change the exit code:
+each dangling link in `~/.agents/skills`, whoever created it. A user-owned skill
+whose source is gone shows as `forget <path>`: the registry drops its record and
+the link stays.
+
 Start a new Codex session after installation. Open `/hooks` in the Codex CLI,
 review the generated command and trust its exact definition. This adapter never
 changes trust records or bypasses the trust check. Re-review after the hook

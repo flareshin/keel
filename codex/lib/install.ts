@@ -14,7 +14,7 @@ import { isJsonObject } from "./json.ts";
 import type { JsonValue } from "./json.ts";
 import { absolutePath, childPath, cleanPath, isAbsolute, isDirectory, isFile, resolvePath } from "./paths.ts";
 import { Refusal, refusalMessage } from "./refusal.ts";
-import { applySkillPlan, planSkills, realSkillFiles, withInstallationLock } from "./skill_registry.ts";
+import { applySkillPlan, danglingSkillLinks, planSkills, realSkillFiles, withInstallationLock } from "./skill_registry.ts";
 import type { SkillFiles, SkillPlan } from "./skill_registry.ts";
 
 export const KEEL_ROOT = dirname(dirname(dirname(resolvePath(import.meta.filename))));
@@ -144,10 +144,11 @@ export function reconcile(
   const { changes, problems } = planFiles(desired, owned);
   problems.push(...skillPlan.problems);
   const actions = [...changes, ...skillPlan.create.keys(), ...Array.from(skillPlan.replace.keys(), (path) => `retarget ${path}`),
-    ...skillPlan.remove.map((path) => `remove ${path}`)];
+    ...skillPlan.remove.map((path) => `remove ${path}`), ...skillPlan.forget.map((path) => `forget ${path}`)];
   if (skillPlan.changed) actions.push("update shared skill references");
+  const notices = mode.unlink ? [] : danglingSkillLinks(agentsHome);
   if (problems.length > 0) {
-    const stdout = JSON.stringify({ actions, problems, written: 0 }) + "\n";
+    const stdout = JSON.stringify({ actions, problems, notices, written: 0 }) + "\n";
     return { code: mode.write || mode.unlink ? REFUSED_EXIT_CODE : mode.check ? CHECK_PENDING_EXIT_CODE : 0, stdout, stderr: "" };
   }
   if (mode.unlink) {
@@ -157,7 +158,7 @@ export function reconcile(
     return { code: 0, stdout: JSON.stringify({ removed: owned.size + skillPlan.remove.length }) + "\n", stderr: "" };
   }
   if (mode.write) writeAll(desired, changes, skillPlan, owned, agentsHome, statePath, files);
-  const stdout = JSON.stringify({ actions, problems: [] }) + "\n";
+  const stdout = JSON.stringify({ actions, problems: [], notices }) + "\n";
   return { code: mode.check && actions.length > 0 ? CHECK_PENDING_EXIT_CODE : 0, stdout, stderr: "" };
 }
 

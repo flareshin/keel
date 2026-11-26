@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { isSystemError } from "../../hooks/lib/hookkit/files.ts";
@@ -10,7 +10,7 @@ import { readJson, writeAtomic } from "./files.ts";
 import type { ManagedFile } from "./files.ts";
 import { isJsonObject } from "./json.ts";
 import type { JsonValue } from "./json.ts";
-import { childPath, isAbsolute, isSymlink, pathExists, resolvePath } from "./paths.ts";
+import { childPath, isAbsolute, isDirectory, isSymlink, pathExists, resolvePath } from "./paths.ts";
 import { Refusal } from "./refusal.ts";
 
 const JSON_INDENT = 2;
@@ -36,6 +36,7 @@ export interface SkillPlan {
   create: Map<string, string>;
   replace: Map<string, string>;
   remove: string[];
+  forget: string[];
   problems: string[];
   changed: boolean;
 }
@@ -140,7 +141,7 @@ export const realSkillFiles: SkillFiles = { writeAtomic, replaceLink };
 
 export function planSkills(agentsHome: string, profile: string, desired: Map<string, ManagedFile>): SkillPlan {
   const original = readRegistry(agentsHome);
-  const plan: SkillPlan = { records: new Map(Array.from(original, ([name, record]) => [name, copyRecord(record)])), create: new Map(), replace: new Map(), remove: [], problems: [], changed: false };
+  const plan: SkillPlan = { records: new Map(Array.from(original, ([name, record]) => [name, copyRecord(record)])), create: new Map(), replace: new Map(), remove: [], forget: [], problems: [], changed: false };
   const desiredNames = new Set(Array.from(desired.keys(), (path) => basename(path)));
   for (const [name, record] of Array.from(plan.records)) {
     if (!desiredNames.has(name) && record.profiles.includes(profile)) releaseSkill(plan, childPath(agentsHome, `skills/${name}`), profile);
@@ -205,6 +206,8 @@ function releaseSkill(plan: SkillPlan, path: string, profile: string): void {
       return;
     }
     plan.remove.push(path);
+  } else {
+    plan.forget.push(path);
   }
   plan.records.delete(name);
 }
@@ -245,6 +248,14 @@ function retargetSkill(plan: SkillPlan, record: SkillRecord, path: string, targe
 
 function sameLink(path: string, target: string): boolean {
   return isSymlink(path) && resolvePath(path) === target;
+}
+
+export function danglingSkillLinks(agentsHome: string): string[] {
+  const directory = childPath(agentsHome, "skills");
+  if (!isDirectory(directory)) return [];
+  return readdirSync(directory).sort(compareCodePoints).map((name) => childPath(directory, name))
+    .filter((path) => isSymlink(path) && !pathExists(path))
+    .map((path) => `dangling skill link: ${path} -> ${readlinkSync(path)}`);
 }
 
 export function applySkillPlan(agentsHome: string, plan: SkillPlan, files: SkillFiles = realSkillFiles): void {

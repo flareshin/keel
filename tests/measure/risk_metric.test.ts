@@ -295,11 +295,11 @@ describe("risk runner", () => {
     box.write(path.relative(box.root, cacheFile()), "{not json")
     const rework = itemFor(runMetric(), "light")["rework"]
     assert.deepEqual([rework.shipped_lines, rework.reworked_lines], [4, 1])
-    assert.equal(Object.keys(JSON.parse(fs.readFileSync(cacheFile(), "utf8"))).length, 1)
+    assert.equal(Object.keys(JSON.parse(fs.readFileSync(cacheFile(), "utf8")).ships).length, 1)
   })
 
-  it("rework_cachedWithoutTheBaseItWasComputedFrom_isComputedAgain_andCachedWithItsBase", () => {
-    const { repo, start } = newRepo()
+  it("rework_cachedByAnEarlierCacheVersion_isComputedAgain_andCachedAtTheCurrentVersion", () => {
+    const { repo } = newRepo()
     const head = mergedShip(repo)
     laterEdits(repo)
     publish(repo)
@@ -307,7 +307,7 @@ describe("risk runner", () => {
     box.write(path.relative(box.root, cacheFile()), JSON.stringify({ [`${REPO} ${head}`]: { shipped: 20408, reworked: 8250 } }))
     const rework = itemFor(runMetric(), "light")["rework"]
     assert.deepEqual([rework.shipped_lines, rework.reworked_lines], [4, 1])
-    assert.deepEqual(JSON.parse(fs.readFileSync(cacheFile(), "utf8")), { [`${REPO} ${head}`]: { base: start, shipped: 4, reworked: 1 } })
+    assert.deepEqual(JSON.parse(fs.readFileSync(cacheFile(), "utf8")), { version: 2, ships: { [`${REPO} ${head}`]: { shipped: 4, reworked: 1 } } })
   })
 
   it("rework_ofEachDecidedShip_isCachedAsSoonAsItIsDecided_soARunStoppedLaterKeepsIt", () => {
@@ -325,7 +325,7 @@ describe("risk runner", () => {
     box.env["PATH"] = `${path.dirname(shim)}:${box.env["PATH"]}`
     const stopped = box.runMeasure("metrics/risk", ["--since", "2000-01-01"])
     assert.notEqual(stopped.status, 0)
-    assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(cacheFile(), "utf8"))), [`${REPO} ${first}`])
+    assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(cacheFile(), "utf8")).ships), [`${REPO} ${first}`])
   })
 
   it("perCheckoutGitFacts_andTheCheckoutHoldingAHead_areReadOncePerRun_notOncePerShipOrDefect", () => {

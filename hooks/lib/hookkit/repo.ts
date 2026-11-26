@@ -1,6 +1,6 @@
-import { lstatSync, realpathSync, statSync } from "node:fs";
+import { lstatSync, realpathSync } from "node:fs";
 import { dirname } from "node:path";
-import { isSystemError } from "./files.ts";
+import { isDirectory, isSystemError } from "./files.ts";
 import { rstripChar, trimSpace } from "./text.ts";
 import { TimeoutExpired } from "../../../measure/lib/measurekit/timeout.ts";
 import { OSError, run } from "./subprocess.ts";
@@ -12,15 +12,6 @@ const NOT_A_REPOSITORY_MESSAGE = "not a git repository";
 
 export function git(args: readonly string[], cwd: string, env?: NodeJS.ProcessEnv): CompletedProcess {
   return run(["git", "-C", cwd, ...args], HOOK_GIT_TIMEOUT_SECONDS, { env });
-}
-
-function isDirectory(path: string): boolean {
-  try {
-    return statSync(path).isDirectory();
-  } catch (error) {
-    if (isSystemError(error)) return false;
-    throw error;
-  }
 }
 
 export function gitOutputOrNull(args: readonly string[], cwd: string, env?: NodeJS.ProcessEnv): string | null {

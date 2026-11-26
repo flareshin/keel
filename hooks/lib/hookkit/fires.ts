@@ -1,6 +1,7 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { dataDir } from "./env.ts";
+import { describeError } from "./errors.ts";
 import { isSystemError } from "./files.ts";
 import { joinPath } from "./paths.ts";
 import { pythonJsonDumps } from "./jsonout.ts";
@@ -40,8 +41,4 @@ export class FireLog {
       process.stderr.write(`${this.hook}: could not append keel-fires.jsonl (${describeError(error)})\n`);
     }
   }
-}
-
-function describeError(error: unknown): string {
-  return `${(error as Error).name}(${(error as Error).message})`;
 }

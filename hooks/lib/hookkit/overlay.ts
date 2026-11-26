@@ -1,19 +1,10 @@
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { splitLines } from "../../../measure/lib/measurekit/files.ts";
 import { arraysEqual, trimSpace } from "./text.ts";
-import { isSystemError } from "./files.ts";
+import { isFile } from "./files.ts";
 
 export class OverlayDataError extends Error {
   override name = "OverlayDataError";
-}
-
-function isFile(path: string): boolean {
-  try {
-    return statSync(path).isFile();
-  } catch (error) {
-    if (isSystemError(error)) return false;
-    throw error;
-  }
 }
 
 export function readTsv(path: string, header: readonly string[], optional: readonly string[] = []): Array<Record<string, string>> {

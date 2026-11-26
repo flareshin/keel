@@ -44,6 +44,7 @@ const CLI_ARGUMENTS: Record<string, string[]> = {
   "abbreviated file": ["--fil", "x"], "abbreviated profile with equals": ["--pro=x", "--file=y"], "write check and help": ["--write", "--check", "-h"],
   "file without value": ["--file"], "file missing": ["--file", "{sandbox}/absent.toml"], "file and profile": ["--file", "{sandbox}/absent.toml", "--profile", "{sandbox}"],
   "profile only": ["--profile", "{sandbox}"], "file equals": ["--file={sandbox}/absent.toml"], "file empty": ["--file", ""],
+  "allow worktree alone": ["--allow-worktree"], "allow worktree equals value": ["--allow-worktree=1"],
 };
 
 export interface Probe {
@@ -404,7 +405,7 @@ function commandLineProbes(sandbox: Sandbox): Probe[] {
       }
     };
     return [
-      { label: `link ${label}`, observe: observe((args) => runLink(args.includes("--write") || args.includes("--check") || args.includes("--unlink") ? ["--home", join(sandbox.root, "dry"), ...args] : args)) },
+      { label: `link ${label}`, observe: observe((args) => runLink(args.includes("--write") || args.includes("--check") || args.includes("--unlink") ? ["--home", join(sandbox.root, "dry"), "--allow-worktree", ...args] : args)) },
       { label: `config ${label}`, observe: observe(runConfig) },
     ];
   });

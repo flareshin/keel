@@ -107,11 +107,47 @@ describe("ungated_landings", () => {
     land(d1)
     fire(d1, "pass", { repo: "example/other" })
     fire(d1, "pass", { session: "test-session" })
+    fire(d1, "pass", { hook: "git-guard" })
+    fires.push({ hook: "ship-gate", head: d1, outcome: "pass", session: SESSION })
 
     const result = classifyLandings(box.keel, "main", REPO, fires, BEFORE_COMMITS)
 
     assert.equal(result.no_fire, 1)
     assert.equal(result.covered, 0)
+  })
+
+  it("classifyLandings_countsEachCommitOnce_whenTheOriginRefMovesBackAndForth", () => {
+    const base = commit("base")
+    const d1 = commit("d1")
+    land(base)
+    land(d1)
+    land(base)
+    land(d1)
+
+    const result = classifyLandings(box.keel, "main", REPO, fires, BEFORE_COMMITS)
+
+    assert.equal(result.updates, 3)
+    assert.equal(result.commits, 1)
+  })
+
+  it("classifyLandings_keepsFiveExamplesPerBucket", () => {
+    land(commit("base"))
+    for (const name of ["d1", "d2", "d3", "d4", "d5"]) commit(name)
+    land(commit("d6"))
+
+    const result = classifyLandings(box.keel, "main", REPO, fires, BEFORE_COMMITS)
+
+    assert.equal(result.no_fire, 6)
+    assert.equal(result.examples.no_fire!.length, 5)
+  })
+
+  it("classifyLandings_countsAnOriginUpdateOnTheWindowStartDay", () => {
+    land(commit("base"))
+    land(commit("d1"))
+
+    const result = classifyLandings(box.keel, "main", REPO, fires, "2026-01-01")
+
+    assert.equal(result.updates, 1)
   })
 
   it("classifyLandings_countsOnlyOriginUpdatesInsideTheWindow", () => {
@@ -154,6 +190,28 @@ describe("weekly ungated_landings", () => {
     const [completed, report] = box.runJson("weekly")
     assert.equal(completed.status, 0, completed.stderr)
     assert.match(report.ungated_landings.error, /^unreadable keel-fires.jsonl: /)
+  })
+
+  it("weekly_reportsAnError_andStillPrintsTheReport_whenTheFiresLogIsADirectory", () => {
+    fs.mkdirSync(path.join(box.data, "logs", "keel-fires.jsonl"), { recursive: true })
+    const [completed, report] = box.runJson("weekly")
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.match(report.ungated_landings.error, /^unreadable keel-fires.jsonl: /)
+  })
+
+  it("weekly_reportsAnError_andStillPrintsTheReport_whenGatedReposTsvIsNotUtf8", () => {
+    fs.mkdirSync(path.join(box.root, "overlay"), { recursive: true })
+    fs.writeFileSync(path.join(box.root, "overlay", "gated-repos.tsv"), Buffer.from([0xff, 0x0a]))
+    const [completed, report] = box.runJson("weekly")
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.equal(typeof report.ungated_landings.error, "string")
+  })
+
+  it("weekly_reportsAnError_andStillPrintsTheReport_whenGatedReposTsvIsUnreadable", () => {
+    fs.chmodSync(box.write("overlay/gated-repos.tsv", "origin\tgate\tintegration_base\trisk_rules\ttests\n"), 0o000)
+    const [completed, report] = box.runJson("weekly")
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.equal(typeof report.ungated_landings.error, "string")
   })
 
   it("weekly_reportsAnError_whenTheGatedRepoHasNoOriginRef", () => {

@@ -15,6 +15,7 @@ const WARN = "warn"
 const EXAMPLES = 5
 const SHORT_SHA = 12
 const REFLOG_TIME = /@\{(\d+)\}$/
+const ISO_DATE_LENGTH = 10
 
 type Bucket = "covered" | "after_pass" | "denied_only" | "warned_only" | "no_fire"
 const REPORTED_EXAMPLES: Bucket[] = ["after_pass", "denied_only", "warned_only", "no_fire"]
@@ -46,7 +47,7 @@ export function summarizeUngatedLandings(checkouts: string[], since: string): Re
   const report: Record<string, RepoLandings | { error: string }> = {}
   for (const checkout of checkouts) {
     const key = repoKey(checkout)
-    if (key === null || key in report) continue
+    if (key === null) continue
     let row: registry.GatedRepo | null
     try {
       row = registry.lookup(key)
@@ -120,14 +121,14 @@ function originUpdates(checkout: string, ref: string, since: string): OriginUpda
     if (error instanceof GitError) throw new GitError(`no reflog for ${ref}`)
     throw error
   }
-  const sinceSeconds = Date.parse(since + "T00:00:00") / 1000
   const tips = log.split("\n").filter((line) => line !== "").map((line) => {
     const [sha, selector] = line.split(" ") as [string, string]
-    return { sha, time: Number(REFLOG_TIME.exec(selector)?.[1] ?? 0) }
+    const seconds = Number(REFLOG_TIME.exec(selector)?.[1] ?? 0)
+    return { sha, day: new Date(seconds * 1000).toISOString().slice(0, ISO_DATE_LENGTH) }
   }).reverse()
   const updates: OriginUpdate[] = []
   for (let index = 1; index < tips.length; index++) {
-    if (tips[index]!.time >= sinceSeconds) updates.push({ previous: tips[index - 1]!.sha, tip: tips[index]!.sha })
+    if (tips[index]!.day >= since) updates.push({ previous: tips[index - 1]!.sha, tip: tips[index]!.sha })
   }
   return updates
 }

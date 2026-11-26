@@ -55,12 +55,13 @@ const FILE_FAILURES = new RegExp(
   `${LINE_START}${TEST_FILES_LINE}[^\\n]*?${NOT_WORD_BEFORE}([0-9]+) failed${NOT_WORD_AFTER}`, 'gu');
 export const NO_TESTS_RECOGNIZED = 4;
 export const FAILURES_RECOGNIZED = 6;
+const KEEL_EXITS = { passed: 0, no_tests_recognized: NO_TESTS_RECOGNIZED, failures_recognized: FAILURES_RECOGNIZED, tree_changed: 7, output_stayed_open: 8 };
+type Outcome = keyof typeof KEEL_EXITS | 'command_failed';
 const COMMAND_NOT_FOUND = 2;
 const DEFAULT_EXEC_PATH = '/bin:/usr/bin';
 const MKFIFO = '/usr/bin/mkfifo';
 const KEEPS_SEARCHING_ERRORS = new Set(['ENOENT', 'ENOTDIR']);
 const CAT = '/bin/cat';
-const OUTPUT_STAYED_OPEN = 5;
 const DEFAULT_OUTPUT_IDLE_MS = 60_000;
 const MAX_TIMER_MS = 2_147_483_647;
 const TESTS_LOG = 'keel-tests.jsonl';
@@ -75,15 +76,17 @@ export async function run(argv: string[], cwd: string): Promise<number> {
   const runId = env.newId('tr', now, env.RUN_ID_RANDOM_BYTES);
   const before = gitcmd.snapshotTree(repoRoot);
   const submodulesBefore = submoduleSnapshots(repoRoot);
-  const [exitCode, output] = await stream(argv, cwd);
+  const { exitCode, output, outputStayedOpen } = await stream(argv, cwd);
   const after = gitcmd.snapshotTree(repoRoot);
   const submodulesAfter = submoduleSnapshots(repoRoot);
   const [count, framework] = recognize(output);
   const failures = recognizeFailures(output);
+  const outcome = outcomeOf({ exitCode, outputStayedOpen, failures, count, treeChanged: before !== after });
+  const keelExit = outcome === 'command_failed' ? exitCode : KEEL_EXITS[outcome];
   const testRecord = { run_id: runId, repo: repoKey, repo_root: repoRoot, cmd: argv, exit: exitCode, count, framework, tree: after };
   let evidenceId: string | null = null;
   let submoduleEvidence: Record<string, string> = {};
-  if (exitCode === 0 && count > 0 && failures === 0 && before === after) {
+  if (outcome === 'passed') {
     const evidence = store.write('tests', { ...testRecord, head: gitcmd.commitSha(repoRoot, 'HEAD') }, repoKey);
     evidenceId = evidence.evidence_id;
     submoduleEvidence = writeSubmoduleEvidence(testRecord, submodulesBefore, submodulesAfter);
@@ -91,17 +94,24 @@ export async function run(argv: string[], cwd: string): Promise<number> {
   const flakySignal = evidenceId === null ? null : earlierFailureOnSameTree(testRecord);
   if (flakySignal !== null) printErrorLine(`keel test: [K3] warn: run ${flakySignal} of this command failed on this same tree and it passes now with no change; that is a flaky signal, so find what makes the test nondeterministic instead of rerunning it until it passes`);
   env.appendRecord(TESTS_LOG, {
-    ...testRecord, ts: env.iso(env.utcNow()), evidence_id: evidenceId, submodule_evidence: submoduleEvidence,
+    ...testRecord, keel_exit: keelExit, ts: env.iso(env.utcNow()), evidence_id: evidenceId, submodule_evidence: submoduleEvidence,
     ...(flakySignal === null ? {} : { passed_after_failure: flakySignal }),
   });
-  const failedDespiteExitZero = exitCode === 0 && failures > 0;
-  if (failedDespiteExitZero) printErrorLine(`keel test: the output reports ${failures} failing test${failures === 1 ? '' : 's'} or test file${failures === 1 ? '' : 's'} although the command exited 0; no evidence written`);
+  if (outcome === 'failures_recognized') printErrorLine(`keel test: the output reports ${failures} failing test${failures === 1 ? '' : 's'} or test file${failures === 1 ? '' : 's'} although the command exited 0; no evidence written`);
+  if (outcome === 'tree_changed') printErrorLine('keel test: the working tree changed while the command ran; no evidence written');
   printErrorLine('KEEL-TEST ' + JSON.stringify({
     run_id: runId, count, exit: exitCode, evidence_id: evidenceId, submodule_evidence: submoduleEvidence,
   }));
-  if (failedDespiteExitZero) return FAILURES_RECOGNIZED;
-  if (exitCode === 0 && count === 0) return NO_TESTS_RECOGNIZED;
-  return exitCode;
+  return keelExit;
+}
+
+function outcomeOf(run: { exitCode: number; outputStayedOpen: boolean; failures: number; count: number; treeChanged: boolean }): Outcome {
+  if (run.exitCode !== 0) return 'command_failed';
+  if (run.failures > 0) return 'failures_recognized';
+  if (run.outputStayedOpen) return 'output_stayed_open';
+  if (run.count === 0) return 'no_tests_recognized';
+  if (run.treeChanged) return 'tree_changed';
+  return 'passed';
 }
 
 function earlierFailureOnSameTree(run: { repo_root: string; tree: string; cmd: string[] }): string | null {
@@ -109,8 +119,12 @@ function earlierFailureOnSameTree(run: { repo_root: string; tree: string; cmd: s
   const failure = readJsonl(join(env.logsDir(), TESTS_LOG)).records
     .findLast((earlier) => earlier.repo_root === run.repo_root && earlier.tree === run.tree
       && JSON.stringify(earlier.cmd) === sameCommand && typeof earlier.count === 'number' && earlier.count > 0
-      && earlier.exit !== 0 && typeof earlier.run_id === 'string');
+      && testsFailed(earlier) && typeof earlier.run_id === 'string');
   return typeof failure?.run_id === 'string' ? failure.run_id : null;
+}
+
+function testsFailed(earlier: { exit?: unknown; keel_exit?: unknown }): boolean {
+  return earlier.exit !== 0 || earlier.keel_exit === FAILURES_RECOGNIZED;
 }
 
 function submoduleSnapshots(repoRoot: string): Map<string, string> {
@@ -207,7 +221,13 @@ interface Launched {
 
 type Attempt = Launched | { failure: NodeJS.ErrnoException };
 
-async function stream(argv: string[], cwd: string): Promise<[exitCode: number, output: string]> {
+interface Streamed {
+  exitCode: number;
+  output: string;
+  outputStayedOpen: boolean;
+}
+
+async function stream(argv: string[], cwd: string): Promise<Streamed> {
   const pipe = openOutputPipe();
   try {
     let launched: Launched | null;
@@ -276,7 +296,7 @@ async function attemptSpawn(program: string, argv0: string, args: string[], cwd:
   return { child, exited };
 }
 
-async function relayUntilClosed(exited: Promise<number>, reader: number): Promise<[exitCode: number, output: string]> {
+async function relayUntilClosed(exited: Promise<number>, reader: number): Promise<Streamed> {
   const relay = childProcess.spawn(CAT, [], { stdio: [reader, 'pipe', 'inherit'] });
   const chunks: Buffer[] = [];
   const idleLimitMs = outputIdleLimitMs();
@@ -298,11 +318,9 @@ async function relayUntilClosed(exited: Promise<number>, reader: number): Promis
   const [, relaySignal] = await relayClosed;
   clearTimeout(idleTimer);
   const output = Buffer.concat(chunks).toString();
-  if (relaySignal === 'SIGKILL') {
-    printErrorLine(`keel test: the command exited but its output stayed open and silent for ${idleLimitMs} ms; no evidence written`);
-    return [OUTPUT_STAYED_OPEN, output];
-  }
-  return [exitCode, output];
+  const outputStayedOpen = relaySignal === 'SIGKILL';
+  if (outputStayedOpen) printErrorLine(`keel test: the command exited but its output stayed open and silent for ${idleLimitMs} ms; no evidence written`);
+  return { exitCode, output, outputStayedOpen };
 }
 
 function outputIdleLimitMs(): number {
@@ -310,7 +328,7 @@ function outputIdleLimitMs(): number {
   return Number.isInteger(configured) && configured > 0 && configured <= MAX_TIMER_MS ? configured : DEFAULT_OUTPUT_IDLE_MS;
 }
 
-function commandNotFound(name: string): [exitCode: number, output: string] {
+function commandNotFound(name: string): Streamed {
   printErrorLine(`keel test: command not found: ${name}`);
-  return [COMMAND_NOT_FOUND, ''];
+  return { exitCode: COMMAND_NOT_FOUND, output: '', outputStayedOpen: false };
 }

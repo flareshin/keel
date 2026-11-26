@@ -61,6 +61,7 @@ describe('GhApiWriteParseTest', () => {
       'gh api -X POST repos/{owner}/{repo}/issues/7/comments -f body=x',
       'gh api repos/acme/app/contents/a.py', 'gh api -X GET repos/acme/app/contents/a.py -f ref=main',
       'gh api -X POST gists -f description=x', 'gh api -X PUT user/starred/acme/app',
+      'A=pr; gh $A view 7', 'A=api; gh $A repos/acme/app/contents/a.py',
       "gh api graphql -f query='query { viewer { login } }'",
       "gh api graphql -f query='{ viewer { login } }'",
       "gh api graphql -f query='mutation { addComment(input: {}) { clientMutationId } addReaction(input: {}) { clientMutationId } }'",

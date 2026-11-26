@@ -40,6 +40,10 @@ describe('GhApiWriteParseTest', () => {
       "gh api graphql -f query='mutation M { a: addComment(input: {subjectId: 1}) { clientMutationId } x: createCommitOnBranch(input: {}) { clientMutationId } }'",
       "gh api https://api.github.com/graphql -f query='mutation { createCommitOnBranch(input: {}) { clientMutationId } }'",
       "gh api graphql -f query='mutation { ...F } fragment F on Mutation { addComment(input: {}) { clientMutationId } }'",
+      "gh api graphql -f query='mutation { addComment(input: {subjectId: \"\"\"A\\\"\"\"B\"\"\"}) { clientMutationId } createCommitOnBranch(input: {}) { clientMutationId } addReaction(input: {content: \"\"\"C\"\"\"}) { clientMutationId } }'",
+      "gh api graphql -f query='mutation query { createCommitOnBranch(input: {}) { clientMutationId } }'",
+      "gh api graphql -f query='mutation { addComment(input: {body: \"x}) { clientMutationId } }'",
+      "gh api https://ghe.example.invalid/api/graphql -f query='mutation { createCommitOnBranch(input: {}) { clientMutationId } }'",
       'gh api graphql -F query=@mutation.graphql', 'gh api graphql -F query=@-', 'gh api graphql --input body.json']) {
       assert.equal(onlyWrite(command).target.kind, 'unknown', command);
     }
@@ -59,6 +63,7 @@ describe('GhApiWriteParseTest', () => {
       'gh api -X POST repos/acme/app/pulls/7/comments/3/replies -f body=x',
       'gh api -X POST repos/acme/app/issues/comments/9/reactions -f content=+1',
       'gh api -X POST repos/{owner}/{repo}/issues/7/comments -f body=x',
+      'gh api -X POST repositories/123/issues/7/comments -f body=x',
       'gh api repos/acme/app/contents/a.py', 'gh api -X GET repos/acme/app/contents/a.py -f ref=main',
       'gh api -X POST gists -f description=x', 'gh api -X PUT user/starred/acme/app',
       'A=pr; gh $A view 7', 'A=api; gh $A repos/acme/app/contents/a.py',
@@ -120,6 +125,12 @@ describe('GhApiWriteJudgeTest', () => {
     assert.equal(run.rc, 2, run.stderr);
     assert.ok(run.stderr.includes(OUTSIDE_ALLOW_LIST), run.stderr);
     assert.equal(sandbox.push(lib, CONTENTS_WRITE).rc, 0);
+  });
+
+  test('placeholderWrite_withAnUnreadableGhRepo_isDenied', (t) => {
+    const sandbox = new Sandbox(t, GATED_AND_LIB);
+    const run = sandbox.push(sandbox.clone('acme', 'app'), `GH_REPO=bad ${CONTENTS_WRITE}`);
+    assert.equal(run.rc, 2, run.stderr);
   });
 
   test('unknownRepoWrite_isDenied_onlyWhileARepoIsGated', (t) => {

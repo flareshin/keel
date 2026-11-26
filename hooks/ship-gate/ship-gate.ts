@@ -84,13 +84,14 @@ const DISCUSSION_MUTATIONS: ReadonlySet<string> = new Set([
 const GRAPHQL_QUERY_FIELD = "query";
 const TYPED_FIELD_OPTIONS: ReadonlySet<string> = new Set(["-F", "--field"]);
 const FILE_VALUE_SIGN = "@";
-const GRAPHQL_TOKEN = /"""[\s\S]*?"""|"(?:[^"\\]|\\.)*"|#[^\n]*|\.\.\.|[_A-Za-z][_0-9A-Za-z]*|[^\s,]/gu;
+const GRAPHQL_TOKEN = /"""(?:\\"""|[\s\S])*?"""|"(?:[^"\\]|\\.)*"|#[^\n]*|\.\.\.|[_A-Za-z][_0-9A-Za-z]*|[^\s,]/gu;
 const GRAPHQL_NAME = /^[_A-Za-z]/u;
 const GRAPHQL_OPERATION_KEYWORDS: ReadonlySet<string> = new Set(["query", "mutation", "subscription", "fragment"]);
 const GRAPHQL_MUTATION = "mutation";
 const GRAPHQL_SPREAD = "...";
 const GRAPHQL_DIRECTIVE = "@";
 const GRAPHQL_ALIAS = ":";
+const GRAPHQL_UNCLOSED_STRING = '"';
 const GH_API_VALUE_OPTIONS: ReadonlySet<string> = new Set([
   ...GH_API_METHOD_OPTIONS, ...GH_API_BODY_OPTIONS, "-H", "--header", "-q", "--jq", "-t", "--template", "--hostname", "-p", "--preview",
   "--cache",
@@ -491,6 +492,7 @@ function graphqlWriteTarget(options: GhApiOption[]): GhApiTarget | null {
 
 function topLevelMutationFields(document: string): string[] | null {
   const tokens = [...document.matchAll(GRAPHQL_TOKEN)].map((match) => match[0]).filter((token) => !token.startsWith("#"));
+  if (tokens.includes(GRAPHQL_UNCLOSED_STRING)) return null;
   const fields: string[] = [];
   let braces = 0;
   let parens = 0;
@@ -507,7 +509,7 @@ function topLevelMutationFields(document: string): string[] | null {
     } else if (token === "}") {
       braces -= 1;
       if (braces === 0) operation = "";
-    } else if (braces === 0 && GRAPHQL_OPERATION_KEYWORDS.has(token)) {
+    } else if (braces === 0 && operation === "" && GRAPHQL_OPERATION_KEYWORDS.has(token)) {
       operation = token;
     } else if (braces === 1 && inMutation) {
       if (token === GRAPHQL_SPREAD) return null;

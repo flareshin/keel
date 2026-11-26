@@ -126,6 +126,11 @@ gh api graphql -F query=@mutation.graphql	deny	a query read from a file the gate
 gh api graphql --input body.json	deny	a request body read from a file the gate cannot see
 gh api graphql -f query='mutation { addComment(input: {}) { clientMutationId } createCommitOnBranch(input: {}) { clientMutationId } }'	deny	one allowed and one unlisted mutation field
 gh api graphql -f query='mutation M { c: createCommitOnBranch(input: {}) { clientMutationId } }'	deny	an aliased unlisted mutation field
+gh api graphql -f query='mutation { addComment(input: {subjectId: """A\"""B"""}) { clientMutationId } createCommitOnBranch(input: {}) { clientMutationId } addReaction(input: {content: """C"""}) { clientMutationId } }'	deny	an escaped triple quote inside a block string hides an unlisted mutation field
+gh api graphql -f query='mutation query { createCommitOnBranch(input: {}) { clientMutationId } }'	deny	a mutation whose operation name is a keyword
+gh api graphql -f query='mutation fragment { createCommitOnBranch(input: {}) { clientMutationId } }'	deny	a mutation named fragment
+gh api graphql -f query='mutation { addComment(input: {body: "x}) { clientMutationId } }'	deny	an unclosed string
+gh api -X POST https://ghe.example.invalid/api/graphql -f query='mutation { createCommitOnBranch(input: {}) { clientMutationId } }'	deny	GHE GraphQL endpoint
 cd {tmp} && gh api -X PUT repos/acme/app/contents/a.py -f branch=main	deny	a literal gated repo written from outside any clone
 xargs gh api -X PUT repos/acme/app/contents/a.py -f branch=main < /dev/null	deny	xargs forwards a contents write
 env --chdir=/ gh api -X PUT repos/acme/app/contents/a.py -f branch=main	deny	a wrapper option the parser cannot attribute

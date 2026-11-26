@@ -111,6 +111,14 @@ describe("measure run", () => {
     assert.deepEqual([result.count, result.items.map((item: { case: string }) => item.case), result.status], [1, ["c"], "PASS"])
   })
 
+  it("run_countsNothing_forEvalsMetric_whenALaterLineInTheFileSharesTheNewestTsAndFails", () => {
+    givenKeelRows(ledgerRow("C-demo", { metric: "evals:demo" }))
+    box.appendLog("keel-evals.jsonl", { ts: "2026-11-02T10:00:00Z", eval_id: "demo", rule_id: "C-demo", case: "a", pass: true, model: "m" })
+    box.appendLog("keel-evals.jsonl", { ts: "2026-11-02T10:00:00Z", eval_id: "demo", rule_id: "C-demo", case: "b", pass: false, model: "m" })
+    const [completed, result] = box.runJson("run", ["C-demo", "--since", "2026-10-01"])
+    assert.deepEqual([completed.status, result.count, result.status], [1, 0, "FAIL"])
+  })
+
   it("run_usesOverlayRunner_whenKeelHasNone", () => {
     givenKeelRows(ledgerRow("C-demo", { metric: "run:demo-runner" }))
     box.write("overlay/measure/metrics/demo-runner", '#!/bin/bash\necho \'{"count": 2, "items": ["a", "b"]}\'\n', true)

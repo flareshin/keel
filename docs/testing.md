@@ -1,8 +1,9 @@
 # Running the tests
 
-Requirements: `node` 24 or newer (the `engines` field; tested on 26.12), `bash`, `git` and `jq`. keel does not use Python.
+Requirements: `node` 24 or newer (the `engines` field; tested on 26.12), `bash`, `git` and `jq`. keel does not use Python. Run `npm ci` once before the tests: the precheck tests and `keel precheck` need `typescript`, found in the checkout's `node_modules` or a parent folder's (a worktree under a checkout that has run `npm ci` finds it there), and `run-all.sh` stops before any suite when it cannot resolve it.
 
 ```bash
+npm ci
 bash tests/run-all.sh
 ```
 
@@ -11,7 +12,6 @@ Tests run in temporary directories (`KEEL_DATA_DIR`, `KEEL_OVERLAY_DIR`, `HOME`)
 ```bash
 node --test 'tests/ship-gate/*.test.ts'
 node --test 'tests/workflows/*.test.mjs'
-npm ci   # once, before the typecheck
 npx tsc -p tsconfig.json
 ```
 

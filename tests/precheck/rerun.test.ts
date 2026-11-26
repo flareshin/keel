@@ -303,6 +303,7 @@ describe("keel precheck rerun", () => {
 
     assert.equal(rerun.status, 3, rerun.stdout)
     assert.match(rerun.stderr, /no-such-ref does not resolve to a commit/u)
+    assert.doesNotMatch(rerun.stderr, /set-head/u)
   })
 
   it("rerun_printsItsUsage_outsideAGitRepository", () => {

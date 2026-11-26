@@ -5,7 +5,7 @@ import { joinPath } from "../lib/hookkit/paths.ts";
 import { SPACE_CHARS, WORD_CHARS } from "../lib/hookkit/text.ts";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { isFile, isSystemError, tryReadText } from "../lib/hookkit/files.ts";
+import { isFile, isSystemError, resolveSymlinksKeepingMissingTail, tryReadText } from "../lib/hookkit/files.ts";
 import { parseJson, parsePayload } from "../lib/hookkit/json.ts";
 import { findToplevel } from "../lib/hookkit/repo.ts";
 import { describeError, RecursionError, ValueError } from "../lib/hookkit/errors.ts";
@@ -185,9 +185,20 @@ function agentFilePath(agentType: string, cwd: string): string | null {
     const agentName = agentType.slice(separator + 1);
     return existingFile(pluginInstallPaths(agentType.slice(0, separator)).map((root) => joinPath(root, "agents", `${agentName}.md`)));
   }
-  const toplevel = cwd === "" ? null : findToplevel(cwd);
-  const projectAgents = toplevel === null ? [] : [joinPath(toplevel, ".claude", "agents", `${agentType}.md`)];
+  const projectAgents = projectDirectories(cwd).map((directory) => joinPath(directory, ".claude", "agents", `${agentType}.md`));
   return existingFile([...projectAgents, joinPath(dataDir(), "agents", `${agentType}.md`)]);
+}
+
+function projectDirectories(cwd: string): string[] {
+  const toplevel = cwd === "" ? null : findToplevel(cwd);
+  if (toplevel === null) return [];
+  const directories: string[] = [];
+  let directory = resolveSymlinksKeepingMissingTail(cwd);
+  while (directory !== toplevel && directory.startsWith(`${toplevel}/`)) {
+    directories.push(directory);
+    directory = dirname(directory);
+  }
+  return [...directories, toplevel];
 }
 
 function pluginInstallPaths(plugin: string): string[] {

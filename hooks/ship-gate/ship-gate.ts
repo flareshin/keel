@@ -189,8 +189,8 @@ class Report {
     this.fire(K1, "record", { detail, ...where });
   }
 
-  decide(decision: Decision, summary: string, hint: string, repo: string, head: string): void {
-    const where = { head, risk: decision.riskClass, root_run_id: decision.rootRunId, files: decision.files, lines: decision.lines };
+  decide(decision: Decision, summary: string, hint: string, repo: string, head: string, base: string): void {
+    const where = { head, base, risk: decision.riskClass, root_run_id: decision.rootRunId, files: decision.files, lines: decision.lines };
     if (decision.ok) {
       this.passed(repo, { detail: decision.k3Waiver ? "K3 waived: " + decision.k3Waiver : null, ...where });
       return;
@@ -784,7 +784,7 @@ function judgePush(push: Push, repoRoot: string, repoKey: string | null, row: Ga
     }
     const baseRef = resolveBase(repoRoot, gatedRow);
     const outgoing = outgoingOf(repoRoot, gatedKey, gatedRow, head, baseRef, registry.pushNeedsApproval(gatedRow), false);
-    report.decide(verify.judge(outgoing), `push of ${spec.source} in ${gatedKey} denied`, hint, gatedKey, head);
+    report.decide(verify.judge(outgoing), `push of ${spec.source} in ${gatedKey} denied`, hint, gatedKey, head, outgoing.mergeBase);
   }
 }
 
@@ -852,7 +852,7 @@ function judgeMerge(merge: Merge, repoRoot: string, repoKey: string | null, row:
   const baseRef = fetchedRemoteBranch(repoRoot, pullRequest["baseRefName"]);
   const promote = pullRequest["baseRefName"] !== gatedRow.integrationBase;
   const outgoing = outgoingOf(repoRoot, gatedKey, gatedRow, head, baseRef, true, promote);
-  report.decide(verify.judge(outgoing), summary, hint, gatedKey, head);
+  report.decide(verify.judge(outgoing), summary, hint, gatedKey, head, outgoing.mergeBase);
 }
 
 function foreignCloneReason(repoRoot: string, repoKey: string, command: string): Reason | null {

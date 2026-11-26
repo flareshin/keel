@@ -18,7 +18,7 @@ import type { JsonObject, JsonValue } from "../lib/measurekit/json.ts"
 import { allRows, loadLedgersFrom } from "../lib/measurekit/ledger.ts"
 import { Case, CaseError, GRADED_CHANGE, loadCases, READABLE_CHANGE, selectCases, SPLITS, splitGaps } from "./lib/evalkit/cases.ts"
 import { faultReason, graderCommit, LEFTOVER_FAULT, runPasses } from "./lib/evalkit/grade.ts"
-import { cliConfigDir, configFingerprint, isKeelLive, suiteEvalId } from "./lib/evalkit/liveconfig.ts"
+import { CONFIG_FINGERPRINT_KEYS, cliConfigDir, configFingerprint, isKeelLive, suiteEvalId } from "./lib/evalkit/liveconfig.ts"
 import { CLAUDE_BINARY, claudeCommand, DEFAULT_MAX_TURNS, findOnPath, runOnce, UNLOCKABLE_TOOLS } from "./lib/evalkit/runner.ts"
 import type { RunRecord } from "./lib/evalkit/runner.ts"
 import { RunFacts, summarizeStream } from "./lib/evalkit/stream.ts"
@@ -124,7 +124,7 @@ function main(argv: string[]): number {
   const rawDir = createRawDir(plan)
   const results = runPlan(plan, rawDir)
   saveConfig(rawDir, plan, results)
-  return gradeAndWrite(plan, rawDir, results, {}, {})
+  return gradeAndWrite(plan, rawDir, results, savedFingerprint(rawDir), {})
 }
 
 function parseEvalArgs(argv: string[]): EvalArgs {
@@ -278,7 +278,7 @@ function regrade(evalId: string, rawDir: string): number {
   if (leftoverUnknown.length > 0) {
     process.stderr.write(`eval: ${rawDir} recorded no leftover project dir check for ${leftoverUnknown.join(", ")}; graded without it\n`)
   }
-  const provenance = { regraded_from: path.basename(path.normalize(rawDir)), grader }
+  const provenance = { regraded_from: path.basename(path.normalize(rawDir)), grader, ...savedFingerprint(rawDir) }
   return gradeAndWrite(plan, rawDir, results, provenance, { leftover_unknown: leftoverUnknown })
 }
 
@@ -410,6 +410,11 @@ function saveConfig(rawDir: string, plan: Plan, results: RunResult[]): void {
   }
   writeText(path.join(rawDir, "config.json"), stringifySorted(config, JSON_INDENT) + "\n")
   writeText(path.join(rawDir, "skill-diagnostic.json"), stringifySorted(skillDiagnostic(plan, results), JSON_INDENT) + "\n")
+}
+
+function savedFingerprint(rawDir: string): Provenance {
+  const config = readJsonObject(path.join(rawDir, "config.json"))
+  return Object.fromEntries(CONFIG_FINGERPRINT_KEYS.map((key) => [key, config[key] ?? null]))
 }
 
 function skillDiagnostic(plan: Plan, results: RunResult[]): JsonObject {

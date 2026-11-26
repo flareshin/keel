@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, lstatSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, lstatSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { missDetail, missingFields, OUTCOME } from "../lib/hookkit/contract.ts";
 import { dataDir, keelCli } from "../lib/hookkit/env.ts";
@@ -19,10 +19,13 @@ import { KEEL_EVIDENCE_LINE } from "../../lib/evidence/findings.ts";
 import { OSError, run } from "../lib/hookkit/subprocess.ts";
 import type { CompletedProcess } from "../lib/hookkit/subprocess.ts";
 import { commandWritesFiles } from "../lib/hookkit/writes.ts";
-import { contentOf, iterEntries, roleOf, textOf, toolUses } from "../lib/hookkit/transcript.ts";
+import { contentOf, iterEntries, roleOf, textOf, toolUses, withText } from "../lib/hookkit/transcript.ts";
+import { isDirectory } from "../lib/hookkit/files.ts";
 
 const HOOK = "report-gate";
 const CLI_TIMEOUT_SECONDS = 20;
+export const EVIDENCE_DEADLINE_SECONDS = 25;
+const MIN_CLI_SECONDS = 1;
 const TRANSCRIPT_REREADS = 15;
 const TRANSCRIPT_REREAD_MS = 100;
 const DIGIT = "\\p{Nd}";
@@ -147,14 +150,9 @@ class AgentTranscript {
           this.readToolUse(this.lastToolName.toLowerCase(), getField(block, "input"));
         }
         if (blocks.length > 0) this.finalText = null;
-        else this.appendFinalText(textOf(contentOf(entry)));
+        else this.finalText = withText(this.finalText, textOf(contentOf(entry)));
       }
     }
-  }
-
-  private appendFinalText(text: string | null): void {
-    if (text === null || trimSpace(text) === "") return;
-    this.finalText = this.finalText === null ? text : `${this.finalText}\n${text}`;
   }
 
   private readBrief(brief: string): void {
@@ -173,13 +171,17 @@ class AgentTranscript {
     const command = name === "bash" ? textField(toolArgs, "command") : "";
     const edits = protocol.FILE_EDIT_TOOLS.has(name);
     if (edits || commandWritesFiles(command)) this.needsEvidence = true;
-    if (edits || commandWritesFiles(command, SCRATCH_PREFIXES)) this.editedFiles = true;
     const target = edits ? editedPath(toolArgs) : "";
+    if (edits ? !isScratchPath(target) : commandWritesFiles(command, SCRATCH_PREFIXES)) this.editedFiles = true;
     if (target !== "" && this.scopes.length > 0 && !inScope(target, this.scopes)
         && !this.outOfScope.includes(normalize(target))) {
       this.outOfScope.push(normalize(target));
     }
   }
+}
+
+function isScratchPath(path: string): boolean {
+  return path !== "" && SCRATCH_PREFIXES.some((prefix) => normalize(path).startsWith(prefix));
 }
 
 function readAgentTranscript(path: string | null): AgentTranscript {
@@ -390,7 +392,7 @@ function filesNamedUnder(directory: string, fileName: string): string[] {
   }
   for (const name of names) {
     const child = joinPath(directory, name);
-    if (!name.startsWith(".") && isDirectoryEntry(child)) found.push(...filesNamedUnder(child, fileName));
+    if (!name.startsWith(".") && isDirectory(child)) found.push(...filesNamedUnder(child, fileName));
   }
   return found;
 }
@@ -399,14 +401,6 @@ function lexists(path: string): boolean {
   try {
     lstatSync(path);
     return true;
-  } catch {
-    return false;
-  }
-}
-
-function isDirectoryEntry(path: string): boolean {
-  try {
-    return statSync(path).isDirectory();
   } catch {
     return false;
   }
@@ -444,9 +438,14 @@ function sendToCli(evidenceLine: string, verdict: string, source: Record<string,
     fires.append("K1", "warn", { detail: "KEEL-EVIDENCE line is not JSON" });
     return;
   }
+  const timeoutSeconds = cliTimeoutSeconds(process.uptime());
+  if (timeoutSeconds === null) {
+    fires.append("K1", "warn", { detail: `keel evidence write-review skipped: the hook's ${EVIDENCE_DEADLINE_SECONDS} s evidence deadline passed` });
+    return;
+  }
   let result: CompletedProcess;
   try {
-    result = run([keelCli(), "evidence", "write-review"], CLI_TIMEOUT_SECONDS, { input: request });
+    result = run([keelCli(), "evidence", "write-review"], timeoutSeconds, { input: request });
   } catch (error) {
     if (!(error instanceof OSError || error instanceof TimeoutExpired)) throw error;
     fires.append("K1", "warn", { detail: `keel evidence write-review did not run: ${errorName(error)}` });
@@ -459,6 +458,11 @@ function sendToCli(evidenceLine: string, verdict: string, source: Record<string,
   fires.append("K1", "record", { detail: `review evidence ${evidenceIdOf(result.stdout)}` });
   const findingsError = responseField(result.stdout, "findings_error");
   if (findingsError !== null) fires.append("K1", "warn", { detail: `findings log not written: ${findingsError}` });
+}
+
+export function cliTimeoutSeconds(elapsedSeconds: number): number | null {
+  const remaining = EVIDENCE_DEADLINE_SECONDS - elapsedSeconds;
+  return remaining < MIN_CLI_SECONDS ? null : Math.min(CLI_TIMEOUT_SECONDS, Math.floor(remaining));
 }
 
 function evidenceIdOf(stdout: string): string {
@@ -500,12 +504,36 @@ function hasEvidenceLine(report: string): boolean {
 
 function lacksEvidence(report: string, needsEvidence: boolean, fires: FireLog): boolean {
   const stripped = trimSpace(report);
-  const exempt = !(needsEvidence || VERDICT_RE.test(stripped)) || stripped.startsWith("{") || stripped.startsWith("[");
-  if (exempt) return false;
-  const hasToken = hasEvidenceToken(stripped);
+  if (!needsEvidence && !VERDICT_RE.test(stripped)) return false;
+  const hasToken = hasEvidenceToken(stripped) || jsonCitesFileAndLine(stripped);
   if (hasToken) fires.append("K2", "pass");
   else fires.append("K2", "deny", { detail: evidenceDenyDetail(stripped) });
   return !hasToken;
+}
+
+const FINDING_FILE_KEYS = ["file", "path"] as const;
+
+function jsonCitesFileAndLine(report: string): boolean {
+  let parsed: unknown;
+  try {
+    parsed = parseJson(report);
+  } catch (error) {
+    if (error instanceof ValueError || error instanceof RecursionError) return false;
+    throw error;
+  }
+  return holdsFileAndLine(parsed);
+}
+
+function holdsFileAndLine(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(holdsFileAndLine);
+  if (!isRecord(value)) return false;
+  const line = getField(value, "line");
+  if (FINDING_FILE_KEYS.some((key) => isNonBlankText(getField(value, key))) && Number.isInteger(line) && (line as number) > 0) return true;
+  return Object.values(value).some(holdsFileAndLine);
+}
+
+function isNonBlankText(value: unknown): boolean {
+  return typeof value === "string" && trimSpace(value) !== "";
 }
 
 function evidenceDenyDetail(report: string): string {

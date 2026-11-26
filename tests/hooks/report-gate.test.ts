@@ -8,7 +8,9 @@ import {
 } from "./helpers.ts";
 import type { Fire, HookResult } from "./helpers.ts";
 import { MAX_JSON_DEPTH } from "../../measure/lib/measurekit/json.ts";
-import { evidenceMessage, hasEvidenceToken, REPORT_END, REPORT_START, withoutReportMarkers } from "../../hooks/report-gate/report-gate.ts";
+import {
+  cliTimeoutSeconds, EVIDENCE_DEADLINE_SECONDS, evidenceMessage, hasEvidenceToken, REPORT_END, REPORT_START, withoutReportMarkers,
+} from "../../hooks/report-gate/report-gate.ts";
 
 const PASS_REPORT = "VERDICT: PASS\nNo findings. 3 files changed, 40 insertions(+).\n" + KEEL_EVIDENCE_LINE;
 const FRAMED_PASS_REPORT = `<<<KEEL-REPORT\n${PASS_REPORT}\nKEEL-REPORT>>>`;
@@ -765,3 +767,133 @@ function tooDeep(fields: string): string {
   const nesting = "[".repeat(MAX_JSON_DEPTH + 1) + "]".repeat(MAX_JSON_DEPTH + 1);
   return `{${fields}, "deep": ${nesting}}`;
 }
+
+describe("StructuredReportEvidenceTest", () => {
+  const UNPROVEN_JSON_REPORTS = [["an object", '{"status": "done", "verdict": "PASS"}'], ["an array", '["done", "PASS"]']] as const;
+
+  for (const [shape, report] of UNPROVEN_JSON_REPORTS) {
+    it(`handback_deniesWithK2_whenTheReportIsJsonAs${shape === "an object" ? "AnObject" : "AnArray"}WithNoEvidenceToken`, () => {
+      const result = handback(report, { toolUses: [editIn(scope, "a.py")] });
+      assert.equal(result.code, 2);
+      assert.ok(result.stderr.startsWith("[K2] report-gate: "), result.stderr);
+    });
+
+    it(`stop_blocksWithK2_whenTheReportIsJsonAs${shape === "an object" ? "AnObject" : "AnArray"}WithNoEvidenceToken`, () => {
+      const result = stop(report, { toolUses: [editIn(scope, "a.py")] });
+      assert.equal(result.json().decision, "block");
+      assert.ok(result.json().reason.startsWith("[K2] report-gate: "), result.json().reason);
+    });
+  }
+
+  it("handback_deniesWithK2_whenAJsonFindingNamesAFileButNoLine", () => {
+    const result = handback('[{"file": "src/a.py", "summary": "dead branch"}]', { toolUses: [editIn(scope, "a.py")] });
+    assert.equal(result.code, 2);
+  });
+
+  it("handback_deniesWithK2_whenTheJsonReportIsAnEmptyArray", () => {
+    assert.equal(handback("[]", { toolUses: [editIn(scope, "a.py")] }).code, 2);
+  });
+
+  const UNUSABLE_FINDINGS = [
+    ["ALineOfZero", '[{"file": "src/a.py", "line": 0}]'],
+    ["ANegativeLine", '[{"file": "src/a.py", "line": -4}]'],
+    ["ALineWrittenAsText", '[{"file": "src/a.py", "line": "12"}]'],
+    ["AFractionalLine", '[{"file": "src/a.py", "line": 1.5}]'],
+    ["ABlankFile", '[{"file": "  ", "line": 12}]'],
+  ] as const;
+
+  for (const [flaw, report] of UNUSABLE_FINDINGS) {
+    it(`handback_deniesWithK2_whenTheOnlyJsonFindingHas${flaw}`, () => {
+      assert.equal(handback(report, { toolUses: [editIn(scope, "a.py")] }).code, 2);
+    });
+  }
+
+  it("handback_deniesWithK2_whenAJsonReportCarriesAVerdictAndTheAgentWroteNothing", () => {
+    const result = handback('{"verdict": "PASS"}');
+    assert.equal(result.code, 2);
+    assert.ok(result.stderr.startsWith("[K2] report-gate: "), result.stderr);
+  });
+
+  it("handback_passes_whenAJsonFindingHasABlankFileButAPathAndALine", () => {
+    assert.equal(handback('[{"file": "", "path": "src/a.py", "line": 3}]', { toolUses: [editIn(scope, "a.py")] }).code, 0);
+  });
+
+  it("handback_passesWithK2Pass_whenAJsonFindingCarriesAFileAndALineNumber", () => {
+    const result = handback('[{"file": "src/a.py", "line": 12, "summary": "dead branch"}]', { toolUses: [editIn(scope, "a.py")] });
+    assert.equal(result.code, 0);
+    assert.ok(sandbox.fires().some((fire) => fire.rule_id === "K2" && fire.outcome === "pass"));
+  });
+
+  it("stop_passes_whenANestedJsonFindingCarriesAPathAndALineNumber", () => {
+    const result = stop('{"findings": [{"path": "src/a.py", "line": 3}]}', { toolUses: [editIn(scope, "a.py")] });
+    assert.equal(result.stdout, "");
+  });
+
+  it("handback_passesWithK2Pass_whenAJsonReportCitesAFileAndLine", () => {
+    const result = handback('{"status": "done", "changed": "src/a.py:12"}', { toolUses: [editIn(scope, "a.py")] });
+    assert.equal(result.code, 0);
+    assert.ok(sandbox.fires().some((fire) => fire.rule_id === "K2" && fire.outcome === "pass"));
+  });
+});
+
+describe("EvidenceDeadlineTest", () => {
+  it("cliTimeoutSeconds_givesTheFullPerCallTimeout_whenTheHookHasJustStarted", () => {
+    assert.equal(cliTimeoutSeconds(0), 20);
+  });
+
+  it("cliTimeoutSeconds_givesOnlyWhatIsLeftOfTheSharedDeadline_whenEarlierCallsUsedPartOfIt", () => {
+    assert.equal(cliTimeoutSeconds(EVIDENCE_DEADLINE_SECONDS - 7), 7);
+  });
+
+  it("cliTimeoutSeconds_roundsDownToWholeSeconds_whenWhatIsLeftIsFractional", () => {
+    assert.equal(cliTimeoutSeconds(EVIDENCE_DEADLINE_SECONDS - 7.4), 7);
+  });
+
+  it("cliTimeoutSeconds_skipsTheCall_whenLessThanASecondOfTheDeadlineIsLeft", () => {
+    assert.equal(cliTimeoutSeconds(EVIDENCE_DEADLINE_SECONDS - 0.5), null);
+  });
+
+  it("cliTimeoutSeconds_skipsTheCall_whenTheDeadlineHasPassed", () => {
+    assert.equal(cliTimeoutSeconds(EVIDENCE_DEADLINE_SECONDS + 3), null);
+  });
+
+  it("handback_stopsCallingTheCli_whenHangingWriteReviewCallsUseUpTheSharedDeadline", () => {
+    sandbox.env["KEEL_CLI"] = sandbox.stub("keel", { stdout: CLI_RESPONSE, hangSeconds: 120 });
+    const lines = ["/work/app", "/work/lib", "/work/docs"].map((repo) => KEEL_EVIDENCE_LINE.replace("/work/app", repo));
+    const report = "VERDICT: PASS\nNo findings. 3 files changed, 40 insertions(+).\n" + lines.join("\n");
+
+    const result = handback(report);
+
+    assert.equal(result.code, 0);
+    assert.equal(sandbox.stubCalls("keel").length, 2);
+    assert.ok(sandbox.fires().some((fire) => fire.rule_id === "K1" && fire.outcome === "warn" && fire.detail?.includes("write-review skipped")));
+  });
+});
+
+describe("ScratchWriteReviewEvidenceTest", () => {
+  it("handback_writesEvidence_whenTheReviewerWroteItsNotesWithTheWriteToolUnderTmp", () => {
+    handback(PASS_REPORT, { toolUses: [["Write", { file_path: "/tmp/review-notes.md", content: "notes" }]] });
+    assert.equal(sandbox.stubCalls("keel").length, 1);
+  });
+
+  it("handback_refusesEvidence_whenTheWriteToolPathClimbsOutOfTmp", () => {
+    handback(PASS_REPORT, { toolUses: [["Write", { file_path: `/tmp/../${scope}/a.py`, content: "x" }]] });
+    assert.deepEqual(sandbox.stubCalls("keel"), []);
+  });
+
+  it("handback_refusesEvidence_whenABashRedirectClimbsOutOfTmp", () => {
+    handback(PASS_REPORT, { toolUses: [["Bash", { command: `echo x > /tmp/../${scope}/a.py` }]] });
+    assert.deepEqual(sandbox.stubCalls("keel"), []);
+  });
+
+  it("handback_refusesEvidence_whenTheWriteToolTargetIsEmptyAndTmpdirIsTheWorkingDirectory", () => {
+    sandbox.env["TMPDIR"] = ".";
+    handback(PASS_REPORT, { toolUses: [["Write", { file_path: "", content: "x" }]] });
+    assert.deepEqual(sandbox.stubCalls("keel"), []);
+  });
+
+  it("handback_refusesEvidence_whenTheReviewerEditedARepoFileBesidesItsScratchNotes", () => {
+    handback(PASS_REPORT, { toolUses: [["Write", { file_path: "/tmp/review-notes.md", content: "notes" }], editIn(scope, "a.py")] });
+    assert.deepEqual(sandbox.stubCalls("keel"), []);
+  });
+});

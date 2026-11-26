@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e
 cd "$(dirname "$0")/.."
+if ! node --input-type=module -e "import.meta.resolve('typescript')" 2>/dev/null; then
+  echo "run-all.sh: typescript is not installed, so the precheck suites would skip; run npm ci in $PWD" >&2
+  exit 1
+fi
 source tests/suite-lock.sh
 export NODE_COMPILE_CACHE="${NODE_COMPILE_CACHE:-${KEEL_DATA_DIR:-$HOME/.claude}/state/keel/node-compile-cache}"
 hold_suite_lock

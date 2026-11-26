@@ -83,8 +83,9 @@ export function isCountedFire(record: JsonObject, since: string): boolean {
 
 function evalItems(evalId: string, since: string): MetricItems {
   const { records } = readJsonl(path.join(env.logsDir(), "keel-evals.jsonl"))
-  const items = records.filter((record) => record["eval_id"] === evalId && record["pass"] === true && isWithinWindow(record, since))
-  return [items.length, items]
+  const lines = records.filter((record) => record["eval_id"] === evalId && isWithinWindow(record, since))
+  const newest = lines.reduce<JsonObject | null>((latest, line) => latest === null || (line["ts"] as string) >= (latest["ts"] as string) ? line : latest, null)
+  return newest?.["pass"] === true ? [1, [newest]] : [0, []]
 }
 
 export function isWithinWindow(record: JsonObject, since: string): boolean {

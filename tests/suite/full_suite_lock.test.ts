@@ -1,11 +1,13 @@
 import assert from "node:assert/strict"
 import { spawn, spawnSync, type ChildProcess } from "node:child_process"
 import fs from "node:fs"
+import { createRequire } from "node:module"
 import os from "node:os"
 import path from "node:path"
 import { afterEach, beforeEach, describe, it } from "node:test"
 
 const CHECKOUT = path.resolve(import.meta.dirname, "..", "..")
+const TYPESCRIPT_PACKAGE = path.dirname(createRequire(import.meta.url).resolve("typescript/package.json"))
 const WAITING = "waiting for the full suite run"
 const PAST_THE_GRACE_MS = 90_000
 const TAKEOVER_DEADLINE_MS = 5_000
@@ -217,6 +219,8 @@ describe("full suite lock", { timeout: 60_000 }, () => {
     const checkout = path.join(dataDir, "checkout")
     fs.mkdirSync(path.join(checkout, "tests"), { recursive: true })
     for (const script of ["run-all.sh", "suite-lock.sh"]) fs.copyFileSync(path.join(CHECKOUT, "tests", script), path.join(checkout, "tests", script))
+    fs.mkdirSync(path.join(checkout, "node_modules"))
+    fs.symlinkSync(TYPESCRIPT_PACKAGE, path.join(checkout, "node_modules", "typescript"))
     for (const [file, body] of Object.entries(testFiles)) {
       fs.mkdirSync(path.dirname(path.join(checkout, file)), { recursive: true })
       fs.writeFileSync(path.join(checkout, file), body)

@@ -30,7 +30,9 @@ describe("eval cli", () => {
     assert.equal(completed.status, 0, completed.stderr)
     assert.deepEqual([report.eval_id, report.pass, report.written, report.model], ["K4", true, true, MODEL])
     const suite = linesOf("K4")
-    assert.deepEqual(suite, [{ ts: suite[0].ts, eval_id: "K4", rule_id: "K4", case: "suite train=2/2 holdout=2/2", pass: true, model: MODEL }])
+    const config = JSON.parse(fs.readFileSync(path.join(report.raw_dir, "config.json"), "utf8"))
+    const fingerprint = { link_mode: "full", claude_md_sha256: config.claude_md_sha256, principles_md_sha256: null, skill_md_sha256: config.skill_md_sha256 }
+    assert.deepEqual(suite, [{ ts: suite[0].ts, eval_id: "K4", rule_id: "K4", case: "suite train=2/2 holdout=2/2", pass: true, model: MODEL, ...fingerprint }])
     assert.deepEqual(linesOf("K4.case").map((line) => [line.case, line.pass]), [["a1", true], ["c1", true], ["h1", true], ["h2", true]])
   })
 
@@ -42,6 +44,20 @@ describe("eval cli", () => {
     const config = readJson(path.join(report.raw_dir as string, "config.json"))
     assert.deepEqual([config.keel_live, config.link_mode, config.claude_md_sha256], [true, "plugin", null])
     assert.equal(config.skill_md_sha256, createHash("sha256").update("# skill\n").digest("hex"))
+  })
+
+  it("evalLines_carryTheConfigFingerprintOfTheirRun_onAFullRunAndOnItsRegrade", () => {
+    box.installKeelPlugin()
+    box.seedSuite(box.askScenario(), box.editScenario())
+    const sha256 = (text: string): string => createHash("sha256").update(text).digest("hex")
+    const fingerprint = { link_mode: "plugin", claude_md_sha256: null, principles_md_sha256: sha256("# Principles\n"), skill_md_sha256: sha256("# skill\n") }
+    const [, runReport] = box.runEvalJson("K4", "--model", MODEL, ...RUN_ONCE)
+    box.write("keel/PRINCIPLES.md", "# Principles changed after the run\n")
+    const [completed] = box.runEvalJson("K4", "--regrade", runReport.raw_dir)
+    assert.equal(completed.status, 0, completed.stderr)
+    const fingerprintOf = (line: any) => ({ link_mode: line.link_mode, claude_md_sha256: line.claude_md_sha256, principles_md_sha256: line.principles_md_sha256, skill_md_sha256: line.skill_md_sha256 })
+    assert.deepEqual(linesOf("K4").map(fingerprintOf), [fingerprint, fingerprint])
+    assert.deepEqual(linesOf("K4.case").map(fingerprintOf), Array(8).fill(fingerprint))
   })
 
   it("fullRun_writesV1BaselineLine_whenKeelIsNotLinked", () => {
@@ -499,6 +515,7 @@ describe("eval cli", () => {
     assert.deepEqual(suite, [{
       ts: suite[0].ts, eval_id: "K4", rule_id: "K4", case: "suite train=2/2 holdout=2/2", pass: true,
       model: MODEL, regraded_from: "keel-eval-K4-old", grader: graderCommit(CHECKOUT),
+      link_mode: null, claude_md_sha256: null, principles_md_sha256: null, skill_md_sha256: null,
     }])
     assert.deepEqual(linesOf("K4.case").map((line) => [line.case, line.regraded_from]), ["a1", "c1", "h1", "h2"].map((name) => [name, "keel-eval-K4-old"]))
   })

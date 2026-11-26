@@ -71,6 +71,24 @@ describe("CliModesTest", () => {
     assert.ok(!note.includes("working tree clean"), note);
   });
 
+  it("help_printsUsageAndLeavesTheNoteAlone_whenANoteIsRecorded", () => {
+    cli(["next: start from the repro test"]);
+    const result = cli(["--help"]);
+    assert.equal(result.code, 0);
+    assert.ok(result.stdout.includes("--status"), result.stdout);
+    assert.ok(read(handoffFile()).includes("## Resume point\nnext: start from the repro test\n"));
+  });
+
+  it("help_writesNoNote_whenNoneIsRecorded", () => {
+    assert.equal(cli(["-h"]).code, 0);
+    assert.equal(existsSync(handoffFile()), false);
+  });
+
+  it("note_logsNoFire_becauseTheCHandoffRuleIsRetired", () => {
+    cli(["next: x"]);
+    assert.deepEqual(sandbox.fires(), []);
+  });
+
   it("cli_failsWithUsage_whenOutsideRepo", () => {
     const outside = join(sandbox.root, "plain");
     mkdirSync(outside);

@@ -79,6 +79,15 @@ describe('MergeScenarioTest', () => {
     assert.ok(readText(sandbox.ghLog).includes('pr view 7 --json statusCheckRollup,baseRefName'));
   });
 
+  test('merge_recordsTheJudgedRangeBase_onThePassLine', (t) => {
+    const sandbox = new Sandbox(t);
+    const [repo, head] = reviewedFeature(sandbox);
+    const base = repo.git('merge-base', 'origin/main', head).trim();
+    pullRequest(sandbox, head);
+    merge(sandbox, repo, head);
+    assert.equal(sandbox.fires('risk', 'pass').at(-1).base, base);
+  });
+
   test('merge_deniesK1_whenApprovalMissing', (t) => {
     const sandbox = new Sandbox(t);
     const [repo, head] = reviewedFeature(sandbox, LOGIC_WITH_TEST, false);

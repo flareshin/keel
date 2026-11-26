@@ -15,7 +15,7 @@ const PRECHECK_SUMMARY_PREFIX = 'totals ';
 
 export function typecheck(repo: string): Typecheck {
   if (!existsSync(join(repo, 'tsconfig.json'))) return { ok: true };
-  const completed = runCaptured([process.execPath, tscScript(repo), '--noEmit', '-p', repo], { cwd: repo });
+  const completed = runCaptured([...tscCommand(repo), '--noEmit', '-p', repo], { cwd: repo });
   if (completed.returncode === 0) return { ok: true };
   return { ok: false, head: nonEmptyLines(`${completed.stdout}${completed.stderr}`).slice(0, TSC_HEAD_LINES).join('\n') };
 }
@@ -30,9 +30,9 @@ export function ruleCheckOutputLines(completed: Completed): string[] {
   return [...scanned, ...exit].map((line) => `rule-checks ${line}`);
 }
 
-function tscScript(repo: string): string {
-  const repoTsc = join(repo, 'node_modules', TSC_SCRIPT);
-  return existsSync(repoTsc) ? repoTsc : createRequire(join(KEEL_ROOT, 'package.json')).resolve(TSC_SCRIPT);
+function tscCommand(repo: string): string[] {
+  const repoTsc = join(repo, 'node_modules', '.bin', 'tsc');
+  return existsSync(repoTsc) ? [repoTsc] : [process.execPath, createRequire(join(KEEL_ROOT, 'package.json')).resolve(TSC_SCRIPT)];
 }
 
 function nonEmptyLines(text: string): string[] {

@@ -138,7 +138,8 @@ export function buildFiles(codexHome: string, overlay: string, data: string, age
   const agents = GENERATED_HEADER +
     [principles, owner, runtime, "## Runtime paths", locations, `- keel CLI: \`${childPath(keelRoot, "bin/keel")}\`\n`].join("\n");
   paths.push(["KEEL_CODEX_HOME", codexHome], ["KEEL_AGENTS_HOME", agentsHome]);
-  const assignments = [["NODE_COMPILE_CACHE", childPath(data, COMPILE_CACHE)], ...paths].map(([key, value]) => `${key}=${shlexQuote(value)}`).join(" ");
+  const environment: Array<[string, string]> = [["NODE_COMPILE_CACHE", childPath(data, COMPILE_CACHE)], ...paths];
+  const assignments = environment.map(([key, value]) => `${key}=${shlexQuote(value)}`).join(" ");
   const command = `${assignments} ${shlexQuote(hookRuntime())} ${shlexQuote(childPath(keelRoot, HOOK_SCRIPT))}`;
   const hooks: JsonValue = {
     hooks: {

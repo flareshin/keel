@@ -114,9 +114,9 @@ type GitRunner = (command: readonly string[], timeoutSeconds: number) => Complet
 export function linkedWorktreeProblems(keelRoot: string, runGit: GitRunner = run): string[] {
   let output: string;
   try {
-    const result = runGit(["git", "-C", keelRoot, "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"], GIT_TIMEOUT_SECONDS);
-    if (result.returncode !== 0) return [];
-    output = result.stdout;
+    const revParse = runGit(["git", "-C", keelRoot, "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"], GIT_TIMEOUT_SECONDS);
+    if (revParse.returncode !== 0) return [];
+    output = revParse.stdout;
   } catch (error) {
     if (error instanceof OSError) return [];
     if (error instanceof TimeoutExpired) return [`linked worktree: git timed out checking whether ${keelRoot} is a linked worktree of keel; retry, or pass --allow-worktree`];

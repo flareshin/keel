@@ -123,8 +123,7 @@ describe("installation", () => {
     const LINKED_WORKTREE_PROBLEM = /linked worktree.*--allow-worktree/;
 
     function git(cwd: string, ...args: string[]): void {
-      const isolated = { ...env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
-      const result = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8", env: isolated });
+      const result = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8", env });
       assert.equal(result.status, 0, result.stderr);
     }
 

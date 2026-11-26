@@ -22,7 +22,8 @@ describe('GhApiWriteParseTest', () => {
       'gh api -X PUT /repos/ACME/App/contents/a.py', "gh api -X PUT 'repos/acme/app/contents/a.py?ref=x#y'",
       'gh api --method=PUT https://api.github.com/repos/acme/app/contents/a.py',
       'gh api -X PUT https://ghe.example.invalid/api/v3/repos/acme/app/contents/a.py',
-      'gh api -X PATCH repos/acme/app/ -f default_branch=x']) {
+      'gh api -X PATCH repos/acme/app/ -f default_branch=x',
+      'gh api -X POST repos/acme/app/issues/7/comments/x']) {
       assert.deepEqual(onlyWrite(command).target, { kind: 'named', key: 'acme/app' }, command);
     }
   });
@@ -43,6 +44,7 @@ describe('GhApiWriteParseTest', () => {
       "gh api graphql -f query='mutation { ...F } fragment F on Mutation { addComment(input: {}) { clientMutationId } }'",
       "gh api graphql -f query='mutation { addComment(input: {subjectId: \"\"\"A\\\"\"\"B\"\"\"}) { clientMutationId } createCommitOnBranch(input: {}) { clientMutationId } addReaction(input: {content: \"\"\"C\"\"\"}) { clientMutationId } }'",
       "gh api graphql -f query='mutation query { createCommitOnBranch(input: {}) { clientMutationId } }'",
+      "gh api graphql -f query='M mutation { createCommitOnBranch(input: {}) { clientMutationId } }'",
       "gh api graphql -f query='mutation { addComment(input: {body: \"x}) { clientMutationId } }'",
       "gh api graphql -f query='mutation { addComment(input: {}) { clientMutationId } #\r createCommitOnBranch(input: {}) { clientMutationId }\n}'",
       "gh api https://ghe.example.invalid/api/graphql -f query='mutation { createCommitOnBranch(input: {}) { clientMutationId } }'",
@@ -73,6 +75,7 @@ describe('GhApiWriteParseTest', () => {
       "gh api graphql -f query='{ viewer { login } }'",
       "gh api graphql -f query='mutation { addComment(input: {}) { clientMutationId } addReaction(input: {}) { clientMutationId } }'",
       "gh api graphql -f query='mutation { a: addLabelsToLabelable(input: {}) { clientMutationId } }'",
+      "gh api graphql -F query='mutation { addComment(input: {}) { clientMutationId } }'", 'gh api graphql -f query=@x',
       "gh api graphql -F owner=@vars.txt -f query='mutation { addComment(input: {}) { clientMutationId } }'",
       "gh api graphql -H 'query=mutation { createCommitOnBranch }' -f query='mutation { addComment(input: {}) { clientMutationId } }'"]) {
       assert.deepEqual(callActions(command, '/work'), [], command);

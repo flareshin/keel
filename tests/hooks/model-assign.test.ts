@@ -232,6 +232,27 @@ describe("AgentFileLocationTest", () => {
     assert.equal(dispatchFrom(repo, { subagent_type: "developer", effort: "high" }).stdout, "");
   });
 
+  it("dispatch_keepsANestedProjectAgentPin_whenCwdIsBelowItsDirectory", () => {
+    const repo = sandbox.makeRepo("acme", "app");
+    sandbox.write(join(repo, "packages", "web", ".claude", "agents", "developer.md"), OPUS_PIN);
+    sandbox.write(join(repo, "packages", "web", "src", "keep.txt"), "");
+    assert.equal(dispatchFrom(join(repo, "packages", "web", "src"), { subagent_type: "developer", effort: "high" }).stdout, "");
+  });
+
+  it("dispatch_prefersTheClosestProjectAgentFile_whenTheRepositoryRootHasTheSameName", () => {
+    const repo = sandbox.makeRepo("acme", "app");
+    sandbox.write(join(repo, ".claude", "agents", "developer.md"), "---\nname: developer\nmodel: haiku\n---\nBody\n");
+    sandbox.write(join(repo, "packages", "web", ".claude", "agents", "developer.md"), OPUS_PIN);
+    assert.equal(dispatchFrom(join(repo, "packages", "web"), { subagent_type: "developer", effort: "high" }).stdout, "");
+  });
+
+  it("dispatch_ignoresAProjectAgentFileBesideTheCwd_whenItIsNotOnThePathToTheRoot", () => {
+    const repo = sandbox.makeRepo("acme", "app");
+    sandbox.write(join(repo, "packages", "api", ".claude", "agents", "developer.md"), OPUS_PIN);
+    sandbox.write(join(repo, "packages", "web", "keep.txt"), "");
+    assert.equal(updated(dispatchFrom(join(repo, "packages", "web"), { subagent_type: "developer", effort: "high" }))["model"], "sonnet");
+  });
+
   it("dispatch_keepsAnotherPluginsAgentPin_whenItIsInstalled", () => {
     const installPath = join(sandbox.root, "cache", "acme", "1.0.0");
     installPlugin("acme@market", installPath);

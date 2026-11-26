@@ -406,7 +406,7 @@ function saveConfig(rawDir: string, plan: Plan, results: RunResult[]): void {
     eval_id: plan.evalId, summary_eval_id: summaryEvalId(plan), keel_live: plan.keelLive, config_dir: plan.configDir, keel_home: env.keelHome(),
     model_requested: plan.model, model_observed: firstInit["model"] ?? null, cli_version: firstInit["claude_code_version"] ?? null,
     repeat: plan.repeat, cases: plan.cases.map((planned) => planned.id), command: plan.command, timeout_seconds: plan.timeoutSeconds,
-    ...configFingerprint(plan.configDir, plan.skill),
+    ...configFingerprint(plan.configDir, env.keelHome(), plan.skill),
   }
   writeText(path.join(rawDir, "config.json"), stringifySorted(config, JSON_INDENT) + "\n")
   writeText(path.join(rawDir, "skill-diagnostic.json"), stringifySorted(skillDiagnostic(plan, results), JSON_INDENT) + "\n")

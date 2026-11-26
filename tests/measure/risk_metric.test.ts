@@ -24,6 +24,8 @@ interface PassFields {
   session?: string
   outcome?: string
   kind?: string
+  files?: number
+  lines?: number
 }
 
 describe("risk runner", () => {
@@ -45,6 +47,8 @@ describe("risk runner", () => {
     if (fields.risk !== null) record["risk"] = fields.risk ?? "light"
     if (fields.rootRunId !== null) record["root_run_id"] = fields.rootRunId ?? "rv-a"
     if (fields.kind !== undefined) record["kind"] = fields.kind
+    if (fields.files !== undefined) record["files"] = fields.files
+    if (fields.lines !== undefined) record["lines"] = fields.lines
     box.appendLog("keel-fires.jsonl", record)
   }
 
@@ -142,6 +146,16 @@ describe("risk runner", () => {
     assert.deepEqual([result.count, result.items, result.status], [0, [], "GRACE"])
   })
 
+  it("reviewToApproval_takesTheMedianOfTheUnroundedWaits_thenRoundsItToATenthOfAMinute", () => {
+    givenPass({ rootRunId: "rv-a", head: "a".repeat(40) })
+    givenPass({ rootRunId: "rv-b", head: "b".repeat(40) })
+    givenReview("review-a", { createdAt: daysAgo(3, "08:00:00Z") })
+    givenReview("review-b", { createdAt: daysAgo(3, "08:00:00Z") })
+    givenApproval("approval-a", "rv-a", daysAgo(3, "08:01:10Z"), "review-a")
+    givenApproval("approval-b", "rv-b", daysAgo(3, "08:01:20Z"), "review-b")
+    assert.deepEqual(itemFor(runMetric(), "light")["review_to_approval"], { approved_ships: 2, no_approval_evidence: 0, median_minutes: 1.3 })
+  })
+
   it("reviewToApproval_usesTheFirstApprovalOfTheRun_andTheMedianOfTheApprovedShips", () => {
     givenPass({ rootRunId: "rv-a", head: "a".repeat(40) })
     givenPass({ rootRunId: "rv-b", head: "b".repeat(40) })
@@ -176,6 +190,36 @@ describe("risk runner", () => {
     const result = runMetric()
     assert.deepEqual([itemFor(result, "light")["rework"]["shipped_lines"], itemFor(result, "light")["rework"]["reworked_lines"]], [4, 1])
     assert.deepEqual(itemFor(result, "standard")["rework"]["not_computable"], { "no earlier ship bounds a fast-forwarded head": 1 })
+  })
+
+  const unshippedThenShipped = (): { repo: string; start: string; head: string } => {
+    const { repo, start } = newRepo()
+    commitAt(repo, daysAgo(33), "Unshipped work", ["never", "pushed", "alone"], "unshipped.ts")
+    const head = commitAt(repo, daysAgo(31), "Add the four lines", SHIPPED)
+    laterEdits(repo)
+    publish(repo)
+    givenPass({ head: start, ts: daysAgo(35, "10:00:00Z"), risk: "standard" })
+    return { repo, start, head }
+  }
+
+  it("rework_ofAFastForwardedShip_startsAtTheNearestFirstParentBaseMatchingThePassLinesDiffStat_notAtTheEarlierShip", () => {
+    const { head } = unshippedThenShipped()
+    givenPass({ head, ts: OLD_SHIP_TS, files: 1, lines: 4 })
+    const rework = itemFor(runMetric(), "light")["rework"]
+    assert.deepEqual([rework.decided_ships, rework.shipped_lines, rework.reworked_lines], [1, 4, 1])
+  })
+
+  it("rework_ofAFastForwardedShip_isNotComputable_whenNoBaseUpToTheEarlierShipMatchesThePassLinesDiffStat", () => {
+    const { head } = unshippedThenShipped()
+    givenPass({ head, ts: OLD_SHIP_TS, files: 9, lines: 99 })
+    assert.deepEqual(itemFor(runMetric(), "light")["rework"]["not_computable"], { "no base on the first-parent chain matches the pass line's diff stat": 1 })
+  })
+
+  it("rework_ofAFastForwardedShip_reachesTheEarlierShip_whenThePassLineCoversEveryCommitSinceIt", () => {
+    const { head } = unshippedThenShipped()
+    givenPass({ head, ts: OLD_SHIP_TS, files: 2, lines: 7 })
+    const rework = itemFor(runMetric(), "light")["rework"]
+    assert.deepEqual([rework.shipped_lines, rework.reworked_lines], [7, 1])
   })
 
   it("rework_followsARenameWithinFourteenDays_soMovedLinesAreNotReworked", () => {
@@ -261,7 +305,65 @@ describe("risk runner", () => {
     box.write(path.relative(box.root, cacheFile()), "{not json")
     const rework = itemFor(runMetric(), "light")["rework"]
     assert.deepEqual([rework.shipped_lines, rework.reworked_lines], [4, 1])
-    assert.equal(Object.keys(JSON.parse(fs.readFileSync(cacheFile(), "utf8"))).length, 1)
+    assert.equal(Object.keys(JSON.parse(fs.readFileSync(cacheFile(), "utf8")).ships).length, 1)
+  })
+
+  it("rework_cachedByAnEarlierCacheVersion_isComputedAgain_andCachedAtTheCurrentVersion", () => {
+    const { repo } = newRepo()
+    const head = mergedShip(repo)
+    laterEdits(repo)
+    publish(repo)
+    givenPass({ head, ts: OLD_SHIP_TS })
+    box.write(path.relative(box.root, cacheFile()), JSON.stringify({ [`${REPO} ${head}`]: { shipped: 20408, reworked: 8250 } }))
+    const rework = itemFor(runMetric(), "light")["rework"]
+    assert.deepEqual([rework.shipped_lines, rework.reworked_lines], [4, 1])
+    assert.deepEqual(JSON.parse(fs.readFileSync(cacheFile(), "utf8")), { version: 2, ships: { [`${REPO} ${head}`]: { shipped: 4, reworked: 1 } } })
+  })
+
+  it("rework_ofEachDecidedShip_isCachedAsSoonAsItIsDecided_soARunStoppedLaterKeepsIt", () => {
+    const { repo } = newRepo()
+    const first = mergedShip(repo)
+    gitAt(repo, daysAgo(22), "checkout", "-q", "-b", "second")
+    const second = commitAt(repo, daysAgo(22), "Second feature", ["two"], "two.ts")
+    gitAt(repo, daysAgo(21), "checkout", "-q", "main")
+    gitAt(repo, daysAgo(21), "merge", "-q", "--no-ff", "-m", "Merge the second feature", "second")
+    publish(repo)
+    givenPass({ head: first, ts: OLD_SHIP_TS })
+    givenPass({ head: second, ts: daysAgo(21, "10:00:00Z"), risk: "standard" })
+    const realGit = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim()
+    const shim = box.write("shim/git", `#!/bin/sh\ncase " $* " in *" blame "*" two.ts "*) kill -9 $PPID ;; esac\nexec ${realGit} "$@"\n`, true)
+    box.env["PATH"] = `${path.dirname(shim)}:${box.env["PATH"]}`
+    const stopped = box.runMeasure("metrics/risk", ["--since", "2000-01-01"])
+    assert.notEqual(stopped.status, 0)
+    assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(cacheFile(), "utf8")).ships), [`${REPO} ${first}`])
+  })
+
+  it("perCheckoutGitFacts_andTheCheckoutHoldingAHead_areReadOncePerRun_notOncePerShipOrDefect", () => {
+    const { repo, bad } = shippedDefectRepo()
+    const first = box.git(repo, "rev-parse", "HEAD~1").trim()
+    givenPass({ head: bad, ts: daysAgo(31, "10:00:00Z") })
+    givenPass({ head: first, ts: daysAgo(20, "10:00:00Z"), risk: "standard" })
+    givenDefects("reverts", [defect("1".repeat(40), [bad]), defect("2".repeat(40), [bad])])
+    const realGit = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim()
+    const calls = path.join(box.root, "git-calls.txt")
+    const shim = box.write("shim/git", `#!/bin/sh\nprintf '%s\\n' "$*" >> '${calls}'\nexec ${realGit} "$@"\n`, true)
+    box.env["PATH"] = `${path.dirname(shim)}:${box.env["PATH"]}`
+    runAttribution()
+    const logged = fs.readFileSync(calls, "utf8").split("\n")
+    assert.equal(logged.filter((line) => line.endsWith("rev-parse --verify --quiet refs/remotes/origin/HEAD")).length, 1)
+    assert.equal(logged.filter((line) => line.endsWith(`cat-file -e ${bad}^{commit}`)).length, 1)
+  })
+
+  it("unreadableReviewOrApprovalEvidence_isSkippedAndCounted_notACrash", () => {
+    givenPass({ rootRunId: "rv-a" })
+    givenReview("review-a", { createdAt: daysAgo(3, "08:00:00Z") })
+    givenApproval("approval-a", "rv-a", daysAgo(3, "08:15:00Z"), "review-a")
+    box.write(`data/state/keel/evidence/review/${REPO.replace("/", "__")}/broken.json`, "{not json")
+    box.write("data/state/keel/evidence/approval/broken.json", "{not json")
+    const [completed, result] = box.runJson("metrics/risk", ["--since", "2000-01-01"])
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.equal(result.unreadable_evidence, 2)
+    assert.deepEqual(itemFor(result, "light")["review_to_approval"], { approved_ships: 1, no_approval_evidence: 0, median_minutes: 15 })
   })
 
   it("reviewToApproval_matchesTheApprovalHeadsRepo_ignoringCase", () => {

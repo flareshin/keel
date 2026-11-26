@@ -78,7 +78,13 @@ const REPOINTING_OPTIONS: ReadonlySet<string> = new Set(["--git-dir", "--work-tr
 const REPOINTING_VARIABLES = ["GIT_DIR", "GIT_WORK_TREE"];
 const CONFIG_OVERRIDE_OPTIONS: ReadonlySet<string> = new Set(["-c", "--config-env"]);
 const GH_DEFAULT_VIEW_OPTIONS: ReadonlySet<string> = new Set(["-v", "--view"]);
-const PUSH_ROUTING_SECTIONS: ReadonlySet<string> = new Set(["remote", "branch", "url", "push", "include", "includeif"]);
+const PUSH_ROUTING_SECTIONS: ReadonlySet<string> =
+  new Set(["remote", "branch", "url", "push", "include", "includeif", "submodule"]);
+const RECURSE_SUBMODULES_OPTION = "--recurse-submodules";
+const NO_RECURSE_SUBMODULES_OPTION = "--no-recurse-submodules";
+const RECURSION_LEAVING_SUBMODULES_UNPUSHED: ReadonlySet<string> = new Set(["check", "no", "false", "off", "0"]);
+const NO_RECURSION = "no";
+const GIT_CONFIG_KEY_MISSING = 1;
 const CONFIG_VARIABLE_PREFIX = "GIT_CONFIG";
 const REMOTE_EDITS: ReadonlySet<string> = new Set(["set-url", "add", "rename"]);
 const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
@@ -116,6 +122,7 @@ export interface Push {
   tagsOnly: boolean;
   wholeRepo: boolean;
   dryRun: boolean;
+  recurseSubmodules: string | null;
 }
 
 export interface Merge {
@@ -571,7 +578,18 @@ export function parsePush(words: string[], args: string[], workdir: string): Pus
     tagsOnly: options.longOptions.includes("--tags") && given.length === 0,
     wholeRepo,
     dryRun: options.longOptions.includes("--dry-run") || options.shortFlags.includes("n"),
+    recurseSubmodules: lastRecurseSubmodulesOption(options.longOptions),
   };
+}
+
+function lastRecurseSubmodulesOption(longOptions: readonly string[]): string | null {
+  let recursion: string | null = null;
+  for (const option of longOptions) {
+    const [name, , value] = partition(option, "=");
+    if (option === NO_RECURSE_SUBMODULES_OPTION) recursion = NO_RECURSION;
+    else if (name === RECURSE_SUBMODULES_OPTION) recursion = value;
+  }
+  return recursion;
 }
 
 export function parseMerge(words: string[], workdir: string, repoEnv: string | null): Merge {
@@ -727,6 +745,18 @@ function warnRegistryAbsentOnce(report: Report): void {
 }
 
 function judgePush(push: Push, repoRoot: string, repoKey: string | null, row: GatedRepo | null, report: Report, hint: string): void {
+  const gatedBySubmodulePush = push.dryRun ? [] : gatedReposASubmodulePushReaches(push, repoRoot, repoKey, row);
+  if (gatedBySubmodulePush.length > 0) {
+    report.deny(
+      [{
+        ruleId: F_IRREVERSIBLE,
+        text: "git push --recurse-submodules=on-demand/only pushes submodule commits the gate does not judge; "
+          + "push each submodule on its own first, then this repo with --recurse-submodules=check",
+      }],
+      `push into submodules of ${gatedBySubmodulePush.join(", ")} denied`, hint, { repo: gatedBySubmodulePush[0]! },
+    );
+    return;
+  }
   if (!registry.isGated(row) || push.deletesOnly || push.tagsOnly || push.dryRun) {
     report.passed(repoKey, { head: gitcmd.commitSha(repoRoot, pushSources(push)[0] ?? HEAD) });
     return;
@@ -756,6 +786,32 @@ function judgePush(push: Push, repoRoot: string, repoKey: string | null, row: Ga
     const outgoing = outgoingOf(repoRoot, gatedKey, gatedRow, head, baseRef, registry.pushNeedsApproval(gatedRow), false);
     report.decide(verify.judge(outgoing), `push of ${spec.source} in ${gatedKey} denied`, hint, gatedKey, head);
   }
+}
+
+function gatedReposASubmodulePushReaches(push: Push, repoRoot: string, repoKey: string | null, row: GatedRepo | null): string[] {
+  if (!pushRecursesIntoSubmodules(push, repoRoot)) return [];
+  const submoduleKeys = gitcmd.submoduleRoots(repoRoot).map((root) => registry.originKey(root));
+  if (submoduleKeys.length === 0) return [];
+  const gatedSubmodules = submoduleKeys.filter((key): key is string => key !== null && registry.isGated(registry.lookup(key)));
+  return registry.isGated(row) ? [repoKey!, ...gatedSubmodules] : gatedSubmodules;
+}
+
+function pushRecursesIntoSubmodules(push: Push, repoRoot: string): boolean {
+  if (push.recurseSubmodules !== null) return recursesIntoSubmodules(push.recurseSubmodules);
+  const stored = storedConfig(repoRoot, ["push.recurseSubmodules"]);
+  const submoduleRecurse = storedConfig(repoRoot, ["--type=bool", "submodule.recurse"]) === "true";
+  return (stored !== null && recursesIntoSubmodules(stored)) || submoduleRecurse;
+}
+
+function recursesIntoSubmodules(recursion: string): boolean {
+  return !RECURSION_LEAVING_SUBMODULES_UNPUSHED.has(recursion.toLowerCase());
+}
+
+function storedConfig(repoRoot: string, keyArgs: string[]): string | null {
+  const read = gitcmd.runUnchecked(repoRoot, ["config", "--get", ...keyArgs]);
+  if (read.returncode === GIT_CONFIG_KEY_MISSING) return null;
+  if (read.returncode !== 0) throw new GateError(`git config ${keyArgs.join(" ")}: ${read.stderr.toString().trim()}`);
+  return read.stdout.toString().trim();
 }
 
 function pushesTag(repoRoot: string, spec: Refspec): boolean {

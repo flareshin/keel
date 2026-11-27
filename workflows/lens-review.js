@@ -65,6 +65,7 @@ const SPACE_CHARS = String.raw`\t-\r\x1c-\x20\x85\xa0\u1680\u2000-\u200a\u2028\u
 const EVIDENCE_LINE = new RegExp(`^[${SPACE_CHARS}]*KEEL-EVIDENCE:`)
 const LINE_BREAKS = /\s*[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]+\s*/g
 const JOINED_LINES = ' / '
+const INVISIBLE_CHARACTERS = /(?![ \n])[\s\p{Cc}\p{Cf}]/gu
 const BLANK_TO_EVIDENCE_WRITER = /^[\s\x1c-\x1f\x85]*$/
 const PRECHECK_HEADER = /^precheck tree ([0-9a-f]{40})(?: ·|$)/
 const PRECHECK_BLOBS = /^blobs\s+(.+)$/m
@@ -627,7 +628,11 @@ function describeLensNotes(lensNotes) {
 }
 
 function toOneLine(text) {
-  return String(text).replace(LINE_BREAKS, JOINED_LINES)
+  return String(text).replace(LINE_BREAKS, JOINED_LINES).replace(INVISIBLE_CHARACTERS, toCodePoint)
+}
+
+function toCodePoint(character) {
+  return `U+${character.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`
 }
 
 async function handBackWithOneRetry(report, evidenceLines) {

@@ -1354,3 +1354,11 @@ test('noTestReasonBlankSet_matchesTheEvidenceWriter_forEveryCharacter', () => {
   }
   assert.deepEqual(disagreeing, [])
 })
+
+test('lensReview_writesInvisibleCharactersAsCodePoints_soTheReporterCanCopyTheReportLineForLine', async () => {
+  const audits = { contract: { findings: [], notes: 'SPACE_CHARS holds 　,   and ﻿\tafter a tab' } }
+  const rt = createRuntime({ respond: responder({ audits }) })
+  const result = await rt.run('lens-review', { auditMode: 'split', diffs: [ROOT_DIFF], lenses: CALLER_LENSES })
+  assert.equal(result.verdict, 'PASS')
+  assert.match(result.report, /\n- contract: SPACE_CHARS holds U\+3000, U\+200A and U\+FEFFU\+0009after a tab\n/)
+})

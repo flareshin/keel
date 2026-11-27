@@ -33,6 +33,7 @@ const PARTIAL_SUFFIX = "-partial"
 const CASE_SUFFIX = ".case"
 const SKILL_ENFORCEMENT = "skill:"
 const RAW_DIR_PREFIX = "keel-eval-"
+const RAW_DIR_STAMP = /-(\d{4})(\d\d)(\d\d)T(\d\d)(\d\d)(\d\d)Z-[0-9a-f]{4}$/
 const SUITE_TOOLS_FILE = "tools.json"
 const SUITE_MAX_TURNS_CEILING = 50
 const SUITE_TIMEOUT_SECONDS_CEILING = 3600
@@ -121,10 +122,11 @@ function main(argv: string[]): number {
     printJson(planReport(plan))
     return EXIT_OK
   }
-  const rawDir = createRawDir(plan)
+  const started = new Date()
+  const rawDir = createRawDir(plan, started)
   const results = runPlan(plan, rawDir)
-  saveConfig(rawDir, plan, results)
-  return gradeAndWrite(plan, rawDir, results, savedFingerprint(rawDir), {})
+  saveConfig(rawDir, plan, results, started)
+  return gradeAndWrite(plan, rawDir, results, { run_ts: utcSeconds(started), ...savedFingerprint(rawDir) }, {})
 }
 
 function parseEvalArgs(argv: string[]): EvalArgs {
@@ -238,11 +240,11 @@ function planReport(plan: Plan): JsonObject {
   }
 }
 
-function createRawDir(plan: Plan): string {
-  const stamp = compactUtcSeconds(new Date())
+function createRawDir(plan: Plan, started: Date): string {
+  const stamp = compactUtcSeconds(started)
   const rawDir = path.join(env.logsDir(), `${RAW_DIR_PREFIX}${plan.evalId}-${stamp}-${randomBytes(2).toString("hex")}`)
   fs.mkdirSync(rawDir, { recursive: true })
-  saveConfig(rawDir, plan, [])
+  saveConfig(rawDir, plan, [], started)
   return rawDir
 }
 
@@ -278,7 +280,7 @@ function regrade(evalId: string, rawDir: string): number {
   if (leftoverUnknown.length > 0) {
     process.stderr.write(`eval: ${rawDir} recorded no leftover project dir check for ${leftoverUnknown.join(", ")}; graded without it\n`)
   }
-  const provenance = { regraded_from: path.basename(path.normalize(rawDir)), grader, ...savedFingerprint(rawDir) }
+  const provenance = { regraded_from: rawDirName(rawDir), grader, run_ts: savedRunTs(rawDir), ...savedFingerprint(rawDir) }
   return gradeAndWrite(plan, rawDir, results, provenance, { leftover_unknown: leftoverUnknown })
 }
 
@@ -400,13 +402,13 @@ function saveRun(rawDir: string, result: RunResult): void {
   })
 }
 
-function saveConfig(rawDir: string, plan: Plan, results: RunResult[]): void {
+function saveConfig(rawDir: string, plan: Plan, results: RunResult[], started: Date): void {
   const firstInit = results.map((result) => result.record.facts.stream.init).find((init) => init !== null) ?? {}
   const config: JsonObject = {
     eval_id: plan.evalId, summary_eval_id: summaryEvalId(plan), keel_live: plan.keelLive, config_dir: plan.configDir, keel_home: env.keelHome(),
     model_requested: plan.model, model_observed: firstInit["model"] ?? null, cli_version: firstInit["claude_code_version"] ?? null,
     repeat: plan.repeat, cases: plan.cases.map((planned) => planned.id), command: plan.command, timeout_seconds: plan.timeoutSeconds,
-    ...configFingerprint(plan.configDir, env.keelHome(), plan.skill),
+    started_ts: utcSeconds(started), ...configFingerprint(plan.configDir, env.keelHome(), plan.skill),
   }
   writeText(path.join(rawDir, "config.json"), stringifySorted(config, JSON_INDENT) + "\n")
   writeText(path.join(rawDir, "skill-diagnostic.json"), stringifySorted(skillDiagnostic(plan, results), JSON_INDENT) + "\n")
@@ -415,6 +417,19 @@ function saveConfig(rawDir: string, plan: Plan, results: RunResult[]): void {
 function savedFingerprint(rawDir: string): Provenance {
   const config = readJsonObject(path.join(rawDir, "config.json"))
   return Object.fromEntries(CONFIG_FINGERPRINT_KEYS.map((key) => [key, config[key] ?? null]))
+}
+
+function savedRunTs(rawDir: string): string | null {
+  const startedTs = readJsonObject(path.join(rawDir, "config.json"))["started_ts"]
+  if (typeof startedTs === "string") return startedTs
+  const stamp = RAW_DIR_STAMP.exec(rawDirName(rawDir))
+  if (stamp === null) return null
+  const [year, month, day, hour, minute, second] = stamp.slice(1)
+  return `${year}-${month}-${day}T${hour}:${minute}:${second}Z`
+}
+
+function rawDirName(rawDir: string): string {
+  return path.basename(path.normalize(rawDir))
 }
 
 function skillDiagnostic(plan: Plan, results: RunResult[]): JsonObject {

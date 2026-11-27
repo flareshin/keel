@@ -1,0 +1,3 @@
+### Fixed
+
+- A passing `measure/evals/eval --regrade` line kept `evals:<id>` passing with no fresh run, because the line carried the regrade's time. Every `keel-evals.jsonl` line now carries `run_ts`, the start of the run it grades (`started_ts` in the raw dir's `config.json`, else the stamp in the raw dir name), and a passing regrade line counts only when its `run_ts` is on or after `--since` and no line of that `eval_id` has a later run time (`run_ts`, else `ts`). A regrade of a run recorded in `keel-evals.jsonl` before this change never counts: that run's own lines carry its end time as `ts`, which is later than the start the regrade reads from the raw dir name.

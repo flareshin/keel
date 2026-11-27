@@ -516,6 +516,15 @@ describe('IntegrationBasePushTest', () => {
     });
   }
 
+  test('gitItself_sendsAColonLessNamedPushToTheUpstream_whenPushDefaultIsUpstream', (t) => {
+    const [, repo] = sandboxAndFeature(t);
+    repo.git('branch', '-q', '--set-upstream-to=origin/main');
+    repo.git('config', 'push.default', 'upstream');
+    repo.git('push', '-q', 'origin', 'feature');
+    const remoteHeads = repo.git('ls-remote', '--heads', 'origin');
+    assert.match(remoteHeads, new RegExp(`^${repo.head()}\\trefs/heads/main$`, 'm'), remoteHeads);
+  });
+
   for (const pushDefault of [null, 'simple', 'current']) {
     test(`barePush_passesWithoutAnApproval_whenPushDefaultSendsTheBranchToItsOwnName: ${pushDefault ?? 'unset'}`, (t) => {
       const [sandbox, repo] = sandboxAndFeature(t);

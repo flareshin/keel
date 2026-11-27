@@ -70,6 +70,30 @@ describe('PushScenarioTest', () => {
     assert.equal(line.base, repo.git('merge-base', 'origin/main', 'HEAD').trim());
   });
 
+  test('push_deniesAsWholeRepo_whenTheRemoteIsConfiguredAsAMirror', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t);
+    sandbox.fullBundle(repo);
+    repo.git('config', 'remote.origin.mirror', 'true');
+    assertDenied(sandbox.push(repo, 'git push origin'), 'F-irreversible', 'cannot be attributed to one branch');
+  });
+
+  test('barePush_deniesAsWholeRepo_whenThePushRemoteItResolvesIsAMirror', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t);
+    sandbox.fullBundle(repo);
+    repo.git('remote', 'add', 'backup', repo.git('remote', 'get-url', 'origin').trim());
+    repo.git('config', 'remote.pushDefault', 'backup');
+    repo.git('config', 'remote.backup.mirror', 'true');
+    assertDenied(sandbox.push(repo, 'git push'), 'F-irreversible', 'cannot be attributed to one branch');
+  });
+
+  test('push_failsClosed_whenTheMirrorSettingOfTheRemoteCannotBeRead', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t);
+    sandbox.fullBundle(repo);
+    const url = repo.git('remote', 'get-url', 'origin').trim();
+    repo.git('config', `remote.${url}.mirror`, 'maybe');
+    assertDenied(sandbox.push(repo, `git push ${url} feature`), 'K1', `cannot read whether remote ${url} is a mirror`);
+  });
+
   test('push_deniesK3_whenTestsEvidenceMissing', (t) => {
     const [sandbox, repo] = sandboxAndFeature(t);
     sandbox.review(repo);

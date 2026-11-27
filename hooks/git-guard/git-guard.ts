@@ -25,9 +25,12 @@ import type { CodeChange } from "./notebook.ts";
 import { currentBranch, findRepoKey, findToplevel, git, gitOutputOrNull, isCommit, isOutsideEveryRepository } from "../lib/hookkit/repo.ts";
 import { RUN_TIME_WORD_RE } from "../lib/hookkit/commands.ts";
 import { hereStrings, parseCommands } from "../lib/hookkit/parser.ts";
-import { ghSubcommandArgv, gitDirectory, gitSubcommandIndex, interpretPush, isConfigRead } from "../lib/hookkit/gitargs.ts";
+import { configOverrides, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, interpretPush, isConfigRead, nextWord, routesPushes } from "../lib/hookkit/gitargs.ts";
+import { pushRemoteMirror } from "../../lib/evidence/gitcmd.ts";
+import type { ConfigView } from "../../lib/evidence/gitcmd.ts";
 import { steps } from "../lib/hookkit/steps.ts";
 import type { Step } from "../lib/hookkit/steps.ts";
+import type { ConfigSetting } from "../lib/hookkit/gitargs.ts";
 import { resolveDirectory } from "../lib/hookkit/variables.ts";
 import { fileWriteOf, operands, writeTargets } from "../lib/hookkit/writes.ts";
 import { TimeoutExpired } from "../../measure/lib/measurekit/timeout.ts";
@@ -76,6 +79,8 @@ const COMMIT_PATHSPEC_NUL_OPTION = "--pathspec-file-nul";
 const ADD_INTERACTIVE_LONG_OPTIONS: ReadonlySet<string> = new Set(["--patch", "--interactive", "--edit"]);
 const ADD_INTERACTIVE_SHORT_FLAGS: ReadonlySet<string> = new Set(["p", "i", "e"]);
 const INDEX_FILE_VARIABLE = "GIT_INDEX_FILE";
+const CONFIG_VARIABLE_PREFIX = "GIT_CONFIG_";
+const CONFIG_LOCATION_VARIABLES: ReadonlySet<string> = new Set(["HOME", "XDG_CONFIG_HOME"]);
 const INDEX_COPY_PREFIX = "keel-index-";
 const NOT_STAGING = "not-staging";
 const UNREPLAYABLE = "unreplayable";
@@ -120,6 +125,8 @@ const UNREAD_MESSAGE_TEXT = "Known values are loaded, and this commit message or
 const PR_TEXT_SHOWN = "PR text";
 const COMMAND_SHOWN = "command";
 const HOOKED_SUBCOMMANDS: ReadonlySet<string> = new Set(["commit", "merge", "push"]);
+const NO_VERIFY_OPTION = "--no-verify";
+const NO_VERIFY_UNIQUE_FROM = "--no-".length;
 const LIVE_MOVING_SUBCOMMANDS: ReadonlySet<string> = new Set([
   "checkout", "switch", "restore", "reset", "add", "rm", "mv", "commit", "cherry-pick", "revert", "am", "apply",
   "merge", "rebase", "pull", "stash", "clean",
@@ -643,7 +650,7 @@ function gitHookSkip(step: Step, index: number): string | null {
   if (configValues.some((value) => value.toLowerCase().startsWith(HOOKS_PATH_KEY + "="))) {
     return "`-c core.hooksPath=…` points git at other hooks for this command.";
   }
-  if (HOOKED_SUBCOMMANDS.has(subcommand) && args.includes("--no-verify")) return `\`git ${subcommand} --no-verify\` skips the repo's hooks.`;
+  if (HOOKED_SUBCOMMANDS.has(subcommand) && skipsHooks(subcommand, args)) return `\`git ${subcommand} --no-verify\` skips the repo's hooks.`;
   if (subcommand === "commit" && args.some((arg) => arg.startsWith("-") && readCommitOption(arg).skipsHooks)) {
     return "`git commit -n` skips the repo's hooks.";
   }
@@ -651,6 +658,14 @@ function gitHookSkip(step: Step, index: number): string | null {
     return "`git config core.hooksPath` points git at other hooks.";
   }
   return null;
+}
+
+function skipsHooks(subcommand: string, args: readonly string[]): boolean {
+  if (subcommand === "push") return interpretPush(args).skipsHooks;
+  return args.some((arg) => {
+    const spelled = partition(arg, "=")[0];
+    return spelled.length > NO_VERIFY_UNIQUE_FROM && NO_VERIFY_OPTION.startsWith(spelled);
+  });
 }
 
 function checkGitOrPr(
@@ -664,7 +679,7 @@ function checkGitOrPr(
   if (argv[position] === "commit") {
     return checkCommit(argv.slice(position + 1), step, repoDirectory, call.slice(0, index), callHeredocs, plainCallText);
   }
-  if (argv[position] === "push") return checkPush(argv.slice(position + 1), repoDirectory);
+  if (argv[position] === "push") return checkPush(argv.slice(position + 1), repoDirectory, pushConfigView(argv.slice(1, position), step));
   return [];
 }
 
@@ -891,13 +906,13 @@ function copyIndex(toplevel: string, destination: string): boolean {
   return true;
 }
 
-function checkPush(args: readonly string[], repoDirectory: string): Violation[] {
+function checkPush(args: readonly string[], repoDirectory: string, view: PushConfigView): Violation[] {
   const toplevel = findToplevel(repoDirectory);
   if (toplevel === null) return [];
   const push = readPush(args, currentBranch(toplevel));
   const repoKey = findRepoKey(toplevel);
   const violations: Violation[] = [];
-  if (push.force) {
+  if (push.force || mayPushToAMirror(push, toplevel, view)) {
     violations.push({ ruleId: F_FORCE_PUSH, repo: repoKey, text: "Force push rewrites shared history; push without --force, -f or a +refspec." });
   }
   const leased = push.forceWithLease ? leasedProtectedBranches(push, repoKey) : [];
@@ -906,6 +921,36 @@ function checkPush(args: readonly string[], repoDirectory: string): Violation[] 
   }
   for (const [revisions, label] of pushedRanges(toplevel, push)) violations.push(...checkPushRange(toplevel, repoKey, revisions, label));
   return violations;
+}
+
+function mayPushToAMirror(push: PushRequest, toplevel: string, view: PushConfigView): boolean {
+  if (view.routingDecidedAtRunTime || isRunTimeWord(push.remote ?? "")) return true;
+  return pushRemoteMirror(toplevel, push.remote, view) !== "notMirror";
+}
+
+interface PushConfigView extends ConfigView {
+  routingDecidedAtRunTime: boolean;
+}
+
+function pushConfigView(gitGlobals: readonly string[], step: Step): PushConfigView {
+  const overrides = configOverrides(gitGlobals);
+  const commandVariables = step.environment;
+  const named = new Set(overrides.settings.flatMap((setting) => "variable" in setting ? [setting.variable] : []));
+  const read = [...commandVariables].filter(([name]) => named.has(name) || locatesConfig(name));
+  const settingValue = (setting: ConfigSetting): string =>
+    "variable" in setting ? (commandVariables.get(setting.variable) ?? "") : setting.literal;
+  const routingDecidedAtRunTime = overrides.settings.some((setting) =>
+    isRunTimeWord(setting.key) || (routesPushes(setting.key) && isRunTimeWord(settingValue(setting))))
+    || read.some(([name, value]) => locatesConfig(name) && isRunTimeWord(value));
+  return { configArgs: overrides.configArgs, env: { ...process.env, ...Object.fromEntries(read) }, routingDecidedAtRunTime };
+}
+
+function locatesConfig(variable: string): boolean {
+  return variable.startsWith(CONFIG_VARIABLE_PREFIX) || CONFIG_LOCATION_VARIABLES.has(variable);
+}
+
+function isRunTimeWord(word: string): boolean {
+  return RUN_TIME_WORD_RE.test(word);
 }
 
 function leasedProtectedBranches(push: PushRequest, repoKey: string | null): string[] {
@@ -1026,6 +1071,7 @@ function findIntegrationBase(repoKey: string | null): string | null {
 }
 
 interface PushRequest {
+  remote: string | null;
   sources: string[];
   destinations: Set<string>;
   force: boolean;
@@ -1034,12 +1080,13 @@ interface PushRequest {
 }
 
 export function readPush(args: readonly string[], branch: string | null): PushRequest {
-  const { options, refspecs, deletes, wholeRepo } = interpretPush(args);
+  const { remote, refspecs, deletes, wholeRepo, force, forceWithLease } = interpretPush(args);
   const push: PushRequest = {
+    remote,
     sources: [],
     destinations: new Set(),
-    force: options.longOptions.includes("--force") || options.shortFlags.includes("f") || refspecs.some((spec) => spec.forced),
-    forceWithLease: options.longOptions.some((option) => option.startsWith("--force-with-lease")),
+    force: force || refspecs.some((spec) => spec.forced),
+    forceWithLease,
     wholeRepo,
   };
   if (refspecs.length === 0 && !deletes) {

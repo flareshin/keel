@@ -6,11 +6,9 @@ import type { Variables } from "./variables.ts";
 const DASHED_GIT_PROGRAM_RE = /^git-([a-z0-9][a-z0-9-]*)$/;
 export const GIT_VALUE_OPTIONS: ReadonlySet<string> =
   new Set(["-C", "-c", "--config-env", "--git-dir", "--work-tree", "--namespace", "--exec-path"]);
-const PUSH_VALUE_OPTIONS: ReadonlySet<string> = new Set(["--push-option", "--receive-pack", "--exec"]);
-const PUSH_OPTION_LETTER = "o";
-const PUSH_REPO_OPTION = "--repo";
-const WHOLE_REPO_PUSH_OPTIONS: ReadonlySet<string> = new Set(["--all", "--branches", "--mirror"]);
 const MATCHING_REFSPEC = ":";
+const NEGATION = "no-";
+const NO_RECURSION = "no";
 export const GH_REPO_OPTIONS: ReadonlySet<string> = new Set(["-R", "--repo"]);
 const GH_SUBCOMMAND_DEPTH = 2;
 const CONFIG_READ_SUBCOMMANDS: ReadonlySet<string> = new Set(["get", "list"]);
@@ -24,15 +22,45 @@ const CONFIG_WRITE_OPTIONS: ReadonlySet<string> = new Set([
 const CONFIG_VALUE_OPTIONS: ReadonlySet<string> =
   new Set(["-f", "--file", "--blob", "-t", "--type", "--default", "--comment", "--value"]);
 
-export class PushArguments {
-  remote: string | null = null;
-  refspecs: string[] = [];
-  longOptions: string[] = [];
-  shortFlags = "";
+type Arity = "flag" | "value" | "optionalValue";
 
-  get wholeRepo(): boolean {
-    return this.longOptions.some((option) => WHOLE_REPO_PUSH_OPTIONS.has(option));
-  }
+interface OptionSpec {
+  name: string;
+  short: string | null;
+  arity: Arity;
+}
+
+const PUSH_OPTIONS: readonly OptionSpec[] = [
+  flagOption("verbose", "v"), flagOption("quiet", "q"), valueOption("repo"), flagOption("all"), flagOption("branches"), flagOption("mirror"),
+  flagOption("delete", "d"), flagOption("tags"), flagOption("dry-run", "n"), flagOption("porcelain"), flagOption("force", "f"),
+  optionalValueOption("force-with-lease"), flagOption("force-if-includes"), valueOption("recurse-submodules"), flagOption("thin"),
+  valueOption("receive-pack"), valueOption("exec"), flagOption("set-upstream", "u"), flagOption("progress"), flagOption("prune"), flagOption("no-verify"),
+  flagOption("follow-tags"), optionalValueOption("signed"), flagOption("atomic"), valueOption("push-option", "o"), flagOption("ipv4", "4"), flagOption("ipv6", "6"),
+];
+
+function flagOption(name: string, short: string | null = null): OptionSpec {
+  return { name, short, arity: "flag" };
+}
+
+function valueOption(name: string, short: string | null = null): OptionSpec {
+  return { name, short, arity: "value" };
+}
+
+function optionalValueOption(name: string): OptionSpec {
+  return { name, short: null, arity: "optionalValue" };
+}
+
+interface OptionUse {
+  name: string;
+  set: boolean;
+  value: string | null;
+}
+
+interface ReadOptions {
+  uses: OptionUse[];
+  ambiguousUses: OptionUse[];
+  operands: string[];
+  rejected: boolean;
 }
 
 export function gitDirectory(argv: readonly string[], directory: string, environment: Variables): string {
@@ -72,40 +100,6 @@ export function attachedGhRepo(word: string): string | null {
   return null;
 }
 
-export function readPushArguments(args: readonly string[]): PushArguments {
-  const pushed = new PushArguments();
-  const positional: string[] = [];
-  let repoOption: string | null = null;
-  const words = args.values();
-  for (const word of words) {
-    if (word === PUSH_REPO_OPTION) {
-      repoOption = nextWord(words);
-    } else if (word.startsWith(PUSH_REPO_OPTION + "=")) {
-      repoOption = partition(word, "=")[2];
-    } else if (PUSH_VALUE_OPTIONS.has(word)) {
-      nextWord(words);
-    } else if (word === "--") {
-      positional.push(...words);
-    } else if (word.startsWith("--")) {
-      pushed.longOptions.push(word);
-    } else if (word.startsWith("-")) {
-      const [flags, takesValue, attachedValue] = partition(word.slice(1), PUSH_OPTION_LETTER);
-      pushed.shortFlags += flags;
-      if (takesValue && !attachedValue) nextWord(words);
-    } else {
-      positional.push(word);
-    }
-  }
-  if (positional.length > 0) {
-    pushed.remote = positional[0] ?? null;
-    pushed.refspecs = positional.slice(1);
-  } else {
-    pushed.remote = repoOption;
-    pushed.refspecs = [];
-  }
-  return pushed;
-}
-
 export interface PushedRefspec {
   source: string;
   destination: string | null;
@@ -114,23 +108,141 @@ export interface PushedRefspec {
 }
 
 export interface PushInterpretation {
-  options: PushArguments;
+  remote: string | null;
   refspecs: PushedRefspec[];
   deletes: boolean;
+  dryRun: boolean;
+  tags: boolean;
   wholeRepo: boolean;
+  force: boolean;
+  forceWithLease: boolean;
+  skipsHooks: boolean;
+  recurseSubmodules: string | null;
 }
 
 export function interpretPush(args: readonly string[]): PushInterpretation {
-  const options = readPushArguments(args);
-  const refspecs = options.refspecs.map((word): PushedRefspec => {
+  const read = readOptions(args, PUSH_OPTIONS);
+  const [remoteWord, ...refspecWords] = read.operands;
+  const refspecs = refspecWords.map((word): PushedRefspec => {
     const spec = lstripChar(word, "+");
     const [source, , destination] = partition(spec, ":");
     const deletesDestination = spec.startsWith(":") && spec !== MATCHING_REFSPEC;
     return { source, destination: destination || null, forced: word.startsWith("+"), deletesDestination };
   });
-  const deletes = options.longOptions.includes("--delete") || options.shortFlags.includes("d");
-  const pushesMatchingBranches = options.refspecs.some((word) => lstripChar(word, "+") === MATCHING_REFSPEC);
-  return { options, refspecs, deletes, wholeRepo: options.wholeRepo || pushesMatchingBranches };
+  const allowsPass = (name: string) => !read.rejected && lastSet(read.uses, name);
+  const mayDeny = (name: string) => lastSet(read.uses, name) || read.ambiguousUses.some((use) => use.name === name && use.set);
+  const mirror = mayDeny("mirror");
+  const pushesMatchingBranches = refspecWords.some((word) => lstripChar(word, "+") === MATCHING_REFSPEC);
+  return {
+    remote: remoteWord ?? lastValue(read.uses, "repo"),
+    refspecs,
+    deletes: allowsPass("delete"),
+    dryRun: allowsPass("dry-run"),
+    tags: allowsPass("tags"),
+    wholeRepo: mirror || mayDeny("all") || mayDeny("branches") || pushesMatchingBranches,
+    force: mirror || mayDeny("force"),
+    forceWithLease: mayDeny("force-with-lease"),
+    skipsHooks: mayDeny("no-verify"),
+    recurseSubmodules: recursion(read.uses),
+  };
+}
+
+function lastUse(uses: readonly OptionUse[], name: string): OptionUse | null {
+  return uses.findLast((use) => use.name === name) ?? null;
+}
+
+function lastSet(uses: readonly OptionUse[], name: string): boolean {
+  return lastUse(uses, name)?.set ?? false;
+}
+
+function lastValue(uses: readonly OptionUse[], name: string): string | null {
+  const use = lastUse(uses, name);
+  return use?.set ? use.value : null;
+}
+
+function recursion(uses: readonly OptionUse[]): string | null {
+  const use = lastUse(uses, "recurse-submodules");
+  if (use === null) return null;
+  return use.set ? use.value : NO_RECURSION;
+}
+
+function readOptions(args: readonly string[], specs: readonly OptionSpec[]): ReadOptions {
+  const read: ReadOptions = { uses: [], ambiguousUses: [], operands: [], rejected: false };
+  const words = args.values();
+  for (const word of words) {
+    if (word === "--") read.operands.push(...words);
+    else if (word.startsWith("--")) readLongOption(word.slice(2), words, specs, read);
+    else if (word.startsWith("-") && word !== "-") readShortOptions(word.slice(1), words, specs, read);
+    else read.operands.push(word);
+  }
+  return read;
+}
+
+function readLongOption(text: string, words: IteratorObject<string>, specs: readonly OptionSpec[], read: ReadOptions): void {
+  const [spelled, hasValue, attached] = partition(text, "=");
+  const readings = longReadings(spelled, specs);
+  if (readings.length !== 1) {
+    read.rejected = true;
+    read.ambiguousUses.push(...readings);
+    return;
+  }
+  const [reading] = readings as [OptionUse];
+  const spec = specs.find((candidate) => candidate.name === reading.name)!;
+  if (!reading.set || spec.arity === "flag") {
+    if (hasValue) read.rejected = true;
+    else read.uses.push(reading);
+    return;
+  }
+  const value = hasValue ? attached : spec.arity === "value" ? nextWord(words) : null;
+  if (spec.arity === "value" && value === null) read.rejected = true;
+  read.uses.push({ ...reading, value });
+}
+
+function longReadings(spelled: string, specs: readonly OptionSpec[]): OptionUse[] {
+  const exact = specs.flatMap((spec) => exactReadings(spelled, spec));
+  return exact.length > 0 ? exact : specs.flatMap((spec) => abbreviatedReadings(spelled, spec));
+}
+
+function exactReadings(spelled: string, spec: OptionSpec): OptionUse[] {
+  if (spelled === spec.name) return [use(spec, true)];
+  if (spelled === NEGATION + spec.name || spelled === negatedName(spec)) return [use(spec, false)];
+  return [];
+}
+
+function abbreviatedReadings(spelled: string, spec: OptionSpec): OptionUse[] {
+  const readings: OptionUse[] = [];
+  if (spec.name.startsWith(spelled)) readings.push(use(spec, true));
+  const abbreviatesNegation = NEGATION.startsWith(spelled) ||
+    (spelled.startsWith(NEGATION) && spec.name.startsWith(spelled.slice(NEGATION.length)));
+  if (abbreviatesNegation || negatedName(spec)?.startsWith(spelled)) readings.push(use(spec, false));
+  return readings;
+}
+
+function negatedName(spec: OptionSpec): string | null {
+  return spec.name.startsWith(NEGATION) ? spec.name.slice(NEGATION.length) : null;
+}
+
+function use(spec: OptionSpec, set: boolean): OptionUse {
+  return { name: spec.name, set, value: null };
+}
+
+function readShortOptions(cluster: string, words: IteratorObject<string>, specs: readonly OptionSpec[], read: ReadOptions): void {
+  const letters = Array.from(cluster);
+  for (const [position, letter] of letters.entries()) {
+    const spec = specs.find((candidate) => candidate.short === letter);
+    if (spec === undefined) {
+      read.rejected = true;
+      return;
+    }
+    if (spec.arity === "flag") {
+      read.uses.push(use(spec, true));
+      continue;
+    }
+    const value = letters.slice(position + 1).join("") || nextWord(words);
+    if (value === null) read.rejected = true;
+    read.uses.push({ ...use(spec, true), value });
+    return;
+  }
 }
 
 export function isConfigRead(args: readonly string[]): boolean {
@@ -157,6 +269,37 @@ function configOperands(args: readonly string[]): string[] {
     else if (!word.startsWith("-")) operands.push(word);
   }
   return operands;
+}
+
+export const CONFIG_OVERRIDE_OPTIONS: ReadonlySet<string> = new Set(["-c", "--config-env"]);
+const CONFIG_ENV_OPTION = "--config-env";
+const PUSH_ROUTING_SECTIONS: ReadonlySet<string> =
+  new Set(["remote", "branch", "url", "push", "include", "includeif", "submodule"]);
+
+export function routesPushes(key: string): boolean {
+  return PUSH_ROUTING_SECTIONS.has(partition(key, ".")[0].toLowerCase());
+}
+
+export interface ConfigOverrides {
+  configArgs: string[];
+  settings: ConfigSetting[];
+}
+
+export type ConfigSetting = { spelling: string; key: string } & ({ literal: string } | { variable: string });
+
+export function configOverrides(gitGlobals: readonly string[]): ConfigOverrides {
+  const overrides: ConfigOverrides = { configArgs: [], settings: [] };
+  const words = gitGlobals.values();
+  for (const word of words) {
+    const [option, separator, attached] = partition(word, "=");
+    if (!CONFIG_OVERRIDE_OPTIONS.has(option)) continue;
+    const setting = separator ? attached : (nextWord(words) ?? "");
+    const [key, , right] = partition(setting, "=");
+    overrides.configArgs.push(option, setting);
+    const spelling = `${option} ${setting}`;
+    overrides.settings.push(option === CONFIG_ENV_OPTION ? { spelling, key, variable: right } : { spelling, key, literal: right });
+  }
+  return overrides;
 }
 
 export function nextWord(words: IteratorObject<string>): string | null {

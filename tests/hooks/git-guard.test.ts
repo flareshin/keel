@@ -217,6 +217,18 @@ describe("HookSkipTest", () => {
     assertPassed(guard("git push -n origin main", repo));
   });
 
+  it("pushCommitAndMerge_denied_whenNoVerifyIsAbbreviated", () => {
+    for (const command of ["git push --no-verif origin main", "git commit --no-verif -m wip", "git merge --no-ver topic"]) {
+      assertDenied(guard(command, repo), "F-hookskip");
+    }
+  });
+
+  it("push_passes_whenALaterVerifyUndoesNoVerify", () => {
+    for (const command of ["git push --no-verify --verify origin main", "git push --no-verify --verif origin main"]) {
+      assertPassed(guard(command, repo));
+    }
+  });
+
   it("git_deniedWithFHookskip_whenSudoCarriesAnOptionTheParserDoesNotRead", () => {
     for (const command of ["sudo -i git commit --no-verify -m wip", "sudo -nE git commit --no-verify -m wip",
       "sudo --login git config core.hooksPath /dev/null"]) {
@@ -1914,6 +1926,97 @@ describe("ForcePushTest", () => {
 
   it("push_denied_whenShortFlagCombined", () => {
     assertDenied(guard("git push -fu origin feature", repo), "F-force-push");
+  });
+
+  it("push_denied_whenForceIsAbbreviatedOrAmbiguous", () => {
+    for (const command of ["git push --forc origin feature", "git push --force-w origin feature:main"]) {
+      assertDenied(guard(command, repo), "F-force-push");
+    }
+  });
+
+  it("push_passes_whenALaterNoForceUndoesForce", () => {
+    assertPassed(guard("git push -f --no-force origin feature", repo));
+  });
+
+  it("mirrorPush_deniedWithFForcePush_byOptionOrRemoteConfig", () => {
+    for (const command of ["git push --mirror origin", "git push --mirro origin", "git -c remote.origin.mirror=true push origin"]) {
+      assertDenied(guard(command, repo), "F-force-push");
+    }
+    sandbox.git(repo, "config", "remote.origin.mirror", "true");
+    assertDenied(guard("git push origin", repo), "F-force-push");
+  });
+
+  it("mirrorPush_deniedWithFForcePush_whenTheCommandSetsMirrorThroughConfigEnvOrVariables", () => {
+    for (const command of ["M=true git --config-env=remote.origin.mirror=M push origin",
+      "export M=true; git --config-env remote.origin.mirror=M push origin",
+      "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=remote.origin.mirror GIT_CONFIG_VALUE_0=true git push origin"]) {
+      assertDenied(guard(command, repo), "F-force-push");
+    }
+  });
+
+  it("mirrorPush_deniedWithFForcePush_whenTheMirrorSettingCannotBeRead", () => {
+    for (const command of ["M=$(cat mirror.txt) git --config-env=remote.origin.mirror=M push origin feature",
+      "git --config-env=remote.origin.mirror=UNSET_MIRROR_VARIABLE push origin feature"]) {
+      assertDenied(guard(command, repo), "F-force-push");
+    }
+  });
+
+  it("barePush_deniedWithFForcePush_whenThePushRemoteItResolvesIsAMirror", () => {
+    sandbox.git(repo, "remote", "add", "backup", sandbox.git(repo, "remote", "get-url", "origin").trim());
+    sandbox.git(repo, "config", "remote.pushDefault", "backup");
+    assertPassed(guard("git push", repo));
+    sandbox.git(repo, "config", "remote.backup.mirror", "true");
+    assertDenied(guard("git push", repo), "F-force-push");
+  });
+
+  it("barePush_deniedWithFForcePush_whenACommandOverrideRoutesItToAMirror", () => {
+    sandbox.git(repo, "remote", "add", "backup", sandbox.git(repo, "remote", "get-url", "origin").trim());
+    sandbox.git(repo, "config", "remote.backup.mirror", "true");
+    assertDenied(guard("git -c remote.pushDefault=backup push", repo), "F-force-push");
+  });
+
+  it("mirrorPush_deniedWithFForcePush_whenTheRemoteOrMirrorKeyIsDecidedAtRunTime", () => {
+    sandbox.git(repo, "remote", "add", "backup", sandbox.git(repo, "remote", "get-url", "origin").trim());
+    sandbox.git(repo, "config", "remote.backup.mirror", "true");
+    for (const command of ['git -c "remote.$(cat r.txt).mirror=true" push origin feature',
+      'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="remote.$(cat r.txt).mirror" GIT_CONFIG_VALUE_0=true git push origin feature',
+      'git -c remote.pushDefault="$(cat r.txt)" push', 'git push "$(cat r.txt)" feature']) {
+      assertDenied(guard(command, repo), "F-force-push");
+    }
+  });
+
+  it("mirrorPush_deniedWithFForcePush_whenAnUnexportedVariableWouldOverrideTheStoredMirror", () => {
+    sandbox.git(repo, "config", "remote.origin.mirror", "true");
+    assertDenied(guard("GIT_CONFIG_COUNT=1; GIT_CONFIG_KEY_0=remote.origin.mirror; GIT_CONFIG_VALUE_0=false; git push origin", repo),
+      "F-force-push");
+  });
+
+  it("mirrorPush_deniedWithFForcePush_whenTheCommandPointsGitAtAGlobalConfigThatSetsMirror", () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "keel-guard-home-")));
+    const globalConfig = sandbox.env["GIT_CONFIG_GLOBAL"]!;
+    delete sandbox.env["GIT_CONFIG_GLOBAL"];
+    try {
+      const mirrorConfig = '[remote "origin"]\n\tmirror = true\n';
+      writeFileSync(join(home, ".gitconfig"), mirrorConfig);
+      mkdirSync(join(home, "git"));
+      writeFileSync(join(home, "git", "config"), mirrorConfig);
+      for (const command of [`HOME=${home} git push origin feature`, `XDG_CONFIG_HOME=${home} git push origin feature`,
+        `HOME="$(cat home.txt)" git push origin feature`]) {
+        assertDenied(guard(command, repo), "F-force-push");
+      }
+    } finally {
+      sandbox.env["GIT_CONFIG_GLOBAL"] = globalConfig;
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("push_passes_whenTheCommandOverridesOnlyUnrelatedConfig", () => {
+    for (const command of ["git -c user.name=x push origin feature",
+      "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=user.name GIT_CONFIG_VALUE_0=x git push origin feature",
+      'git -c user.name="$(cat name.txt)" push origin feature',
+      "NOT_A_MIRROR=false git --config-env remote.origin.mirror=NOT_A_MIRROR push origin feature"]) {
+      assertPassed(guard(command, repo));
+    }
   });
 
   it("push_denied_whenGitsOwnDashedPushProgramForces", () => {

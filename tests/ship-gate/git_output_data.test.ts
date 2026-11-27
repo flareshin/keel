@@ -153,6 +153,12 @@ describe('git output that feeds a gate decision and holds a line break other tha
     refusesLineBreak(() => gitcmd.pushRemote(repo));
   });
 
+  test('a push remote holding a \\n refuses instead of returning its first line', () => {
+    const repo = newRepo();
+    git(repo, 'config', 'remote.pushDefault', 'origin\nmirror');
+    refuses(SEVERAL_LINES_REFUSAL, () => gitcmd.pushRemote(repo));
+  });
+
   test('an empty push remote refuses instead of falling through to the next key', () => {
     const repo = newRepo();
     git(repo, 'config', 'remote.pushDefault', '');

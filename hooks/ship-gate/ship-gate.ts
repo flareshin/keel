@@ -15,8 +15,8 @@ import { parseJson } from "../lib/hookkit/json.ts";
 import { AttributeError, describeError, pythonTypeName, RecursionError, ValueError } from "../lib/hookkit/errors.ts";
 import { readStdin, writeStderr } from "../lib/hookkit/stdio.ts";
 import {
-  attachedGhRepo, configKey, dashedGitSubcommand, GH_REPO_OPTIONS, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, interpretPush,
-  isConfigRead, nextWord,
+  attachedGhRepo, configKey, configOverrides, dashedGitSubcommand, GH_REPO_OPTIONS, ghSubcommandArgv, gitDirectory, gitSubcommandIndex,
+  interpretPush, isConfigRead, nextWord, routesPushes,
 } from "../lib/hookkit/gitargs.ts";
 import { RUN_TIME_WORD_RE } from "../lib/hookkit/commands.ts";
 import type { SimpleCommand } from "../lib/hookkit/commands.ts";
@@ -127,14 +127,8 @@ const GC_INTERVAL_SECONDS = 24 * 3600;
 const MERGE_VALUE_FLAGS: ReadonlySet<string> = new Set(["-A", "--author-email", "-b", "--body", "-F", "--body-file", "-t", "--subject"]);
 const REPOINTING_OPTIONS: ReadonlySet<string> = new Set(["--git-dir", "--work-tree"]);
 const REPOINTING_VARIABLES = ["GIT_DIR", "GIT_WORK_TREE"];
-const CONFIG_OVERRIDE_OPTIONS: ReadonlySet<string> = new Set(["-c", "--config-env"]);
 const GH_DEFAULT_VIEW_OPTIONS: ReadonlySet<string> = new Set(["-v", "--view"]);
-const PUSH_ROUTING_SECTIONS: ReadonlySet<string> =
-  new Set(["remote", "branch", "url", "push", "include", "includeif", "submodule"]);
-const RECURSE_SUBMODULES_OPTION = "--recurse-submodules";
-const NO_RECURSE_SUBMODULES_OPTION = "--no-recurse-submodules";
 const RECURSION_LEAVING_SUBMODULES_UNPUSHED: ReadonlySet<string> = new Set(["check", "no", "false", "off", "0"]);
-const NO_RECURSION = "no";
 const GIT_CONFIG_KEY_MISSING = 1;
 const CONFIG_VARIABLE_PREFIX = "GIT_CONFIG";
 const REMOTE_EDITS: ReadonlySet<string> = new Set(["set-url", "add", "rename"]);
@@ -760,13 +754,8 @@ function repointing(args: string[], environment: Environment): string | null {
 }
 
 function configOverride(globalWords: string[], environment: Environment): string | null {
-  const words = globalWords.values();
-  for (const word of words) {
-    const [option, , attached] = partition(word, "=");
-    if (!CONFIG_OVERRIDE_OPTIONS.has(option)) continue;
-    const setting = attached || (nextWord(words) ?? "");
-    if (routesPushes(setting)) return `${option} ${setting}`;
-  }
+  const routing = configOverrides(globalWords).settings.find((setting) => routesPushes(setting.key));
+  if (routing !== undefined) return routing.spelling;
   const variable = [...environment.keys()].find((name) => name.startsWith(CONFIG_VARIABLE_PREFIX));
   return variable === undefined ? null : `${variable}=${environment.get(variable)}`;
 }
@@ -809,32 +798,18 @@ function writesPushRouting(configArgs: string[]): boolean {
   return key === null || routesPushes(key);
 }
 
-function routesPushes(key: string): boolean {
-  return PUSH_ROUTING_SECTIONS.has(partition(key, ".")[0].toLowerCase());
-}
-
 export function parsePush(words: string[], args: string[], workdir: string): Push {
-  const { options, refspecs: given, deletes, wholeRepo } = interpretPush(args);
-  const refspecs = given.filter((spec) => !spec.deletesDestination)
+  const push = interpretPush(args);
+  const refspecs = push.refspecs.filter((spec) => !spec.deletesDestination)
     .map((spec): Refspec => ({ source: spec.source, destination: spec.destination }));
   return {
-    kind: "push", workdir, words, remote: options.remote, refspecs,
-    deletesOnly: deletes || (given.length > 0 && refspecs.length === 0),
-    tagsOnly: options.longOptions.includes("--tags") && given.length === 0,
-    wholeRepo,
-    dryRun: options.longOptions.includes("--dry-run") || options.shortFlags.includes("n"),
-    recurseSubmodules: lastRecurseSubmodulesOption(options.longOptions),
+    kind: "push", workdir, words, remote: push.remote, refspecs,
+    deletesOnly: push.deletes || (push.refspecs.length > 0 && refspecs.length === 0),
+    tagsOnly: push.tags && push.refspecs.length === 0,
+    wholeRepo: push.wholeRepo,
+    dryRun: push.dryRun,
+    recurseSubmodules: push.recurseSubmodules,
   };
-}
-
-function lastRecurseSubmodulesOption(longOptions: readonly string[]): string | null {
-  let recursion: string | null = null;
-  for (const option of longOptions) {
-    const [name, , value] = partition(option, "=");
-    if (option === NO_RECURSE_SUBMODULES_OPTION) recursion = NO_RECURSION;
-    else if (name === RECURSE_SUBMODULES_OPTION) recursion = value;
-  }
-  return recursion;
 }
 
 export function parseMerge(words: string[], workdir: string, repoEnv: string | null): Merge {
@@ -1041,7 +1016,7 @@ function judgePush(push: Push, repoRoot: string, repoKey: string | null, row: Ga
     report.deny([foreign], `push to ${gatedKey} denied`, hint, { repo: gatedKey });
     return;
   }
-  if (push.wholeRepo) {
+  if (pushesEveryRef(push, repoRoot)) {
     report.deny(
       [{ ruleId: F_IRREVERSIBLE, text: "git push --all/--mirror cannot be attributed to one branch; push one branch" }],
       `push of every branch in ${gatedKey} denied`, hint, { repo: gatedKey },
@@ -1084,6 +1059,13 @@ function gatedReposASubmodulePushReaches(push: Push, repoRoot: string, repoKey: 
   if (submoduleKeys.length === 0) return [];
   const gatedSubmodules = submoduleKeys.filter((key): key is string => key !== null && registry.isGated(registry.lookup(key)));
   return registry.isGated(row) ? [repoKey!, ...gatedSubmodules] : gatedSubmodules;
+}
+
+function pushesEveryRef(push: Push, repoRoot: string): boolean {
+  if (push.wholeRepo) return true;
+  const mirror = gitcmd.pushRemoteMirror(repoRoot, push.remote || null);
+  if (mirror === "unreadable") throw new GateError(`git config cannot read whether remote ${push.remote || "of this push"} is a mirror`);
+  return mirror === "mirror";
 }
 
 function pushRecursesIntoSubmodules(push: Push, repoRoot: string): boolean {

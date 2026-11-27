@@ -10,7 +10,7 @@ import * as protocol from "../../hooks/lib/hookkit/protocol.ts";
 import { normalizeRepoKey } from "../../hooks/lib/hookkit/repo.ts";
 import { unwrap } from "../../hooks/lib/hookkit/commands.ts";
 import {
-  configKey, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, interpretPush, isConfigRead, readPushArguments,
+  configKey, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, interpretPush, isConfigRead,
 } from "../../hooks/lib/hookkit/gitargs.ts";
 import { parseCommands } from "../../hooks/lib/hookkit/parser.ts";
 import { steps } from "../../hooks/lib/hookkit/steps.ts";
@@ -155,45 +155,46 @@ describe("GhSubcommandArgvTest", () => {
 });
 
 describe("ReadPushArgumentsTest", () => {
-  it("readPushArguments_splitsRemoteRefspecsAndOptions", () => {
-    const pushed = readPushArguments(["-u", "--force-with-lease=main", "-o", "ci.skip", "upstream", "+a:b", "--", "-odd"]);
-    assert.deepEqual([pushed.remote, pushed.refspecs], ["upstream", ["+a:b", "-odd"]]);
-    assert.deepEqual([pushed.longOptions, pushed.shortFlags], [["--force-with-lease=main"], "u"]);
-    assert.equal(pushed.wholeRepo, false);
+  function sources(push: ReturnType<typeof interpretPush>): string[] {
+    return push.refspecs.map((spec) => (spec.forced ? "+" : "") + spec.source + (spec.destination ? ":" + spec.destination : ""));
+  }
+
+  it("interpretPush_splitsRemoteRefspecsAndOptions", () => {
+    const pushed = interpretPush(["-u", "--force-with-lease=main", "-o", "ci.skip", "upstream", "+a:b", "--", "-odd"]);
+    assert.deepEqual([pushed.remote, sources(pushed)], ["upstream", ["+a:b", "-odd"]]);
+    assert.deepEqual([pushed.forceWithLease, pushed.force, pushed.wholeRepo], [true, false, false]);
   });
 
-  it("readPushArguments_hasNoRemote_whenOnlyOptionsAreGiven", () => {
-    const pushed = readPushArguments(["-u", "--dry-run"]);
+  it("interpretPush_hasNoRemote_whenOnlyOptionsAreGiven", () => {
+    const pushed = interpretPush(["-u", "--dry-run"]);
     assert.deepEqual([pushed.remote, pushed.refspecs], [null, []]);
   });
 
-  it("readPushArguments_takesTheRepoOption_asTheRemote_whenNoRemoteWordFollows", () => {
+  it("interpretPush_takesTheRepoOption_asTheRemote_whenNoRemoteWordFollows", () => {
     for (const args of [["--repo=upstream"], ["--repo", "upstream"]]) {
-      const pushed = readPushArguments(args);
-      assert.deepEqual([pushed.remote, pushed.refspecs, pushed.longOptions], ["upstream", [], []], args.join(" "));
+      const pushed = interpretPush(args);
+      assert.deepEqual([pushed.remote, pushed.refspecs], ["upstream", []], args.join(" "));
     }
   });
 
-  it("readPushArguments_takesTheRemoteWord_overTheRepoOption", () => {
+  it("interpretPush_takesTheRemoteWord_overTheRepoOption", () => {
     for (const args of [["--repo=upstream", "origin", "feature"], ["--repo", "upstream", "origin", "feature"]]) {
-      const pushed = readPushArguments(args);
-      assert.deepEqual([pushed.remote, pushed.refspecs], ["origin", ["feature"]], args.join(" "));
+      const pushed = interpretPush(args);
+      assert.deepEqual([pushed.remote, sources(pushed)], ["origin", ["feature"]], args.join(" "));
     }
   });
 
-  it("readPushArguments_readsAnAttachedPushOptionValue_asTheValueNotAsFlags", () => {
-    const cases: Array<[string[], string]> = [
-      [["-odeploy", "origin", "feature"], ""], [["-uodeploy", "origin", "feature"], "u"], [["-uo", "deploy", "origin", "feature"], "u"],
-    ];
-    for (const [args, flags] of cases) {
-      const pushed = readPushArguments(args);
-      assert.deepEqual([pushed.remote, pushed.refspecs, pushed.shortFlags], ["origin", ["feature"], flags], args.join(" "));
+  it("interpretPush_readsAnAttachedPushOptionValue_asTheValueNotAsFlags", () => {
+    for (const args of [["-odeploy", "origin", "feature"], ["-uodeploy", "origin", "feature"], ["-uo", "deploy", "origin", "feature"],
+      ["-ofd", "origin", "feature"]]) {
+      const pushed = interpretPush(args);
+      assert.deepEqual([pushed.remote, sources(pushed), pushed.force, pushed.deletes], ["origin", ["feature"], false, false], args.join(" "));
     }
   });
 
-  it("readPushArguments_marksWholeRepo_forAllBranchesAndMirror", () => {
+  it("interpretPush_marksWholeRepo_forAllBranchesAndMirror", () => {
     for (const option of ["--all", "--branches", "--mirror"]) {
-      assert.equal(readPushArguments([option, "origin"]).wholeRepo, true, option);
+      assert.equal(interpretPush([option, "origin"]).wholeRepo, true, option);
     }
   });
 });
@@ -217,11 +218,9 @@ describe("InterpretPushTest", () => {
     }
   });
 
-  it("interpretPush_keepsTheRawArguments_andReadsTheDeleteOption", () => {
+  it("interpretPush_readsTheDeleteOption", () => {
     for (const args of [["--delete", "origin", "old"], ["-d", "origin", "old"], ["-fd", "origin", "old"]]) {
-      const push = interpretPush(args);
-      assert.equal(push.deletes, true, args.join(" "));
-      assert.deepEqual(push.options, readPushArguments(args), args.join(" "));
+      assert.equal(interpretPush(args).deletes, true, args.join(" "));
     }
     assert.equal(interpretPush(["-u", "origin", "old"]).deletes, false);
   });
@@ -230,6 +229,64 @@ describe("InterpretPushTest", () => {
     for (const spec of [":", "+:"]) assert.equal(interpretPush(["origin", spec]).wholeRepo, true, spec);
     for (const spec of [":old", "topic"]) assert.equal(interpretPush(["origin", spec]).wholeRepo, false, spec);
     assert.equal(interpretPush(["--all", "origin"]).wholeRepo, true);
+  });
+});
+
+describe("PushOptionReaderTest", () => {
+  function read(line: string) {
+    return interpretPush(line.split(" "));
+  }
+
+  it("aLaterNegation_undoesAnEarlierOption_andTheLastSpellingWins", () => {
+    const cases: Array<[line: string, field: "dryRun" | "deletes" | "tags" | "wholeRepo" | "force" | "skipsHooks", expected: boolean]> = [
+      ["-n --no-dry-run origin feature", "dryRun", false],
+      ["--no-dry-run -n origin feature", "dryRun", true],
+      ["--dry-run --no-dry origin feature", "dryRun", false],
+      ["-d --no-delete origin feature", "deletes", false],
+      ["--delete --no-delete origin feature", "deletes", false],
+      ["--tags --no-tags origin", "tags", false],
+      ["--all --no-all origin", "wholeRepo", false],
+      ["--mirror --no-mirror origin", "wholeRepo", false],
+      ["-f --no-force origin feature", "force", false],
+      ["--no-verify --verify origin feature", "skipsHooks", false],
+      ["--no-verify --verif origin feature", "skipsHooks", false],
+    ];
+    for (const [line, field, expected] of cases) assert.equal(read(line)[field], expected, line);
+  });
+
+  it("aUniquePrefix_readsAsTheOptionItAbbreviates", () => {
+    assert.equal(read("--dry origin feature").dryRun, true);
+    assert.equal(read("--de origin feature").deletes, true);
+    assert.equal(read("--ta origin").tags, true);
+    for (const line of ["--al origin", "--mirro origin", "--branc origin"]) assert.equal(read(line).wholeRepo, true, line);
+    assert.equal(read("--no-verif origin feature").skipsHooks, true);
+    assert.equal(read("--force-w origin feature").forceWithLease, true);
+    assert.equal(read("--recu=on-demand origin feature").recurseSubmodules, "on-demand");
+    assert.equal(read("--no-recurse origin feature").recurseSubmodules, "no");
+  });
+
+  it("aValueOption_takesTheNextWord_whenSpelledInFullOrAbbreviated", () => {
+    for (const line of ["--recurse-submodules on-demand origin feature", "--recurse-sub on-demand origin feature"]) {
+      const push = read(line);
+      assert.deepEqual([push.remote, push.refspecs.map((spec) => spec.source), push.recurseSubmodules], ["origin", ["feature"], "on-demand"], line);
+    }
+    for (const line of ["--push-o ci.skip origin feature", "--rep upstream origin feature", "--exe x origin feature"]) {
+      const push = read(line);
+      assert.deepEqual([push.remote, push.refspecs.map((spec) => spec.source)], ["origin", ["feature"]], line);
+    }
+    assert.equal(read("--rep upstream").remote, "upstream");
+  });
+
+  it("mirror_forcesEveryRef", () => {
+    for (const line of ["--mirror origin", "--mirro origin"]) assert.equal(read(line).force, true, line);
+  });
+
+  it("anAmbiguousOrUnknownSpelling_countsForEveryDenyingReading_andForNoPassingOne", () => {
+    assert.equal(read("--forc origin feature").force, true);
+    const ambiguous = read("--d origin feature");
+    assert.deepEqual([ambiguous.deletes, ambiguous.dryRun], [false, false]);
+    assert.equal(read("-n --no-such-option origin feature").dryRun, false);
+    assert.equal(read("-n -Z origin feature").dryRun, false);
   });
 });
 

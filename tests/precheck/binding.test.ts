@@ -121,6 +121,8 @@ describe("bindPrecheck", () => {
   })
 })
 
+const UNSUPPORTED_RUNNER_REASON = "no test file matches tests/**/*.test.ts, codex/tests/*.test.ts, tests/workflows/*.test.mjs (the node:test paths keel precheck runs); vitest, jest and JUnit (Maven/Gradle) tests are not supported, so this repo gets no mutation census"
+
 describe("precheckRequirement", () => {
   const roots: string[] = []
   after(() => roots.forEach((root) => rmSync(root, { recursive: true, force: true })))
@@ -153,10 +155,24 @@ describe("precheckRequirement", () => {
     assert.deepEqual(precheckRequirement(root, base, git(root, "write-tree")), { required: false, sources: 2 })
   })
 
-  it("precheckRequirement_isNotRequired_whenTheRepoHasNoTestTheRunnerCanRun", () => {
+  it("precheckRequirement_isNotRequiredAndSaysWhy_whenTheRepoHasNoTestTheRunnerCanRun", () => {
     const { root, base, end } = changedRepo({ "src/a.test.tsx": "t\n" }, { "src/a.ts": "a\n", "src/b.ts": "b\n", "src/c.tsx": "c\n" })
 
-    assert.deepEqual(precheckRequirement(root, base, end), { required: false, sources: 3 })
+    assert.deepEqual(precheckRequirement(root, base, end), { required: false, sources: 3, unsupported: UNSUPPORTED_RUNNER_REASON })
+  })
+
+  it("precheckRequirement_leavesTheUnsupportedReasonOut_whenTooFewSourcesChangeForAPrecheck", () => {
+    const { root, base, end } = changedRepo({ "src/a.test.tsx": "t\n" }, { "src/a.ts": "a\n", "src/b.ts": "b\n" })
+
+    assert.deepEqual(precheckRequirement(root, base, end), { required: false, sources: 2 })
+  })
+
+  it("keelPrecheckRequired_printsTheUnsupportedReason_whenTheRepoHasNoTestTheRunnerCanRun", () => {
+    const { root, base, end } = changedRepo({ "pom.xml": "<project/>\n", "src/test/java/ATest.java": "class ATest {}\n" }, { "lib/a.ts": "a\n", "lib/b.ts": "b\n", "lib/c.ts": "c\n" })
+
+    const printed = JSON.parse(execFileSync(KEEL, ["precheck", "required", "--repo", root, "--base", base, "--end", end], { encoding: "utf8" }))
+
+    assert.deepEqual(printed, { required: false, sources: 3, unsupported: UNSUPPORTED_RUNNER_REASON })
   })
 
   it("keelPrecheckRequired_printsTheRequirementAsJson_andRejectsAMissingOption", () => {

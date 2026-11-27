@@ -250,6 +250,39 @@ describe("keel precheck run", { skip: typescriptInstalled ? false : "typescript 
     assert.equal(logged[0].review_base, execFileSync("git", ["-C", root, "merge-base", "trunk", "HEAD"], { encoding: "utf8" }).trim())
   })
 
+  const UNSUPPORTED_RUNNER_REASON = "no test file matches tests/**/*.test.ts, codex/tests/*.test.ts, tests/workflows/*.test.mjs (the node:test paths keel precheck runs); vitest, jest and JUnit (Maven/Gradle) tests are not supported, so this repo gets no mutation census"
+  const UNSUPPORTED_LAYOUTS: Record<string, Record<string, string>> = {
+    Vitest: {
+      "lib/a.ts": PICK,
+      "lib/__tests__/a.test.ts": "import { expect, it } from 'vitest'\nimport { pick } from '../a.ts'\nit('picks', () => expect(pick(true)).toBe(1))\n",
+    },
+    Maven: {
+      "pom.xml": "<project><modelVersion>4.0.0</modelVersion><groupId>t</groupId><artifactId>a</artifactId><version>1</version></project>\n",
+      "src/main/java/A.java": "public class A {\n  public int pick() { return 0; }\n}\n",
+      "src/test/java/ATest.java": "import org.junit.jupiter.api.Test;\nclass ATest {\n  @Test void picks() { new A().pick(); }\n}\n",
+    },
+  }
+
+  for (const [layout, files] of Object.entries(UNSUPPORTED_LAYOUTS)) {
+    it(`keelPrecheckRun_refusesAndLogsTheRefusal_whenThe${layout}RepoHasNoNodeTestAtKeelsPaths`, () => {
+      const root = committedRepo(files)
+      roots.push(root)
+      writeFiles(root, { "lib/b.ts": "export const b = 1\n" })
+      const dataDir = scratchDir("keel-data-")
+
+      const completed = keel(["--repo", root, "--base", "HEAD"], dataDir)
+
+      assert.equal(completed.status, 3, completed.stderr)
+      assert.equal(completed.stdout, "")
+      assert.equal(completed.stderr, `keel: refused: ${UNSUPPORTED_RUNNER_REASON}\n`)
+      const logged = readFileSync(join(dataDir, "logs", "keel-precheck.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line))
+      assert.equal(logged.length, 1)
+      const { at, ...record } = logged[0]
+      assert.equal(typeof at, "string")
+      assert.deepEqual(record, { repo: root, review_base: execFileSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).trim(), outcome: "refused", reason: UNSUPPORTED_RUNNER_REASON })
+    })
+  }
+
   it("keelPrecheckRun_refusesBeforeTheCensus_whenTscReportsATypeError", () => {
     const root = committedRepo({ "tsconfig.json": TSCONFIG, "lib/a.ts": PICK, "tests/a.test.ts": PICK_TEST })
     roots.push(root)

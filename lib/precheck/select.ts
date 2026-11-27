@@ -4,7 +4,7 @@ import { SCRIPT_FILE } from './consumers.ts';
 
 type NameForm = 'path' | 'file name' | 'bare name';
 
-const TEST_GLOBS = ['tests/**/*.test.ts', 'codex/tests/*.test.ts', 'tests/workflows/*.test.mjs'];
+export const TEST_GLOBS = ['tests/**/*.test.ts', 'codex/tests/*.test.ts', 'tests/workflows/*.test.mjs'];
 const SUPPORT_DIRECTORIES = ['tests/', 'codex/tests/'];
 const SUPPORT_GLOBS = SUPPORT_DIRECTORIES.map((directory) => `${directory}**/*`);
 const SCRIPT_GLOB = '**/*.{ts,mts,cts,js,mjs,cjs,tsx,jsx}';

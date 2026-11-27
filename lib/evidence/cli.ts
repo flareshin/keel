@@ -4,7 +4,7 @@ import { isJsonObject, parseJsonKeepingIntegers, stringifySorted } from '../../m
 import type { JsonValue } from '../../measure/lib/measurekit/json.ts';
 import * as affected from '../precheck/affected.ts';
 import { ruleCheckLines, typecheck } from '../precheck/author.ts';
-import { bindPrecheck, precheckRequirement } from '../precheck/binding.ts';
+import { bindPrecheck, missingRunnableTestReason, precheckRequirement } from '../precheck/binding.ts';
 import { renderCensus, renderRerun, summarizeCensus, summarizeRerun } from '../precheck/render.ts';
 import { buildChains } from './chain.ts';
 import * as codexLenses from './codex_lenses.ts';
@@ -194,6 +194,7 @@ async function precheckRun(rest: string[]): Promise<number> {
   const { runCensus } = await loadNeedingTypescript(seams.loadCensus, 'run');
   requireTypecheck(repoRoot);
   const tree = gitcmd.snapshotTree(repoRoot);
+  refuseWithoutRunnableTest(repoRoot, reviewBase, tree);
   const census = await runCensus(repoRoot, { base, reviewBase, tree });
   printLine([renderCensus(census), ...ruleCheckLines(repoRoot, reviewBase, tree)].join('\n'));
   env.appendRecord(PRECHECK_LOG, { at: env.iso(env.utcNow()), repo: repoRoot, review_base: reviewBase, ...summarizeCensus(census) });
@@ -214,6 +215,13 @@ async function precheckRerun(rest: string[]): Promise<number> {
     if (error instanceof RerunRefused) throw new writers.Refused(error.message);
     throw error;
   }
+}
+
+function refuseWithoutRunnableTest(repoRoot: string, reviewBase: string, tree: string): void {
+  const reason = missingRunnableTestReason(repoRoot, tree);
+  if (reason === null) return;
+  env.appendRecord(PRECHECK_LOG, { at: env.iso(env.utcNow()), repo: repoRoot, review_base: reviewBase, outcome: 'refused', reason });
+  throw new writers.Refused(reason);
 }
 
 function readCensusFile(path: string): string {

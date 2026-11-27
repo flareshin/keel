@@ -115,6 +115,21 @@ test('isAncestor_asksGitOncePerCommitPair_butEveryTimeForRefNames', (t) => {
   assert.equal(count(calls, 'merge-base', '--is-ancestor'), 4);
 });
 
+test('isAncestor_throwsAMissingCommitNamingTheAbsentOne_whenEitherSideIsNotInTheClone', (t) => {
+  const { repo, head } = setUp(t);
+  const missing = 'c'.repeat(40);
+
+  for (const [ancestor, descendant] of [[missing, head], [head, missing]]) {
+    assert.throws(() => gitcmd.isAncestor(repo.path, ancestor!, descendant!), (error: unknown) => {
+      assert.ok(error instanceof gitcmd.MissingCommit);
+      assert.ok(error instanceof gitcmd.GitError);
+      assert.equal(error.commit, missing);
+      assert.ok(error.message.startsWith(`merge-base --is-ancestor ${ancestor} ${descendant}: `), error.message);
+      return true;
+    });
+  }
+});
+
 function forkedHistory(t: TestContext) {
   const { repo, base, head } = setUp(t);
   const middle = repo.git('rev-parse', head + '^');

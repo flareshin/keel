@@ -148,6 +148,22 @@ describe('MergeScenarioTest', () => {
     assert.ok(run.stderr.includes('src/a.py (content or mode changed after review)'), run.stderr);
   });
 
+  test('merge_namesThePullRequestHeadToPass_whenMatchHeadIsNotInTheClone', (t) => {
+    const sandbox = new Sandbox(t);
+    const [repo, head] = reviewedFeature(sandbox);
+    pullRequest(sandbox, head);
+    for (const [matchHead, nextStep] of [
+      [SHA_A, `commit ${SHA_A} is not in ${repo.path} or on its origin; pass the pull request's head commit ` +
+        '(`gh pr view 7 --json headRefOid`)'],
+      ['$H', 'the gate reads `$H` as written and does not expand it; pass the head commit itself (`gh pr view 7 --json headRefOid`)'],
+    ]) {
+      const run = sandbox.push(repo, `gh pr merge 7 --match-head-commit ${matchHead}`);
+      assert.equal(run.rc, 2, run.stderr + run.stdout);
+      assert.ok(run.stderr.includes('failing closed'), run.stderr);
+      assert.ok(run.stderr.includes(`- [K1] next step: ${nextStep}\n`), run.stderr);
+    }
+  });
+
   test('merge_failsClosed_whenGhCannotAnswer', (t) => {
     const sandbox = new Sandbox(t);
     const [repo, head] = reviewedFeature(sandbox);

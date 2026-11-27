@@ -52,6 +52,15 @@ export class GitError extends Error {
   override name = 'GitError';
 }
 
+export class MissingCommit extends GitError {
+  readonly commit: string;
+
+  constructor(message: string, commit: string) {
+    super(message);
+    this.commit = commit;
+  }
+}
+
 export interface PathEntry {
   path: string;
   blob: string | null;
@@ -209,7 +218,9 @@ export function isAncestor(repo: string, ancestor: string, descendant: string): 
   if (known !== undefined) return known;
   const completed = runUnchecked(repo, ['merge-base', '--is-ancestor', ancestor, descendant]);
   if (completed.returncode !== 0 && completed.returncode !== 1) {
-    throw new GitError(`merge-base --is-ancestor ${ancestor} ${descendant}: ${completed.stderr.toString()}`);
+    const message = `merge-base --is-ancestor ${ancestor} ${descendant}: ${completed.stderr.toString()}`;
+    const missing = [ancestor, descendant].find((rev) => commitSha(repo, rev) === null);
+    throw missing === undefined ? new GitError(message) : new MissingCommit(message, missing);
   }
   const answer = completed.returncode === 0;
   if (OBJECT_ID.test(ancestor) && OBJECT_ID.test(descendant)) ancestryAnswers.set(key, answer);

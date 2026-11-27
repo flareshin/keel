@@ -143,10 +143,20 @@ const TAG_PREFIX = "refs/tags/";
 const HEAD = "HEAD";
 const K1 = verify.K1;
 const RISK = verify.RISK;
+const PLAIN_BRANCH_NAME = /^[A-Za-z0-9_][A-Za-z0-9._/-]*$/;
+const RUN_FROM_THE_CLONE = "run it from inside the clone it pushes or merges (`cd <clone>` or `git -C <clone>`), then retry";
 
 export class GateError extends Error {
   override name = "GateError";
+  readonly nextStep: string | null;
+
+  constructor(message: string, nextStep: string | null = null) {
+    super(message);
+    this.nextStep = nextStep;
+  }
 }
+
+class NotAClone extends GateError {}
 
 export class UnclearTarget extends Error {
   override name = "UnclearTarget";
@@ -266,10 +276,11 @@ class Report {
     this.fire(K1, contract.OUTCOME, { detail: contract.missDetail(payload, missing) });
   }
 
-  error(error: unknown, failClosed: boolean, hint: string, repo: string | null = null): void {
+  error(error: unknown, failClosed: boolean, hint: string, repo: string | null = null, nextStep: string | null = null): void {
     const detail = describeError(error);
     if (failClosed) {
-      this.blocks.push(message("internal error; failing closed for a gated repo", [{ ruleId: K1, text: detail }], hint));
+      const reasons = [...(nextStep === null ? [] : [{ ruleId: K1, text: "next step: " + nextStep }]), { ruleId: K1, text: detail }];
+      this.blocks.push(message("internal error; failing closed for a gated repo", reasons, hint));
     }
     this.fire(K1, "error", { repo, detail });
   }
@@ -869,8 +880,10 @@ function judgeAction(action: Action, report: Report): void {
   } catch (error) {
     if (error instanceof UnclearTarget) {
       denyUnclearTarget(action, error, report);
+    } else if (error instanceof NotAClone && action.kind === "unattributable" && registry.gatesAnyRepo()) {
+      denyUnattributable(action, null, report, hint);
     } else {
-      report.error(error, irreversible && registry.gatesAnyRepo(), hint);
+      report.error(error, irreversible && registry.gatesAnyRepo(), hint, null, error instanceof GateError ? error.nextStep : null);
     }
     return;
   }
@@ -882,8 +895,23 @@ function judgeAction(action: Action, report: Report): void {
     else if (action.kind === "unattributable") denyUnattributable(action, repoKey, report, hint);
     else earlyWarning(repoRoot, repoKey, row, report);
   } catch (error) {
-    report.error(error, irreversible && gated, hint, repoKey);
+    report.error(error, irreversible && gated, hint, repoKey, nextStepAfter(error, repoRoot, repoKey));
   }
+}
+
+function nextStepAfter(error: unknown, repoRoot: string, repoKey: string | null): string | null {
+  if (error instanceof gitcmd.MissingCommit) return fetchTheMissingCommit(repoRoot, repoKey, error.commit);
+  return error instanceof GateError ? error.nextStep : null;
+}
+
+function fetchTheMissingCommit(repoRoot: string, repoKey: string | null, commit: string): string {
+  return `fetch commit ${commit} into ${repoRoot} from ${repoKey ?? "its origin"} ` +
+    `(\`git -C ${shlexQuote(repoRoot)} fetch origin ${commit}\`), then retry; ` +
+    "if origin lacks it too, review the change again on a base this clone has";
+}
+
+function readAsWritten(word: string): string {
+  return `the gate reads \`${word}\` as written and does not expand it`;
 }
 
 function userCommand(workdir: string, words: readonly string[]): string {
@@ -892,13 +920,18 @@ function userCommand(workdir: string, words: readonly string[]): string {
 
 function resolveTarget(action: Action, report: Report): Target {
   const repoRoot = gitcmd.toplevel(action.workdir);
-  if (repoRoot === null) throw new GateError("not a git repository: " + action.workdir);
+  if (repoRoot === null) throw new NotAClone("not a git repository: " + action.workdir, runFromTheClone(action.workdir));
   const repoKey = targetKey(action, repoRoot);
   if (!isFile(registry.registryPath())) {
     warnRegistryAbsentOnce(report);
     return [repoRoot, repoKey, null];
   }
   return [repoRoot, repoKey, registry.lookup(repoKey)];
+}
+
+function runFromTheClone(workdir: string): string {
+  if (RUN_TIME_WORD_RE.test(workdir)) return `${readAsWritten(workdir)}; name the clone's path in the command (\`git -C <clone>\`)`;
+  return RUN_FROM_THE_CLONE;
 }
 
 function targetKey(action: Action, repoRoot: string): string | null {
@@ -1013,7 +1046,7 @@ function judgePush(push: Push, repoRoot: string, repoKey: string | null, row: Ga
   }
   for (const spec of push.refspecs.length > 0 ? push.refspecs : [{ source: HEAD, destination: null }]) {
     const head = gitcmd.commitSha(repoRoot, spec.source);
-    if (head === null) throw new GateError(`refspec source ${spec.source} does not name a commit`);
+    if (head === null) throw new GateError(`refspec source ${spec.source} does not name a commit`, createTheSource(repoRoot, spec.source));
     if (pushesTag(repoRoot, spec)) {
       report.passed(gatedKey, { head });
       continue;
@@ -1022,6 +1055,20 @@ function judgePush(push: Push, repoRoot: string, repoKey: string | null, row: Ga
     const outgoing = outgoingOf(repoRoot, gatedKey, gatedRow, head, baseRef, registry.pushNeedsApproval(gatedRow), false);
     report.decide(verify.judge(outgoing), `push of ${spec.source} in ${gatedKey} denied`, hint, gatedKey, head, outgoing.mergeBase);
   }
+}
+
+function createTheSource(repoRoot: string, source: string): string {
+  const clone = shlexQuote(repoRoot);
+  if (RUN_TIME_WORD_RE.test(source)) return `${readAsWritten(source)}; name the branch in the command (\`git push origin <branch>\`)`;
+  const tag = source.startsWith(TAG_PREFIX) ? source.slice(TAG_PREFIX.length) : null;
+  if (tag !== null && PLAIN_BRANCH_NAME.test(tag)) {
+    return `no tag ${tag} is in ${repoRoot}; create it first (\`git -C ${clone} tag ${shlexQuote(tag)}\`)`;
+  }
+  if (tag === null && source !== HEAD && PLAIN_BRANCH_NAME.test(source)) {
+    return `no branch, tag or commit named ${source} is in ${repoRoot}; ` +
+      `create the branch first (\`git -C ${clone} branch ${shlexQuote(source)}\`) or push one that exists`;
+  }
+  return `\`${source}\` names no commit in ${repoRoot}; push a branch, tag or commit that exists`;
 }
 
 function gatedReposASubmodulePushReaches(push: Push, repoRoot: string, repoKey: string | null, row: GatedRepo | null): string[] {
@@ -1084,7 +1131,7 @@ function judgeMerge(merge: Merge, repoRoot: string, repoKey: string | null, row:
     );
     return;
   }
-  const head = fetchedCommit(repoRoot, merge.matchHead);
+  const head = fetchedCommit(repoRoot, merge.matchHead, merge.selector);
   const baseRef = fetchedRemoteBranch(repoRoot, pullRequest["baseRefName"]);
   const promote = pullRequest["baseRefName"] !== gatedRow.integrationBase;
   const outgoing = outgoingOf(repoRoot, gatedKey, gatedRow, head, baseRef, true, promote);
@@ -1218,11 +1265,17 @@ function outgoingOf(
   return { repoRoot, repoKey, row, head, mergeBase, needsApproval, promote };
 }
 
-function fetchedCommit(repoRoot: string, sha: string): string {
+function fetchedCommit(repoRoot: string, sha: string, selector: string | null): string {
   if (gitcmd.commitSha(repoRoot, sha) === null) gitcmd.fetch(repoRoot, ["origin"]);
   const head = gitcmd.commitSha(repoRoot, sha);
-  if (head === null) throw new GateError(`commit ${sha} is not in this clone even after fetching origin`);
+  if (head === null) throw new GateError(`commit ${sha} is not in this clone even after fetching origin`, passThePullRequestHead(repoRoot, sha, selector));
   return head;
+}
+
+function passThePullRequestHead(repoRoot: string, sha: string, selector: string | null): string {
+  const view = `\`gh pr view ${selector === null ? "" : shlexQuote(selector) + " "}--json headRefOid\``;
+  if (RUN_TIME_WORD_RE.test(sha)) return `${readAsWritten(sha)}; pass the head commit itself (${view})`;
+  return `commit ${sha} is not in ${repoRoot} or on its origin; pass the pull request's head commit (${view})`;
 }
 
 function fetchedRemoteBranch(repoRoot: string, name: unknown): string {

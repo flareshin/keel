@@ -546,6 +546,8 @@ describe('HookBehaviorTest', () => {
     const run = sandbox.push(repo, 'git -C $NO_SUCH_VARIABLE/app push origin main');
     assert.equal(run.rc, 2, run.stderr + run.stdout);
     assert.ok(run.stderr.includes('failing closed'), run.stderr);
+    assert.ok(run.stderr.includes(`- [K1] next step: the gate reads \`${repo.path}/$NO_SUCH_VARIABLE/app\` ` +
+      'as written and does not expand it; name the clone\'s path in the command (`git -C <clone>`)\n'), run.stderr);
   });
 
   test('push_passesTagsDeletesAndDryRuns_butGatesATagPushedAsABranch', (t) => {
@@ -667,12 +669,83 @@ describe('HookBehaviorTest', () => {
     assert.equal(sandbox.fires('K1', 'error')[0].repo, 'acme/app');
   });
 
-  test('push_failsClosed_whenWorkdirIsNotARepo', (t) => {
+  test('push_namesWhatToCreate_whenRefspecSourceNamesNoCommit', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    const clone = shlexQuote(repo.path);
+    for (const [source, nextStep] of [
+      ['no-such-branch', `no branch, tag or commit named no-such-branch is in ${repo.path}; ` +
+        `create the branch first (\`git -C ${clone} branch no-such-branch\`) or push one that exists`],
+      ['refs/tags/v9', `no tag v9 is in ${repo.path}; create it first (\`git -C ${clone} tag v9\`)`],
+      ['$B', 'the gate reads `$B` as written and does not expand it; name the branch in the command (`git push origin <branch>`)'],
+      ['HEAD~9', `\`HEAD~9\` names no commit in ${repo.path}; push a branch, tag or commit that exists`],
+      ['refs/tags/v*', `\`refs/tags/v*\` names no commit in ${repo.path}; push a branch, tag or commit that exists`],
+    ]) {
+      const run = sandbox.push(repo, `git push origin ${source}`);
+      assert.equal(run.rc, 2, run.stderr + run.stdout);
+      assert.ok(run.stderr.includes('failing closed'), run.stderr);
+      assert.ok(run.stderr.includes(`- [K1] next step: ${nextStep}\n`), run.stderr);
+    }
+  });
+
+  test('push_keepsTheNextStepAndTheCommandToRun_whenTheFailClosedMessageIsCutToTheLimit', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    const branch = 'x'.repeat(450);
+    const run = sandbox.push(repo, `git push origin ${branch}`);
+    assert.equal(run.rc, 2, run.stderr + run.stdout);
+    assert.ok(run.stderr.includes('…\n'), run.stderr);
+    assert.ok(run.stderr.includes(`- [K1] next step: no branch, tag or commit named ${branch} is in ${repo.path}; ` +
+      `create the branch first (\`git -C ${shlexQuote(repo.path)} branch ${branch}\`) or push one that exists\n`), run.stderr);
+    assert.equal(lastLine(run.stderr), `Run it yourself in your terminal: cd ${shlexQuote(repo.path)} && git push origin ${branch}`);
+  });
+
+  test('push_namesTheCommitToFetch_whenTheReviewBaseIsNotInTheClone', (t) => {
+    const { sandbox, repo } = featureRepo(t, LOGIC_WITH_TEST);
+    repo.git('switch', '-q', '-c', 'rewritten', 'main');
+    const missing = repo.commit({ 'notes.md': 'rewritten later\n' });
+    repo.git('switch', '-q', 'feature');
+    sandbox.review(repo, { reviewBase: missing });
+    sandbox.testsEvidence(repo);
+    repo.git('branch', '-q', '-D', 'rewritten');
+    repo.git('reflog', 'expire', '--expire=now', '--all');
+    repo.git('gc', '-q', '--prune=now');
+    assert.equal(gitcmd.commitSha(repo.path, missing), null);
+    const run = sandbox.push(repo, 'git push origin feature');
+    assert.equal(run.rc, 2, run.stderr + run.stdout);
+    assert.ok(run.stderr.includes('failing closed'), run.stderr);
+    assert.ok(run.stderr.includes(`GitError: merge-base --is-ancestor ${missing} `), run.stderr);
+    assert.ok(run.stderr.includes(`- [K1] next step: fetch commit ${missing} into ${repo.path} from acme/app ` +
+      `(\`git -C ${shlexQuote(repo.path)} fetch origin ${missing}\`), then retry; ` +
+      'if origin lacks it too, review the change again on a base this clone has\n'), run.stderr);
+  });
+
+  test('push_failsClosedNamingWhereToRunIt_whenWorkdirIsNotARepo', (t) => {
     const sandbox = new Sandbox(t);
     const repo = sandbox.clone('acme', 'app');
     const run = sandbox.push(repo, 'cd /nonexistent-dir && git push origin feature');
     assert.equal(run.rc, 2);
     assert.ok(run.stderr.includes('GateError: not a git repository'), run.stderr);
+    assert.ok(run.stderr.includes('- [K1] next step: run it from inside the clone it pushes or merges ' +
+      '(`cd <clone>` or `git -C <clone>`), then retry\n'), run.stderr);
+  });
+
+  test('unattributable_isDeniedAsUnattributableNotAsAnInternalError_whenWorkdirIsNotARepo', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    const run = sandbox.push(repo, 'cd /nonexistent-dir && $g push origin feature');
+    assert.equal(run.rc, 2, run.stderr + run.stdout);
+    assert.ok(run.stderr.includes(UNATTRIBUTABLE), run.stderr);
+    assert.ok(run.stderr.includes('`$g`'), run.stderr);
+    assert.ok(!run.stderr.includes('internal error'), run.stderr);
+    assert.equal(sandbox.fires('K1', 'deny').length, 1);
+  });
+
+  test('prCreate_passes_whenWorkdirIsNotARepo', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    const run = sandbox.push(repo, 'cd /nonexistent-dir && gh pr create --fill');
+    assert.equal(run.rc, 0, run.stderr + run.stdout);
   });
 
   test('push_failsClosed_whenFiresLogIsUnwritableInGatedRepo', (t) => {

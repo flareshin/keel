@@ -35,7 +35,7 @@ export function runProcess(command: string[] | string, options: RunOptions = {})
     stdio: [inputGiven ? "pipe" : options.stdin ?? "inherit", "pipe", "pipe"],
   })
   const error = result.error as NodeJS.ErrnoException | undefined
-  if (error?.code === "ETIMEDOUT") throw timeoutExpired(command, options.timeoutSeconds ?? 0, result.stdout ?? "")
+  if (error?.code === "ETIMEDOUT") throw timeoutExpired(command, options.timeoutSeconds ?? 0, result.stdout ?? "", result.stderr ?? "")
   if (error) throw error
   return { returncode: exitCode(result.status, result.signal), stdout: result.stdout ?? "", stderr: result.stderr ?? "" }
 }
@@ -55,7 +55,7 @@ export function runProcessAsync(command: string[], options: Pick<RunOptions, "ti
       }
       child.stdout.destroy()
       child.stderr.destroy()
-      reject(timeoutExpired(command, options.timeoutSeconds ?? 0, stdout))
+      reject(timeoutExpired(command, options.timeoutSeconds ?? 0, stdout, stderr))
     }, options.timeoutSeconds * 1000)
     child.stdout.setEncoding("utf8").on("data", (chunk: string) => { stdout += chunk })
     child.stderr.setEncoding("utf8").on("data", (chunk: string) => { stderr += chunk })
@@ -70,8 +70,8 @@ export function runProcessAsync(command: string[], options: Pick<RunOptions, "ti
   })
 }
 
-function timeoutExpired(command: string[] | string, timeoutSeconds: number, partialStdout: string): TimeoutExpired {
-  return new TimeoutExpired(`command ${JSON.stringify(command)} timed out after ${timeoutSeconds} seconds`, timeoutSeconds, partialStdout)
+function timeoutExpired(command: string[] | string, timeoutSeconds: number, partialStdout: string, partialStderr: string): TimeoutExpired {
+  return new TimeoutExpired(`command ${JSON.stringify(command)} timed out after ${timeoutSeconds} seconds`, timeoutSeconds, partialStdout, partialStderr)
 }
 
 function killProcessGroup(leader: number): void {

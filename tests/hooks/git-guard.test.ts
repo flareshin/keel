@@ -1849,6 +1849,30 @@ describe("ForcePushTest", () => {
     assertDenied(guard("git push", repo), "F-force-push");
   });
 
+  it("barePush_deniedWithFForcePush_whenACommandOverrideRoutesItToAMirror", () => {
+    sandbox.git(repo, "remote", "add", "backup", sandbox.git(repo, "remote", "get-url", "origin").trim());
+    sandbox.git(repo, "config", "remote.backup.mirror", "true");
+    assertDenied(guard("git -c remote.pushDefault=backup push", repo), "F-force-push");
+  });
+
+  it("mirrorPush_deniedWithFForcePush_whenTheRemoteOrMirrorKeyIsDecidedAtRunTime", () => {
+    sandbox.git(repo, "remote", "add", "backup", sandbox.git(repo, "remote", "get-url", "origin").trim());
+    sandbox.git(repo, "config", "remote.backup.mirror", "true");
+    for (const command of ['git -c "remote.$(cat r.txt).mirror=true" push origin feature',
+      'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="remote.$(cat r.txt).mirror" GIT_CONFIG_VALUE_0=true git push origin feature',
+      'git -c remote.pushDefault="$(cat r.txt)" push', 'git push "$(cat r.txt)" feature']) {
+      assertDenied(guard(command, repo), "F-force-push");
+    }
+  });
+
+  it("push_passes_whenTheCommandOverridesOnlyUnrelatedConfig", () => {
+    for (const command of ["git -c user.name=x push origin feature",
+      "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=user.name GIT_CONFIG_VALUE_0=x git push origin feature",
+      'git -c user.name="$(cat name.txt)" push origin feature']) {
+      assertPassed(guard(command, repo));
+    }
+  });
+
   it("push_denied_whenGitsOwnDashedPushProgramForces", () => {
     assertDenied(guard("/usr/libexec/git-core/git-push --force origin feature", repo), "F-force-push");
   });

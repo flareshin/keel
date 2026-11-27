@@ -276,18 +276,21 @@ const CONFIG_ENV_OPTION = "--config-env";
 
 export interface ConfigOverrides {
   configArgs: string[];
-  variables: string[];
+  settings: ConfigSetting[];
 }
 
+export type ConfigSetting = { key: string; literal: string } | { key: string; variable: string };
+
 export function configOverrides(gitGlobals: readonly string[]): ConfigOverrides {
-  const overrides: ConfigOverrides = { configArgs: [], variables: [] };
+  const overrides: ConfigOverrides = { configArgs: [], settings: [] };
   const words = gitGlobals.values();
   for (const word of words) {
     const [option, separator, attached] = partition(word, "=");
     if (!CONFIG_OVERRIDE_OPTIONS.has(option)) continue;
     const setting = separator ? attached : (nextWord(words) ?? "");
+    const [key, , right] = partition(setting, "=");
     overrides.configArgs.push(option, setting);
-    if (option === CONFIG_ENV_OPTION) overrides.variables.push(partition(setting, "=")[2]);
+    overrides.settings.push(option === CONFIG_ENV_OPTION ? { key, variable: right } : { key, literal: right });
   }
   return overrides;
 }

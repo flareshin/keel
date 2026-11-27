@@ -30,6 +30,7 @@ import { pushRemoteMirror } from "../../lib/evidence/gitcmd.ts";
 import type { ConfigView } from "../../lib/evidence/gitcmd.ts";
 import { steps } from "../lib/hookkit/steps.ts";
 import type { Step } from "../lib/hookkit/steps.ts";
+import type { ConfigSetting } from "../lib/hookkit/gitargs.ts";
 import { resolveDirectory } from "../lib/hookkit/variables.ts";
 import { fileWriteOf, operands, writeTargets } from "../lib/hookkit/writes.ts";
 import { TimeoutExpired } from "../../measure/lib/measurekit/timeout.ts";
@@ -79,6 +80,7 @@ const ADD_INTERACTIVE_LONG_OPTIONS: ReadonlySet<string> = new Set(["--patch", "-
 const ADD_INTERACTIVE_SHORT_FLAGS: ReadonlySet<string> = new Set(["p", "i", "e"]);
 const INDEX_FILE_VARIABLE = "GIT_INDEX_FILE";
 const CONFIG_VARIABLE_PREFIX = "GIT_CONFIG_";
+const PUSH_ROUTING_KEY_PREFIXES = ["remote.", "branch."];
 const INDEX_COPY_PREFIX = "keel-index-";
 const NOT_STAGING = "not-staging";
 const UNREPLAYABLE = "unreplayable";
@@ -863,7 +865,7 @@ function copyIndex(toplevel: string, destination: string): boolean {
   return true;
 }
 
-function checkPush(args: readonly string[], repoDirectory: string, view: ConfigView): Violation[] {
+function checkPush(args: readonly string[], repoDirectory: string, view: PushConfigView): Violation[] {
   const toplevel = findToplevel(repoDirectory);
   if (toplevel === null) return [];
   const push = readPush(args, currentBranch(toplevel));
@@ -880,15 +882,34 @@ function checkPush(args: readonly string[], repoDirectory: string, view: ConfigV
   return violations;
 }
 
-function mayPushToAMirror(push: PushRequest, toplevel: string, view: ConfigView): boolean {
+function mayPushToAMirror(push: PushRequest, toplevel: string, view: PushConfigView): boolean {
+  if (view.routingDecidedAtRunTime || isRunTimeWord(push.remote ?? "")) return true;
   return pushRemoteMirror(toplevel, push.remote, view) !== "notMirror";
 }
 
-function pushConfigView(gitGlobals: readonly string[], step: Step): ConfigView {
+interface PushConfigView extends ConfigView {
+  routingDecidedAtRunTime: boolean;
+}
+
+function pushConfigView(gitGlobals: readonly string[], step: Step): PushConfigView {
   const overrides = configOverrides(gitGlobals);
   const commandVariables = new Map([...step.expansion, ...step.environment]);
-  const read = [...commandVariables].filter(([name]) => overrides.variables.includes(name) || name.startsWith(CONFIG_VARIABLE_PREFIX));
-  return { configArgs: overrides.configArgs, env: { ...process.env, ...Object.fromEntries(read) } };
+  const named = new Set(overrides.settings.flatMap((setting) => "variable" in setting ? [setting.variable] : []));
+  const read = [...commandVariables].filter(([name]) => named.has(name) || name.startsWith(CONFIG_VARIABLE_PREFIX));
+  const settingValue = (setting: ConfigSetting): string =>
+    "variable" in setting ? (commandVariables.get(setting.variable) ?? "") : setting.literal;
+  const routingDecidedAtRunTime = overrides.settings.some((setting) =>
+    isRunTimeWord(setting.key) || (routesPushes(setting.key) && isRunTimeWord(settingValue(setting))))
+    || read.some(([name, value]) => name.startsWith(CONFIG_VARIABLE_PREFIX) && isRunTimeWord(value));
+  return { configArgs: overrides.configArgs, env: { ...process.env, ...Object.fromEntries(read) }, routingDecidedAtRunTime };
+}
+
+function routesPushes(key: string): boolean {
+  return PUSH_ROUTING_KEY_PREFIXES.some((prefix) => key.toLowerCase().startsWith(prefix));
+}
+
+function isRunTimeWord(word: string): boolean {
+  return RUN_TIME_WORD_RE.test(word);
 }
 
 function leasedProtectedBranches(push: PushRequest, repoKey: string | null): string[] {

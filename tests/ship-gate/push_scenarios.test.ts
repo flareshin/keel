@@ -12,6 +12,8 @@ const HEAVY_FILE = 'src/core/billing/a.py';
 const TWO_LINE_TEST = 'def test_a():\n    assert True\n';
 const ONE_LINE_TEST = 'def test_a(): assert True\n';
 const PUSH_FEATURE = 'git push origin feature';
+const UNRELATED_RUN = 'rv-unrelated-0001';
+const NEWEST_CREATED_AT = '2099-01-01T00:00:00Z';
 
 function feature(sandbox: Sandbox, files: Record<string, string | Buffer> = LOGIC_WITH_TEST): Repo {
   const repo = sandbox.clone('acme', 'app');
@@ -42,6 +44,19 @@ function snapshotTree(sandbox: Sandbox, repo: Repo): string {
 function sandboxAndFeature(t: TestContext, registry?: string[], files?: Record<string, string | Buffer>): [Sandbox, Repo] {
   const sandbox = new Sandbox(t, registry);
   return [sandbox, feature(sandbox, files)];
+}
+
+function reviewUnrelatedBranch(sandbox: Sandbox, repo: Repo, path = 'src/other.py'): void {
+  repo.git('checkout', '-q', '-b', 'other', 'origin/main');
+  repo.commit({ [path]: "print('other')\n" }, 'other change');
+  sandbox.review(repo, { runId: UNRELATED_RUN, session: 's2', agentId: 'ag2' });
+  repo.git('checkout', '-q', 'feature');
+  for (const path of sandbox.evidenceFiles('review')) {
+    const evidence = JSON.parse(readFileSync(path, 'utf8'));
+    if (evidence.root_run_id !== UNRELATED_RUN) continue;
+    evidence.created_at = NEWEST_CREATED_AT;
+    writeFileSync(path, JSON.stringify(evidence) + '\n');
+  }
 }
 
 describe('PushScenarioTest', () => {
@@ -390,5 +405,34 @@ describe('PushScenarioTest', () => {
     const path = sandbox.evidenceFiles('review')[0]!;
     expireEvidence(path);
     assertDenied(sandbox.push(repo, PUSH_FEATURE), 'K1', 'no review evidence');
+  });
+
+  test('push_deniesWithoutNamingAnUnrelatedChain_whenNoReviewSawTheChange', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t);
+    reviewUnrelatedBranch(sandbox, repo);
+    sandbox.testsEvidence(repo);
+    const run = sandbox.push(repo, PUSH_FEATURE);
+    assertDenied(run, 'K1', 'run lens-review on this change');
+    assert.ok(!run.stderr.includes(UNRELATED_RUN), run.stderr);
+  });
+
+  test('push_namesTheChainThatReviewedTheChange_overANewerUnrelatedChain', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t);
+    sandbox.fullBundle(repo);
+    repo.commit({ 'src/a.py': "print('edited')\n" }, 'edit after review');
+    reviewUnrelatedBranch(sandbox, repo);
+    const run = sandbox.push(repo, PUSH_FEATURE);
+    assertDenied(run, 'K1', 'chain rv-root-0001 does not cover: src/a.py (content or mode changed after review)');
+    assert.ok(!run.stderr.includes(UNRELATED_RUN), run.stderr);
+  });
+
+  test('push_namesTheChainThatReviewedMoreOfTheChange_whenANewerChainSharesOnePath', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t);
+    sandbox.fullBundle(repo);
+    repo.commit({ 'src/a.py': "print('edited')\n" }, 'edit after review');
+    reviewUnrelatedBranch(sandbox, repo, 'src/a.py');
+    const run = sandbox.push(repo, PUSH_FEATURE);
+    assertDenied(run, 'K1', 'chain rv-root-0001 does not cover: src/a.py (content or mode changed after review)');
+    assert.ok(!run.stderr.includes(UNRELATED_RUN), run.stderr);
   });
 });

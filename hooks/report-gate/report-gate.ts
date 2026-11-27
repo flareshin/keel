@@ -16,6 +16,7 @@ import { sleep } from "../lib/hookkit/sleep.ts";
 import { SPACE_CHARS, SPACE_CLASS, testCaseFolded, trimCharacters, trimSpace, WORD_BOUNDARY, WORD_CHARS } from "../lib/hookkit/text.ts";
 import { TimeoutExpired } from "../../measure/lib/measurekit/timeout.ts";
 import { KEEL_EVIDENCE_LINE } from "../../lib/evidence/findings.ts";
+import { nonblank } from "../../lib/evidence/text.ts";
 import { OSError, run } from "../lib/hookkit/subprocess.ts";
 import type { CompletedProcess } from "../lib/hookkit/subprocess.ts";
 import { commandWritesFiles } from "../lib/hookkit/writes.ts";
@@ -528,12 +529,8 @@ function holdsFileAndLine(value: unknown): boolean {
   if (Array.isArray(value)) return value.some(holdsFileAndLine);
   if (!isRecord(value)) return false;
   const line = getField(value, "line");
-  if (FINDING_FILE_KEYS.some((key) => isNonBlankText(getField(value, key))) && Number.isInteger(line) && (line as number) > 0) return true;
+  if (FINDING_FILE_KEYS.some((key) => nonblank(getField(value, key))) && Number.isInteger(line) && (line as number) > 0) return true;
   return Object.values(value).some(holdsFileAndLine);
-}
-
-function isNonBlankText(value: unknown): boolean {
-  return typeof value === "string" && trimSpace(value) !== "";
 }
 
 function evidenceDenyDetail(report: string): string {

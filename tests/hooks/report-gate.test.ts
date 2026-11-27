@@ -800,6 +800,7 @@ describe("StructuredReportEvidenceTest", () => {
     ["ALineWrittenAsText", '[{"file": "src/a.py", "line": "12"}]'],
     ["AFractionalLine", '[{"file": "src/a.py", "line": 1.5}]'],
     ["ABlankFile", '[{"file": "  ", "line": 12}]'],
+    ["AFileOfOnlyAByteOrderMark", '[{"file": "\\ufeff", "line": 12}]'],
   ] as const;
 
   for (const [flaw, report] of UNUSABLE_FINDINGS) {

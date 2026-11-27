@@ -334,10 +334,18 @@ describe("review-eval cli", () => {
     assert.ok(report.faults[0].reason.includes("prepare failed"))
   })
 
-  it("faultedFullRun_writesNoSummaryLine", () => {
+  it("faultedFullRun_writesItsSummaryLine_withTheFaultCount", () => {
     play([{ result: result() }, { record: false }, { result: result() }])
+    const [completed, report] = runEval("--repeat", "1")
+    assert.equal(completed.status, 1)
+    assert.deepEqual(summaryLines().map((line) => [line.faults, line.numbers]), [[1, report.numbers]])
+  })
+
+  it("cleanFullRun_summaryLine_recordsZeroFaults", () => {
+    play([{ result: result() }, { result: result() }, { result: result() }])
     const [completed] = runEval("--repeat", "1")
-    assert.deepEqual([completed.status, summaryLines()], [1, []])
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.deepEqual(summaryLines().map((line) => line.faults), [0])
   })
 
   it("driver_waitsForTheWorkflowPastPrintModesBackgroundCeiling_whateverTheCallersSetting", () => {

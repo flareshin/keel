@@ -460,3 +460,142 @@ describe('PushScenarioTest', () => {
     assert.ok(!run.stderr.includes(UNRELATED_RUN), run.stderr);
   });
 });
+
+const NO_APPROVAL = 'no approval bound to chain head';
+const FEATURE_ONTO_MAIN = 'git push origin feature:main';
+
+function mergedIntoMain(repo: Repo, ...mergeOptions: string[]): void {
+  repo.git('checkout', '-q', 'main');
+  repo.git('merge', '-q', ...mergeOptions, '--no-edit', 'feature');
+}
+
+function assertNeedsApproval(sandbox: Sandbox, repo: Repo, command: string): void {
+  assertDenied(sandbox.push(repo, command), 'K1', NO_APPROVAL);
+  sandbox.approve('rv-root-0001');
+  assertPassed(sandbox, sandbox.push(repo, command));
+}
+
+describe('IntegrationBasePushTest', () => {
+  for (const command of [
+    FEATURE_ONTO_MAIN, 'git push origin feature:refs/heads/main', 'git push origin feature:heads/main',
+    'git push origin HEAD:main', 'git push origin +feature:main', 'git push origin feature:HEAD',
+  ]) {
+    test(`pushOntoTheIntegrationBase_needsAnApproval: ${command}`, (t) => {
+      const [sandbox, repo] = sandboxAndFeature(t);
+      sandbox.pushBundle(repo);
+      assertNeedsApproval(sandbox, repo, command);
+    });
+  }
+
+  for (const command of ['git push origin main', 'git push origin refs/heads/main', 'git push origin HEAD', 'git push origin @', 'git push']) {
+    test(`pushOfMainAfterALocalMerge_needsAnApproval: ${command}`, (t) => {
+      const [sandbox, repo] = sandboxAndFeature(t);
+      sandbox.pushBundle(repo);
+      mergedIntoMain(repo, '--ff-only');
+      assertNeedsApproval(sandbox, repo, command);
+    });
+  }
+
+  for (const mergeOption of ['--ff-only', '--no-ff']) {
+    test(`pushOfMainAfterAnApprovedLocalMerge_passes: ${mergeOption}`, (t) => {
+      const [sandbox, repo] = sandboxAndFeature(t);
+      sandbox.fullBundle(repo);
+      mergedIntoMain(repo, mergeOption);
+      const line = assertPassed(sandbox, sandbox.push(repo, 'git push origin main'));
+      assert.equal(line.head, repo.head());
+    });
+  }
+
+  for (const command of ['git push', PUSH_FEATURE, 'git push origin HEAD']) {
+    test(`push_needsAnApproval_whenPushDefaultUpstreamMapsTheBranchToMain: ${command}`, (t) => {
+      const [sandbox, repo] = sandboxAndFeature(t);
+      sandbox.pushBundle(repo);
+      repo.git('branch', '-q', '--set-upstream-to=origin/main');
+      repo.git('config', 'push.default', 'upstream');
+      assertNeedsApproval(sandbox, repo, command);
+    });
+  }
+
+  for (const pushDefault of [null, 'simple', 'current']) {
+    test(`barePush_passesWithoutAnApproval_whenPushDefaultSendsTheBranchToItsOwnName: ${pushDefault ?? 'unset'}`, (t) => {
+      const [sandbox, repo] = sandboxAndFeature(t);
+      sandbox.pushBundle(repo);
+      repo.git('branch', '-q', '--set-upstream-to=origin/main');
+      if (pushDefault !== null) repo.git('config', 'push.default', pushDefault);
+      assertPassed(sandbox, sandbox.push(repo, 'git push'));
+    });
+  }
+
+  for (const command of ['git push origin HEAD', 'git push']) {
+    test(`push_needsAnApproval_whenHeadIsDetached: ${command}`, (t) => {
+      const [sandbox, repo] = sandboxAndFeature(t);
+      sandbox.pushBundle(repo);
+      repo.git('checkout', '-q', '--detach');
+      assertNeedsApproval(sandbox, repo, command);
+    });
+  }
+
+  test('push_needsAnApproval_whenTheDestinationIsARunTimeWord', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t);
+    sandbox.pushBundle(repo);
+    assertNeedsApproval(sandbox, repo, 'git push origin "feature:$BRANCH"');
+  });
+
+  test('barePush_needsAnApproval_whenPushDefaultIsMatching', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t);
+    sandbox.pushBundle(repo);
+    repo.git('config', 'push.default', 'matching');
+    assertNeedsApproval(sandbox, repo, 'git push origin');
+  });
+
+  for (const command of [PUSH_FEATURE, 'git push']) {
+    test(`pushWithoutADestination_needsAnApproval_whenTheRemoteMapsItsRefs: ${command}`, (t) => {
+      const [sandbox, repo] = sandboxAndFeature(t);
+      sandbox.pushBundle(repo);
+      repo.git('config', 'remote.origin.push', 'refs/heads/feature:refs/heads/main');
+      assertNeedsApproval(sandbox, repo, command);
+    });
+  }
+
+  test('pushWithoutADestination_needsAnApproval_whenTheNamedRemoteMapsItsRefs', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t);
+    sandbox.pushBundle(repo);
+    repo.git('remote', 'add', 'mirror', repo.git('remote', 'get-url', 'origin').trim());
+    repo.git('config', 'remote.mirror.push', 'refs/heads/feature:refs/heads/main');
+    assertNeedsApproval(sandbox, repo, 'git push mirror feature');
+  });
+
+  test('pushOfATagOntoMain_needsAnApproval', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t);
+    sandbox.pushBundle(repo);
+    repo.git('tag', 'v1');
+    assertNeedsApproval(sandbox, repo, 'git push origin v1:main');
+  });
+
+  test('pushOfAPatternRefspec_isDenied', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t);
+    sandbox.pushBundle(repo);
+    assertDenied(sandbox.push(repo, "git push origin 'refs/heads/*:refs/heads/*'"), 'K1', 'refspec source refs/heads/* does not name a commit');
+  });
+
+  test('push_isDenied_whenAnEnvironmentConfigMayMapTheBranchToMain', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t);
+    sandbox.pushBundle(repo);
+    repo.git('branch', '-q', '--set-upstream-to=origin/main');
+    const command = `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=push.default GIT_CONFIG_VALUE_0=upstream ${PUSH_FEATURE}`;
+    assertDenied(sandbox.push(repo, command), 'K1', '`GIT_CONFIG_COUNT=1` changes git config the gate reads from the clone');
+  });
+
+  test('pushOntoAnotherBranch_passesWithoutAnApproval', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t);
+    sandbox.pushBundle(repo);
+    assertPassed(sandbox, sandbox.push(repo, 'git push origin feature:release'));
+    assertPassed(sandbox, sandbox.push(repo, 'git push origin HEAD'));
+  });
+
+  test('pushOntoTheIntegrationBase_passesWithoutAnApproval_whenTheRegistryMergesThisRepo', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t, AUTO_MERGE_REGISTRY);
+    sandbox.pushBundle(repo);
+    assertPassed(sandbox, sandbox.push(repo, FEATURE_ONTO_MAIN));
+  });
+});

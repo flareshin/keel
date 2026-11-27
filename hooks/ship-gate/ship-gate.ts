@@ -27,6 +27,7 @@ import { appendRecord, dataDir, iso, stateDir, utcNow } from "../../lib/evidence
 import * as compileCache from "../../lib/evidence/compile-cache.ts";
 import * as gc from "../../lib/evidence/gc.ts";
 import * as gitcmd from "../../lib/evidence/gitcmd.ts";
+import * as pushDestination from "../../lib/evidence/push_destination.ts";
 import * as registry from "../../lib/evidence/registry.ts";
 import { EvidenceTooDeepError } from "../../lib/evidence/store.ts";
 import type { GatedRepo } from "../../lib/evidence/registry.ts";
@@ -1035,7 +1036,9 @@ function judgePush(push: Push, repoRoot: string, repoKey: string | null, row: Ga
       continue;
     }
     const baseRef = resolveBase(repoRoot, gatedRow);
-    const outgoing = outgoingOf(repoRoot, gatedKey, gatedRow, head, baseRef, registry.pushNeedsApproval(gatedRow), false);
+    const target = { remote: push.remote, namesRefspecs: push.refspecs.length > 0, spec };
+    const needsApproval = registry.pushNeedsApproval(gatedRow) || pushDestination.mayLandOn(repoRoot, gatedRow.integrationBase, target);
+    const outgoing = outgoingOf(repoRoot, gatedKey, gatedRow, head, baseRef, needsApproval, false);
     report.decide(verify.judge(outgoing), `push of ${spec.source} in ${gatedKey} denied`, hint, gatedKey, head, outgoing.mergeBase);
   }
 }

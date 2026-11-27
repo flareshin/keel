@@ -1,4 +1,5 @@
 import * as gitcmd from './gitcmd.ts';
+import * as pushDestination from './push_destination.ts';
 import * as registry from './registry.ts';
 import * as verify from './verify.ts';
 import * as writers from './writers.ts';
@@ -29,7 +30,8 @@ export function pushReadiness(repoPath: string, approval: ApprovalCheck = 'as-th
   if (!gitcmd.refExists(repoRoot, 'refs/remotes/' + baseRef)) throw new writers.Usage(`base ${baseRef} is missing: run \`git fetch origin\``);
   const mergeBase = gitcmd.mergeBase(repoRoot, baseRef, head);
   if (mergeBase === null) throw new writers.Usage(`no merge base between ${baseRef} and HEAD`);
-  const needsApproval = approval === 'as-the-push' && registry.pushNeedsApproval(row!);
+  const needsApproval = approval === 'as-the-push'
+    && (registry.pushNeedsApproval(row!) || pushDestination.mayLandOn(repoRoot, row!.integrationBase, pushDestination.PUSH_OF_HEAD));
   const decision = verify.judge({ repoRoot, repoKey: repoKey!, row: row!, head, mergeBase, needsApproval, promote: false });
   return {
     repo: repoKey, head, gated: true, ok: decision.ok, risk: decision.riskClass, root_run_id: decision.rootRunId,

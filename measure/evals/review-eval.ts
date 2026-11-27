@@ -16,7 +16,7 @@ import { isFile, readUtf8 } from "../lib/measurekit/files.ts"
 import { displayText, isJsonObject, JSON_INDENT, parseJson, stringifySorted } from "../lib/measurekit/json.ts"
 import type { JsonObject } from "../lib/measurekit/json.ts"
 import { CaseError, SPLITS } from "./lib/evalkit/cases.ts"
-import { cliConfigDir } from "./lib/evalkit/liveconfig.ts"
+import { cliConfigDir, servedFilesRoot } from "./lib/evalkit/liveconfig.ts"
 import { loadReviewCases, selectReviewCases } from "./lib/evalkit/reviewcases.ts"
 import type { ReviewCase } from "./lib/evalkit/reviewcases.ts"
 import { gradeResult, suiteNumbers } from "./lib/evalkit/reviewgrade.ts"
@@ -30,7 +30,7 @@ const DEFAULT_MODEL = "sonnet"
 const DEFAULT_TIMEOUT_SECONDS = 1800
 const RAW_DIR_PREFIX = "keel-review-eval-"
 const SUMMARY_LOG = "keel-review-eval.jsonl"
-const REVIEWER_FILES = ["lens-review.js", "adversarial-audit.js"]
+const REVIEWER_FILES = ["agents/auditor.md", "agents/reporter.md", "workflows/adversarial-audit.js", "workflows/lens-review.js", "workflows/review-lenses.json"]
 const COMMAND: CommandSpec = {
   prog: "measure/evals/review-eval",
   usage: "measure/evals/review-eval [-h] [--split {train,holdout}] [--case CASE] [--repeat N] [--model MODEL] [--timeout-seconds S] [--dry-run] [--regrade RAW_DIR]",
@@ -150,16 +150,16 @@ function runConfig(args: ReviewEvalArgs, cases: ReviewCase[]): RunConfig {
   return {
     full_run: args.split === undefined && args.caseId === undefined,
     repeat: args.repeat, model, timeout_seconds: args.timeoutSeconds, config_dir: configDir,
-    command: reviewCommand(model), reviewer: reviewerFingerprint(configDir),
+    command: reviewCommand(model), reviewer: reviewerFingerprint(servedFilesRoot(configDir, env.keelHome())),
     cases: cases.map((planned) => ({ id: planned.id, split: planned.split, clean: planned.isClean })),
   }
 }
 
-function reviewerFingerprint(configDir: string): { [file: string]: string | null } {
+function reviewerFingerprint(servedRoot: string): { [file: string]: string | null } {
   const fingerprint: { [file: string]: string | null } = {}
   for (const name of REVIEWER_FILES) {
-    const workflowPath = path.join(configDir, "workflows", name)
-    fingerprint[name] = isFile(workflowPath) ? createHash("sha256").update(fs.readFileSync(workflowPath)).digest("hex") : null
+    const servedPath = path.join(servedRoot, name)
+    fingerprint[name] = isFile(servedPath) ? createHash("sha256").update(fs.readFileSync(servedPath)).digest("hex") : null
   }
   return fingerprint
 }

@@ -1426,7 +1426,7 @@
    "stdin": null,
    "rc": 4,
    "stdout": "no newline Ran 4 tests",
-   "stderr": "KEEL-TEST {\"count\":0,\"evidence_id\":null,\"exit\":0,\"run_id\":\"<RUN_ID>\",\"submodule_evidence\":{}}\n"
+   "stderr": "keel test: no test summary recognized; no evidence written\nKEEL-TEST {\"count\":0,\"evidence_id\":null,\"exit\":0,\"run_id\":\"<RUN_ID>\",\"submodule_evidence\":{}}\n"
   },
   {
    "args": [

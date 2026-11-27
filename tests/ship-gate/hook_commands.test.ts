@@ -772,8 +772,11 @@ describe('HookBehaviorTest', () => {
     const repo = sandbox.clone('acme', 'app');
     for (const command of ['cd "$X" && git push --dry-run origin feature', 'cd "$X" && git push -n origin feature',
       'cd - && git push --dry-run origin feature']) {
+      const passes = sandbox.fires('risk', 'pass').length;
       const run = sandbox.push(repo, command);
       assert.equal(run.rc, 0, command + run.stderr + run.stdout);
+      assert.equal(sandbox.fires('risk', 'pass').length, passes + 1, command);
+      assert.equal(sandbox.fires('risk', 'pass').at(-1).repo, undefined, command);
     }
     for (const command of ['cd "$X" && git push --dry-run --no-dry-run origin feature', 'cd "$X" && git push origin feature']) {
       const run = sandbox.push(repo, command);

@@ -850,6 +850,10 @@ describe("EvidenceDeadlineTest", () => {
     assert.equal(cliTimeoutSeconds(EVIDENCE_DEADLINE_SECONDS - 7.4), 7);
   });
 
+  it("cliTimeoutSeconds_stillMakesTheCall_whenExactlyOneSecondOfTheDeadlineIsLeft", () => {
+    assert.equal(cliTimeoutSeconds(EVIDENCE_DEADLINE_SECONDS - 1), 1);
+  });
+
   it("cliTimeoutSeconds_skipsTheCall_whenLessThanASecondOfTheDeadlineIsLeft", () => {
     assert.equal(cliTimeoutSeconds(EVIDENCE_DEADLINE_SECONDS - 0.5), null);
   });

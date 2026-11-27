@@ -404,15 +404,37 @@ describe("review-eval cli", () => {
     }
   })
 
-  it("reportAndSummaryLine_carryTheReviewerFingerprint", () => {
-    const workflow = path.join(box.data, "workflows", "lens-review.js")
-    fs.mkdirSync(path.dirname(workflow), { recursive: true })
-    fs.writeFileSync(workflow, "export const meta = {}\n")
+  const REVIEWER_FILE_KEYS = ["agents/auditor.md", "agents/reporter.md", "workflows/adversarial-audit.js", "workflows/lens-review.js", "workflows/review-lenses.json"]
+  const sha256Of = (text: string): string => createHash("sha256").update(text).digest("hex")
+
+  function reviewerWith(served: { [file: string]: string }): { [file: string]: string | null } {
+    return Object.fromEntries(REVIEWER_FILE_KEYS.map((file) => [file, file in served ? sha256Of(served[file] as string) : null]))
+  }
+
+  function writeUnder(root: string, file: string, text: string): void {
+    fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true })
+    fs.writeFileSync(path.join(root, file), text)
+  }
+
+  it("reportAndSummaryLine_carryTheReviewerFingerprint_ofTheLinkedFiles", () => {
+    writeUnder(box.data, "workflows/lens-review.js", "export const meta = {}\n")
+    writeUnder(box.data, "agents/auditor.md", "# auditor\n")
     play([{ result: result() }])
     const [completed, report] = runEval("--repeat", "1")
     assert.equal(completed.status, 0, completed.stderr)
-    const expected = { "lens-review.js": createHash("sha256").update("export const meta = {}\n").digest("hex"), "adversarial-audit.js": null }
+    const expected = reviewerWith({ "workflows/lens-review.js": "export const meta = {}\n", "agents/auditor.md": "# auditor\n" })
     assert.deepEqual([report.reviewer, summaryLines()[0].reviewer], [expected, expected])
+  })
+
+  it("reviewerFingerprint_hashesTheKeelCheckoutsFiles_underThePluginInstall", () => {
+    writeUnder(box.data, "state/keel/link-state.json", JSON.stringify({ schema: 1, mode: "plugin" }))
+    writeUnder(box.data, "workflows/lens-review.js", "stale linked copy\n")
+    const served = { "workflows/lens-review.js": "export const meta = { name: 'lens-review' }\n", "workflows/review-lenses.json": "{}\n", "agents/reporter.md": "# reporter\n" }
+    for (const [file, text] of Object.entries(served)) writeUnder(box.keel, file, text)
+    play([{ result: result() }])
+    const [completed, report] = runEval("--repeat", "1")
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.deepEqual(report.reviewer, reviewerWith(served))
   })
 
   it("dryRun_buildsEveryCaseAndCallsNothing", () => {

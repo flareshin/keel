@@ -17,6 +17,7 @@ const DECISION_MARGIN_SECONDS = 5;
 const NOT_GATED_REGISTRY = ['acme/app\toff\tmain\t-\tnone'];
 const NO_REVIEW = '- [K1] no review evidence';
 const UNATTRIBUTABLE = '- [K1] cannot attribute this push or merge';
+const MISSING_COMMIT = 'c'.repeat(40);
 
 const REMOVAL_DEADLINE_MS = 10_000;
 const POLL_MS = 20;
@@ -688,6 +689,9 @@ describe('HookBehaviorTest', () => {
       ['$B', 'the gate reads `$B` as written and does not expand it; name the branch in the command (`git push origin <branch>`)'],
       ['HEAD~9', `\`HEAD~9\` names no commit in ${repo.path}; push a branch, tag or commit that exists`],
       ['refs/tags/v*', `\`refs/tags/v*\` names no commit in ${repo.path}; push a branch, tag or commit that exists`],
+      [`${MISSING_COMMIT}:refs/heads/main`, `fetch commit ${MISSING_COMMIT} into ${repo.path} from acme/app ` +
+        `(\`git -C ${clone} fetch origin ${MISSING_COMMIT}\`), then retry; ` +
+        'if origin lacks it too, review the change again on a base this clone has'],
     ]) {
       const run = sandbox.push(repo, `git push origin ${source}`);
       assert.equal(run.rc, 2, run.stderr + run.stdout);

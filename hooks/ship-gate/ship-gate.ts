@@ -1048,7 +1048,9 @@ function judgePush(push: Push, repoRoot: string, repoKey: string | null, row: Ga
   }
   for (const spec of push.refspecs.length > 0 ? push.refspecs : [{ source: HEAD, destination: null }]) {
     const head = gitcmd.commitSha(repoRoot, spec.source);
-    if (head === null) throw new GateError(`refspec source ${spec.source} does not name a commit`, createTheSource(repoRoot, spec.source));
+    if (head === null) {
+      throw new GateError(`refspec source ${spec.source} does not name a commit`, createTheSource(repoRoot, gatedKey, spec.source));
+    }
     if (pushesTag(repoRoot, spec)) {
       report.passed(gatedKey, { head });
       continue;
@@ -1059,9 +1061,10 @@ function judgePush(push: Push, repoRoot: string, repoKey: string | null, row: Ga
   }
 }
 
-function createTheSource(repoRoot: string, source: string): string {
+function createTheSource(repoRoot: string, repoKey: string, source: string): string {
   const clone = shlexQuote(repoRoot);
   if (RUN_TIME_WORD_RE.test(source)) return `${readAsWritten(source)}; name the branch in the command (\`git push origin <branch>\`)`;
+  if (gitcmd.isObjectId(source)) return fetchTheMissingCommit(repoRoot, repoKey, source);
   const tag = source.startsWith(TAG_PREFIX) ? source.slice(TAG_PREFIX.length) : null;
   if (tag !== null && PLAIN_BRANCH_NAME.test(tag)) {
     return `no tag ${tag} is in ${repoRoot}; create it first (\`git -C ${clone} tag ${shlexQuote(tag)}\`)`;

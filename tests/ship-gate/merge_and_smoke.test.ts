@@ -164,6 +164,17 @@ describe('MergeScenarioTest', () => {
     }
   });
 
+  test('merge_namesThePullRequestHeadToPassWithoutASelector_whenNoPullRequestIsNamed', (t) => {
+    const sandbox = new Sandbox(t);
+    const [repo, head] = reviewedFeature(sandbox);
+    pullRequest(sandbox, head);
+    const run = sandbox.push(repo, `gh pr merge --match-head-commit ${SHA_A}`);
+    assert.equal(run.rc, 2, run.stderr + run.stdout);
+    assert.ok(run.stderr.includes('failing closed'), run.stderr);
+    assert.ok(run.stderr.includes(`- [K1] next step: commit ${SHA_A} is not in ${repo.path} or on its origin; ` +
+      "pass the pull request's head commit (`gh pr view --json headRefOid`)\n"), run.stderr);
+  });
+
   test('merge_failsClosed_whenGhCannotAnswer', (t) => {
     const sandbox = new Sandbox(t);
     const [repo, head] = reviewedFeature(sandbox);

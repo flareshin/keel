@@ -2120,6 +2120,17 @@ describe("ForcePushTest", () => {
       assertDenied(guard("git -c push.default=upstream push --force-with-lease origin feature", repo), "F-force-push");
     });
 
+    it("push_denied_whenConfigVariablesOfTheCommandSendTheLeaseToMain", () => {
+      const command = "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=push.default GIT_CONFIG_VALUE_0=upstream git push --force-with-lease origin feature";
+      assertDenied(guard(command, repo), "F-force-push");
+    });
+
+    it("push_denied_whenConfigVariablesPickAPushRemoteWhoseMappingSendsTheLeaseToMain", () => {
+      sandbox.git(repo, "config", "remote.fork.push", "refs/heads/feature:refs/heads/main");
+      const command = "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=remote.pushDefault GIT_CONFIG_VALUE_0=fork git push --force-with-lease";
+      assertDenied(guard(command, repo), "F-force-push");
+    });
+
     it("push_passes_whenTheLeaseStaysOnTheFeatureBranch", () => {
       sandbox.git(repo, "config", "push.default", "current");
       assertPassed(guard("git push --force-with-lease origin feature", repo));

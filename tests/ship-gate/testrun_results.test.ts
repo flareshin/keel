@@ -42,6 +42,17 @@ describe('TestrunResultsTest', () => {
     assert.doesNotMatch(run.stderr, /-q hides/);
   });
 
+  test('keelTest_givesNoQuietHint_whenMvnWithoutQuietExitsZeroWithCountZero', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    const mvn = join(repo.path, 'mvnw');
+    writeFileSync(mvn, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    const run = sandbox.keel(['test', '--', mvn, 'test'], { cwd: repo.path });
+    assert.equal(run.rc, NO_TESTS_RECOGNIZED, run.stderr);
+    assert.match(run.stderr, /keel test: no test summary recognized; no evidence written\n/);
+    assert.doesNotMatch(run.stderr, /-q hides/);
+  });
+
   test('keelTest_exitsTreeChangedAndSaysWhy_whenAGreenCommandChangesTheTree', (t) => {
     const sandbox = new Sandbox(t);
     const repo = sandbox.clone('acme', 'app');

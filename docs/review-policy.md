@@ -60,6 +60,14 @@ can observe it, and fix or note each consumer outside the diff. Pass the output
 verbatim as the lens-review `precheck` argument. lens-review refuses a single-repo
 root review without it when the diff changes three or more non-test TS/JS sources
 in a repo with tests `keel precheck run` can run (`keel precheck required` decides).
+The precheck runs only node:test files at keel's paths (`tests/**/*.test.ts`,
+`codex/tests/*.test.ts`, `tests/workflows/*.test.mjs`). A repo with none of them,
+such as a vitest, jest or Maven/Gradle JUnit repo, gets no mutation census:
+`keel precheck run` refuses with the reason and records the refusal in
+`keel-precheck.jsonl`, and `keel precheck required` adds the reason as
+`unsupported`, which lens-review reports as `Precheck: unsupported: …`. Quote that
+refusal or line in place of a census; neither counts as prechecked in the
+C-precheck metric, and neither does a run whose baseline found no test to run.
 `keel precheck run` first runs `tsc --noEmit` when the repo has a `tsconfig.json`
 and refuses with tsc's first lines on a type error; after the census it appends
 the writing-readable-code rule-checks lines (`rule-checks signal …`, and the summary as

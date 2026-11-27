@@ -279,6 +279,11 @@ describe("ParseCommandsTest", () => {
                      [["cd", "/x"], ["git", "push"], ["echo", "a"], ["echo", "b"], ["tail", "-1"]]);
   });
 
+  it("parseCommands_marksOnlyTheCommandsEndedByAnd", () => {
+    assert.deepEqual(parseCommands("a && b; c || d | e\nf & g && h").map((command) => command.andsToNext),
+                     [true, false, false, false, false, false, true, false]);
+  });
+
   it("parseCommands_keepsQuotedSeparators_whenInsideQuotes", () => {
     assert.deepEqual(argvs("echo 'a; b' \"c && d\""), [["echo", "a; b", "c && d"]]);
   });

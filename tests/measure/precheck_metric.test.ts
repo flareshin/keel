@@ -81,8 +81,8 @@ describe("C-precheck runner", () => {
     }))
   }
 
-  const givenPrecheck = (tree: string = TREE): void => {
-    box.appendLog("keel-precheck.jsonl", { at: NOW_TS, repo: "/somewhere/keel", review_base: "0".repeat(40), tree, outcome: "census" })
+  const givenPrecheck = (tree: string = TREE, outcome: Record<string, string> = { outcome: "census" }): void => {
+    box.appendLog("keel-precheck.jsonl", { at: NOW_TS, repo: "/somewhere/keel", review_base: "0".repeat(40), tree, ...outcome })
   }
 
   const givenReport = (text: string): string => {
@@ -119,6 +119,28 @@ describe("C-precheck runner", () => {
       run_id: "rv-a", created_at: NOW_TS, repos: ["flareshin/keel"], verdict: "NEEDS_FIXES", prechecked: true, mutation_tests_findings: 2,
       existing_test_lines_removed: null,
     }])
+  })
+
+  it("precheckThatStoppedOnAnEmptyBaseline_doesNotCountAsPrechecked", () => {
+    givenReview({ runId: "rv-a" })
+    givenPrecheck(TREE, { outcome: "stopped", baseline: "empty" })
+    const result = runMetric()
+    assert.equal(result.count, 0)
+    assert.equal(result.items[0].prechecked, false)
+  })
+
+  it("refusedPrecheck_doesNotCountAsPrechecked_evenWhenItNamesTheReviewedTree", () => {
+    givenReview({ runId: "rv-a" })
+    givenPrecheck(TREE, { outcome: "refused", reason: "no test file matches tests/**/*.test.ts" })
+    const result = runMetric()
+    assert.equal(result.count, 0)
+    assert.equal(result.items[0].prechecked, false)
+  })
+
+  it("precheckThatStoppedOnARedBaseline_stillCountsAsPrechecked", () => {
+    givenReview({ runId: "rv-a" })
+    givenPrecheck(TREE, { outcome: "stopped", baseline: "red" })
+    assert.equal(runMetric().count, 1)
   })
 
   it("handedBackReport_isReadFromTheSubagentHandbackMessage_asTheReportGateTakesIt", () => {

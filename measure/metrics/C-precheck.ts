@@ -48,7 +48,12 @@ function main(argv: string[]): number {
 
 function precheckedTrees(): Set<string> {
   const { records } = readJsonl(path.join(env.logsDir(), "keel-precheck.jsonl"))
-  return new Set(records.map((record) => record["tree"]).filter((tree): tree is string => typeof tree === "string"))
+  return new Set(records.filter(ranTheTests).map((record) => record["tree"]).filter((tree): tree is string => typeof tree === "string"))
+}
+
+function ranTheTests(record: JsonObject): boolean {
+  if (record["outcome"] === "refused") return false
+  return !(record["outcome"] === "stopped" && record["baseline"] === "empty")
 }
 
 function coveredFirstReviewsByRun(since: string): Map<string, FirstReview[]> {

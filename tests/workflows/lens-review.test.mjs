@@ -1138,6 +1138,14 @@ test('lensReview_runsTheReview_whenThePrecheckIsNotRequiredOrTheRequirementCould
   }
 })
 
+test('lensReview_reportsTheUnsupportedReason_whenThePrepareStepSaysTheRepoHasNoTestThePrecheckCanRun', async () => {
+  const reason = 'no test file matches tests/**/*.test.ts (the node:test paths keel precheck runs); vitest is not supported'
+  const { result } = await runWithPrecheck(undefined, requirementPrepared({ required: false, sources: 4, unsupported: reason }))
+  assert.equal(result.verdict, 'PASS')
+  assert.deepEqual(linesStartingWith(result.report, 'Precheck'), [`Precheck: unsupported: ${reason}`])
+  assert.equal(result.report.split('\n\n')[2], `Precheck: unsupported: ${reason}`)
+})
+
 test('lensReview_asksThePrepareStepForTheRequirement_onlyForASingleRootDiffWithoutAPrecheck', async () => {
   const root = await runWithPrecheck(undefined)
   const withPrecheck = await runWithPrecheck(precheckText())
@@ -1321,6 +1329,12 @@ test('lensReview_givesEachRepoOnlyItsOwnNoTestReason_whenTwoReposAreReviewed', a
 test('lensReview_joinsAMultiLineNoTestReasonIntoOneLine', async () => {
   const result = await reviewWithTestsAudit({ no_test_reasons: [{ repo_root: '/work/app', reason: 'Only prose changed.\nNo test reads DESIGN.md.' }] })
   assert.equal(result.evidence[0].no_test_reason, 'Only prose changed. / No test reads DESIGN.md.')
+})
+
+test('lensReview_writesInvisibleCharactersInANoTestReasonAsCodePoints', async () => {
+  const result = await reviewWithTestsAudit({ no_test_reasons: [{ repo_root: '/work/app', reason: 'Only prose\u3000changed\tno test.' }] })
+  assert.equal(result.evidence[0].no_test_reason, 'Only proseU+3000changedU+0009no test.')
+  assert.equal(result.verdict, 'PASS')
 })
 
 test('lensReview_asksTheDeltaAuditorToJudgeTheWholeRange_beforeItGivesANoTestReason', async () => {

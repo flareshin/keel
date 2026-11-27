@@ -555,6 +555,14 @@ describe('IntegrationBasePushTest', () => {
     assertNeedsApproval(sandbox, repo, PUSH_FEATURE);
   });
 
+  test('pushWithoutADestination_needsAnApproval_whenTheNamedRemoteMapsItsRefs', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t);
+    sandbox.pushBundle(repo);
+    repo.git('remote', 'add', 'mirror', repo.git('remote', 'get-url', 'origin').trim());
+    repo.git('config', 'remote.mirror.push', 'refs/heads/feature:refs/heads/main');
+    assertNeedsApproval(sandbox, repo, 'git push mirror feature');
+  });
+
   test('pushOntoAnotherBranch_passesWithoutAnApproval', (t) => {
     const [sandbox, repo] = sandboxAndFeature(t);
     sandbox.pushBundle(repo);

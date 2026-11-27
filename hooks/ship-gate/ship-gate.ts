@@ -1036,7 +1036,7 @@ function judgePush(push: Push, repoRoot: string, repoKey: string | null, row: Ga
       continue;
     }
     const baseRef = resolveBase(repoRoot, gatedRow);
-    const target = { remote: push.remote || null, namesRefspecs: push.refspecs.length > 0, spec };
+    const target = { remote: push.remote, namesRefspecs: push.refspecs.length > 0, spec };
     const needsApproval = registry.pushNeedsApproval(gatedRow) || pushDestination.mayLandOn(repoRoot, gatedRow.integrationBase, target);
     const outgoing = outgoingOf(repoRoot, gatedKey, gatedRow, head, baseRef, needsApproval, false);
     report.decide(verify.judge(outgoing), `push of ${spec.source} in ${gatedKey} denied`, hint, gatedKey, head, outgoing.mergeBase);

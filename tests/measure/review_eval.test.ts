@@ -340,6 +340,21 @@ describe("review-eval cli", () => {
     assert.deepEqual([completed.status, summaryLines()], [1, []])
   })
 
+  it("driver_waitsForTheWorkflowPastPrintModesBackgroundCeiling_whateverTheCallersSetting", () => {
+    box.env["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] = "600000"
+    play([{ result: result() }])
+    const [completed] = runEval("--case", "mean-1", "--repeat", "1")
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.deepEqual(calls().map((call) => call.bgWaitCeiling), ["0"])
+  })
+
+  it("driverStderr_isSavedBesideTheStream", () => {
+    play([{ status: "killed", result: result(), stderr: "Background tasks still running 10m after the last turn; stopping them.\n" }])
+    const [completed, report] = runEval("--case", "mean-1", "--repeat", "1")
+    assert.equal(completed.status, 1)
+    assert.equal(readText(path.join(report.raw_dir, "mean-1-1.stderr.txt")), "Background tasks still running 10m after the last turn; stopping them.\n")
+  })
+
   it("regrade_gradesTheSameRecordsTheSame_andCatchesAChangedGrade", () => {
     play([{ result: result([finding("{{REPO}}/calc.ts:6")]) }])
     const [, report] = runEval("--case", "mean-1", "--repeat", "1")

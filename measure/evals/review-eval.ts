@@ -198,6 +198,7 @@ function describe(grade: RunGrade): string {
 function saveRun(rawDir: string, reviewed: ReviewCase, index: number, run: ReviewRun, fault: string | null, grade: RunGrade | null): void {
   const stem = path.join(rawDir, `${reviewed.id}-${index}`)
   fs.writeFileSync(stem + ".stream.jsonl", run.streamText, "utf8")
+  fs.writeFileSync(stem + ".stderr.txt", run.stderrText, "utf8")
   if (run.workflowRecord !== null) writeJson(stem + ".workflow.json", run.workflowRecord)
   appendJsonl(path.join(rawDir, "runs.jsonl"), {
     case: reviewed.id, run: index, exit: run.exitCode, timed_out: run.timedOut, fault,

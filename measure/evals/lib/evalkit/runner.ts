@@ -38,6 +38,7 @@ export interface ClaudeRun {
   exitCode: number
   timedOut: boolean
   streamText: string
+  stderrText: string
 }
 
 export function claudeCommand(model: string, unlockedTools: string[] = [], maxTurns = DEFAULT_MAX_TURNS): string[] {
@@ -119,13 +120,13 @@ export function projectIdentity(project: string): Record<string, string> {
   return { GIT_AUTHOR_NAME: project, GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_NAME: project, GIT_COMMITTER_EMAIL: email }
 }
 
-export function runClaude(command: string[], prompt: string, cwd: string, timeoutSeconds: number): ClaudeRun {
-  const env = { ...process.env, CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" }
+export function runClaude(command: string[], prompt: string, cwd: string, timeoutSeconds: number, extraEnv: Record<string, string> = {}): ClaudeRun {
+  const env = { ...process.env, CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1", ...extraEnv }
   try {
     const completed = runProcess(command, { input: prompt + "\n", cwd, env, timeoutSeconds })
-    return { exitCode: completed.returncode, timedOut: false, streamText: completed.stdout }
+    return { exitCode: completed.returncode, timedOut: false, streamText: completed.stdout, stderrText: completed.stderr }
   } catch (error) {
-    if (error instanceof TimeoutExpired) return { exitCode: TIMEOUT_EXIT, timedOut: true, streamText: error.partialStdout }
+    if (error instanceof TimeoutExpired) return { exitCode: TIMEOUT_EXIT, timedOut: true, streamText: error.partialStdout, stderrText: error.partialStderr }
     throw error
   }
 }

@@ -126,6 +126,49 @@ describe("measure run", () => {
     assert.deepEqual([completed.status, result.count, result.status], [1, 0, "FAIL"])
   })
 
+  const givenEvalLine = (fields: Record<string, unknown>) =>
+    box.appendLog("keel-evals.jsonl", { eval_id: "demo", rule_id: "C-demo", case: "suite", model: "m", ...fields })
+  const regradeOf = (runTs: string | null) => ({ regraded_from: "keel-eval-demo-old", grader: "g", run_ts: runTs })
+
+  it("run_countsNothing_forEvalsMetric_whenAPassingRegradeIsOfARunOlderThanAFailingRun", () => {
+    givenKeelRows(ledgerRow("C-demo", { metric: "evals:demo" }))
+    givenEvalLine({ ts: "2026-11-01T10:20:00Z", run_ts: "2026-11-01T10:00:00Z", pass: true })
+    givenEvalLine({ ts: "2026-11-02T10:20:00Z", pass: false })
+    givenEvalLine({ ts: "2026-11-03T10:00:00Z", pass: true, ...regradeOf("2026-11-01T10:00:00Z") })
+    const [completed, result] = box.runJson("run", ["C-demo", "--since", "2026-10-01"])
+    assert.deepEqual([completed.status, result.count, result.status], [1, 0, "FAIL"])
+  })
+
+  it("run_countsNothing_forEvalsMetric_whenAPassingRegradesRunStartedBeforeSince", () => {
+    givenKeelRows(ledgerRow("C-demo", { metric: "evals:demo", grace_until: PAST }))
+    givenEvalLine({ ts: "2026-11-03T10:00:00Z", pass: true, ...regradeOf("2026-09-01T10:00:00Z") })
+    const [completed, result] = box.runJson("run", ["C-demo", "--since", "2026-10-01"])
+    assert.deepEqual([completed.status, result.count, result.status], [1, 0, "FAIL"])
+  })
+
+  it("run_countsNothing_forEvalsMetric_whenAPassingRegradeHasNoRunTime", () => {
+    givenKeelRows(ledgerRow("C-demo", { metric: "evals:demo", grace_until: PAST }))
+    givenEvalLine({ ts: "2026-11-03T10:00:00Z", pass: true, ...regradeOf(null) })
+    const [completed, result] = box.runJson("run", ["C-demo", "--since", "2026-10-01"])
+    assert.deepEqual([completed.status, result.count, result.status], [1, 0, "FAIL"])
+  })
+
+  it("run_countsOneItem_forEvalsMetric_whenAPassingRegradeIsOfTheNewestRun", () => {
+    givenKeelRows(ledgerRow("C-demo", { metric: "evals:demo" }))
+    givenEvalLine({ ts: "2026-11-02T10:20:00Z", run_ts: "2026-11-02T10:00:00Z", pass: false })
+    givenEvalLine({ ts: "2026-11-03T10:00:00Z", pass: true, ...regradeOf("2026-11-02T10:00:00Z") })
+    const [, result] = box.runJson("run", ["C-demo", "--since", "2026-10-01"])
+    assert.deepEqual([result.count, result.items.map((item: { ts: string }) => item.ts), result.status], [1, ["2026-11-03T10:00:00Z"], "PASS"])
+  })
+
+  it("run_countsNothing_forEvalsMetric_whenTheNewestLineIsAFailingRegrade", () => {
+    givenKeelRows(ledgerRow("C-demo", { metric: "evals:demo" }))
+    givenEvalLine({ ts: "2026-11-02T10:20:00Z", run_ts: "2026-11-02T10:00:00Z", pass: true })
+    givenEvalLine({ ts: "2026-11-03T10:00:00Z", pass: false, ...regradeOf("2026-11-02T10:00:00Z") })
+    const [completed, result] = box.runJson("run", ["C-demo", "--since", "2026-10-01"])
+    assert.deepEqual([completed.status, result.count, result.status], [1, 0, "FAIL"])
+  })
+
   it("run_usesOverlayRunner_whenKeelHasNone", () => {
     givenKeelRows(ledgerRow("C-demo", { metric: "run:demo-runner" }))
     box.write("overlay/measure/metrics/demo-runner", '#!/bin/bash\necho \'{"count": 2, "items": ["a", "b"]}\'\n', true)

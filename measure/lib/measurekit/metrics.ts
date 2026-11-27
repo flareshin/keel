@@ -83,13 +83,27 @@ export function isCountedFire(record: JsonObject, since: string): boolean {
 
 function evalItems(evalId: string, since: string): MetricItems {
   const { records } = readJsonl(path.join(env.logsDir(), "keel-evals.jsonl"))
-  const lines = records.filter((record) => record["eval_id"] === evalId && isWithinWindow(record, since))
-  const newest = lines.reduce<JsonObject | null>((latest, line) => latest === null || (line["ts"] as string) >= (latest["ts"] as string) ? line : latest, null)
-  return newest?.["pass"] === true ? [1, [newest]] : [0, []]
+  const lines = records.filter((record) => record["eval_id"] === evalId)
+  const inWindow = lines.filter((line) => isWithinWindow(line, since))
+  const newest = inWindow.reduce<JsonObject | null>((latest, line) => latest === null || (line["ts"] as string) >= (latest["ts"] as string) ? line : latest, null)
+  if (newest?.["pass"] !== true) return [0, []]
+  return "regraded_from" in newest && !isRegradeOfLatestRun(newest, lines, since) ? [0, []] : [1, [newest]]
+}
+
+function isRegradeOfLatestRun(regrade: JsonObject, lines: JsonObject[], since: string): boolean {
+  const runTs = regrade["run_ts"]
+  if (typeof runTs !== "string" || !isOnOrAfter(runTs, since)) return false
+  return !lines.some((line) => {
+    const runTime = line["run_ts"] ?? line["ts"]
+    return typeof runTime === "string" && runTime > runTs
+  })
 }
 
 export function isWithinWindow(record: JsonObject, since: string): boolean {
-  const timestamp = record["ts"]
+  return isOnOrAfter(record["ts"], since)
+}
+
+function isOnOrAfter(timestamp: JsonValue | undefined, since: string): boolean {
   return typeof timestamp === "string" && timestamp.slice(0, ISO_DATE_LENGTH) >= since
 }
 

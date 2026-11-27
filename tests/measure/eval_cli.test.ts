@@ -32,7 +32,7 @@ describe("eval cli", () => {
     const suite = linesOf("K4")
     const config = JSON.parse(fs.readFileSync(path.join(report.raw_dir, "config.json"), "utf8"))
     const fingerprint = { link_mode: "full", claude_md_sha256: config.claude_md_sha256, principles_md_sha256: null, skill_md_sha256: config.skill_md_sha256 }
-    assert.deepEqual(suite, [{ ts: suite[0].ts, eval_id: "K4", rule_id: "K4", case: "suite train=2/2 holdout=2/2", pass: true, model: MODEL, ...fingerprint }])
+    assert.deepEqual(suite, [{ ts: suite[0].ts, eval_id: "K4", rule_id: "K4", case: "suite train=2/2 holdout=2/2", pass: true, model: MODEL, run_ts: config.started_ts, ...fingerprint }])
     assert.deepEqual(linesOf("K4.case").map((line) => [line.case, line.pass]), [["a1", true], ["c1", true], ["h1", true], ["h2", true]])
   })
 
@@ -58,6 +58,17 @@ describe("eval cli", () => {
     const fingerprintOf = (line: any) => ({ link_mode: line.link_mode, claude_md_sha256: line.claude_md_sha256, principles_md_sha256: line.principles_md_sha256, skill_md_sha256: line.skill_md_sha256 })
     assert.deepEqual(linesOf("K4").map(fingerprintOf), [fingerprint, fingerprint])
     assert.deepEqual(linesOf("K4.case").map(fingerprintOf), Array(8).fill(fingerprint))
+  })
+
+  it("evalLines_carryTheRunsStartTime_onAFullRunAndOnItsRegrade", () => {
+    box.linkKeel()
+    box.seedSuite(box.askScenario(), box.editScenario())
+    const [, runReport] = box.runEvalJson("K4", "--model", MODEL, ...RUN_ONCE)
+    const [completed] = box.runEvalJson("K4", "--regrade", runReport.raw_dir)
+    assert.equal(completed.status, 0, completed.stderr)
+    const startedTs = readJson(path.join(runReport.raw_dir, "config.json")).started_ts
+    assert.match(startedTs, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/)
+    assert.deepEqual(box.evalLines().map((line) => line.run_ts), Array(10).fill(startedTs))
   })
 
   it("fullRun_writesV1BaselineLine_whenKeelIsNotLinked", () => {
@@ -514,10 +525,18 @@ describe("eval cli", () => {
     const suite = linesOf("K4")
     assert.deepEqual(suite, [{
       ts: suite[0].ts, eval_id: "K4", rule_id: "K4", case: "suite train=2/2 holdout=2/2", pass: true,
-      model: MODEL, regraded_from: "keel-eval-K4-old", grader: graderCommit(CHECKOUT),
+      model: MODEL, regraded_from: "keel-eval-K4-old", grader: graderCommit(CHECKOUT), run_ts: null,
       link_mode: null, claude_md_sha256: null, principles_md_sha256: null, skill_md_sha256: null,
     }])
     assert.deepEqual(linesOf("K4.case").map((line) => [line.case, line.regraded_from]), ["a1", "c1", "h1", "h2"].map((name) => [name, "keel-eval-K4-old"]))
+  })
+
+  it("regrade_takesTheRunTsFromTheRawDirName_whenItsConfigSavedNoStartTime", () => {
+    box.seedSuite("unused", "unused")
+    const raw = box.writeRawDir("K4-20261101T100000Z-ab12", suiteRuns())
+    const [completed] = box.runEvalJson("K4", "--regrade", raw)
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.deepEqual(box.evalLines().map((line) => line.run_ts), Array(5).fill("2026-11-01T10:00:00Z"))
   })
 
   it("regrade_matchesTheRunThatWroteTheRawDir", () => {

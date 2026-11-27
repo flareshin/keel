@@ -55,6 +55,7 @@ describe("StepsTest", () => {
       ["cd /a; pushd /b; popd; cd -; git status", "/b"],
       ["cd /a; OLDPWD=/x; cd /b; cd -; git status", "/a"],
       ["cd /a; cd; cd -; git status", "/a"],
+      ["cd /a; bash -c 'cd /b; cd -; git status'", "/a"],
       ["cd /a; x=$(cd /c); cd /b; cd -; git status", "/a"],
     ] as const) {
       assert.equal(directoriesOf(stepViews(command), ["git", "status"])[0], expected, command);
@@ -109,6 +110,7 @@ describe("StepsTest", () => {
       "cd /a; nohup cd /b; cd -; git status",
       "cd /a; cd /b; true | cd /c; cd -; git status",
       "cd /a; cd /b | cat; cd -; git status",
+      "cd /a; cd /b | cd /c; cd -; git status",
     ]) {
       const directory = directoriesOf(stepViews(command), ["git", "status"])[0] ?? "";
       assert.ok(directory.endsWith("/$OLDPWD"), `${command} => ${directory}`);

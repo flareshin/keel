@@ -5,6 +5,7 @@ export const SHELLS: ReadonlySet<string> = new Set(["bash", "sh", "zsh", "dash",
 export const SEPARATOR_OPS: readonly string[] = ["&&", "||", "|&", ";;", ";", "|", "&", "(", ")"];
 export const REDIRECT_OPS: readonly string[] = ["&>>", "&>", ">>", ">|", ">&", "<<<", "<<-", "<<", "<>", "<&", ">", "<"];
 const PIPE_OPS: ReadonlySet<string> = new Set(["|", "|&"]);
+const AND_OP = "&&";
 export const WORD_BREAK: ReadonlySet<string> = new Set(" \t\n;&|()<>");
 export const KEYWORDS_AT_COMMAND_START: ReadonlySet<string> =
   new Set(["if", "then", "else", "elif", "fi", "while", "until", "do", "done", "!", "{", "}", "esac"]);
@@ -91,7 +92,7 @@ class Reader {
 
   read(): void {
     while (this.position < this.text.length) this.readNext();
-    this.finishCommand(false);
+    this.finishCommand(null);
     for (const [body, owner] of this.substitutions) new Reader(body, true, this.out, owner).read();
   }
 
@@ -102,7 +103,7 @@ class Reader {
     if (text.startsWith("\\\n", position)) {
       this.position += 2;
     } else if (char === "\n") {
-      this.finishCommand(false);
+      this.finishCommand(null);
       this.position += 1;
       this.readHeredocBodies();
     } else if (char === " " || char === "\t") {
@@ -135,7 +136,7 @@ class Reader {
     for (const op of SEPARATOR_OPS) {
       if (text.startsWith(op, position)) {
         this.position += op.length;
-        this.finishCommand(PIPE_OPS.has(op));
+        this.finishCommand(op);
         return true;
       }
     }
@@ -192,9 +193,10 @@ class Reader {
     command.argv.push(word);
   }
 
-  private finishCommand(pipesToNext: boolean): void {
+  private finishCommand(separator: string | null): void {
     if (this.current.argv.length > 0 || this.current.assignments.length > 0 || this.current.redirects.length > 0) {
-      this.current.pipesToNext = pipesToNext;
+      this.current.pipesToNext = separator !== null && PIPE_OPS.has(separator);
+      this.current.andsToNext = separator === AND_OP;
       this.out.push(this.current);
     }
     this.current = new SimpleCommand(this.nested, this.parent);

@@ -1,12 +1,12 @@
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
+import { withNodePreload } from '../node-preload.ts';
 
 const READ_LOG_ENV = 'PRECHECK_READ_LOG';
 const PRELOAD = new URL('./read-trace-preload.mjs', import.meta.url);
 
 export function readTraceEnv(logFile: string, inheritedNodeOptions = process.env['NODE_OPTIONS']): NodeJS.ProcessEnv {
-  const preload = `--import=${PRELOAD.href}`;
-  return { [READ_LOG_ENV]: logFile, NODE_OPTIONS: inheritedNodeOptions ? `${inheritedNodeOptions} ${preload}` : preload };
+  return withNodePreload(PRELOAD, { [READ_LOG_ENV]: logFile }, inheritedNodeOptions);
 }
 
 export function readTracedPaths(logFile: string, repoRoot: string): Set<string> {

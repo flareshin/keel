@@ -1488,6 +1488,126 @@ describe("SameCallStagingTest", () => {
     assertProceduralDenied(guard(`cd ${repo}; git add leak.txt; git commit -m wip`));
   });
 
+  it("commit_passes_whenALeadingLiteralCdAndChainsAddAndCommit", () => {
+    assertPassed(guard(`cd ${repo} && git add clean.txt && git commit -q -m wip && git log --oneline -1`));
+  });
+
+  it("commit_deniedWithTheSecret_whenALeadingLiteralCdAndChainsAddOfASecretFile", () => {
+    assertSecretDenied(guard(`cd ${repo} && git add clean.txt leak.txt && git commit -q -m wip`), "leak.txt");
+  });
+
+  it("commit_deniedWithTheSecret_whenALeadingRelativeCdResolvesFromTheHookCwd", () => {
+    assertSecretDenied(guard("cd example/app && git add -A && git commit -m wip", join(sandbox.root, "work")), "leak.txt");
+    assertSecretDenied(guard("cd ./example/app && git add -A && git commit -m wip", join(sandbox.root, "work")), "leak.txt");
+  });
+
+  it("commit_deniedWithTheSecret_whenALeadingLiteralCdAndChainsCommitAll", () => {
+    commitTracked("t.txt", SECRET_LINE);
+    assertSecretDenied(guard(`cd ${repo} && git commit -am wip`), "t.txt");
+  });
+
+  it("commit_resolvesALeadingCdThroughDotDotAndASymlinkTheWayTheShellDoes", () => {
+    sandbox.write(join(repo, "sub", "inner.txt"), "nothing secret\n");
+    const link = join(sandbox.root, "work", "app-link");
+    symlinkSync(repo, link);
+    assertSecretDenied(guard(`cd ${repo}/sub/.. && git add leak.txt && git commit -m wip`), "leak.txt");
+    assertSecretDenied(guard(`cd ${link} && git add leak.txt && git commit -m wip`), "leak.txt");
+    assertPassed(guard(`cd ${link}/sub && git add inner.txt && git commit -m wip`));
+  });
+
+  it("commit_denied_whenDotDotAfterASymlinkLeadsLogicallyAndPhysicallyToDifferentDirectories", () => {
+    const other = sandbox.makeRepo("example", "other");
+    sandbox.write(join(other, "both.txt"), "nothing secret\n");
+    sandbox.write(join(repo, "both.txt"), SECRET_LINE);
+    sandbox.write(join(repo, "sub", "inner.txt"), "nothing secret\n");
+    symlinkSync(join(repo, "sub"), join(other, "into-app"));
+    assertProceduralDenied(guard(`cd ${other}/into-app/.. && git add both.txt && git commit -m wip`));
+  });
+
+  it("commit_scansTheRepoTheLeadingCdEnters_notTheHookCwdRepo", () => {
+    const other = sandbox.makeRepo("example", "other");
+    sandbox.write(join(other, "o.txt"), "nothing secret\n");
+    sandbox.write(join(other, "o-leak.txt"), SECRET_LINE);
+    sandbox.git(repo, "add", "leak.txt");
+    assertPassed(guard(`cd ${other} && git add o.txt && git commit -m wip`, repo));
+    assertSecretDenied(guard(`cd ${other} && git add o-leak.txt && git commit -m wip`, repo), "o-leak.txt");
+  });
+
+  it("commit_scansTheSubmoduleIndex_whenTheLeadingCdEntersASubmodule", () => {
+    const other = sandbox.makeRepo("example", "other");
+    sandbox.git(repo, "-c", "protocol.file.allow=always", "submodule", "add", "-q", other, "mod");
+    const module = join(repo, "mod");
+    sandbox.write(join(module, "m.txt"), "nothing secret\n");
+    sandbox.write(join(module, "m-leak.txt"), SECRET_LINE);
+    sandbox.git(repo, "add", "leak.txt");
+    assertPassed(guard(`cd ${module} && git add m.txt && git commit -m wip`, repo));
+    assertSecretDenied(guard(`cd ${module} && git add m-leak.txt && git commit -m wip`, repo), "m-leak.txt");
+  });
+
+  it("commit_resolvesALeadingTildeCdAgainstTheHookHome", () => {
+    sandbox.env["HOME"] = join(sandbox.root, "work");
+    assertPassed(guard("cd ~/example/app && git add clean.txt && git commit -m wip"));
+    assertSecretDenied(guard("cd ~/example/app && git add leak.txt && git commit -m wip"), "leak.txt");
+    sandbox.env["HOME"] = repo;
+    assertSecretDenied(guard("cd ~ && git add leak.txt && git commit -m wip"), "leak.txt");
+  });
+
+  it("commit_denied_whenTheLeadingTildeIsQuotedOrNamesAnotherUserOrDirectoryStack", () => {
+    sandbox.env["HOME"] = join(sandbox.root, "work");
+    assertProceduralDenied(guard('cd "~/example/app" && git add clean.txt && git commit -m wip'));
+    assertProceduralDenied(guard("cd '~'/example/app && git add clean.txt && git commit -m wip"));
+    assertProceduralDenied(guard("cd ~nobody/example/app && git add clean.txt && git commit -m wip"));
+    assertProceduralDenied(guard("cd ~+ && git add clean.txt && git commit -m wip", repo));
+    assertProceduralDenied(guard("cd ~- && git add clean.txt && git commit -m wip", repo));
+  });
+
+  it("commit_denied_whenCdpathIsSetAndTheLeadingCdOperandIsRelative", () => {
+    sandbox.env["CDPATH"] = join(sandbox.root, "work");
+    assertProceduralDenied(guard("cd example/app && git add clean.txt && git commit -m wip", join(sandbox.root, "work")));
+    assertSecretDenied(guard("cd ./example/app && git add leak.txt && git commit -m wip", join(sandbox.root, "work")), "leak.txt");
+    assertSecretDenied(guard(`cd ${repo} && git add leak.txt && git commit -m wip`), "leak.txt");
+  });
+
+  it("commit_denied_whenTheLeadingCdIsNotAPlainAndChainedLiteral", () => {
+    const sub = join(repo, "sub");
+    sandbox.write(join(sub, "inner.txt"), "nothing secret\n");
+    sandbox.write(join(repo, "-", "clean.txt"), "nothing secret\n");
+    sandbox.write(join(repo, "+1", "clean.txt"), "nothing secret\n");
+    assertProceduralDenied(guard(`X=${repo}; cd "$X" && git add clean.txt && git commit -m wip`));
+    assertProceduralDenied(guard(`cd ${repo} && cd sub && git add inner.txt && git commit -m wip`));
+    assertProceduralDenied(guard(`git status && cd ${repo} && git add clean.txt && git commit -m wip`, repo));
+    assertProceduralDenied(guard(`cd ${repo} ${sub} && git add clean.txt && git commit -m wip`));
+    assertProceduralDenied(guard("cd - && git add clean.txt && git commit -m wip", repo));
+    assertProceduralDenied(guard(`cd -P ${repo} && git add clean.txt && git commit -m wip`));
+    assertProceduralDenied(guard("cd +1 && git add clean.txt && git commit -m wip", repo));
+    assertProceduralDenied(guard(`cd ${repo} || git add clean.txt && git commit -m wip`, repo));
+    assertProceduralDenied(guard(`cd ${repo}\ngit add clean.txt && git commit -m wip`));
+    assertProceduralDenied(guard(`FOO=1 cd ${repo} && git add clean.txt && git commit -m wip`));
+    assertProceduralDenied(guard(`builtin cd ${repo} && git add clean.txt && git commit -m wip`));
+    assertProceduralDenied(guard(`env cd ${repo} && git add clean.txt && git commit -m wip`));
+    assertProceduralDenied(guard(`command cd ${repo} && git add clean.txt && git commit -m wip`));
+    assertProceduralDenied(guard(`cd ${repo} > /dev/null && git add clean.txt && git commit -m wip`));
+    assertProceduralDenied(guard(`cd ${repo} && python3 gen.py && git add -A && git commit -m wip`));
+    assertProceduralDenied(guard(`cd ${repo} && git status && git add clean.txt && git commit -m wip`));
+    assertProceduralDenied(guard(`cd ${join(sandbox.root, "work", "missing")} && git add clean.txt && git commit -m wip`, repo));
+  });
+
+  it("commit_deniedWithASeparateCallStep_whenOnlyTheStagingCannotBeReplayed", () => {
+    const result = guard(`cd ${repo}; git add clean.txt; git commit -m wip`);
+    const lines = result.stderr.trimEnd().split("\n");
+    assertProceduralDenied(result);
+    assert.equal(lines[lines.length - 2], "Stage with `git -C <dir> add <files>`, then commit in a separate call.", result.stderr);
+    assert.ok(lastLine(result.stderr).startsWith(RUN_YOURSELF), result.stderr);
+  });
+
+  it("commit_keepsTheSeparateCallStep_whenTheCommitMessageIsLongAndMultiLine", () => {
+    const body = Array.from({ length: 60 }, (_, line) => `line ${line} of a long body that runs on`).join("\n");
+    const result = guard(`cd ${repo}; git add clean.txt; git commit -m "subject\n\n${body}"`);
+    assertProceduralDenied(result);
+    assert.ok(result.stderr.includes("…\n"), result.stderr);
+    assert.ok(result.stderr.includes("Stage with `git -C <dir> add <files>`, then commit in a separate call.\n"), result.stderr);
+  });
+
   it("commit_denied_whenCdDashReturnsTheCommitToTheCallRepo", () => {
     const other = sandbox.makeRepo("example", "other");
     commitTracked("t.txt", SECRET_LINE, other);

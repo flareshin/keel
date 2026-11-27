@@ -334,10 +334,40 @@ describe("review-eval cli", () => {
     assert.ok(report.faults[0].reason.includes("prepare failed"))
   })
 
-  it("faultedFullRun_writesNoSummaryLine", () => {
+  it("faultedFullRun_writesItsSummaryLine_withTheFaultCount", () => {
     play([{ result: result() }, { record: false }, { result: result() }])
+    const [completed, report] = runEval("--repeat", "1")
+    assert.equal(completed.status, 1)
+    assert.deepEqual(summaryLines().map((line) => [line.faults, line.numbers]), [[1, report.numbers]])
+  })
+
+  it("cleanFullRun_summaryLine_recordsZeroFaults", () => {
+    play([{ result: result() }, { result: result() }, { result: result() }])
     const [completed] = runEval("--repeat", "1")
-    assert.deepEqual([completed.status, summaryLines()], [1, []])
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.deepEqual(summaryLines().map((line) => line.faults), [0])
+  })
+
+  it("driver_waitsForTheWorkflowPastPrintModesBackgroundCeiling_whateverTheCallersSetting", () => {
+    box.env["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] = "600000"
+    play([{ result: result() }])
+    const [completed] = runEval("--case", "mean-1", "--repeat", "1")
+    assert.equal(completed.status, 0, completed.stderr)
+    assert.deepEqual(calls().map((call) => call.bgWaitCeiling), ["0"])
+  })
+
+  it("driverStderr_isSavedBesideTheStream", () => {
+    play([{ status: "killed", result: result(), stderr: "Background tasks still running 10m after the last turn; stopping them.\n" }])
+    const [completed, report] = runEval("--case", "mean-1", "--repeat", "1")
+    assert.equal(completed.status, 1)
+    assert.equal(readText(path.join(report.raw_dir, "mean-1-1.stderr.txt")), "Background tasks still running 10m after the last turn; stopping them.\n")
+  })
+
+  it("driverStderr_ofATimedOutRun_isSavedBesideTheStream", () => {
+    play([{ result: result(), stderr: "still reviewing\n", sleep: 5 }])
+    const [completed, report] = runEval("--case", "mean-1", "--repeat", "1", "--timeout-seconds", "1")
+    assert.equal(completed.status, 1)
+    assert.equal(readText(path.join(report.raw_dir, "mean-1-1.stderr.txt")), "still reviewing\n")
   })
 
   it("regrade_gradesTheSameRecordsTheSame_andCatchesAChangedGrade", () => {

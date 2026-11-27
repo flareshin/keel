@@ -1893,7 +1893,8 @@ describe("ForcePushTest", () => {
   it("push_passes_whenTheCommandOverridesOnlyUnrelatedConfig", () => {
     for (const command of ["git -c user.name=x push origin feature",
       "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=user.name GIT_CONFIG_VALUE_0=x git push origin feature",
-      'git -c user.name="$(cat name.txt)" push origin feature']) {
+      'git -c user.name="$(cat name.txt)" push origin feature',
+      "NOT_A_MIRROR=false git --config-env remote.origin.mirror=NOT_A_MIRROR push origin feature"]) {
       assertPassed(guard(command, repo));
     }
   });

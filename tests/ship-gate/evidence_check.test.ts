@@ -52,6 +52,18 @@ describe('EvidenceCheckTest', () => {
     assertAgreesWithThePush(sandbox, repo, run);
   });
 
+  for (const [mappedRemote, expected] of [['origin', NOT_READY], ['fork', READY]] as const) {
+    test(`check_readsThePushMappingOfOrigin_whenTheBranchPushesToAnotherRemote: mapping on ${mappedRemote}`, (t) => {
+      const [sandbox, repo] = feature(t);
+      sandbox.pushBundle(repo);
+      repo.git('config', 'branch.feature.pushRemote', 'fork');
+      repo.git('config', `remote.${mappedRemote}.push`, 'refs/heads/feature:refs/heads/main');
+      const run = check(sandbox, repo);
+      assert.equal(run.rc, expected, run.stdout);
+      assertAgreesWithThePush(sandbox, repo, run);
+    });
+  }
+
   test('check_namesK1_onMainAfterAnUnapprovedLocalMerge_andIsReadyOnceApproved', (t) => {
     const [sandbox, repo] = feature(t);
     sandbox.pushBundle(repo);

@@ -11,7 +11,7 @@ import type { Completed } from './subprocess.ts';
 export const LOCAL_GIT_TIMEOUT_SECONDS = 20;
 export const FETCH_TIMEOUT_SECONDS = 20;
 export const SNAPSHOT_TIMEOUT_SECONDS = 300;
-const DEFAULT_REMOTE = 'origin';
+export const DEFAULT_REMOTE = 'origin';
 const CONFIG_KEY_MISSING = 1;
 const GIT_TRUE = 'true';
 export const GH_RESOLVED_BASE = 'base';

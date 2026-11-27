@@ -11,7 +11,7 @@ const BRANCH_REF_PREFIXES = ['refs/heads/', 'heads/'];
 const UPSTREAM_PUSH_MODES: ReadonlySet<string> = new Set(['upstream', 'tracking']);
 const DEFAULT_PUSH_MODE = 'simple';
 
-export const PUSH_OF_HEAD: PushTarget = { remote: null, namesRefspecs: true, spec: { source: 'HEAD', destination: null } };
+export const PUSH_OF_HEAD: PushTarget = { remote: gitcmd.DEFAULT_REMOTE, namesRefspecs: true, spec: { source: 'HEAD', destination: null } };
 
 export function mayLandOn(repoRoot: string, branch: string, target: PushTarget): boolean {
   return pushedBranches(repoRoot, target).some((pushed) => pushed === null || pushed === branch);

@@ -27,6 +27,7 @@ import { appendRecord, dataDir, iso, stateDir, utcNow } from "../../lib/evidence
 import * as compileCache from "../../lib/evidence/compile-cache.ts";
 import * as gc from "../../lib/evidence/gc.ts";
 import * as gitcmd from "../../lib/evidence/gitcmd.ts";
+import * as pushDestination from "../../lib/evidence/push_destination.ts";
 import * as registry from "../../lib/evidence/registry.ts";
 import { EvidenceTooDeepError } from "../../lib/evidence/store.ts";
 import type { GatedRepo } from "../../lib/evidence/registry.ts";
@@ -135,10 +136,6 @@ const REMOTE_EDITS: ReadonlySet<string> = new Set(["set-url", "add", "rename"]);
 const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
 const TAG_PREFIX = "refs/tags/";
 const HEAD = "HEAD";
-const CURRENT_BRANCH_NAMES: ReadonlySet<string> = new Set([HEAD, "@"]);
-const BRANCH_REF_PREFIXES = ["refs/heads/", "heads/"];
-const UPSTREAM_PUSH_MODES: ReadonlySet<string> = new Set(["simple", "upstream", "tracking"]);
-const DEFAULT_PUSH_MODE = "simple";
 const K1 = verify.K1;
 const RISK = verify.RISK;
 const PLAIN_BRANCH_NAME = /^[A-Za-z0-9_][A-Za-z0-9._/-]*$/;
@@ -1039,38 +1036,11 @@ function judgePush(push: Push, repoRoot: string, repoKey: string | null, row: Ga
       continue;
     }
     const baseRef = resolveBase(repoRoot, gatedRow);
-    const needsApproval = registry.pushNeedsApproval(gatedRow) || mayLandOnTheIntegrationBase(repoRoot, gatedRow, push, spec);
+    const target = { remote: push.remote || null, namesRefspecs: push.refspecs.length > 0, spec };
+    const needsApproval = registry.pushNeedsApproval(gatedRow) || pushDestination.mayLandOn(repoRoot, gatedRow.integrationBase, target);
     const outgoing = outgoingOf(repoRoot, gatedKey, gatedRow, head, baseRef, needsApproval, false);
     report.decide(verify.judge(outgoing), `push of ${spec.source} in ${gatedKey} denied`, hint, gatedKey, head, outgoing.mergeBase);
   }
-}
-
-function mayLandOnTheIntegrationBase(repoRoot: string, row: GatedRepo, push: Push, spec: Refspec): boolean {
-  return pushedBranches(repoRoot, push, spec).some((branch) => branch === null || branch === row.integrationBase);
-}
-
-function pushedBranches(repoRoot: string, push: Push, spec: Refspec): Array<string | null> {
-  if (spec.destination !== null) return [branchNamed(spec.destination)];
-  if (storedConfig(repoRoot, [`remote.${push.remote || gitcmd.pushRemote(repoRoot)}.push`]) !== null) return [null];
-  if (push.refspecs.length > 0) return [CURRENT_BRANCH_NAMES.has(spec.source) ? gitcmd.currentBranch(repoRoot) : branchNamed(spec.source)];
-  return branchesOfABarePush(repoRoot);
-}
-
-function branchNamed(ref: string): string | null {
-  if (RUN_TIME_WORD_RE.test(ref) || CURRENT_BRANCH_NAMES.has(ref)) return null;
-  const prefix = BRANCH_REF_PREFIXES.find((candidate) => ref.startsWith(candidate));
-  return prefix === undefined ? ref : ref.slice(prefix.length);
-}
-
-function branchesOfABarePush(repoRoot: string): Array<string | null> {
-  const mode = storedConfig(repoRoot, ["push.default"]) ?? DEFAULT_PUSH_MODE;
-  if (mode === "nothing") return [];
-  const branch = gitcmd.currentBranch(repoRoot);
-  if (branch === null) return [null];
-  if (mode === "current") return [branch];
-  if (!UPSTREAM_PUSH_MODES.has(mode)) return [null];
-  const upstream = storedConfig(repoRoot, [`branch.${branch}.merge`]);
-  return upstream === null ? [branch] : [branch, branchNamed(upstream)];
 }
 
 function createTheSource(repoRoot: string, repoKey: string, source: string): string {

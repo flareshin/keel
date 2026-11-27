@@ -31,6 +31,21 @@ function hasReason(run: Run, ruleId: string, text: string): boolean {
 }
 
 describe('EvidenceCheckTest', () => {
+  test('check_namesK1_onMainAfterAnUnapprovedLocalMerge_andIsReadyOnceApproved', (t) => {
+    const [sandbox, repo] = feature(t);
+    sandbox.pushBundle(repo);
+    repo.git('checkout', '-q', 'main');
+    repo.git('merge', '-q', '--ff-only', 'feature');
+    const denied = check(sandbox, repo);
+    assert.equal(denied.rc, NOT_READY, denied.stderr);
+    assert.ok(hasReason(denied, 'K1', 'no approval bound to chain head'), denied.stdout);
+    assertAgreesWithThePush(sandbox, repo, denied);
+    sandbox.approve('rv-root-0001');
+    const ready = check(sandbox, repo);
+    assert.equal(ready.rc, READY, ready.stderr);
+    assertAgreesWithThePush(sandbox, repo, ready);
+  });
+
   test('check_isReady_whenReviewAndTestsCoverThePush_andTheRepoNeedsNoApproval', (t) => {
     const [sandbox, repo] = feature(t);
     sandbox.pushBundle(repo);

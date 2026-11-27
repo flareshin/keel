@@ -506,12 +506,39 @@ describe('IntegrationBasePushTest', () => {
     });
   }
 
-  test('barePush_needsAnApproval_whenTheBranchPushesToItsMainUpstream', (t) => {
+  for (const command of ['git push', PUSH_FEATURE, 'git push origin HEAD']) {
+    test(`push_needsAnApproval_whenPushDefaultUpstreamMapsTheBranchToMain: ${command}`, (t) => {
+      const [sandbox, repo] = sandboxAndFeature(t);
+      sandbox.pushBundle(repo);
+      repo.git('branch', '-q', '--set-upstream-to=origin/main');
+      repo.git('config', 'push.default', 'upstream');
+      assertNeedsApproval(sandbox, repo, command);
+    });
+  }
+
+  for (const pushDefault of [null, 'simple', 'current']) {
+    test(`barePush_passesWithoutAnApproval_whenPushDefaultSendsTheBranchToItsOwnName: ${pushDefault ?? 'unset'}`, (t) => {
+      const [sandbox, repo] = sandboxAndFeature(t);
+      sandbox.pushBundle(repo);
+      repo.git('branch', '-q', '--set-upstream-to=origin/main');
+      if (pushDefault !== null) repo.git('config', 'push.default', pushDefault);
+      assertPassed(sandbox, sandbox.push(repo, 'git push'));
+    });
+  }
+
+  for (const command of ['git push origin HEAD', 'git push']) {
+    test(`push_needsAnApproval_whenHeadIsDetached: ${command}`, (t) => {
+      const [sandbox, repo] = sandboxAndFeature(t);
+      sandbox.pushBundle(repo);
+      repo.git('checkout', '-q', '--detach');
+      assertNeedsApproval(sandbox, repo, command);
+    });
+  }
+
+  test('push_needsAnApproval_whenTheDestinationIsARunTimeWord', (t) => {
     const [sandbox, repo] = sandboxAndFeature(t);
     sandbox.pushBundle(repo);
-    repo.git('branch', '-q', '--set-upstream-to=origin/main');
-    repo.git('config', 'push.default', 'upstream');
-    assertNeedsApproval(sandbox, repo, 'git push');
+    assertNeedsApproval(sandbox, repo, 'git push origin "feature:$BRANCH"');
   });
 
   test('barePush_needsAnApproval_whenPushDefaultIsMatching', (t) => {

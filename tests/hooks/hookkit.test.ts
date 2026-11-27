@@ -96,6 +96,7 @@ describe("StepsTest", () => {
       "cd /a; pushd /b; popd -n; cd -; git status",
       "cd /a; cd /b; cd -P /c; cd -; git status",
       "cd /a; cd /b; cd -L; cd -; git status",
+      "cd /a; cd /b /c; cd -; git status",
       "cd /a; cd /b; eval 'cd /c'; cd /d; cd -; git status",
       "f() { cd /c; }; cd /a; cd /b; f; cd /d; cd -; git status",
       "cd /a; cd /b; $g; cd /d; cd -; git status",

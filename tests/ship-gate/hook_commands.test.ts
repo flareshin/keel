@@ -748,6 +748,21 @@ describe('HookBehaviorTest', () => {
     assert.equal(run.rc, 0, run.stderr + run.stdout);
   });
 
+  test('ghApiWrite_isDeniedAsAWriteNotAsAnInternalError_whenWorkdirIsNotARepo', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    for (const [command, expected] of [
+      ['gh api -X PUT repos/{owner}/{repo}/contents/a.py -f branch=main',
+        '`gh api` writes to a repo the gate cannot name (its placeholders need a clone and it runs outside one): repos/{owner}/{repo}/contents/a.py'],
+      ['gh api -X PUT repos/acme/app/contents/a.py -f branch=main', '`gh api` writes to acme/app outside the allow-list'],
+    ] as const) {
+      const run = sandbox.push(repo, `cd /nonexistent-dir && ${command}`);
+      assert.equal(run.rc, 2, command + run.stderr + run.stdout);
+      assert.ok(run.stderr.includes(expected), run.stderr);
+      assert.ok(!run.stderr.includes('internal error'), run.stderr);
+    }
+  });
+
   test('push_failsClosed_whenFiresLogIsUnwritableInGatedRepo', (t) => {
     const sandbox = new Sandbox(t);
     const repo = sandbox.clone('acme', 'app');

@@ -1871,6 +1871,25 @@ describe("ForcePushTest", () => {
       "F-force-push");
   });
 
+  it("mirrorPush_deniedWithFForcePush_whenTheCommandPointsGitAtAGlobalConfigThatSetsMirror", () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "keel-guard-home-")));
+    const globalConfig = sandbox.env["GIT_CONFIG_GLOBAL"]!;
+    delete sandbox.env["GIT_CONFIG_GLOBAL"];
+    try {
+      const mirrorConfig = '[remote "origin"]\n\tmirror = true\n';
+      writeFileSync(join(home, ".gitconfig"), mirrorConfig);
+      mkdirSync(join(home, "git"));
+      writeFileSync(join(home, "git", "config"), mirrorConfig);
+      for (const command of [`HOME=${home} git push origin feature`, `XDG_CONFIG_HOME=${home} git push origin feature`,
+        `HOME="$(cat home.txt)" git push origin feature`]) {
+        assertDenied(guard(command, repo), "F-force-push");
+      }
+    } finally {
+      sandbox.env["GIT_CONFIG_GLOBAL"] = globalConfig;
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   it("push_passes_whenTheCommandOverridesOnlyUnrelatedConfig", () => {
     for (const command of ["git -c user.name=x push origin feature",
       "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=user.name GIT_CONFIG_VALUE_0=x git push origin feature",

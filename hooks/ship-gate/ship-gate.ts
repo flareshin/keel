@@ -15,8 +15,8 @@ import { parseJson } from "../lib/hookkit/json.ts";
 import { AttributeError, describeError, pythonTypeName, RecursionError, ValueError } from "../lib/hookkit/errors.ts";
 import { readStdin, writeStderr } from "../lib/hookkit/stdio.ts";
 import {
-  attachedGhRepo, CONFIG_OVERRIDE_OPTIONS, configKey, dashedGitSubcommand, GH_REPO_OPTIONS, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, interpretPush,
-  isConfigRead, nextWord, routesPushes,
+  attachedGhRepo, configKey, configOverrides, dashedGitSubcommand, GH_REPO_OPTIONS, ghSubcommandArgv, gitDirectory, gitSubcommandIndex,
+  interpretPush, isConfigRead, nextWord, routesPushes,
 } from "../lib/hookkit/gitargs.ts";
 import { RUN_TIME_WORD_RE } from "../lib/hookkit/commands.ts";
 import type { SimpleCommand } from "../lib/hookkit/commands.ts";
@@ -651,13 +651,8 @@ function repointing(args: string[], environment: Environment): string | null {
 }
 
 function configOverride(globalWords: string[], environment: Environment): string | null {
-  const words = globalWords.values();
-  for (const word of words) {
-    const [option, , attached] = partition(word, "=");
-    if (!CONFIG_OVERRIDE_OPTIONS.has(option)) continue;
-    const setting = attached || (nextWord(words) ?? "");
-    if (routesPushes(setting)) return `${option} ${setting}`;
-  }
+  const routing = configOverrides(globalWords).settings.find((setting) => routesPushes(setting.key));
+  if (routing !== undefined) return routing.spelling;
   const variable = [...environment.keys()].find((name) => name.startsWith(CONFIG_VARIABLE_PREFIX));
   return variable === undefined ? null : `${variable}=${environment.get(variable)}`;
 }

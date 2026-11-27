@@ -285,7 +285,7 @@ export interface ConfigOverrides {
   settings: ConfigSetting[];
 }
 
-export type ConfigSetting = { key: string; literal: string } | { key: string; variable: string };
+export type ConfigSetting = { spelling: string; key: string } & ({ literal: string } | { variable: string });
 
 export function configOverrides(gitGlobals: readonly string[]): ConfigOverrides {
   const overrides: ConfigOverrides = { configArgs: [], settings: [] };
@@ -296,7 +296,8 @@ export function configOverrides(gitGlobals: readonly string[]): ConfigOverrides 
     const setting = separator ? attached : (nextWord(words) ?? "");
     const [key, , right] = partition(setting, "=");
     overrides.configArgs.push(option, setting);
-    overrides.settings.push(option === CONFIG_ENV_OPTION ? { key, variable: right } : { key, literal: right });
+    const spelling = `${option} ${setting}`;
+    overrides.settings.push(option === CONFIG_ENV_OPTION ? { spelling, key, variable: right } : { spelling, key, literal: right });
   }
   return overrides;
 }

@@ -113,14 +113,14 @@ function exactOutputOrNull(repo: string, args: string[]): string | null {
   return withoutFinalNewline(completed.stdout.toString()) || null;
 }
 
-function outputOrNull(repo: string, args: string[]): string | null {
-  const lines = linesOrEmpty(repo, args);
+function outputOrNull(repo: string, args: string[], options: GitOptions = {}): string | null {
+  const lines = linesOrEmpty(repo, args, options);
   if (lines.length > 1) throw new GitError(`git ${args.join(' ')}: the output holds more than one line`);
   return lines[0] ?? null;
 }
 
-function linesOrEmpty(repo: string, args: string[]): string[] {
-  const completed = runUnchecked(repo, args);
+function linesOrEmpty(repo: string, args: string[], options: GitOptions = {}): string[] {
+  const completed = runUnchecked(repo, args, options);
   return completed.returncode === 0 ? gateLines(args, completed.stdout.toString()) : [];
 }
 
@@ -174,7 +174,7 @@ export function pushRemote(repo: string, view: ConfigView = STORED_CONFIG): stri
   const keys = branch === null ? ['remote.pushDefault']
     : [`branch.${branch}.pushRemote`, 'remote.pushDefault', `branch.${branch}.remote`];
   for (const key of keys) {
-    const configured = configValue(repo, view, ['--get', key]);
+    const configured = outputOrNull(repo, configCommand(view, ['--get', key]), { env: view.env });
     if (configured) return configured;
   }
   return DEFAULT_REMOTE;
@@ -182,19 +182,14 @@ export function pushRemote(repo: string, view: ConfigView = STORED_CONFIG): stri
 
 export function pushRemoteMirror(repo: string, remote: string | null, view: ConfigView = STORED_CONFIG): MirrorSetting {
   const name = remote || pushRemote(repo, view);
-  const read = runConfig(repo, view, ['--type=bool', '--get', `remote.${name}.mirror`]);
+  const read = runUnchecked(repo, configCommand(view, ['--type=bool', '--get', `remote.${name}.mirror`]), { env: view.env });
   if (read.returncode === CONFIG_KEY_MISSING) return 'notMirror';
   if (read.returncode !== 0) return 'unreadable';
   return read.stdout.toString().trim() === GIT_TRUE ? 'mirror' : 'notMirror';
 }
 
-function configValue(repo: string, view: ConfigView, args: string[]): string | null {
-  const read = runConfig(repo, view, args);
-  return read.returncode === 0 ? (gateLines(args, read.stdout.toString())[0] ?? null) : null;
-}
-
-function runConfig(repo: string, view: ConfigView, args: string[]): Completed {
-  return runUnchecked(repo, [...view.configArgs, 'config', ...args], { env: view.env });
+function configCommand(view: ConfigView, args: string[]): string[] {
+  return [...view.configArgs, 'config', ...args];
 }
 
 export function ghDefaultRemote(repo: string): GhDefault | null {

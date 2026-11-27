@@ -80,6 +80,7 @@ const ADD_INTERACTIVE_LONG_OPTIONS: ReadonlySet<string> = new Set(["--patch", "-
 const ADD_INTERACTIVE_SHORT_FLAGS: ReadonlySet<string> = new Set(["p", "i", "e"]);
 const INDEX_FILE_VARIABLE = "GIT_INDEX_FILE";
 const CONFIG_VARIABLE_PREFIX = "GIT_CONFIG_";
+const CONFIG_LOCATION_VARIABLES: ReadonlySet<string> = new Set(["HOME", "XDG_CONFIG_HOME"]);
 const INDEX_COPY_PREFIX = "keel-index-";
 const NOT_STAGING = "not-staging";
 const UNREPLAYABLE = "unreplayable";
@@ -894,13 +895,17 @@ function pushConfigView(gitGlobals: readonly string[], step: Step): PushConfigVi
   const overrides = configOverrides(gitGlobals);
   const commandVariables = step.environment;
   const named = new Set(overrides.settings.flatMap((setting) => "variable" in setting ? [setting.variable] : []));
-  const read = [...commandVariables].filter(([name]) => named.has(name) || name.startsWith(CONFIG_VARIABLE_PREFIX));
+  const read = [...commandVariables].filter(([name]) => named.has(name) || locatesConfig(name));
   const settingValue = (setting: ConfigSetting): string =>
     "variable" in setting ? (commandVariables.get(setting.variable) ?? "") : setting.literal;
   const routingDecidedAtRunTime = overrides.settings.some((setting) =>
     isRunTimeWord(setting.key) || (routesPushes(setting.key) && isRunTimeWord(settingValue(setting))))
-    || read.some(([name, value]) => name.startsWith(CONFIG_VARIABLE_PREFIX) && isRunTimeWord(value));
+    || read.some(([name, value]) => locatesConfig(name) && isRunTimeWord(value));
   return { configArgs: overrides.configArgs, env: { ...process.env, ...Object.fromEntries(read) }, routingDecidedAtRunTime };
+}
+
+function locatesConfig(variable: string): boolean {
+  return variable.startsWith(CONFIG_VARIABLE_PREFIX) || CONFIG_LOCATION_VARIABLES.has(variable);
 }
 
 function isRunTimeWord(word: string): boolean {

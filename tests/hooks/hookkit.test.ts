@@ -233,6 +233,64 @@ describe("InterpretPushTest", () => {
   });
 });
 
+describe("PushOptionReaderTest", () => {
+  function read(line: string) {
+    return interpretPush(line.split(" "));
+  }
+
+  it("aLaterNegation_undoesAnEarlierOption_andTheLastSpellingWins", () => {
+    const cases: Array<[line: string, field: "dryRun" | "deletes" | "tags" | "wholeRepo" | "force" | "skipsHooks", expected: boolean]> = [
+      ["-n --no-dry-run origin feature", "dryRun", false],
+      ["--no-dry-run -n origin feature", "dryRun", true],
+      ["--dry-run --no-dry origin feature", "dryRun", false],
+      ["-d --no-delete origin feature", "deletes", false],
+      ["--delete --no-delete origin feature", "deletes", false],
+      ["--tags --no-tags origin", "tags", false],
+      ["--all --no-all origin", "wholeRepo", false],
+      ["--mirror --no-mirror origin", "wholeRepo", false],
+      ["-f --no-force origin feature", "force", false],
+      ["--no-verify --verify origin feature", "skipsHooks", false],
+      ["--no-verify --verif origin feature", "skipsHooks", false],
+    ];
+    for (const [line, field, expected] of cases) assert.equal(read(line)[field], expected, line);
+  });
+
+  it("aUniquePrefix_readsAsTheOptionItAbbreviates", () => {
+    assert.equal(read("--dry origin feature").dryRun, true);
+    assert.equal(read("--de origin feature").deletes, true);
+    assert.equal(read("--ta origin").tags, true);
+    for (const line of ["--al origin", "--mirro origin", "--branc origin"]) assert.equal(read(line).wholeRepo, true, line);
+    assert.equal(read("--no-verif origin feature").skipsHooks, true);
+    assert.equal(read("--force-w origin feature").forceWithLease, true);
+    assert.equal(read("--recu=on-demand origin feature").recurseSubmodules, "on-demand");
+    assert.equal(read("--no-recurse origin feature").recurseSubmodules, "no");
+  });
+
+  it("aValueOption_takesTheNextWord_whenSpelledInFullOrAbbreviated", () => {
+    for (const line of ["--recurse-submodules on-demand origin feature", "--recurse-sub on-demand origin feature"]) {
+      const push = read(line);
+      assert.deepEqual([push.remote, push.refspecs.map((spec) => spec.source), push.recurseSubmodules], ["origin", ["feature"], "on-demand"], line);
+    }
+    for (const line of ["--push-o ci.skip origin feature", "--rep upstream origin feature", "--exe x origin feature"]) {
+      const push = read(line);
+      assert.deepEqual([push.remote, push.refspecs.map((spec) => spec.source)], ["origin", ["feature"]], line);
+    }
+    assert.equal(read("--rep upstream").remote, "upstream");
+  });
+
+  it("mirror_forcesEveryRef", () => {
+    for (const line of ["--mirror origin", "--mirro origin"]) assert.equal(read(line).force, true, line);
+  });
+
+  it("anAmbiguousOrUnknownSpelling_countsForEveryDenyingReading_andForNoPassingOne", () => {
+    assert.equal(read("--forc origin feature").force, true);
+    const ambiguous = read("--d origin feature");
+    assert.deepEqual([ambiguous.deletes, ambiguous.dryRun], [false, false]);
+    assert.equal(read("-n --no-such-option origin feature").dryRun, false);
+    assert.equal(read("-n -Z origin feature").dryRun, false);
+  });
+});
+
 describe("GitConfigCallTest", () => {
   it("isConfigRead_isTrue_forEveryReadSpelling", () => {
     for (const args of [["user.email"], ["--global", "user.email"], ["get", "user.email"], ["list"], ["-l"],

@@ -70,6 +70,13 @@ describe('PushScenarioTest', () => {
     assert.equal(line.base, repo.git('merge-base', 'origin/main', 'HEAD').trim());
   });
 
+  test('push_deniesAsWholeRepo_whenTheRemoteIsConfiguredAsAMirror', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t);
+    sandbox.fullBundle(repo);
+    repo.git('config', 'remote.origin.mirror', 'true');
+    assertDenied(sandbox.push(repo, 'git push origin'), 'F-irreversible', 'cannot be attributed to one branch');
+  });
+
   test('push_deniesK3_whenTestsEvidenceMissing', (t) => {
     const [sandbox, repo] = sandboxAndFeature(t);
     sandbox.review(repo);

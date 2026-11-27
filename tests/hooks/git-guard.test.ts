@@ -217,6 +217,18 @@ describe("HookSkipTest", () => {
     assertPassed(guard("git push -n origin main", repo));
   });
 
+  it("pushCommitAndMerge_denied_whenNoVerifyIsAbbreviated", () => {
+    for (const command of ["git push --no-verif origin main", "git commit --no-verif -m wip", "git merge --no-ver topic"]) {
+      assertDenied(guard(command, repo), "F-hookskip");
+    }
+  });
+
+  it("push_passes_whenALaterVerifyUndoesNoVerify", () => {
+    for (const command of ["git push --no-verify --verify origin main", "git push --no-verify --verif origin main"]) {
+      assertPassed(guard(command, repo));
+    }
+  });
+
   it("git_deniedWithFHookskip_whenSudoCarriesAnOptionTheParserDoesNotRead", () => {
     for (const command of ["sudo -i git commit --no-verify -m wip", "sudo -nE git commit --no-verify -m wip",
       "sudo --login git config core.hooksPath /dev/null"]) {
@@ -1794,6 +1806,24 @@ describe("ForcePushTest", () => {
 
   it("push_denied_whenShortFlagCombined", () => {
     assertDenied(guard("git push -fu origin feature", repo), "F-force-push");
+  });
+
+  it("push_denied_whenForceIsAbbreviatedOrAmbiguous", () => {
+    for (const command of ["git push --forc origin feature", "git push --force-w origin feature:main"]) {
+      assertDenied(guard(command, repo), "F-force-push");
+    }
+  });
+
+  it("push_passes_whenALaterNoForceUndoesForce", () => {
+    assertPassed(guard("git push -f --no-force origin feature", repo));
+  });
+
+  it("mirrorPush_deniedWithFForcePush_byOptionOrRemoteConfig", () => {
+    for (const command of ["git push --mirror origin", "git push --mirro origin", "git -c remote.origin.mirror=true push origin"]) {
+      assertDenied(guard(command, repo), "F-force-push");
+    }
+    sandbox.git(repo, "config", "remote.origin.mirror", "true");
+    assertDenied(guard("git push origin", repo), "F-force-push");
   });
 
   it("push_denied_whenGitsOwnDashedPushProgramForces", () => {

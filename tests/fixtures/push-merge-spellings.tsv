@@ -142,6 +142,10 @@ gh pr -R=acme/app merge 7 --squash	deny	repo flag with =value between pr and mer
 git push --all origin	deny	every branch
 git push --mirror origin	deny	mirror
 git push --branches origin	deny	every branch, --branches spelling
+git push --al origin	deny	abbreviated --all
+git push --branc origin	deny	abbreviated --branches
+git push --mirro origin	deny	abbreviated --mirror
+git push --all --no-all --mirror origin	deny	mirror after a negated --all
 git push origin :	deny	matching refspec: every branch on both sides
 git push origin +:	deny	forced matching refspec
 git push upstream feature	deny	a gated upstream named from a fork clone	fork
@@ -214,6 +218,17 @@ git push origin :feature	pass	deletion by refspec
 git push --delete origin feature	pass	deletion by flag
 git push -n origin feature	pass	dry run, short flag
 git push --dry-run origin feature	pass	dry run, long flag
+git push -n --no-dry-run origin feature	gate	dry run negated by a later option
+git push --dry-run --no-dry origin feature	gate	dry run negated by an abbreviated option
+git push -d --no-delete origin feature	gate	deletion negated by a later option
+git push --tags --no-tags origin	gate	tags negated, so the current branch is pushed
+git push --all --no-all origin feature	gate	--all negated, so only the named branch is pushed
+git push --recurse-submodules on-demand origin feature	gate	recursion value as the next word
+git push --push-o ci.skip origin feature	gate	abbreviated value option takes the next word
+git push -n --no-such-option origin feature	gate	an unknown option voids the dry run
+git push --dry origin feature	pass	dry run, abbreviated long flag
+git push --no-dry-run -n origin feature	pass	dry run after its negation
+git push --de origin feature	pass	deletion by abbreviated flag
 git push origin feature	pass	the fork itself is not gated	fork
 git push	pass	the branch's push remote is the ungated fork	fork-origin
 git push-it origin feature	pass	not the push subcommand

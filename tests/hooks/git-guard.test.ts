@@ -1571,6 +1571,8 @@ describe("SameCallStagingTest", () => {
   it("commit_denied_whenTheLeadingCdIsNotAPlainAndChainedLiteral", () => {
     const sub = join(repo, "sub");
     sandbox.write(join(sub, "inner.txt"), "nothing secret\n");
+    sandbox.write(join(repo, "-", "clean.txt"), "nothing secret\n");
+    sandbox.write(join(repo, "+1", "clean.txt"), "nothing secret\n");
     assertProceduralDenied(guard(`X=${repo}; cd "$X" && git add clean.txt && git commit -m wip`));
     assertProceduralDenied(guard(`cd ${repo} && cd sub && git add inner.txt && git commit -m wip`));
     assertProceduralDenied(guard(`git status && cd ${repo} && git add clean.txt && git commit -m wip`, repo));

@@ -10,12 +10,14 @@ import type { Repo } from './helpers.ts';
 
 const FIXTURE = join(KEEL_HOME, 'tests', 'fixtures', 'push-merge-spellings.tsv');
 const GIT_GUARD = join(KEEL_HOME, 'hooks', 'git-guard', 'git-guard.ts');
-const EXPECTATIONS = ['gate', 'pass', 'deny'];
+const EXPECTATIONS = ['gate', 'pass', 'ignore', 'deny'];
 const GATED_CLONE = 'gated';
 const FORK_CLONE = 'fork';
 const FORK_ORIGIN_CLONE = 'fork-origin';
 const CLONES = [GATED_CLONE, FORK_CLONE, FORK_ORIGIN_CLONE];
-const MIN_ROWS = 25;
+const REPO_OF_CLONE: Record<string, string> = { [GATED_CLONE]: 'acme/app', [FORK_CLONE]: 'me/app', [FORK_ORIGIN_CLONE]: 'me/app' };
+const HOUSEKEEPING = 'record';
+const MIN_ROWS = 280;
 const ATTRIBUTION_TRAILER = 'Co-Authored-By: Claude <noreply@example.invalid>';
 const UNATTRIBUTABLE = '- [K1] cannot attribute this push or merge';
 const RUN_YOURSELF = 'Run it yourself in your terminal: ';
@@ -86,6 +88,21 @@ function assertDeniedForMissingEvidence(run: Run, label: string): void {
   assert.ok(run.stderr.includes(RUN_YOURSELF), label + run.stderr);
 }
 
+function verdictFires(sandbox: Sandbox, from: number): any[] {
+  return sandbox.fires().slice(from).filter((line) => line.outcome !== HOUSEKEEPING);
+}
+
+function assertPassedAsJudged(run: Run, fired: any[], repo: string, label: string): void {
+  assert.equal(run.rc, 0, label + run.stderr + run.stdout);
+  assert.deepEqual(fired.map((line) => [line.rule_id, line.outcome, line.repo]), [['risk', 'pass', repo]], label + JSON.stringify(fired));
+}
+
+function assertNotJudged(run: Run, fired: any[], label: string): void {
+  assert.equal(run.rc, 0, label + run.stderr + run.stdout);
+  assert.equal(run.stdout + run.stderr, '', label);
+  assert.deepEqual(fired, [], label + JSON.stringify(fired));
+}
+
 function assertDeniedAsUnattributable(run: Run, label: string): void {
   assert.equal(run.rc, 2, label + run.stderr + run.stdout);
   assert.ok(run.stderr.includes(UNATTRIBUTABLE) || run.stderr.includes('- [F-irreversible]'), label + run.stderr);
@@ -97,6 +114,7 @@ describe('SpellingTableTest', () => {
   test('table_hasEnoughRows_withKnownExpectations', () => {
     assert.ok(ROWS.length >= MIN_ROWS);
     assert.ok(ROWS.every((row) => EXPECTATIONS.includes(row.expect)), ROWS.map((row) => row.expect).join());
+    for (const expectation of EXPECTATIONS) assert.ok(ROWS.some((row) => row.expect === expectation), expectation);
     assert.ok(ROWS.every((row) => CLONES.includes(row.clone)), ROWS.map((row) => row.clone).join());
     assert.equal(new Set(ROWS.map((row) => `${row.command}\u0000${row.clone}`)).size, ROWS.length, 'duplicate commands');
   });
@@ -112,7 +130,7 @@ describe('SpellingTableTest', () => {
     for (const row of ROWS) {
       const label = `${row.command} (${row.note}, ${row.clone}): `;
       const passes = sandbox.fires('risk', 'pass').length;
-      const denies = sandbox.fires(undefined, 'deny').length;
+      const before = sandbox.fires().length;
       const [clone, cloneHead] = clones[row.clone]!;
       const run = sandbox.push(clone, filled(row.command, fixture, clone, cloneHead));
       assert.ok(!run.stderr.includes('Traceback'), label + run.stderr);
@@ -120,11 +138,12 @@ describe('SpellingTableTest', () => {
         assertDeniedForMissingEvidence(run, label);
       } else if (row.expect === 'deny') {
         assertDeniedAsUnattributable(run, label);
+      } else if (row.expect === 'pass') {
+        assertPassedAsJudged(run, verdictFires(sandbox, before), REPO_OF_CLONE[row.clone]!, label);
       } else {
-        assert.equal(run.rc, 0, label + run.stderr + run.stdout);
-        assert.equal(sandbox.fires(undefined, 'deny').length, denies, label + 'a pass spelling logged a deny');
+        assertNotJudged(run, verdictFires(sandbox, before), label);
       }
-      if (row.expect !== 'pass') assert.equal(sandbox.fires('risk', 'pass').length, passes, label + 'a denied spelling logged a pass');
+      if (row.expect === 'gate' || row.expect === 'deny') assert.equal(sandbox.fires('risk', 'pass').length, passes, label + 'a denied spelling logged a pass');
     }
   });
 
@@ -161,7 +180,7 @@ describe('SpellingTableTest', () => {
 
   test('crashFallback_readsEveryGateAndDenySpelling_asAPushOrMerge', () => {
     for (const row of ROWS) {
-      if (row.expect === 'pass') continue;
+      if (row.expect === 'pass' || row.expect === 'ignore') continue;
       assert.equal(mayPushOrMerge(row.command), true, `${row.command} (${row.note})`);
     }
   });

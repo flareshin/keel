@@ -174,7 +174,7 @@ S=push; xargs git $S origin feature < /dev/null	deny	xargs runs a subcommand res
 GP="$(git --exec-path)/git-push"; xargs $GP origin feature < /dev/null	deny	xargs runs a program path assigned earlier
 { git diff --merge-base main -U0; git ls-files -z | xargs -0 -n1 sh -c '[ -f "$0" ] && git diff --no-index -U0 /dev/null "$0"; exit 0'; } | grep -E x	deny	an xargs sh -c script with a run-time name beside --merge-base
 keel="${KEEL_DATA_DIR:-$HOME/.claude}/bin/keel"; "$keel" evidence show --repo {repo} && git -C {repo} merge-base --is-ancestor main HEAD	deny	a run-time keel program beside merge-base, no exemption
-root={repo} && base=$(git -C "$root" merge-base main HEAD) && tree=$(cd "${KEEL_DATA_DIR:-$HOME/.claude}" && bin/keel snapshot "$root" | jq -r .tree)	pass	lens-review's working-tree prepare: a literal program after a cd, beside git merge-base
+root={repo} && base=$(git -C "$root" merge-base main HEAD) && tree=$(cd "${KEEL_DATA_DIR:-$HOME/.claude}" && bin/keel snapshot "$root" | jq -r .tree)	ignore	lens-review's working-tree prepare: a literal program after a cd, beside git merge-base
 GIT=git; S=push; $GIT $S origin feature	deny	command name and subcommand both resolved at run time
 sh -c 'GIT=git; S=push; $GIT $S origin feature'	deny	both resolved at run time inside an inline shell
 S=push; git $S origin feature	deny	subcommand from a variable
@@ -231,51 +231,51 @@ git push --no-dry-run -n origin feature	pass	dry run after its negation
 git push --de origin feature	pass	deletion by abbreviated flag
 git push origin feature	pass	the fork itself is not gated	fork
 git push	pass	the branch's push remote is the ungated fork	fork-origin
-git push-it origin feature	pass	not the push subcommand
-echo "git push"	pass	push as data
-cat <<'EOF' > notes.txt\ngit push origin feature\nEOF\nls	pass	push inside a heredoc body
-git log --grep push	pass	push as a search term
-gh pr view 7	pass	not a merge
-gh api repos/acme/app/git/refs/heads/main	pass	a ref read
-gh api -X=GET repos/acme/app/git/refs/heads/main	pass	a ref read, method attached with =
-git merge-base main HEAD && timeout 60 cat "$F"	pass	an unwrapped wrapper's run-time argument beside merge-base
-git merge-base main HEAD; env FOO=1 python3 "$SCRIPT"	pass	env with an assignment unwraps
-git merge-base main HEAD; command -v git	pass	command -v only looks git up
-ls .git/refs/heads | xargs -n1 git log -1	pass	a local refs path, not an endpoint
-$EDITOR notes.md && cat .git/refs/heads/main	pass	a local refs path beside a run-time program
-$EDITOR x && cat docs/merges.md	pass	a merges file name beside a run-time program
-$EDITOR x && git log --merges	pass	git log's --merges option beside a run-time program
-timeout 120 ls hooks/git-guard && git merge-base main HEAD	pass	an unwrapped wrapper whose argument holds git- beside merge-base
-env LC_ALL=C grep -rn gh docs; git merge-base --is-ancestor main HEAD	pass	an unwrapped env running grep beside merge-base
-gh api "$E" && git merge-base main HEAD	pass	a gh api read from an endpoint resolved at run time
-gh api --jq .object.sha "$E"	pass	a long value option before a run-time endpoint read
-gh api -H 'Accept: application/json' "$E"	pass	a header before a run-time endpoint read
-gh api -H"$H" repos/acme/app/pulls/7	pass	a run-time header value attached to its option
-gh api --jq="$J" repos/acme/app/pulls/7	pass	a run-time jq filter attached to its long option
-gh api -H"$H" "$E"	pass	a run-time header value on a read from a run-time endpoint
-T=x; gh api -f title="$T" -X POST repos/acme/app/issues	pass	a run-time body value before a literal non-branch endpoint
-gh api -X POST repos/acme/app/issues/7/comments -f body=hi	pass	an issue comment is on the allow-list
-gh api -X POST 'https://api.github.com/repos/acme/app/issues/7/comments?x=1' -f body=hi	pass	an allow-listed comment through a full URL with a query
-gh api -X POST repos/acme/app/issues/7/labels -f 'labels[]=bug'	pass	a label write is on the allow-list
-gh api -X PUT repos/acme/other/contents/a.py -f branch=main	pass	a contents write to an ungated repo
-cd {tmp} && gh api -X PUT repos/acme/other/contents/a.py -f branch=main	pass	an ungated literal repo written from outside any clone
-gh api repos/acme/app/contents/a.py	pass	a contents read
-gh api -X POST gists -f description=x	pass	an endpoint outside any repo
-gh api graphql -f query='query { repository(owner: "acme", name: "app") { id } }'	pass	a GraphQL read
-gh api graphql -f query='mutation { addComment(input: {}) { clientMutationId } }'	pass	an allow-listed GraphQL mutation
-gh api -X PUT repos/me/app/contents/a.py -f branch=main	pass	a contents write to the ungated fork	fork
-GH=gh; $GH api repos/acme/app/pulls/7	pass	a run-time gh reading through gh api
-keel="${KEEL_DATA_DIR:-$HOME/.claude}/bin/keel"; python3 "$keel" test -- ./mvnw test -Dtest='*Merge*'	pass	the overlay's keel test step through python3, test names holding merge
-cd {repo} && pat=$(git diff main...HEAD --no-renames --diff-filter=D --name-only | sort -u) && [ -n "$pat" ] && git grep -nE "$pat" HEAD -- '*.md'	pass	the overlay's pinned-head deletion grep without xargs
-python3 "${KEEL_DATA_DIR:-$HOME/.claude}/bin/keel" evidence show --repo {repo} && git -C {repo} merge-base --is-ancestor main HEAD	pass	overlay's keel call through python3 beside merge-base
-python3 "${KEEL_DATA_DIR:-$HOME/.claude}/bin/keel" evidence show --repo /work/sg-push-spellings	pass	overlay's keel call through python3 with a repo path holding push
-{ git diff --merge-base main -U0; git ls-files --others --exclude-standard -z | while IFS= read -r -d '' f; do [ ! -f "$f" ] || git diff --no-index -U0 /dev/null "$f"; done; } | grep -E x	pass	the overlay review skill's body trigger beside --merge-base
-git config push.default simple	pass	push as a config key
+git push-it origin feature	ignore	not the push subcommand
+echo "git push"	ignore	push as data
+cat <<'EOF' > notes.txt\ngit push origin feature\nEOF\nls	ignore	push inside a heredoc body
+git log --grep push	ignore	push as a search term
+gh pr view 7	ignore	not a merge
+gh api repos/acme/app/git/refs/heads/main	ignore	a ref read
+gh api -X=GET repos/acme/app/git/refs/heads/main	ignore	a ref read, method attached with =
+git merge-base main HEAD && timeout 60 cat "$F"	ignore	an unwrapped wrapper's run-time argument beside merge-base
+git merge-base main HEAD; env FOO=1 python3 "$SCRIPT"	ignore	env with an assignment unwraps
+git merge-base main HEAD; command -v git	ignore	command -v only looks git up
+ls .git/refs/heads | xargs -n1 git log -1	ignore	a local refs path, not an endpoint
+$EDITOR notes.md && cat .git/refs/heads/main	ignore	a local refs path beside a run-time program
+$EDITOR x && cat docs/merges.md	ignore	a merges file name beside a run-time program
+$EDITOR x && git log --merges	ignore	git log's --merges option beside a run-time program
+timeout 120 ls hooks/git-guard && git merge-base main HEAD	ignore	an unwrapped wrapper whose argument holds git- beside merge-base
+env LC_ALL=C grep -rn gh docs; git merge-base --is-ancestor main HEAD	ignore	an unwrapped env running grep beside merge-base
+gh api "$E" && git merge-base main HEAD	ignore	a gh api read from an endpoint resolved at run time
+gh api --jq .object.sha "$E"	ignore	a long value option before a run-time endpoint read
+gh api -H 'Accept: application/json' "$E"	ignore	a header before a run-time endpoint read
+gh api -H"$H" repos/acme/app/pulls/7	ignore	a run-time header value attached to its option
+gh api --jq="$J" repos/acme/app/pulls/7	ignore	a run-time jq filter attached to its long option
+gh api -H"$H" "$E"	ignore	a run-time header value on a read from a run-time endpoint
+T=x; gh api -f title="$T" -X POST repos/acme/app/issues	ignore	a run-time body value before a literal non-branch endpoint
+gh api -X POST repos/acme/app/issues/7/comments -f body=hi	ignore	an issue comment is on the allow-list
+gh api -X POST 'https://api.github.com/repos/acme/app/issues/7/comments?x=1' -f body=hi	ignore	an allow-listed comment through a full URL with a query
+gh api -X POST repos/acme/app/issues/7/labels -f 'labels[]=bug'	ignore	a label write is on the allow-list
+gh api -X PUT repos/acme/other/contents/a.py -f branch=main	ignore	a contents write to an ungated repo
+cd {tmp} && gh api -X PUT repos/acme/other/contents/a.py -f branch=main	ignore	an ungated literal repo written from outside any clone
+gh api repos/acme/app/contents/a.py	ignore	a contents read
+gh api -X POST gists -f description=x	ignore	an endpoint outside any repo
+gh api graphql -f query='query { repository(owner: "acme", name: "app") { id } }'	ignore	a GraphQL read
+gh api graphql -f query='mutation { addComment(input: {}) { clientMutationId } }'	ignore	an allow-listed GraphQL mutation
+gh api -X PUT repos/me/app/contents/a.py -f branch=main	ignore	a contents write to the ungated fork	fork
+GH=gh; $GH api repos/acme/app/pulls/7	ignore	a run-time gh reading through gh api
+keel="${KEEL_DATA_DIR:-$HOME/.claude}/bin/keel"; python3 "$keel" test -- ./mvnw test -Dtest='*Merge*'	ignore	the overlay's keel test step through python3, test names holding merge
+cd {repo} && pat=$(git diff main...HEAD --no-renames --diff-filter=D --name-only | sort -u) && [ -n "$pat" ] && git grep -nE "$pat" HEAD -- '*.md'	ignore	the overlay's pinned-head deletion grep without xargs
+python3 "${KEEL_DATA_DIR:-$HOME/.claude}/bin/keel" evidence show --repo {repo} && git -C {repo} merge-base --is-ancestor main HEAD	ignore	overlay's keel call through python3 beside merge-base
+python3 "${KEEL_DATA_DIR:-$HOME/.claude}/bin/keel" evidence show --repo /work/sg-push-spellings	ignore	overlay's keel call through python3 with a repo path holding push
+{ git diff --merge-base main -U0; git ls-files --others --exclude-standard -z | while IFS= read -r -d '' f; do [ ! -f "$f" ] || git diff --no-index -U0 /dev/null "$f"; done; } | grep -E x	ignore	the overlay review skill's body trigger beside --merge-base
+git config push.default simple	ignore	push as a config key
 git -c color.ui=never push	pass	an unrelated config override	fork-origin
 git config --get remote.pushDefault; git push	pass	config read earlier in the call	fork-origin
 git config get remote.pushDefault; git push	pass	config read with the get subcommand earlier in the call	fork-origin
 git remote -v && git push	pass	remotes listed earlier in the call	fork-origin
-git stash push	pass	stash push
-grep -n 'git push' notes.md	pass	push inside a quoted argument
-echo git push origin feature	pass	push words as arguments of a program that does not run them
-man git push	pass	push words as a manual page name
+git stash push	ignore	stash push
+grep -n 'git push' notes.md	ignore	push inside a quoted argument
+echo git push origin feature	ignore	push words as arguments of a program that does not run them
+man git push	ignore	push words as a manual page name

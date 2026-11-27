@@ -312,7 +312,7 @@ Seed rows, all `grace_until` 2026-12-10 and `layer` = the `enforced_at` kind. F-
 | C-comments | core | knowledge | `hook:git-guard` | `fires:C-comments` | 2026-12-10 | cited | active |
 | C-no-comments | core | knowledge | `skill:removing-comments` | `evals:C-no-comments` | 2026-12-10 | cited | active |
 | C-authoring-agents | core | knowledge | `skill:authoring-agents` | `evals:C-authoring-agents` | 2026-12-10 | - | active |
-| C-improving-structure | core | knowledge | `skill:improving-structure` | `evals:C-improving-structure` | 2026-12-10 | - | active |
+| C-improving-structure | core | knowledge | `skill:improving-structure` | `evals:C-improving-structure` | 2026-12-10 | cited | active |
 | C-descending-findings | core | knowledge | `skill:descending-findings` | `evals:C-descending-findings` | 2026-12-10 | cited | active |
 | C-improving-agents | core | knowledge | `skill:improving-agents` | `evals:C-improving-agents` | 2026-12-10 | - | active |
 

@@ -684,6 +684,8 @@ function xargsInputSlot({ command, replaceStrings }: XargsCall): string | null {
   }
   const index = gitSubcommandIndex(command);
   if (index === null) return ": its input becomes the git subcommand";
+  const globalOption = command.slice(1, index).find(fromInput);
+  if (globalOption !== undefined) return `: the git option word \`${globalOption}\` is resolved only at run time`;
   const subcommand = command[index]!;
   if (fromInput(subcommand)) return `: the git subcommand \`${subcommand}\` is resolved only at run time`;
   return GIT_SUBCOMMANDS_THAT_ONLY_READ.has(subcommand) ? null : `: its input becomes arguments of \`git ${subcommand}\``;

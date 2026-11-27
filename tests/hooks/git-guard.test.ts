@@ -2685,6 +2685,19 @@ describe("CommentWriteTest", () => {
     assertCommentDenied(guard(viaTee), "// saves the rows");
   });
 
+  it("bash_denied_whenAHeredocWritesACommentAfterCdDash", () => {
+    const directory = dirname(codeFile("load.py"));
+    const elsewhere = mkdtempSync(join(tmpdir(), "keel-cd-dash-"));
+    const write = "cat > load.py <<'EOF'\n# reads the rows\nrows = load()\nEOF";
+
+    try {
+      assertCommentDenied(guard(`cd ${elsewhere} && cd - && ${write}`, directory), "# reads the rows");
+      assertCommentDenied(guard(`cd - && ${write}`, directory), "# reads the rows");
+    } finally {
+      rmSync(elsewhere, { recursive: true, force: true });
+    }
+  });
+
   it("bash_judgesAnAppendAgainstTheFileOnDisk", () => {
     const path = codeFile("load.py", "# reads the rows\nrows = load()\n");
     const carried = `cat >> ${path} <<'EOF'\nrows.sort()\nEOF`;

@@ -5,6 +5,8 @@ import { parseCommands } from "./parser.ts";
 import { callValue, expandVariables, resolveDirectory } from "./variables.ts";
 import type { Variables } from "./variables.ts";
 
+const PREVIOUS_DIRECTORY = "OLDPWD";
+
 export class Step {
   argv: string[];
   environment: Variables;
@@ -73,12 +75,12 @@ class ShellScope {
     const name = invocation.name;
     const args = invocation.argv.slice(1);
     if (name === "cd") {
-      this.directory = this.changedDirectory(args);
+      this.moveTo(this.changedDirectory(args));
     } else if (name === "pushd" && args.length > 0) {
       this.pushed.push(this.directory);
-      this.directory = this.changedDirectory(args);
+      this.moveTo(this.changedDirectory(args));
     } else if (name === "popd" && this.pushed.length > 0) {
-      this.directory = this.pushed.pop() ?? this.directory;
+      this.moveTo(this.pushed.pop() ?? this.directory);
     } else if (name === "export") {
       this.exportAll(args);
     } else if (invocation.argv.length === 0) {
@@ -110,9 +112,14 @@ class ShellScope {
     return expandVariables(value, (name) => callValue(name, this.directory, variables));
   }
 
+  private moveTo(directory: string): void {
+    const holder = this.exported.has(PREVIOUS_DIRECTORY) ? this.exported : this.variables;
+    holder.set(PREVIOUS_DIRECTORY, this.directory);
+    this.directory = directory;
+  }
+
   private changedDirectory(args: readonly string[]): string {
     const target = args.length > 0 ? (args[0] ?? "") : "~";
-    if (target === "-") return this.directory;
-    return resolveDirectory(this.directory, target, this.expansion());
+    return resolveDirectory(this.directory, target === "-" ? "$" + PREVIOUS_DIRECTORY : target, this.expansion());
   }
 }

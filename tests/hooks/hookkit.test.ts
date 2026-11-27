@@ -46,6 +46,28 @@ describe("StepsTest", () => {
     assert.equal(directoriesOf(views, ["git", "status"])[0], "/work");
   });
 
+  it("steps_followCdDashToTheDirectoryTheCallLeft", () => {
+    for (const [command, expected] of [
+      ["cd /a; cd /b; cd -; git status", "/a"],
+      ["cd /a; cd -; git status", "/work"],
+      ["cd /a; cd -; cd -; git status", "/a"],
+      ["pushd /b; cd -; git status", "/work"],
+      ["cd /a; pushd /b; popd; cd -; git status", "/b"],
+      ["cd /a; OLDPWD=/x; cd -; git status", "/x"],
+    ] as const) {
+      assert.equal(directoriesOf(stepViews(command), ["git", "status"])[0], expected, command);
+    }
+  });
+
+  it("steps_leaveCdDashUnresolved_whenTheCallHasNotChangedDirectory", () => {
+    for (const [command, expected] of [
+      ["cd -; git status", "/work/$OLDPWD"],
+      ["cd /a; bash -c 'cd -; git status'", "/a/$OLDPWD"],
+    ] as const) {
+      assert.equal(directoriesOf(stepViews(command), ["git", "status"])[0], expected, command);
+    }
+  });
+
   it("steps_expandWithTheLastAssignment_whetherPlainOrExported", () => {
     const later = steps("export D=/a; D=/b; X=/c; export X; echo $D $X", "/w").at(-1);
     assert.ok(later);

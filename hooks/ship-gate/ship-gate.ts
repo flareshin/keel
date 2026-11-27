@@ -855,7 +855,9 @@ function judgeAction(action: Action, report: Report): void {
   try {
     target = resolveTarget(action, report);
   } catch (error) {
-    if (error instanceof UnclearTarget) {
+    if (action.kind === "push" && action.dryRun) {
+      report.passed(null);
+    } else if (error instanceof UnclearTarget) {
       denyUnclearTarget(action, error, report);
     } else if (error instanceof NotAClone && action.kind === "unattributable" && registry.gatesAnyRepo()) {
       denyUnattributable(action, null, report, hint);

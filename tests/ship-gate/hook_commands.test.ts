@@ -742,6 +742,47 @@ describe('HookBehaviorTest', () => {
       '(`cd <clone>` or `git -C <clone>`), then retry\n'), run.stderr);
   });
 
+  test('push_isJudgedInTheCloneCdDashReturnsTo', (t) => {
+    const sandbox = new Sandbox(t);
+    const app = sandbox.clone('acme', 'app');
+    const tool = sandbox.clone('acme', 'tool');
+    for (const repo of [app, tool]) {
+      repo.branch('feature');
+      repo.commit(LOGIC_WITH_TEST);
+    }
+    const intoApp = sandbox.push(app, `cd ${shlexQuote(tool.path)} && cd - && git push origin feature`);
+    assert.equal(intoApp.rc, 2, intoApp.stderr + intoApp.stdout);
+    assert.ok(intoApp.stderr.includes('acme/app'), intoApp.stderr);
+    const intoTool = sandbox.push(tool, `cd ${shlexQuote(app.path)} && cd - && git push origin feature`);
+    assert.equal(intoTool.rc, 0, intoTool.stderr + intoTool.stdout);
+  });
+
+  test('push_failsClosed_whenCdDashHasNoDirectoryToReturnTo', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    repo.branch('feature');
+    repo.commit(LOGIC_WITH_TEST);
+    const run = sandbox.push(repo, 'cd - && git push origin feature');
+    assert.equal(run.rc, 2, run.stderr + run.stdout);
+    assert.ok(run.stderr.includes('GateError: not a git repository'), run.stderr);
+  });
+
+  test('dryRunPush_passes_whenItsDirectoryIsResolvedOnlyAtRunTime', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    for (const command of ['cd "$X" && git push --dry-run origin feature', 'cd "$X" && git push -n origin feature',
+      'cd - && git push --dry-run origin feature']) {
+      const run = sandbox.push(repo, command);
+      assert.equal(run.rc, 0, command + run.stderr + run.stdout);
+    }
+    for (const command of ['cd "$X" && git push --dry-run --no-dry-run origin feature', 'cd "$X" && git push origin feature']) {
+      const run = sandbox.push(repo, command);
+      assert.equal(run.rc, 2, command + run.stderr + run.stdout);
+      assert.ok(run.stderr.includes('GateError: not a git repository'), run.stderr);
+      assert.ok(run.stderr.includes('- [K1] next step: the gate reads `'), run.stderr);
+    }
+  });
+
   test('unattributable_isDeniedAsUnattributableNotAsAnInternalError_whenWorkdirIsNotARepo', (t) => {
     const sandbox = new Sandbox(t);
     const repo = sandbox.clone('acme', 'app');

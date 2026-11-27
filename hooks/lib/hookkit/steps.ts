@@ -35,18 +35,20 @@ export class Step {
 export function steps(text: string, cwd: string): Step[] {
   const scopes = new Map<SimpleCommand | null, ShellScope>([[null, new ShellScope(cwd, new Map())]]);
   const stepOf = new Map<SimpleCommand, Step>();
+  const previousUntrustedAt = new Map<SimpleCommand, boolean>();
   for (const command of parseCommands(text)) {
     const script = command.parent;
     let scope = scopes.get(script);
     if (scope === undefined) {
       const owner = script === null ? undefined : stepOf.get(script);
       if (owner === undefined) throw new Error("a nested command precedes the command it came from");
-      scope = new ShellScope(owner.directory, owner.environment);
+      scope = new ShellScope(owner.directory, owner.environment, previousUntrustedAt.get(script) ?? true);
       scopes.set(script, scope);
     }
     const invocation = unwrap(command);
     const environment: Variables = invocation.clearsEnv ? new Map() : new Map(scope.exported);
     for (const [name, value] of invocation.assignments) environment.set(name, value);
+    previousUntrustedAt.set(command, scope.previousUntrusted);
     stepOf.set(command, new Step(invocation.argv, environment, scope.directory, command, scope.expansion(),
                                  invocation.unattributableOptions));
     scope.follow(invocation, command);
@@ -61,10 +63,12 @@ class ShellScope {
   pushed: string[] = [];
   previous: string | null = null;
   receivesPipe = false;
+  previousUntrusted: boolean;
 
-  constructor(directory: string, exported: Variables) {
+  constructor(directory: string, exported: Variables, previousUntrusted = false) {
     this.directory = directory;
     this.exported = new Map(exported);
+    this.previousUntrusted = previousUntrusted;
   }
 
   expansion(): Variables {
@@ -91,6 +95,9 @@ class ShellScope {
       this.assign(invocation.assignments);
     }
     if (!keepsPrevious) this.previous = null;
+    if (!keepsPrevious && (invocation.argv.length > 0 || setsDirectoryLookup(invocation.assignments))) {
+      this.previousUntrusted = true;
+    }
   }
 
   private exportAll(args: readonly string[]): void {
@@ -118,7 +125,7 @@ class ShellScope {
   }
 
   private moveTo(directory: string): void {
-    this.previous = this.directory;
+    this.previous = this.previousUntrusted ? null : this.directory;
     this.directory = directory;
   }
 
@@ -127,6 +134,10 @@ class ShellScope {
     if (target !== "-") return resolveDirectory(this.directory, target, this.expansion());
     return this.previous ?? resolveDirectory(this.directory, "$" + PREVIOUS_DIRECTORY, new Map());
   }
+}
+
+function setsDirectoryLookup(assignments: readonly Assignment[]): boolean {
+  return assignments.some(([variable]) => variable === "CDPATH" || variable === "HOME");
 }
 
 function isModeledDirectoryMove(invocation: Invocation): boolean {

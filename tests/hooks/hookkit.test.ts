@@ -55,6 +55,7 @@ describe("StepsTest", () => {
       ["cd /a; pushd /b; popd; cd -; git status", "/b"],
       ["cd /a; OLDPWD=/x; cd /b; cd -; git status", "/a"],
       ["cd /a; cd; cd -; git status", "/a"],
+      ["cd /a; x=$(cd /c); cd /b; cd -; git status", "/a"],
     ] as const) {
       assert.equal(directoriesOf(stepViews(command), ["git", "status"])[0], expected, command);
     }
@@ -94,6 +95,16 @@ describe("StepsTest", () => {
       "cd /a; pushd /b; popd -n; cd -; git status",
       "cd /a; cd /b; cd -P /c; cd -; git status",
       "cd /a; cd /b; cd -L; cd -; git status",
+      "cd /a; cd /b; eval 'cd /c'; cd /d; cd -; git status",
+      "f() { cd /c; }; cd /a; cd /b; f; cd /d; cd -; git status",
+      "cd /a; cd /b; $g; cd /d; cd -; git status",
+      "cd /a; git fetch; cd /d; cd /e; cd -; git status",
+      "cd /a; cd /b; eval 'cd /c'; x=1; cd /d; cd -; git status",
+      "cd /a; cd /b; eval 'cd /c'; cd d; cd /e; cd -; git status",
+      "cd /a; pushd /b; eval 'pushd /q'; popd; cd /e; cd -; git status",
+      "cd /a; cd /b; f; bash -c 'cd d; cd /e; cd -; git status'",
+      "cd /a; CDPATH=/x; cd b; cd /e; cd -; git status",
+      "cd /a; HOME=/q; cd; cd /e; cd -; git status",
       "cd /a; env cd /b; cd -; git status",
       "cd /a; nohup cd /b; cd -; git status",
       "cd /a; cd /b; true | cd /c; cd -; git status",

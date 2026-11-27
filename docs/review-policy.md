@@ -181,9 +181,9 @@ Do not restart the entire review merely because a small fix was made.
 In a Claude fix delta (a `since` review that carries `priorFindings`), only
 impact high is merge-blocking. A prior finding the fix leaves unresolved comes
 back at impact high and still blocks; a new medium finding is listed as
-non-blocking and goes to the Worklog as a follow-up. Each delta finds fresh
-mediums, so letting them block kept chains running for many rounds. A root
-review and a delta after a PASS keep high and medium blocking. The Codex
+non-blocking and is recorded as a follow-up in the report. Each delta finds
+fresh mediums, so letting them block kept chains running for many rounds. A
+root review and a delta after a PASS keep high and medium blocking. The Codex
 protocol keeps its existing blocking rule.
 
 The bar is checked where the evidence is written, not taken from the caller. A

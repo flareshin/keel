@@ -902,14 +902,16 @@ function judgeAction(action: Action, report: Report): void {
 }
 
 function nextStepAfter(error: unknown, repoRoot: string, repoKey: string | null): string | null {
-  if (error instanceof gitcmd.MissingCommit) return fetchTheMissingCommit(repoRoot, repoKey, error.commit);
+  if (error instanceof gitcmd.MissingCommit) {
+    return fetchTheMissingCommit(repoRoot, repoKey, error.commit, "review the change again on a base this clone has");
+  }
   return error instanceof GateError ? error.nextStep : null;
 }
 
-function fetchTheMissingCommit(repoRoot: string, repoKey: string | null, commit: string): string {
+function fetchTheMissingCommit(repoRoot: string, repoKey: string | null, commit: string, ifOriginLacksIt: string): string {
   return `fetch commit ${commit} into ${repoRoot} from ${repoKey ?? "its origin"} ` +
     `(\`git -C ${shlexQuote(repoRoot)} fetch origin ${commit}\`), then retry; ` +
-    "if origin lacks it too, review the change again on a base this clone has";
+    `if origin lacks it too, ${ifOriginLacksIt}`;
 }
 
 function readAsWritten(word: string): string {
@@ -1064,7 +1066,7 @@ function judgePush(push: Push, repoRoot: string, repoKey: string | null, row: Ga
 function createTheSource(repoRoot: string, repoKey: string, source: string): string {
   const clone = shlexQuote(repoRoot);
   if (RUN_TIME_WORD_RE.test(source)) return `${readAsWritten(source)}; name the branch in the command (\`git push origin <branch>\`)`;
-  if (gitcmd.isObjectId(source)) return fetchTheMissingCommit(repoRoot, repoKey, source);
+  if (gitcmd.isObjectId(source)) return fetchTheMissingCommit(repoRoot, repoKey, source, "push a commit that exists");
   const tag = source.startsWith(TAG_PREFIX) ? source.slice(TAG_PREFIX.length) : null;
   if (tag !== null && PLAIN_BRANCH_NAME.test(tag)) {
     return `no tag ${tag} is in ${repoRoot}; create it first (\`git -C ${clone} tag ${shlexQuote(tag)}\`)`;

@@ -691,7 +691,7 @@ describe('HookBehaviorTest', () => {
       ['refs/tags/v*', `\`refs/tags/v*\` names no commit in ${repo.path}; push a branch, tag or commit that exists`],
       [`${MISSING_COMMIT}:refs/heads/main`, `fetch commit ${MISSING_COMMIT} into ${repo.path} from acme/app ` +
         `(\`git -C ${clone} fetch origin ${MISSING_COMMIT}\`), then retry; ` +
-        'if origin lacks it too, review the change again on a base this clone has'],
+        'if origin lacks it too, push a commit that exists'],
     ]) {
       const run = sandbox.push(repo, `git push origin ${source}`);
       assert.equal(run.rc, 2, run.stderr + run.stdout);

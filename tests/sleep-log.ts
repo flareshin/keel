@@ -1,5 +1,5 @@
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
-import { withPreload } from "./preload.ts";
+import { withNodePreload } from "../lib/node-preload.ts";
 
 export const SLEEP_LOG_VARIABLE = "KEEL_TEST_SLEEP_LOG";
 
@@ -17,7 +17,7 @@ function logEverySleepTo(path: string): void {
 }
 
 export function sleepLogEnv(path: string): Record<string, string> {
-  return withPreload(import.meta.filename, { [SLEEP_LOG_VARIABLE]: path });
+  return withNodePreload(new URL(import.meta.url), { [SLEEP_LOG_VARIABLE]: path });
 }
 
 export function loggedSleeps(path: string): number[] {

@@ -46,6 +46,7 @@ export class SimpleCommand {
   heredocs: string[] = [];
   nested: boolean;
   pipesToNext = false;
+  andsToNext = false;
   parent: SimpleCommand | null;
 
   constructor(nested: boolean = false, parent: SimpleCommand | null = null) {

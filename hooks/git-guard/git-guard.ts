@@ -9,7 +9,7 @@ import * as knownvalues from "../lib/hookkit/knownvalues.ts";
 import { readTsv } from "../lib/hookkit/overlay.ts";
 import * as protocol from "../lib/hookkit/protocol.ts";
 import type { Payload } from "../lib/hookkit/protocol.ts";
-import { basename, expandUser, joinPath, normalizePath } from "../lib/hookkit/paths.ts";
+import { basename, environmentValue, expandUser, joinPath, normalizePath } from "../lib/hookkit/paths.ts";
 import { editTarget, FieldTypeError, getField, isNonEmptyString, isRecord, jsonTypeName, textField } from "../lib/hookkit/fields.ts";
 import { partition, SPACE_CHARS, SPACE_CLASS, splitlines, testCaseFolded, trimSpace, truncate, WORD_BOUNDARY } from "../lib/hookkit/text.ts";
 import { compareCodePoints } from "../../measure/lib/measurekit/json.ts";
@@ -84,6 +84,16 @@ const COMMIT_SHORT_ATTACHED_VALUE_FLAGS: ReadonlySet<string> = new Set(["S", "u"
 const COMMIT_NO_VERIFY_SHORT_FLAG = "n";
 const STAGING_SUBCOMMANDS: ReadonlySet<string> = new Set(["add", "stage"]);
 const PLAIN_CALL_TEXT_RE = /^(?:[A-Za-z0-9 \t\n'"_.,:;=@%+\-\/]|&&)*$/;
+const LEADING_HOME_CD_RE = /^cd ~(?=[\/ \t])/;
+const HOME_OPERAND = "~";
+const CD_OPTION_PREFIXES: readonly string[] = ["-", "+"];
+const CDPATH_SKIPPING_PREFIXES: readonly string[] = ["/", HOME_OPERAND, "./", "../"];
+const CDPATH_SKIPPING_OPERANDS: ReadonlySet<string> = new Set([".", ".."]);
+const UNREPLAYABLE_STAGING_TEXT =
+  "This call stages files in a way the hook cannot replay (a step other than a git add before the commit, interactive or patch staging, " +
+  "a run-time expansion or unresolved directory in the staging command, or a staging command that fails), so the secret and path checks " +
+  "cannot see them; use git -C <dir> instead of cd, or stage in a separate call, then commit.";
+const STAGE_IN_A_SEPARATE_CALL = "Stage with `git -C <dir> add <files>`, then commit in a separate call.";
 const PR_BODY_FILE_LONG_OPTION = "--body-file";
 const PR_BODY_FILE_OPTIONS: ReadonlySet<string> = new Set(["-F", PR_BODY_FILE_LONG_OPTION]);
 const PR_BODY_FILE_SHORT_FLAG = "F";
@@ -208,8 +218,11 @@ function nextStepFor(payload: Payload, violations: readonly Violation[]): string
   if (protocol.toolName(payload) !== "bash") return protocol.ASK_USER;
   const command = commandOf(protocol.toolInput(payload));
   if (violations.every((violation) => violation.text === UNREAD_MESSAGE_TEXT)) return WRITE_MESSAGE_FILE;
-  if (mayHoldKnownValue(command)) return protocol.ASK_USER;
-  return protocol.runYourself(`cd ${shlexQuote(protocol.cwdOrProcessDirectory(payload))} && ${command}`);
+  const runOrAsk = mayHoldKnownValue(command)
+    ? protocol.ASK_USER
+    : protocol.runYourself(`cd ${shlexQuote(protocol.cwdOrProcessDirectory(payload))} && ${command}`);
+  const onlyUnreplayableStaging = violations.every((violation) => violation.text === UNREPLAYABLE_STAGING_TEXT);
+  return onlyUnreplayableStaging ? `${STAGE_IN_A_SEPARATE_CALL}\n${runOrAsk}` : runOrAsk;
 }
 
 function commandOf(toolArgs: Payload): string {
@@ -379,7 +392,7 @@ function checkBash(command: string, cwd: string): Violation[] {
     ...checkKeelCommands(call), ...checkInstallChanges(call), ...checkProtectedWrites(call), ...checkLiveCheckouts(call), ...checkHookSkips(call),
     ...checkHookDisablingWrites(call), ...checkCommentWrites(call),
   ];
-  const plainCallText = PLAIN_CALL_TEXT_RE.test(command);
+  const plainCallText = PLAIN_CALL_TEXT_RE.test(command.replace(LEADING_HOME_CD_RE, "cd "));
   call.forEach((step, index) => violations.push(...checkGitOrPr(step, call, index, callHeredocs, plainCallText)));
   return unique(violations);
 }
@@ -696,12 +709,7 @@ function stagedContentViolations(staging: readonly StagingCommand[] | null, topl
 }
 
 function unreplayableStagingViolation(repoKey: string | null): Violation {
-  return {
-    ruleId: F_SECRETS, repo: repoKey, kind: PROCEDURAL_KIND,
-    text: "This call stages files in a way the hook cannot replay (a step other than a git add before the commit, interactive or patch staging, " +
-      "a run-time expansion or unresolved directory in the staging command, or a staging command that fails), so the secret and path checks " +
-      "cannot see them; use git -C <dir> instead of cd, or stage in a separate call, then commit.",
-  };
+  return { ruleId: F_SECRETS, repo: repoKey, kind: PROCEDURAL_KIND, text: UNREPLAYABLE_STAGING_TEXT };
 }
 
 function indexViolations(toplevel: string, repoKey: string | null, env: NodeJS.ProcessEnv): Violation[] {
@@ -726,7 +734,8 @@ function sameCallStaging(
 ): StagingCommand[] | null {
   const commands: StagingCommand[] = [];
   let replayable = plainCallText;
-  for (const step of earlierSteps) {
+  for (const [position, step] of earlierSteps.entries()) {
+    if (position === 0 && entersOneDirectoryExactly(step)) continue;
     const staging = earlierStaging(step, toplevel);
     if (staging === UNREPLAYABLE) return null;
     if (staging === NOT_STAGING) replayable = false;
@@ -736,6 +745,38 @@ function sameCallStaging(
   if (own === null) return null;
   const staging = [...commands, ...own];
   return staging.length > 0 && !replayable ? null : staging;
+}
+
+function entersOneDirectoryExactly(step: Step): boolean {
+  const command = step.command;
+  const [name, operand, ...extra] = command.argv;
+  if (name !== "cd" || operand === undefined || operand === "" || extra.length > 0) return false;
+  if (command.nested || !command.andsToNext) return false;
+  if (command.assignments.length > 0 || command.redirects.length > 0 || command.heredocs.length > 0) return false;
+  if (CD_OPTION_PREFIXES.some((prefix) => operand.startsWith(prefix)) || namesAnotherUsersHome(operand)) return false;
+  if (cdpathMaySearch(operand)) return false;
+  return reachesOneDirectoryLogicallyAndPhysically(step, operand);
+}
+
+function namesAnotherUsersHome(operand: string): boolean {
+  return operand.startsWith(HOME_OPERAND) && operand !== HOME_OPERAND && !operand.startsWith(HOME_OPERAND + "/");
+}
+
+function cdpathMaySearch(operand: string): boolean {
+  if (!environmentValue("CDPATH")) return false;
+  return !CDPATH_SKIPPING_OPERANDS.has(operand) && !CDPATH_SKIPPING_PREFIXES.some((prefix) => operand.startsWith(prefix));
+}
+
+function reachesOneDirectoryLogicallyAndPhysically(step: Step, operand: string): boolean {
+  const logical = resolveDirectory(step.directory, operand, step.expansion);
+  const physical = joinPath(step.directory, expandUser(operand));
+  if (!isDirectory(logical)) return false;
+  try {
+    return realpathSync.native(logical) === realpathSync.native(physical);
+  } catch (error) {
+    if (isSystemError(error)) return false;
+    throw error;
+  }
 }
 
 function earlierStaging(step: Step, toplevel: string): EarlierStaging {

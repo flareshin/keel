@@ -25,7 +25,7 @@ An agent edit that sounds right can still change nothing, or make another run wo
 
 7. **Adopt or drop.** Only a `helped` change goes forward, through the normal path for its repository (tests, review, owner approval). Anything else is reverted, and the row is kept in the reading guide or the report.
 
-8. **Record the lesson.** Write at most one entry to the module's vault `Learnings/`: `cue` (the shape of situation it applies to, not this task's facts), `lesson` (the operation, naming the component) and `evidence` (the verdict rows and run ids). With no concrete contrast, write none.
+8. **Record the lesson.** Write at most one entry where this installation keeps lessons (the overlay's personal rules name the place; with none, put it in the report): `cue` (the shape of situation it applies to, not this task's facts), `lesson` (the operation, naming the component) and `evidence` (the verdict rows and run ids). With no concrete contrast, write none.
 
 ## Rules
 - [K1] The author of an agent edit does not label it `helped`; the label comes from the deterministic check or a separate blind judge.

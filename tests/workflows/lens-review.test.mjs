@@ -1323,6 +1323,12 @@ test('lensReview_joinsAMultiLineNoTestReasonIntoOneLine', async () => {
   assert.equal(result.evidence[0].no_test_reason, 'Only prose changed. / No test reads DESIGN.md.')
 })
 
+test('lensReview_writesInvisibleCharactersInANoTestReasonAsCodePoints', async () => {
+  const result = await reviewWithTestsAudit({ no_test_reasons: [{ repo_root: '/work/app', reason: 'Only prose\u3000changed\tno test.' }] })
+  assert.equal(result.evidence[0].no_test_reason, 'Only proseU+3000changedU+0009no test.')
+  assert.equal(result.verdict, 'PASS')
+})
+
 test('lensReview_asksTheDeltaAuditorToJudgeTheWholeRange_beforeItGivesANoTestReason', async () => {
   const wholeRange = `git -C '/work/app' diff ${SHA_A} ${SHA_B}`
   const delta = createRuntime({ respond: responder({ audits: { tests: { findings: [], no_test_reasons: [{ repo_root: '/work/app', reason: 'Only prose changed since the root.' }] } } }) })

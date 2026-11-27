@@ -59,6 +59,39 @@ const GH_API_METHOD_OPTIONS: ReadonlySet<string> = new Set(["-X", "--method"]);
 const GH_API_FIELD_OPTIONS: readonly string[] = ["-f", "-F", "--field", "--raw-field"];
 const GH_API_BODY_OPTIONS: readonly string[] = [...GH_API_FIELD_OPTIONS, "--input"];
 const READ_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD"]);
+const GH_API_CALL = new RegExp(`${WORD_BOUNDARY}gh${WORD_BOUNDARY}.*${WORD_BOUNDARY}api${WORD_BOUNDARY}`, "u");
+const URL_ORIGIN = /^[a-z][a-z0-9+.-]*:\/\/[^/]*/iu;
+const QUERY_OR_FRAGMENT = /[?#][\s\S]*$/u;
+const ENTERPRISE_REST_PREFIX = ["api", "v3"];
+const GRAPHQL_ENDPOINTS: readonly string[][] = [["graphql"], ["api", "graphql"]];
+const REPO_SCOPE = "repos";
+const REPO_ID_SCOPE = "repositories";
+const OWNER_REPO_PLACEHOLDERS: readonly string[][] = [["{owner}", "{repo}"], [":owner", ":repo"]];
+const PLACEHOLDER_SIGN = /^:|[{}]/u;
+const UNREADABLE_SEGMENT = /^\.{1,2}$|%/u;
+const ANY_SEGMENT = "*";
+const DISCUSSION_ENDPOINTS: readonly string[][] = [
+  "issues", "issues/*", "issues/*/comments", "issues/comments/*", "issues/*/labels", "issues/*/labels/*",
+  "issues/*/assignees", "issues/*/reactions", "issues/*/reactions/*", "issues/comments/*/reactions",
+  "issues/comments/*/reactions/*", "labels", "labels/*", "pulls/*/comments", "pulls/*/comments/*/replies",
+  "pulls/comments/*", "pulls/comments/*/reactions", "pulls/comments/*/reactions/*",
+].map((pattern) => pattern.split("/"));
+const DISCUSSION_MUTATIONS: ReadonlySet<string> = new Set([
+  "addComment", "updateIssueComment", "deleteIssueComment", "addReaction", "removeReaction", "addLabelsToLabelable",
+  "removeLabelsFromLabelable", "clearLabelsFromLabelable", "addAssigneesToAssignable", "removeAssigneesFromAssignable",
+  "createIssue", "updateIssue", "closeIssue", "reopenIssue", "minimizeComment", "unminimizeComment",
+]);
+const GRAPHQL_QUERY_FIELD = "query";
+const TYPED_FIELD_OPTIONS: ReadonlySet<string> = new Set(["-F", "--field"]);
+const FILE_VALUE_SIGN = "@";
+const GRAPHQL_TOKEN = /"""(?:\\"""|[\s\S])*?"""|"(?:[^"\\]|\\.)*"|#[^\n\r]*|\.\.\.|[_A-Za-z][_0-9A-Za-z]*|[^\s,]/gu;
+const GRAPHQL_NAME = /^[_A-Za-z]/u;
+const GRAPHQL_OPERATION_KEYWORDS: ReadonlySet<string> = new Set(["query", "mutation", "subscription", "fragment"]);
+const GRAPHQL_MUTATION = "mutation";
+const GRAPHQL_SPREAD = "...";
+const GRAPHQL_DIRECTIVE = "@";
+const GRAPHQL_ALIAS = ":";
+const GRAPHQL_UNCLOSED_STRING = '"';
 const GH_API_VALUE_OPTIONS: ReadonlySet<string> = new Set([
   ...GH_API_METHOD_OPTIONS, ...GH_API_BODY_OPTIONS, "-H", "--header", "-q", "--jq", "-t", "--template", "--hostname", "-p", "--preview",
   "--cache",
@@ -150,7 +183,20 @@ export interface PrCreate {
   words: string[];
 }
 
-export type Action = Push | Merge | Unattributable | PrCreate;
+export type GhApiTarget =
+  | { kind: "named"; key: string }
+  | { kind: "ghDefault"; ghRepoEnv: string | null }
+  | { kind: "unknown"; why: string };
+
+export interface GhApiWrite {
+  kind: "ghApiWrite";
+  workdir: string;
+  words: string[];
+  endpoint: string;
+  target: GhApiTarget;
+}
+
+export type Action = Push | Merge | Unattributable | PrCreate | GhApiWrite;
 type Environment = Map<string, string>;
 type Where = Record<string, unknown>;
 type Target = [repoRoot: string, repoKey: string | null, row: GatedRepo | null];
@@ -315,7 +361,7 @@ function guardBash(payload: Payload, report: Report): void {
 export function mayPushOrMerge(call: string): boolean {
   const unquoted = unquote(call);
   const runtimeGitOrGh = DECISION_HINT.test(unquoted) && RUN_TIME_WORD_RE.test(unquoted);
-  return spellsPushOrMerge(call) || runtimeGitOrGh;
+  return spellsPushOrMerge(call) || runtimeGitOrGh || GH_API_CALL.test(unquoted);
 }
 
 function spellsPushOrMerge(call: string): boolean {
@@ -364,6 +410,9 @@ export function actionsOf(step: Step, call: string = "", callCwd: string = ""): 
 }
 
 function ghActions(words: string[], workdir: string, environment: Environment, call: string, callCwd: string): Action[] {
+  if (RUN_TIME_WORD_RE.test(words[1] ?? "") && (ghApiWrites(words.slice(2)) || spellsPushOrMerge(call))) {
+    return [resolvedAtRunTime(workdir, words, "the `gh` subcommand is resolved only at run time", call, callCwd)];
+  }
   if (arraysEqual(words.slice(1, 3), ["pr", "merge"])) {
     const merge = parseMerge(words, workdir, environment.get("GH_REPO") ?? null);
     const namesRepo = repoNamingSources(merge).some(([, name]) => name);
@@ -374,14 +423,101 @@ function ghActions(words: string[], workdir: string, environment: Environment, c
     return [merge];
   }
   if (arraysEqual(words.slice(1, 3), ["pr", "create"])) return [{ kind: "prCreate", workdir, words }];
-  const isApi = arraysEqual(words.slice(1, 2), ["api"]);
-  if (isApi && ghApiChangesABranch(words.slice(2))) {
+  if (!arraysEqual(words.slice(1, 2), ["api"])) return [];
+  const args = words.slice(2);
+  if (ghApiChangesABranch(args)) {
     return [unattributable(workdir, words, "`gh api` merges or moves a branch outside the gate")];
   }
-  if (isApi && ghApiHidesItsTarget(words.slice(2))) {
+  if (ghApiHidesItsTarget(args)) {
     return [resolvedAtRunTime(workdir, words, "`gh api` writes to an endpoint resolved at run time", call, callCwd)];
   }
-  return [];
+  const [options, operands] = readGhApi(args);
+  const endpoint = operands[0] ?? "";
+  const target = ghApiWriteTarget(endpointSegments(endpoint), options, args, environment);
+  const redirected = target?.kind === "ghDefault" ? ghDefaultChangeIn(call, callCwd) : null;
+  if (redirected) {
+    return [resolvedAtRunTime(workdir, words, `\`${redirected}\` changes the repo gh fills the placeholders from`, call, callCwd)];
+  }
+  return target ? [{ kind: "ghApiWrite", workdir, words, endpoint, target }] : [];
+}
+
+function endpointSegments(endpoint: string): string[] {
+  const path = endpoint.replace(URL_ORIGIN, "").replace(QUERY_OR_FRAGMENT, "");
+  const segments = path.split("/").filter((segment) => segment).map((segment) => segment.toLowerCase());
+  return arraysEqual(segments.slice(0, 2), ENTERPRISE_REST_PREFIX) ? segments.slice(2) : segments;
+}
+
+function ghApiWriteTarget(segments: string[], options: GhApiOption[], args: string[], environment: Environment): GhApiTarget | null {
+  if (GRAPHQL_ENDPOINTS.some((graphql) => arraysEqual(segments, graphql))) return graphqlWriteTarget(options);
+  if (!ghApiWrites(args)) return null;
+  if (segments.some((segment) => UNREADABLE_SEGMENT.test(segment))) {
+    return unknownTarget("its endpoint holds a dot or percent-encoded segment");
+  }
+  const [scope, owner, repo, ...path] = segments;
+  if (scope === REPO_ID_SCOPE) return isDiscussionEndpoint(segments.slice(2)) ? null : unknownTarget("it names the repo by id");
+  if (scope !== REPO_SCOPE || isDiscussionEndpoint(path)) return null;
+  if (owner === undefined || repo === undefined) return unknownTarget("it names no owner/repo");
+  if (OWNER_REPO_PLACEHOLDERS.some((placeholders) => arraysEqual([owner, repo], placeholders))) {
+    return { kind: "ghDefault", ghRepoEnv: environment.get("GH_REPO") ?? null };
+  }
+  if (PLACEHOLDER_SIGN.test(owner) || PLACEHOLDER_SIGN.test(repo)) return unknownTarget("only part of owner/repo is a placeholder");
+  return { kind: "named", key: `${owner}/${repo}` };
+}
+
+function isDiscussionEndpoint(path: string[]): boolean {
+  return DISCUSSION_ENDPOINTS.some((pattern) =>
+    pattern.length === path.length && pattern.every((segment, index) => segment === ANY_SEGMENT || segment === path[index]));
+}
+
+function unknownTarget(why: string): GhApiTarget {
+  return { kind: "unknown", why };
+}
+
+function graphqlWriteTarget(options: GhApiOption[]): GhApiTarget | null {
+  if (options.some(([option]) => option === "--input")) return unknownTarget("it reads the request body from a file");
+  const queries = options
+    .filter(([option, value]) => GH_API_FIELD_OPTIONS.includes(option) && partition(value, "=")[0] === GRAPHQL_QUERY_FIELD)
+    .map(([option, value]): [string, string] => [option, partition(value, "=")[2]]);
+  if (queries.some(([option, query]) => TYPED_FIELD_OPTIONS.has(option) && query.startsWith(FILE_VALUE_SIGN))) {
+    return unknownTarget("it reads the query from a file");
+  }
+  const fields: string[] = [];
+  for (const [, query] of queries) {
+    const mutationFields = topLevelMutationFields(query);
+    if (mutationFields === null) return unknownTarget("the gate cannot read every field of its mutation");
+    fields.push(...mutationFields);
+  }
+  return fields.every((field) => DISCUSSION_MUTATIONS.has(field)) ? null : unknownTarget("a GraphQL mutation names repos by node id");
+}
+
+function topLevelMutationFields(document: string): string[] | null {
+  const tokens = [...document.matchAll(GRAPHQL_TOKEN)].map((match) => match[0]).filter((token) => !token.startsWith("#"));
+  if (tokens.includes(GRAPHQL_UNCLOSED_STRING)) return null;
+  const fields: string[] = [];
+  let braces = 0;
+  let parens = 0;
+  let operation = "";
+  let inMutation = false;
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index]!;
+    if (token === "(") parens += 1;
+    else if (token === ")") parens -= 1;
+    else if (parens > 0) continue;
+    else if (token === "{") {
+      if (braces === 0) inMutation = operation === GRAPHQL_MUTATION;
+      braces += 1;
+    } else if (token === "}") {
+      braces -= 1;
+      if (braces === 0) operation = "";
+    } else if (braces === 0 && operation === "" && GRAPHQL_OPERATION_KEYWORDS.has(token)) {
+      operation = token;
+    } else if (braces === 1 && inMutation) {
+      if (token === GRAPHQL_SPREAD) return null;
+      if (token === GRAPHQL_DIRECTIVE) index += 1;
+      else if (GRAPHQL_NAME.test(token) && tokens[index + 1] !== GRAPHQL_ALIAS) fields.push(token);
+    }
+  }
+  return braces === 0 && parens === 0 ? fields : null;
 }
 
 function ghApiChangesABranch(args: string[]): boolean {
@@ -455,7 +591,13 @@ function hidesPushOrMerge(step: Step, call: string): boolean {
   const forwarded = step.command.argv.slice(1);
   const runsOpaque = forwarded.some((word) =>
     PROGRAMS_THAT_MAY_PUSH.has(basename(word)) || dashedGitSubcommand(word) !== null || RUN_TIME_WORD_RE.test(word));
-  return runsOpaque && (spellsPushOrMerge(call) || forwarded.some((word) => PUSH_OR_MERGE_WORDS.has(word)));
+  const forwardsPushOrMerge = forwarded.some((word) => PUSH_OR_MERGE_WORDS.has(word)) || forwardsAGhApiWrite(forwarded, keptForwarder);
+  return runsOpaque && (spellsPushOrMerge(call) || forwardsPushOrMerge);
+}
+
+function forwardsAGhApiWrite(words: string[], appendsArguments: boolean): boolean {
+  const gh = words.findIndex((word) => basename(word) === "gh");
+  return gh >= 0 && words[gh + 1] === "api" && (appendsArguments || ghApiWrites(words.slice(gh + 2)));
 }
 
 function gitActions(step: Step, call: string, callCwd: string): Action[] {
@@ -627,6 +769,10 @@ function nextOrNull(words: ArrayIterator<string>): string | null {
 function judgeAction(action: Action, report: Report): void {
   const hint = (action.kind === "unattributable" && action.userCommand) || userCommand(action.workdir, action.words);
   const irreversible = action.kind !== "prCreate";
+  if (action.kind === "ghApiWrite") {
+    judgeGhApiWrite(action, report, hint);
+    return;
+  }
   let target: Target;
   try {
     target = resolveTarget(action, report);
@@ -922,6 +1068,45 @@ function denyUnattributable(action: Unattributable, repoKey: string | null, repo
     }],
     `unattributable push or merge in ${repoKey || action.workdir} denied`, hint, { repo: repoKey },
   );
+}
+
+function judgeGhApiWrite(write: GhApiWrite, report: Report, hint: string): void {
+  let repo: [key: string | null, why: string];
+  try {
+    repo = ghApiWriteRepo(write);
+  } catch (error) {
+    if (!(error instanceof UnclearTarget)) {
+      report.error(error, registry.gatesAnyRepo(), hint);
+      return;
+    }
+    repo = [null, "its placeholders could name several of this clone's remotes"];
+  }
+  const [key, why] = repo;
+  if (key === null) {
+    if (!registry.gatesAnyRepo()) return;
+    denyGhApiWrite(`\`gh api\` writes to a repo the gate cannot name (${why}): ${write.endpoint}`, "gh api write denied", hint, null, report);
+  } else if (registry.isGated(registry.lookup(key))) {
+    denyGhApiWrite(`\`gh api\` writes to ${key} outside the allow-list (issue, comment, label, assignee and reaction writes): ` +
+      `${write.endpoint}; change a branch through \`git push\` or \`gh pr merge\``, `gh api write to ${key} denied`, hint, key, report);
+  }
+}
+
+function ghApiWriteRepo(write: GhApiWrite): [key: string | null, why: string] {
+  const target = write.target;
+  if (target.kind === "unknown") return [null, target.why];
+  if (target.kind === "named") return [registry.normalizeRepoKey(target.key), "it names no owner/repo"];
+  if (target.ghRepoEnv !== null) {
+    const key = registry.normalizeRepoKey(target.ghRepoEnv);
+    if (key === null) throw new GateError(`GH_REPO ${target.ghRepoEnv} does not name owner/repo`);
+    return [key, ""];
+  }
+  const repoRoot = gitcmd.toplevel(write.workdir);
+  if (repoRoot === null) return [null, "its placeholders need a clone and it runs outside one"];
+  return [ghDefaultKey(repoRoot), "the clone has no remote that names a repo"];
+}
+
+function denyGhApiWrite(text: string, summary: string, hint: string, repoKey: string | null, report: Report): void {
+  report.deny([{ ruleId: F_IRREVERSIBLE, text }], summary, hint, { repo: repoKey });
 }
 
 function denyUnclearTarget(action: Action, unclear: UnclearTarget, report: Report): void {

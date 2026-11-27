@@ -74,7 +74,7 @@ class ShellScope {
   follow(invocation: Invocation, command: SimpleCommand): void {
     const name = invocation.name;
     const args = invocation.argv.slice(1);
-    const runsInThisShell = !this.receivesPipe && !command.pipesToNext && command.argv[0] === invocation.argv[0];
+    const runsInThisShell = !this.receivesPipe && command.argv[0] === invocation.argv[0];
     this.receivesPipe = command.pipesToNext;
     const keepsPrevious = runsInThisShell && isModeledDirectoryMove(invocation);
     if (!keepsPrevious) this.previous = null;

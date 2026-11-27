@@ -59,7 +59,7 @@ describe("StepsTest", () => {
     }
   });
 
-  it("steps_leaveCdDashUnresolved_whenTheCallHasNotChangedDirectoryOrNamesOldpwd", () => {
+  it("steps_leaveCdDashUnresolved_whenTheCallHasNotChangedDirectoryOrMayHaveSetOldpwd", () => {
     for (const [command, expected] of [
       ["cd -; git status", "/work/$OLDPWD"],
       ["cd /a; bash -c 'cd -; git status'", "/a/$OLDPWD"],
@@ -67,8 +67,27 @@ describe("StepsTest", () => {
       ["cd /a; OLDPWD=/x cd -; git status", "/a/$OLDPWD"],
       ["cd /a; export OLDPWD=/x; cd -; git status", "/a/$OLDPWD"],
       ["cd /a; unset OLDPWD; cd -; git status", "/a/$OLDPWD"],
+      ["cd /a; cd /b; OLDPWD+=/x; cd -; git status", "/b/$OLDPWD"],
+      ["cd /a; cd /b; declare -n r=OLDPWD; r=/x; cd -; git status", "/b/$OLDPWD"],
+      ["cd /a; cd /b; eval 'true; OLDPWD=/x'; cd -; git status", "/b/$OLDPWD"],
+      ["cd /a; cd /b; x=OLD; eval \"${x}PWD=/x\"; cd -; git status", "/b/$OLDPWD"],
+      ["cd /a; cd /b; source ./env.sh; cd -; git status", "/b/$OLDPWD"],
+      ["cd /a; cd /b; . ./env.sh; cd -; git status", "/b/$OLDPWD"],
     ] as const) {
       assert.equal(directoriesOf(stepViews(command), ["git", "status"])[0], expected, command);
+    }
+  });
+
+  it("steps_leaveCdDashUnresolved_afterADirectoryMoveTheWalkerDoesNotModel", () => {
+    for (const command of [
+      "cd /a; builtin cd /b; cd -; git status",
+      "cd /a; pushd /b; pushd; cd -; git status",
+      "cd /a; pushd -n /x; cd -; git status",
+      "cd /a; pushd /b; popd -n; cd -; git status",
+      "cd /a; cd /b; cd -P /c; cd -; git status",
+    ]) {
+      const directory = directoriesOf(stepViews(command), ["git", "status"])[0] ?? "";
+      assert.ok(directory.endsWith("/$OLDPWD"), `${command} => ${directory}`);
     }
   });
 

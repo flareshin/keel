@@ -5,6 +5,8 @@ import { parseCommands } from "./parser.ts";
 import { callValue, expandVariables, PREVIOUS_DIRECTORY, resolveDirectory } from "./variables.ts";
 import type { Variables } from "./variables.ts";
 
+const UNFOLLOWED_COMMANDS = new Set(["eval", "source", ".", "trap", "builtin"]);
+
 export class Step {
   argv: string[];
   environment: Variables;
@@ -73,7 +75,8 @@ class ShellScope {
   follow(invocation: Invocation): void {
     const name = invocation.name;
     const args = invocation.argv.slice(1);
-    if (namesPreviousDirectory(invocation)) this.previous = null;
+    const previousMayMoveUnseen = mayMovePreviousDirectoryUnseen(invocation);
+    if (previousMayMoveUnseen) this.previous = null;
     if (name === "cd") {
       this.moveTo(this.changedDirectory(args));
     } else if (name === "pushd" && args.length > 0) {
@@ -86,6 +89,7 @@ class ShellScope {
     } else if (invocation.argv.length === 0) {
       this.assign(invocation.assignments);
     }
+    if (previousMayMoveUnseen) this.previous = null;
   }
 
   private exportAll(args: readonly string[]): void {
@@ -124,7 +128,17 @@ class ShellScope {
   }
 }
 
-function namesPreviousDirectory(invocation: Invocation): boolean {
-  const named = (word: string) => word === PREVIOUS_DIRECTORY || word.startsWith(PREVIOUS_DIRECTORY + "=");
-  return invocation.assignments.some(([variable]) => variable === PREVIOUS_DIRECTORY) || invocation.argv.slice(1).some(named);
+function mayMovePreviousDirectoryUnseen(invocation: Invocation): boolean {
+  const name = invocation.name;
+  if (UNFOLLOWED_COMMANDS.has(name) || !directoryMoveIsModeled(name, invocation.argv.slice(1))) return true;
+  const words = [...invocation.argv, ...invocation.assignments.flat()];
+  return words.some((word) => word.includes(PREVIOUS_DIRECTORY));
+}
+
+function directoryMoveIsModeled(name: string, args: readonly string[]): boolean {
+  const isOption = (word: string) => word.startsWith("-") || word.startsWith("+");
+  if (name === "cd") return args.length === 0 || (args.length === 1 && (args[0] === "-" || !isOption(args[0] ?? "")));
+  if (name === "pushd") return args.length === 1 && !isOption(args[0] ?? "");
+  if (name === "popd") return args.length === 0;
+  return true;
 }

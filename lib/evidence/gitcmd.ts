@@ -189,9 +189,9 @@ export function pushRemote(repo: string, view: ConfigView = STORED_CONFIG): stri
   return DEFAULT_REMOTE;
 }
 
-export function storedConfig(repo: string, keyArgs: readonly string[]): string | null {
-  const args = ['config', '--get', ...keyArgs];
-  const read = runUnchecked(repo, args);
+export function storedConfig(repo: string, keyArgs: readonly string[], view: ConfigView = STORED_CONFIG): string | null {
+  const args = configCommand(view, ['--get', ...keyArgs]);
+  const read = runUnchecked(repo, args, { env: view.env });
   if (read.returncode === CONFIG_KEY_MISSING) return null;
   if (read.returncode !== 0) throw new GitError(`git ${args.join(' ')}: ${stripEitherWay(read.stderr.toString())}`);
   return read.stdout.toString().trim();

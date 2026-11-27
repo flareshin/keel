@@ -22,11 +22,13 @@ import { readStdin } from "../lib/hookkit/stdio.ts";
 import { addedComments, withStraightQuotes } from "./comments.ts";
 import { notebookCellChange } from "./notebook.ts";
 import type { CodeChange } from "./notebook.ts";
-import { currentBranch, findRepoKey, findToplevel, git, gitOutputOrNull, isCommit, isOutsideEveryRepository } from "../lib/hookkit/repo.ts";
+import { findRepoKey, findToplevel, git, gitOutputOrNull, isCommit, isOutsideEveryRepository } from "../lib/hookkit/repo.ts";
 import { RUN_TIME_WORD_RE } from "../lib/hookkit/commands.ts";
 import { hereStrings, parseCommands } from "../lib/hookkit/parser.ts";
 import { configOverrides, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, interpretPush, isConfigRead, nextWord, routesPushes } from "../lib/hookkit/gitargs.ts";
 import { pushRemoteMirror } from "../../lib/evidence/gitcmd.ts";
+import { mayLandOn } from "../../lib/evidence/push_destination.ts";
+import type { PushedRef } from "../../lib/evidence/push_destination.ts";
 import type { ConfigView } from "../../lib/evidence/gitcmd.ts";
 import { steps } from "../lib/hookkit/steps.ts";
 import type { Step } from "../lib/hookkit/steps.ts";
@@ -909,13 +911,13 @@ function copyIndex(toplevel: string, destination: string): boolean {
 function checkPush(args: readonly string[], repoDirectory: string, view: PushConfigView): Violation[] {
   const toplevel = findToplevel(repoDirectory);
   if (toplevel === null) return [];
-  const push = readPush(args, currentBranch(toplevel));
+  const push = readPush(args);
   const repoKey = findRepoKey(toplevel);
   const violations: Violation[] = [];
   if (push.force || mayPushToAMirror(push, toplevel, view)) {
     violations.push({ ruleId: F_FORCE_PUSH, repo: repoKey, text: "Force push rewrites shared history; push without --force, -f or a +refspec." });
   }
-  const leased = push.forceWithLease ? leasedProtectedBranches(push, repoKey) : [];
+  const leased = push.forceWithLease ? leasedProtectedBranches(push, toplevel, repoKey, view) : [];
   if (leased.length > 0) {
     violations.push({ ruleId: F_FORCE_PUSH, repo: repoKey, text: `--force-with-lease onto ${leased.join(", ")} is still a force push to a shared branch.` });
   }
@@ -953,9 +955,13 @@ function isRunTimeWord(word: string): boolean {
   return RUN_TIME_WORD_RE.test(word);
 }
 
-function leasedProtectedBranches(push: PushRequest, repoKey: string | null): string[] {
-  const protectedNames = new Set(protectedBranches(repoKey));
-  return Array.from(push.destinations).filter((name) => protectedNames.has(name)).sort(compareCodePoints);
+function leasedProtectedBranches(push: PushRequest, toplevel: string, repoKey: string | null, view: PushConfigView): string[] {
+  const protectedNames = [...new Set(protectedBranches(repoKey))];
+  if (view.routingDecidedAtRunTime) return protectedNames.sort(compareCodePoints);
+  const target = (spec: PushedRef) => ({ remote: push.remote, namesRefspecs: push.namesRefspecs, spec });
+  return protectedNames
+    .filter((name) => push.targets.some((spec) => mayLandOn(toplevel, name, target(spec), view)))
+    .sort(compareCodePoints);
 }
 
 function pushedRanges(toplevel: string, push: PushRequest): Array<[revisions: string[], label: string]> {
@@ -1073,34 +1079,27 @@ function findIntegrationBase(repoKey: string | null): string | null {
 interface PushRequest {
   remote: string | null;
   sources: string[];
-  destinations: Set<string>;
+  targets: PushedRef[];
+  namesRefspecs: boolean;
   force: boolean;
   forceWithLease: boolean;
   wholeRepo: boolean;
 }
 
-export function readPush(args: readonly string[], branch: string | null): PushRequest {
+export function readPush(args: readonly string[]): PushRequest {
   const { remote, refspecs, deletes, wholeRepo, force, forceWithLease } = interpretPush(args);
-  const push: PushRequest = {
+  const named = deletes ? [] : refspecs.filter((spec) => spec.source !== "");
+  const targets = refspecs.length === 0 && !deletes ? [{ source: "HEAD", destination: null }]
+    : named.map(({ source, destination }) => ({ source, destination }));
+  return {
     remote,
-    sources: [],
-    destinations: new Set(),
+    sources: targets.map((spec) => spec.source),
+    targets,
+    namesRefspecs: refspecs.length > 0,
     force: force || refspecs.some((spec) => spec.forced),
     forceWithLease,
     wholeRepo,
   };
-  if (refspecs.length === 0 && !deletes) {
-    push.sources = ["HEAD"];
-    if (branch) push.destinations.add(branch);
-  }
-  for (const spec of refspecs) {
-    if (deletes || !spec.source) continue;
-    push.sources.push(spec.source);
-    let destination = spec.destination ?? spec.source;
-    if (destination === "HEAD") destination = branch || destination;
-    push.destinations.add(destination.replace(/^refs\/heads\//, ""));
-  }
-  return push;
 }
 
 class ProtectedStore {

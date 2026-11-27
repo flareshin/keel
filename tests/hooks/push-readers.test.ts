@@ -3,12 +3,10 @@ import { describe, it } from "node:test";
 import { readPush } from "../../hooks/git-guard/git-guard.ts";
 import { parsePush } from "../../hooks/ship-gate/ship-gate.ts";
 
-const BRANCH = "feature";
-
 function guardReads(...args: string[]) {
-  const push = readPush(args, BRANCH);
+  const push = readPush(args);
   return {
-    sources: push.sources, destinations: [...push.destinations], force: push.force, forceWithLease: push.forceWithLease,
+    sources: push.sources, targets: push.targets, force: push.force, forceWithLease: push.forceWithLease,
     wholeRepo: push.wholeRepo,
   };
 }
@@ -22,9 +20,9 @@ function gateReads(...args: string[]) {
 }
 
 describe("PushReadersDisagreementTest", () => {
-  it("noRefspec_guardAssumesHeadToTheCurrentBranch_gateKeepsNoRefspec", () => {
+  it("noRefspec_guardAssumesHeadWithNoDestination_gateKeepsNoRefspec", () => {
     assert.deepEqual(guardReads("origin"), {
-      sources: ["HEAD"], destinations: [BRANCH], force: false, forceWithLease: false, wholeRepo: false,
+      sources: ["HEAD"], targets: [{ source: "HEAD", destination: null }], force: false, forceWithLease: false, wholeRepo: false,
     });
     const gate = gateReads("origin");
     assert.deepEqual(gate.refspecs, []);
@@ -33,7 +31,7 @@ describe("PushReadersDisagreementTest", () => {
 
   it("deleteOption_guardSkipsEveryRefspec_gateKeepsThemAndMarksDeletesOnly", () => {
     const guard = guardReads("--delete", "origin", "old");
-    assert.deepEqual([guard.sources, guard.destinations], [[], []]);
+    assert.deepEqual([guard.sources, guard.targets], [[], []]);
     const gate = gateReads("--delete", "origin", "old");
     assert.deepEqual(gate.refspecs, [{ source: "old", destination: null }]);
     assert.equal(gate.deletesOnly, true);
@@ -41,14 +39,14 @@ describe("PushReadersDisagreementTest", () => {
 
   it("deleteOptionWithoutRefspec_guardAddsNoHead_gateMarksDeletesOnly", () => {
     const guard = guardReads("-d", "origin");
-    assert.deepEqual([guard.sources, guard.destinations], [[], []]);
+    assert.deepEqual([guard.sources, guard.targets], [[], []]);
     assert.equal(gateReads("-d", "origin").deletesOnly, true);
   });
 
   it("colonRefspec_bothDropItFromTheNamedRefs_gateCountsItTowardDeletesOnly", () => {
     for (const spec of [":old", "+:old"]) {
       const guard = guardReads("origin", spec);
-      assert.deepEqual([guard.sources, guard.destinations], [[], []], spec);
+      assert.deepEqual([guard.sources, guard.targets], [[], []], spec);
       const gate = gateReads("origin", spec);
       assert.deepEqual(gate.refspecs, [], spec);
       assert.equal(gate.deletesOnly, true, spec);
@@ -61,24 +59,24 @@ describe("PushReadersDisagreementTest", () => {
   it("emptyRefspecWord_guardSkipsIt_gateKeepsItAsAnEmptySource", () => {
     for (const word of ["", "+"]) {
       const guard = guardReads("origin", word);
-      assert.deepEqual([guard.sources, guard.destinations], [[], []], word);
+      assert.deepEqual([guard.sources, guard.targets], [[], []], word);
       const gate = gateReads("origin", word);
       assert.deepEqual(gate.refspecs, [{ source: "", destination: null }], word);
       assert.equal(gate.deletesOnly, false, word);
     }
   });
 
-  it("destination_guardDefaultsToTheSourceAndNormalizesIt_gateKeepsWhatWasGiven", () => {
-    const cases: Array<[spec: string, guardDestination: string, gateDestination: string | null]> = [
-      ["topic", "topic", null],
-      ["topic:", "topic", null],
-      ["topic:refs/heads/x", "x", "refs/heads/x"],
-      ["topic:HEAD", BRANCH, "HEAD"],
-      ["HEAD:refs/heads/x", "x", "refs/heads/x"],
+  it("destination_bothKeepWhatWasGiven", () => {
+    const cases: Array<[spec: string, destination: string | null]> = [
+      ["topic", null],
+      ["topic:", null],
+      ["topic:refs/heads/x", "refs/heads/x"],
+      ["topic:HEAD", "HEAD"],
+      ["HEAD:refs/heads/x", "refs/heads/x"],
     ];
-    for (const [spec, guardDestination, gateDestination] of cases) {
-      assert.deepEqual(guardReads("origin", spec).destinations, [guardDestination], spec);
-      assert.equal(gateReads("origin", spec).refspecs[0]?.destination, gateDestination, spec);
+    for (const [spec, destination] of cases) {
+      assert.equal(guardReads("origin", spec).targets[0]?.destination, destination, spec);
+      assert.equal(gateReads("origin", spec).refspecs[0]?.destination, destination, spec);
     }
   });
 

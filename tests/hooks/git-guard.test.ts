@@ -2097,6 +2097,35 @@ describe("ForcePushTest", () => {
   it("push_passes_whenDeletingRemoteBranch", () => {
     assertPassed(guard("git push origin --delete old-feature", repo));
   });
+
+  describe("a lease whose destination git config decides", () => {
+    beforeEach(() => {
+      sandbox.git(repo, "checkout", "-q", "-b", "feature");
+      sandbox.git(repo, "branch", "-q", "--set-upstream-to", "origin/main");
+    });
+
+    for (const command of ["git push --force-with-lease", "git push --force-with-lease origin feature"]) {
+      it(`push_denied_whenPushDefaultUpstreamSendsTheLeaseToMain: ${command}`, () => {
+        sandbox.git(repo, "config", "push.default", "upstream");
+        assertDenied(guard(command, repo), "F-force-push");
+      });
+    }
+
+    it("push_denied_whenARemotePushMappingSendsTheLeaseToMain", () => {
+      sandbox.git(repo, "config", "remote.origin.push", "refs/heads/feature:refs/heads/main");
+      assertDenied(guard("git push --force-with-lease origin feature", repo), "F-force-push");
+    });
+
+    it("push_denied_whenACommandLineConfigSendsTheLeaseToMain", () => {
+      assertDenied(guard("git -c push.default=upstream push --force-with-lease origin feature", repo), "F-force-push");
+    });
+
+    it("push_passes_whenTheLeaseStaysOnTheFeatureBranch", () => {
+      sandbox.git(repo, "config", "push.default", "current");
+      assertPassed(guard("git push --force-with-lease origin feature", repo));
+      assertPassed(guard("git push --force-with-lease", repo));
+    });
+  });
 });
 
 describe("RepoRulesTest", () => {

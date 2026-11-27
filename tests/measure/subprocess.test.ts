@@ -30,17 +30,23 @@ describe("runProcessAsync", () => {
   })
 
   it("runProcessAsync_throwsWhatRunProcessThrows_onATimeout", async () => {
-    const command = ["sh", "-c", "printf 'x\\r\\n'; sleep 5"]
-    let syncMessage = ""
+    const command = ["sh", "-c", "printf 'x\\r\\n'; printf 'e\\n' >&2; sleep 5"]
+    let syncError: TimeoutExpired | undefined
     try {
       runProcess(command, { timeoutSeconds: 1 })
     } catch (error) {
-      syncMessage = (error as Error).message
+      syncError = error as TimeoutExpired
     }
-    await assert.rejects(
-      runProcessAsync(command, { timeoutSeconds: 1 }),
-      (error) => error instanceof TimeoutExpired && error.partialStdout === "x\r\n" && error.message === syncMessage,
-    )
+    assert.ok(syncError instanceof TimeoutExpired)
+    assert.equal(syncError.partialStderr, "e\n")
+    await assert.rejects(runProcessAsync(command, { timeoutSeconds: 1 }), (error) => {
+      assert.ok(error instanceof TimeoutExpired)
+      assert.deepEqual(
+        { partialStdout: error.partialStdout, partialStderr: error.partialStderr, message: error.message },
+        { partialStdout: "x\r\n", partialStderr: "e\n", message: syncError.message },
+      )
+      return true
+    })
   })
 
   it("runProcessAsync_settlesNearTheTimeout_evenWhenAGrandchildKeepsTheOutputPipeOpen", async () => {

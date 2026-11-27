@@ -312,15 +312,30 @@ function byReviewBase(chains: Chain[]): Map<string, Chain[]> {
 }
 
 function bestChain(outgoing: Outgoing, entries: PathEntry[], chains: Chain[]): [Chain | null, Reason[]] {
-  if (chains.length === 0) {
+  const relevant = chains.filter((chain) => reviewsAnyOutgoingPath(chain, entries));
+  if (relevant.length === 0) {
     return [null, [{ ruleId: K1, text: `no review evidence for ${outgoing.repoKey}: run lens-review on this change` }]];
   }
-  gitcmd.preloadAncestorsOf(outgoing.repoRoot, outgoing.mergeBase, reviewBases(chains));
-  const judged = chains.map((chain): [Chain, Reason[]] => [chain, chainReasons(outgoing, chain, entries)]);
+  gitcmd.preloadAncestorsOf(outgoing.repoRoot, outgoing.mergeBase, reviewBases(relevant));
+  const judged = relevant.map((chain): [Chain, Reason[]] => [chain, chainReasons(outgoing, chain, entries)]);
   const clean = judged.find(([, reasons]) => reasons.length === 0);
   if (clean) return [clean[0], []];
-  const best = judged.find(([chain]) => coverageReasons(chain, entries, outgoing.repoRoot).length === 0) ?? judged[0]!;
-  return best;
+  const covering = judged.find(([chain]) => coverageReasons(chain, entries, outgoing.repoRoot).length === 0);
+  return covering ?? mostReviewed(judged, entries);
+}
+
+function reviewsAnyOutgoingPath(chain: Chain, entries: PathEntry[]): boolean {
+  const reviewable = entries.filter((entry) => !gitcmd.isGitlink(entry));
+  return reviewable.length === 0 || reviewable.some((entry) => chain.reviewed.has(entry.path));
+}
+
+function reviewedPathCount(chain: Chain, entries: PathEntry[]): number {
+  return entries.filter((entry) => chain.reviewed.has(entry.path)).length;
+}
+
+function mostReviewed(judged: Array<[Chain, Reason[]]>, entries: PathEntry[]): [Chain, Reason[]] {
+  return judged.reduce((best, candidate) =>
+    reviewedPathCount(candidate[0], entries) > reviewedPathCount(best[0], entries) ? candidate : best);
 }
 
 function chainReasons(outgoing: Outgoing, chain: Chain, entries: PathEntry[]): Reason[] {

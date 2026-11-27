@@ -1,4 +1,4 @@
-import { withPreload } from "./preload.ts";
+import { withNodePreload } from "../lib/node-preload.ts";
 
 export const FROZEN_NOW_VARIABLE = "KEEL_TEST_FROZEN_NOW";
 
@@ -22,5 +22,5 @@ function freezeClockAt(moment: number): void {
 }
 
 export function frozenClockEnv(moment: string): Record<string, string> {
-  return withPreload(import.meta.filename, { [FROZEN_NOW_VARIABLE]: moment });
+  return withNodePreload(new URL(import.meta.url), { [FROZEN_NOW_VARIABLE]: moment });
 }

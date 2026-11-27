@@ -460,3 +460,84 @@ describe('PushScenarioTest', () => {
     assert.ok(!run.stderr.includes(UNRELATED_RUN), run.stderr);
   });
 });
+
+const NO_APPROVAL = 'no approval bound to chain head';
+const FEATURE_ONTO_MAIN = 'git push origin feature:main';
+
+function mergedIntoMain(repo: Repo, ...mergeOptions: string[]): void {
+  repo.git('checkout', '-q', 'main');
+  repo.git('merge', '-q', ...mergeOptions, '--no-edit', 'feature');
+}
+
+function assertNeedsApproval(sandbox: Sandbox, repo: Repo, command: string): void {
+  assertDenied(sandbox.push(repo, command), 'K1', NO_APPROVAL);
+  sandbox.approve('rv-root-0001');
+  assertPassed(sandbox, sandbox.push(repo, command));
+}
+
+describe('IntegrationBasePushTest', () => {
+  for (const command of [
+    FEATURE_ONTO_MAIN, 'git push origin feature:refs/heads/main', 'git push origin feature:heads/main',
+    'git push origin HEAD:main', 'git push origin +feature:main', 'git push origin feature:HEAD',
+  ]) {
+    test(`pushOntoTheIntegrationBase_needsAnApproval: ${command}`, (t) => {
+      const [sandbox, repo] = sandboxAndFeature(t);
+      sandbox.pushBundle(repo);
+      assertNeedsApproval(sandbox, repo, command);
+    });
+  }
+
+  for (const command of ['git push origin main', 'git push origin refs/heads/main', 'git push origin HEAD', 'git push origin @', 'git push']) {
+    test(`pushOfMainAfterALocalMerge_needsAnApproval: ${command}`, (t) => {
+      const [sandbox, repo] = sandboxAndFeature(t);
+      sandbox.pushBundle(repo);
+      mergedIntoMain(repo, '--ff-only');
+      assertNeedsApproval(sandbox, repo, command);
+    });
+  }
+
+  for (const mergeOption of ['--ff-only', '--no-ff']) {
+    test(`pushOfMainAfterAnApprovedLocalMerge_passes: ${mergeOption}`, (t) => {
+      const [sandbox, repo] = sandboxAndFeature(t);
+      sandbox.fullBundle(repo);
+      mergedIntoMain(repo, mergeOption);
+      const line = assertPassed(sandbox, sandbox.push(repo, 'git push origin main'));
+      assert.equal(line.head, repo.head());
+    });
+  }
+
+  test('barePush_needsAnApproval_whenTheBranchPushesToItsMainUpstream', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t);
+    sandbox.pushBundle(repo);
+    repo.git('branch', '-q', '--set-upstream-to=origin/main');
+    repo.git('config', 'push.default', 'upstream');
+    assertNeedsApproval(sandbox, repo, 'git push');
+  });
+
+  test('barePush_needsAnApproval_whenPushDefaultIsMatching', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t);
+    sandbox.pushBundle(repo);
+    repo.git('config', 'push.default', 'matching');
+    assertNeedsApproval(sandbox, repo, 'git push origin');
+  });
+
+  test('pushWithoutADestination_needsAnApproval_whenTheRemoteMapsItsRefs', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t);
+    sandbox.pushBundle(repo);
+    repo.git('config', 'remote.origin.push', 'refs/heads/feature:refs/heads/main');
+    assertNeedsApproval(sandbox, repo, PUSH_FEATURE);
+  });
+
+  test('pushOntoAnotherBranch_passesWithoutAnApproval', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t);
+    sandbox.pushBundle(repo);
+    assertPassed(sandbox, sandbox.push(repo, 'git push origin feature:release'));
+    assertPassed(sandbox, sandbox.push(repo, 'git push origin HEAD'));
+  });
+
+  test('pushOntoTheIntegrationBase_passesWithoutAnApproval_whenTheRegistryMergesThisRepo', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t, AUTO_MERGE_REGISTRY);
+    sandbox.pushBundle(repo);
+    assertPassed(sandbox, sandbox.push(repo, FEATURE_ONTO_MAIN));
+  });
+});

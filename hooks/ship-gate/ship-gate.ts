@@ -101,7 +101,25 @@ const PROGRAMS_THAT_MAY_PUSH: ReadonlySet<string> = new Set(["git", "gh", ...SHE
 export const ARGV_FORWARDERS: ReadonlySet<string> = new Set([
   "xargs", "parallel", "env", "sudo", "exec", "nice", "nohup", "time", "timeout", "gtimeout", "command",
 ]);
-const PR_VIEW_FIELDS = "statusCheckRollup,baseRefName";
+const XARGS = "xargs";
+const XARGS_FLAGS: ReadonlySet<string> = new Set([
+  "-0", "-o", "-p", "-r", "-t", "-x", "--null", "--interactive", "--no-run-if-empty", "--verbose", "--exit", "--open-tty",
+  "--show-limits",
+]);
+const XARGS_VALUE_OPTIONS: ReadonlySet<string> = new Set([
+  "-a", "-d", "-E", "-I", "-J", "-L", "-n", "-P", "-R", "-S", "-s", "--arg-file", "--delimiter", "--max-args", "--max-procs",
+  "--max-chars", "--process-slot-var",
+]);
+const XARGS_ATTACHED_VALUE_OPTIONS: ReadonlySet<string> = new Set(["-e", "-i", "-l", "--eof", "--replace", "--max-lines"]);
+const XARGS_REPLACE_OPTIONS: ReadonlySet<string> = new Set(["-I", "-J"]);
+const XARGS_SHORT_REPLACE = "-i";
+const XARGS_REPLACE = "--replace";
+const XARGS_DEFAULT_REPLACE = "{}";
+const GIT_SUBCOMMANDS_THAT_ONLY_READ: ReadonlySet<string> = new Set([
+  "log", "show", "cat-file", "rev-parse", "rev-list", "diff", "diff-tree", "ls-files", "ls-tree", "blame", "merge-base",
+  "name-rev", "describe", "show-ref", "for-each-ref", "shortlog", "cherry", "status",
+]);
+const PR_VIEW_FIELDS ="statusCheckRollup,baseRefName";
 const FAILED_CHECKS: ReadonlySet<string> = new Set(["FAILURE", "CANCELLED", "TIMED_OUT", "ERROR", "STARTUP_FAILURE", "ACTION_REQUIRED"]);
 const PENDING_CHECKS: ReadonlySet<string> = new Set(["IN_PROGRESS", "QUEUED", "PENDING", "EXPECTED", "WAITING", "REQUESTED"]);
 export const GH_TIMEOUT_SECONDS = 12;
@@ -397,8 +415,9 @@ export function actionsOf(step: Step, call: string = "", callCwd: string = ""): 
   const workdir = step.directory;
   const first = words[0];
   if (first === undefined) return [];
-  if (hidesPushOrMerge(step, call)) {
-    return [resolvedAtRunTime(workdir, words, `\`${basename(step.command.argv[0] ?? "")}\` wraps it`, call, callCwd)];
+  const hidden = hiddenPushOrMerge(step, call);
+  if (hidden !== null) {
+    return [resolvedAtRunTime(workdir, words, `\`${basename(step.command.argv[0] ?? "")}\` wraps it${hidden}`, call, callCwd)];
   }
   const program = basename(first);
   if (program === "git") return gitActions(step, call, callCwd);
@@ -585,19 +604,90 @@ function runtimeNameMayPushOrMerge(words: string[], call: string): boolean {
   return spellsPushOrMerge(call) || words.slice(1).some((word) => PUSH_OR_MERGE_WORDS.has(word)) || ghApiWrite;
 }
 
-function hidesPushOrMerge(step: Step, call: string): boolean {
+function hiddenPushOrMerge(step: Step, call: string): string | null {
   const keptForwarder = ARGV_FORWARDERS.has(basename(step.argv[0] ?? "")) && step.argv[0] !== "command";
-  if (!(keptForwarder || step.unattributableOptions.length > 0)) return false;
+  if (!(keptForwarder || step.unattributableOptions.length > 0)) return null;
   const forwarded = step.command.argv.slice(1);
-  const runsOpaque = forwarded.some((word) =>
-    PROGRAMS_THAT_MAY_PUSH.has(basename(word)) || dashedGitSubcommand(word) !== null || RUN_TIME_WORD_RE.test(word));
   const forwardsPushOrMerge = forwarded.some((word) => PUSH_OR_MERGE_WORDS.has(word)) || forwardsAGhApiWrite(forwarded, keptForwarder);
-  return runsOpaque && (spellsPushOrMerge(call) || forwardsPushOrMerge);
+  if (!(spellsPushOrMerge(call) || forwardsPushOrMerge)) return null;
+  const xargs = basename(step.argv[0] ?? "") === XARGS && step.unattributableOptions.length === 0 ? readXargs(step.argv.slice(1)) : null;
+  return xargs === null ? opaqueWordIn(forwarded) : xargsInputSlot(xargs);
 }
 
 function forwardsAGhApiWrite(words: string[], appendsArguments: boolean): boolean {
   const gh = words.findIndex((word) => basename(word) === "gh");
   return gh >= 0 && words[gh + 1] === "api" && (appendsArguments || ghApiWrites(words.slice(gh + 2)));
+}
+
+interface XargsCall {
+  command: string[];
+  replaceStrings: string[];
+}
+
+function readXargs(args: readonly string[]): XargsCall | null {
+  const replaceStrings: string[] = [];
+  const words = args.values();
+  for (const word of words) {
+    if (word === "--") return { command: [...words], replaceStrings };
+    if (!word.startsWith("-")) return { command: [word, ...words], replaceStrings };
+    const read = word.startsWith("--") ? readXargsLongOption(word, words) : readXargsCluster(word.slice(1), words);
+    if (read === null) return null;
+    replaceStrings.push(...read);
+  }
+  return { command: [], replaceStrings };
+}
+
+function readXargsLongOption(word: string, words: ArrayIterator<string>): string[] | null {
+  const [option, separator, attached] = partition(word, "=");
+  if (XARGS_FLAGS.has(option) && !separator) return [];
+  if (XARGS_ATTACHED_VALUE_OPTIONS.has(option)) return option === XARGS_REPLACE ? [separator ? attached : XARGS_DEFAULT_REPLACE] : [];
+  if (!XARGS_VALUE_OPTIONS.has(option)) return null;
+  if (!separator) nextWord(words);
+  return [];
+}
+
+function readXargsCluster(letters: string, words: ArrayIterator<string>): string[] | null {
+  const cluster = Array.from(letters);
+  for (const [index, letter] of cluster.entries()) {
+    const option = "-" + letter;
+    const attached = cluster.slice(index + 1).join("");
+    if (XARGS_ATTACHED_VALUE_OPTIONS.has(option)) return option === XARGS_SHORT_REPLACE ? [attached || XARGS_DEFAULT_REPLACE] : [];
+    if (XARGS_VALUE_OPTIONS.has(option)) {
+      const value = attached || (nextWord(words) ?? "");
+      return XARGS_REPLACE_OPTIONS.has(option) ? [value] : [];
+    }
+    if (!XARGS_FLAGS.has(option)) return null;
+  }
+  return [];
+}
+
+function xargsInputSlot({ command, replaceStrings }: XargsCall): string | null {
+  const fromInput = (word: string) => RUN_TIME_WORD_RE.test(word) || replaceStrings.some((replace) => word.includes(replace));
+  const program = command[0];
+  if (program === undefined) return null;
+  if (fromInput(program)) return `: the program \`${program}\` is resolved only at run time`;
+  if (ARGV_FORWARDERS.has(basename(program))) return opaqueWordIn(command) ?? `: its input may become the command \`${program}\` runs`;
+  if (basename(program) !== "git") {
+    const pusher = command.find(mayRunAPush);
+    return pusher === undefined ? null : `: it runs \`${pusher}\``;
+  }
+  const index = gitSubcommandIndex(command);
+  if (index === null) return ": its input becomes the git subcommand";
+  const subcommand = command[index]!;
+  if (fromInput(subcommand)) return `: the git subcommand \`${subcommand}\` is resolved only at run time`;
+  return GIT_SUBCOMMANDS_THAT_ONLY_READ.has(subcommand) ? null : `: its input becomes arguments of \`git ${subcommand}\``;
+}
+
+function opaqueWordIn(words: readonly string[]): string | null {
+  for (const word of words) {
+    if (mayRunAPush(word)) return `: it runs \`${word}\``;
+    if (RUN_TIME_WORD_RE.test(word)) return `: \`${word}\` is resolved only at run time`;
+  }
+  return null;
+}
+
+function mayRunAPush(word: string): boolean {
+  return PROGRAMS_THAT_MAY_PUSH.has(basename(word)) || dashedGitSubcommand(word) !== null;
 }
 
 function gitActions(step: Step, call: string, callCwd: string): Action[] {

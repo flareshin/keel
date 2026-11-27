@@ -203,6 +203,38 @@ describe('CommandParsingTest', () => {
       'xargs grep -l merge < files.txt', 'ls .git/refs/heads | xargs -n1 git log -1']);
   });
 
+  test('xargs_staysAttributable_whenItsInputLandsInArgumentsOfAGitReadOrOfAProgramThatCannotPush', () => {
+    assertNoActions(['git merge-base 74507119 6f1668e6 | xargs git log --oneline -1',
+      'git merge-base main HEAD | xargs -I{} git show {} --stat', 'git merge-base main HEAD | xargs -n 1 git cat-file -p',
+      'git merge-base main HEAD | xargs -0 -I % git -C /work rev-parse --short %',
+      "git diff --merge-base main --name-only | xargs grep -nE '(^|[^:\"`])//'",
+      "echo push | xargs -I{} printf '%s `x`\\n' {}"]);
+  });
+
+  test('xargs_isUnattributableAndNamesWhereItsInputLands_whenTheInputDecidesTheProgramOrTheGitSubcommand', () => {
+    for (const [command, why] of [
+      ['git merge-base main HEAD | xargs git', ': its input becomes the git subcommand'],
+      ['git merge-base main HEAD | xargs git -C /work', ': its input becomes the git subcommand'],
+      ['echo push | xargs -I{} git {} origin feature', ': the git subcommand `{}` is resolved only at run time'],
+      ['echo push | xargs -J % git % origin feature', ': the git subcommand `%` is resolved only at run time'],
+      ['git merge-base main HEAD | xargs -I {} $GP origin {}', ': the program `$GP` is resolved only at run time'],
+      ['echo feature | xargs git push origin', ': its input becomes arguments of `git push`'],
+      ['echo remote.origin.url /x | xargs git config; git push origin feature', ': its input becomes arguments of `git config`'],
+      ['git merge-base main HEAD | xargs git grep -O', ': its input becomes arguments of `git grep`'],
+      ["git merge-base main HEAD | xargs -I{} sh -c 'git log {}'", ': it runs `sh`'],
+      ['git merge-base main HEAD | xargs env $GIT log', ': `$GIT` is resolved only at run time'],
+      ['git merge-base main HEAD | xargs find . -exec git push origin {} \\;',': it runs `git`'],
+      ['git merge-base main HEAD | xargs --no-such-option git log', ': it runs `git`'],
+      ['echo git push origin feature | xargs env', ': its input may become the command `env` runs'],
+      ['echo git push origin feature | xargs timeout 60', ': its input may become the command `timeout` runs'],
+      ['echo git | xargs -I{} sudo {} push origin feature', ': its input may become the command `sudo` runs'],
+    ]) {
+      const unattributable = actions(command!).filter((action): action is Unattributable => action.kind === 'unattributable');
+      assert.equal(unattributable.length, 1, command);
+      assert.equal(unattributable[0]!.why, '`xargs` wraps it' + why, command);
+    }
+  });
+
   test('everyArgvForwarder_isUnattributable_whenItCarriesAnOptionTheParserDoesNotRead', () => {
     for (const name of [...ARGV_FORWARDERS].sort()) {
       const action = actions(name + ' --no-such-option git push origin feature')[0];

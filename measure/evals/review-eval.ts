@@ -21,7 +21,7 @@ import { loadReviewCases, selectReviewCases } from "./lib/evalkit/reviewcases.ts
 import type { ReviewCase } from "./lib/evalkit/reviewcases.ts"
 import { gradeResult, suiteNumbers } from "./lib/evalkit/reviewgrade.ts"
 import type { RunGrade, SplitNumbers, SuiteNumbers } from "./lib/evalkit/reviewgrade.ts"
-import { BuildError, buildCaseRepo, reviewCommand, runFault, runReview } from "./lib/evalkit/reviewrun.ts"
+import { BuildError, buildCaseRepo, lensPromptHash, reviewCommand, runFault, runReview } from "./lib/evalkit/reviewrun.ts"
 import type { ReviewRun } from "./lib/evalkit/reviewrun.ts"
 import { CLAUDE_BINARY, findOnPath } from "./lib/evalkit/runner.ts"
 
@@ -71,6 +71,8 @@ interface RunConfig {
   cases: { id: string; split: string; clean: boolean }[]
 }
 
+type LensPrompts = { [caseRun: string]: string | null }
+
 interface Fault {
   case: string
   run: number
@@ -103,8 +105,8 @@ function main(argv: string[]): number {
     return EXIT_OK
   }
   const rawDir = createRawDir(config)
-  const { grades, faults } = runAll(cases, config, rawDir)
-  const report = buildReport(config, grades, faults, rawDir)
+  const { grades, faults, lensPrompts } = runAll(cases, config, rawDir)
+  const report = buildReport(config, grades, faults, lensPrompts, rawDir)
   if (config.full_run) appendJsonl(path.join(env.logsDir(), SUMMARY_LOG), summaryLine(report))
   printJson(report)
   printSummary(report)
@@ -171,15 +173,17 @@ function createRawDir(config: RunConfig): string {
   return rawDir
 }
 
-function runAll(cases: ReviewCase[], config: RunConfig, rawDir: string): { grades: RunGrade[]; faults: Fault[] } {
+function runAll(cases: ReviewCase[], config: RunConfig, rawDir: string): { grades: RunGrade[]; faults: Fault[]; lensPrompts: LensPrompts } {
   const grades: RunGrade[] = []
   const faults: Fault[] = []
+  const lensPrompts: LensPrompts = {}
   for (const planned of cases) {
     for (let index = 1; index <= config.repeat; index++) {
       const run = runReview(planned, config.command, config.config_dir, config.timeout_seconds)
       const fault = runFault(run, config.timeout_seconds)
       const record = run.workflowRecord
       const grade = fault === null && record !== null ? gradeResult(planned, index, record["result"]) : null
+      lensPrompts[`${planned.id}-${index}`] = record === null ? null : lensPromptHash(record, run.repo)
       saveRun(rawDir, planned, index, run, fault, grade)
       if (fault !== null) faults.push({ case: planned.id, run: index, reason: fault })
       else if (grade !== null) grades.push(grade)
@@ -187,7 +191,7 @@ function runAll(cases: ReviewCase[], config: RunConfig, rawDir: string): { grade
       process.stderr.write(`  ${planned.id} ${index}/${config.repeat}: ${outcome}\n`)
     }
   }
-  return { grades, faults }
+  return { grades, faults, lensPrompts }
 }
 
 function describe(grade: RunGrade): string {
@@ -213,13 +217,14 @@ interface Report {
   raw_dir: string
   numbers: SuiteNumbers
   faults: Fault[]
+  lens_prompts: LensPrompts
   cases: { id: string; split: string; clean: boolean; runs: { run: number; pass: boolean; blocking: number }[] }[]
 }
 
-function buildReport(config: RunConfig, grades: RunGrade[], faults: Fault[], rawDir: string): Report {
+function buildReport(config: RunConfig, grades: RunGrade[], faults: Fault[], lensPrompts: LensPrompts, rawDir: string): Report {
   return {
     full_run: config.full_run, repeat: config.repeat, reviewer: config.reviewer, raw_dir: rawDir,
-    numbers: suiteNumbers(grades), faults,
+    numbers: suiteNumbers(grades), faults, lens_prompts: lensPrompts,
     cases: config.cases.map((planned) => ({
       id: planned.id, split: planned.split, clean: planned.clean,
       runs: grades.filter((grade) => grade.case.id === planned.id).map((grade) => ({ run: grade.run, pass: grade.passed, blocking: grade.blocking })),
@@ -228,7 +233,7 @@ function buildReport(config: RunConfig, grades: RunGrade[], faults: Fault[], raw
 }
 
 function summaryLine(report: Report): object {
-  return { ts: utcSeconds(new Date()), reviewer: report.reviewer, repeat: report.repeat, numbers: report.numbers, faults: report.faults.length, raw_dir: path.basename(report.raw_dir) }
+  return { ts: utcSeconds(new Date()), reviewer: report.reviewer, repeat: report.repeat, numbers: report.numbers, faults: report.faults.length, lens_prompts: report.lens_prompts, raw_dir: path.basename(report.raw_dir) }
 }
 
 function floatText(value: number | null): string {

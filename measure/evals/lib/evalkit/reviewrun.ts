@@ -1,10 +1,11 @@
+import { createHash } from "node:crypto"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
 import { InvalidUtf8Error, isDir, isSystemError, readUtf8, resolveLinks, splitLines } from "../../../lib/measurekit/files.ts"
 import { GitError, runGitOrThrow } from "../../../lib/measurekit/gitutil.ts"
-import { displayText, isJsonObject, parseJson } from "../../../lib/measurekit/json.ts"
+import { displayText, isJsonObject, parseJson, stringifySorted } from "../../../lib/measurekit/json.ts"
 import type { JsonObject, JsonValue } from "../../../lib/measurekit/json.ts"
 import { projectDirFor } from "./liveconfig.ts"
 import { describeLocation } from "./reviewcases.ts"
@@ -21,6 +22,7 @@ const ALLOWED_TOOLS = "Workflow,Skill,Read,Grep,Glob,Bash"
 const DENIED_TOOLS = "Edit,Write,NotebookEdit,WebFetch,WebSearch"
 const DETAIL_EXCERPT_CHARS = 200
 const WAIT_FOR_BACKGROUND_WORKFLOW = { CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS: "0" }
+const COMMIT_ID = /\b[0-9a-f]{40}\b/g
 
 export class BuildError extends Error {}
 
@@ -134,6 +136,14 @@ function isLensReviewName(name: JsonValue | undefined): boolean {
 function startTime(record: JsonObject): number {
   const value = record["startTime"]
   return typeof value === "number" ? value : 0
+}
+
+export function lensPromptHash(record: JsonObject, repo: string): string | null {
+  const args = record["args"]
+  if (!isJsonObject(args)) return null
+  const sent = stringifySorted({ lenses: args["lenses"] ?? null, guardrails: args["guardrails"] ?? null })
+  const runIndependent = sent.replaceAll(repo, "{{REPO}}").replaceAll(path.dirname(repo), "{{PARENT}}").replace(COMMIT_ID, "{{SHA}}")
+  return createHash("sha256").update(runIndependent).digest("hex")
 }
 
 export function runFault(run: ReviewRun, timeoutSeconds: number): string | null {

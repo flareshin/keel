@@ -10,7 +10,7 @@ import { CaseError } from "../../measure/evals/lib/evalkit/cases.ts"
 import { loadReviewCases } from "../../measure/evals/lib/evalkit/reviewcases.ts"
 import type { ReviewCase } from "../../measure/evals/lib/evalkit/reviewcases.ts"
 import { gradeResult, roundToFourDecimals, suiteNumbers } from "../../measure/evals/lib/evalkit/reviewgrade.ts"
-import { BuildError, buildCaseRepo, reviewPrompt } from "../../measure/evals/lib/evalkit/reviewrun.ts"
+import { BuildError, buildCaseRepo, lensPromptHash, reviewPrompt } from "../../measure/evals/lib/evalkit/reviewrun.ts"
 import { runGitOrThrow } from "../../measure/lib/measurekit/gitutil.ts"
 import type { JsonObject } from "../../measure/lib/measurekit/json.ts"
 import { CHECKOUT, MeasureSandbox, readText } from "./helpers.ts"
@@ -252,6 +252,36 @@ describe("grade", () => {
   })
 })
 
+describe("lensPromptHash", () => {
+  const lenses = (prompt: string) => [{ key: "tests", prompt }]
+  const args = (repo: string, sha: string, prompt: string = "check the fake green") => ({
+    diffs: [{ repo, base: sha, head: sha }], lenses: lenses(prompt), guardrails: `Run inside ${repo} with BASE=${sha}; the parent is ${path.dirname(repo)}.`,
+  })
+
+  it("isTheSame_forArgsThatDifferOnlyInTheCaseRepoPathAndCommitIds", () => {
+    const first = lensPromptHash({ args: args("/tmp/tmpAAAA/app", "a".repeat(40)) }, "/tmp/tmpAAAA/app")
+    const second = lensPromptHash({ args: args("/tmp/tmpBBBB/app", "b".repeat(40)) }, "/tmp/tmpBBBB/app")
+    assert.match(first ?? "", /^[0-9a-f]{64}$/)
+    assert.equal(first, second)
+  })
+
+  it("changes_whenALensPromptWordChanges", () => {
+    const first = lensPromptHash({ args: args("/tmp/tmpAAAA/app", "a".repeat(40)) }, "/tmp/tmpAAAA/app")
+    const reworded = lensPromptHash({ args: args("/tmp/tmpAAAA/app", "a".repeat(40), "check the vacuous pass") }, "/tmp/tmpAAAA/app")
+    assert.notEqual(first, reworded)
+  })
+
+  it("changes_whenTheGuardrailsChange", () => {
+    const record = { args: args("/tmp/tmpAAAA/app", "a".repeat(40)) }
+    const loosened = { args: { ...record.args, guardrails: record.args.guardrails + " Missing tests are not defects." } }
+    assert.notEqual(lensPromptHash(record, "/tmp/tmpAAAA/app"), lensPromptHash(loosened, "/tmp/tmpAAAA/app"))
+  })
+
+  it("isNull_forARecordWithoutArgs", () => {
+    assert.equal(lensPromptHash({ status: "completed" }, "/tmp/tmpAAAA/app"), null)
+  })
+})
+
 describe("review-eval cli", () => {
   let box: MeasureSandbox
   let scenarios: string
@@ -339,6 +369,20 @@ describe("review-eval cli", () => {
     const [completed, report] = runEval("--repeat", "1")
     assert.equal(completed.status, 1)
     assert.deepEqual(summaryLines().map((line) => [line.faults, line.numbers]), [[1, report.numbers]])
+  })
+
+  it("fullRun_summaryLine_recordsEachRunsLensPromptHash", () => {
+    const sent = { lenses: [{ key: "tests", prompt: "check the fake green in {{REPO}}" }], guardrails: "none" }
+    play([{ result: result(), args: sent }, { result: result(), args: sent }, { result: result(), args: { ...sent, guardrails: "other" } }, { result: result() }])
+    const [completed] = runEval("--repeat", "2")
+    assert.equal(completed.status, 0, completed.stderr)
+    const prompts = summaryLines()[0].lens_prompts
+    assert.deepEqual(Object.keys(prompts).sort(), ["control-1-1", "control-1-2", "mean-1-1", "mean-1-2", "mean-2-1", "mean-2-2"])
+    const inOrder = ["control-1-1", "control-1-2", "mean-1-1", "mean-1-2"].map((caseRun) => prompts[caseRun])
+    assert.match(inOrder[0], /^[0-9a-f]{64}$/)
+    assert.equal(inOrder[1], inOrder[0], "the same wording sent from two different case repos hashes the same")
+    assert.notEqual(inOrder[2], inOrder[0])
+    assert.equal(inOrder[3], null)
   })
 
   it("cleanFullRun_summaryLine_recordsZeroFaults", () => {

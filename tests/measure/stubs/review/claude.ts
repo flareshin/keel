@@ -7,6 +7,7 @@ interface Record_ {
   status?: string
   startTime?: number
   result?: unknown
+  args?: unknown
 }
 
 interface Round {
@@ -14,6 +15,7 @@ interface Round {
   record?: boolean
   status?: string
   result?: unknown
+  args?: unknown
   sleep?: number
   exit?: number
   stderr?: string
@@ -31,15 +33,15 @@ function previousCalls(): number {
 function recordsOf(round: Round): Record_[] {
   if (round.records !== undefined) return round.records
   if (round.record === false) return []
-  return [{ status: round.status ?? "completed", result: round.result ?? null }]
+  return [{ status: round.status ?? "completed", result: round.result ?? null, args: round.args }]
 }
 
 function writeRecord(sessionId: string, index: number, record: Record_): void {
   const repo = fs.realpathSync(process.cwd())
   const directory = path.join(process.env["CLAUDE_CONFIG_DIR"] as string, "projects", repo.replace(/[^A-Za-z0-9]/g, "-"), sessionId, "workflows")
   fs.mkdirSync(directory, { recursive: true })
-  const result = JSON.parse(JSON.stringify(record.result ?? null).replaceAll("{{REPO}}", repo))
-  const body = { workflowName: record.workflowName ?? "lens-review", status: record.status ?? "completed", startTime: record.startTime ?? 1, result }
+  const withRepo = (value: unknown) => JSON.parse(JSON.stringify(value ?? null).replaceAll("{{REPO}}", repo))
+  const body = { workflowName: record.workflowName ?? "lens-review", status: record.status ?? "completed", startTime: record.startTime ?? 1, result: withRepo(record.result), ...(record.args === undefined ? {} : { args: withRepo(record.args) }) }
   fs.writeFileSync(path.join(directory, `wf_stub_${index}.json`), JSON.stringify(body))
 }
 

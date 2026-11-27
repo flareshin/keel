@@ -130,7 +130,6 @@ const REPOINTING_OPTIONS: ReadonlySet<string> = new Set(["--git-dir", "--work-tr
 const REPOINTING_VARIABLES = ["GIT_DIR", "GIT_WORK_TREE"];
 const GH_DEFAULT_VIEW_OPTIONS: ReadonlySet<string> = new Set(["-v", "--view"]);
 const RECURSION_LEAVING_SUBMODULES_UNPUSHED: ReadonlySet<string> = new Set(["check", "no", "false", "off", "0"]);
-const GIT_CONFIG_KEY_MISSING = 1;
 const CONFIG_VARIABLE_PREFIX = "GIT_CONFIG";
 const REMOTE_EDITS: ReadonlySet<string> = new Set(["set-url", "add", "rename"]);
 const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
@@ -1075,20 +1074,13 @@ function pushesEveryRef(push: Push, repoRoot: string): boolean {
 
 function pushRecursesIntoSubmodules(push: Push, repoRoot: string): boolean {
   if (push.recurseSubmodules !== null) return recursesIntoSubmodules(push.recurseSubmodules);
-  const stored = storedConfig(repoRoot, ["push.recurseSubmodules"]);
-  const submoduleRecurse = storedConfig(repoRoot, ["--type=bool", "submodule.recurse"]) === "true";
+  const stored = gitcmd.storedConfig(repoRoot, ["push.recurseSubmodules"]);
+  const submoduleRecurse = gitcmd.storedConfig(repoRoot, ["--type=bool", "submodule.recurse"]) === "true";
   return (stored !== null && recursesIntoSubmodules(stored)) || submoduleRecurse;
 }
 
 function recursesIntoSubmodules(recursion: string): boolean {
   return !RECURSION_LEAVING_SUBMODULES_UNPUSHED.has(recursion.toLowerCase());
-}
-
-function storedConfig(repoRoot: string, keyArgs: string[]): string | null {
-  const read = gitcmd.runUnchecked(repoRoot, ["config", "--get", ...keyArgs]);
-  if (read.returncode === GIT_CONFIG_KEY_MISSING) return null;
-  if (read.returncode !== 0) throw new GateError(`git config ${keyArgs.join(" ")}: ${read.stderr.toString().trim()}`);
-  return read.stdout.toString().trim();
 }
 
 function pushesTag(repoRoot: string, spec: Refspec): boolean {

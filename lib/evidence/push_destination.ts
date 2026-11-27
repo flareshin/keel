@@ -5,7 +5,6 @@ export type PushedRef = { source: string; destination: string | null };
 
 export type PushTarget = { remote: string | null; namesRefspecs: boolean; spec: PushedRef };
 
-const CONFIG_KEY_MISSING = 1;
 const CURRENT_BRANCH_NAMES: ReadonlySet<string> = new Set(['HEAD', '@']);
 const BRANCH_REF_PREFIXES = ['refs/heads/', 'heads/'];
 const UPSTREAM_PUSH_MODES: ReadonlySet<string> = new Set(['upstream', 'tracking']);
@@ -20,8 +19,8 @@ export function mayLandOn(repoRoot: string, branch: string, target: PushTarget):
 function pushedBranches(repoRoot: string, target: PushTarget): Array<string | null> {
   const { spec } = target;
   if (spec.destination !== null) return [branchNamed(spec.destination)];
-  if (storedConfig(repoRoot, `remote.${target.remote || gitcmd.pushRemote(repoRoot)}.push`) !== null) return [null];
-  const mode = storedConfig(repoRoot, 'push.default') ?? DEFAULT_PUSH_MODE;
+  if (gitcmd.storedConfig(repoRoot, [`remote.${target.remote || gitcmd.pushRemote(repoRoot)}.push`]) !== null) return [null];
+  const mode = gitcmd.storedConfig(repoRoot, ['push.default']) ?? DEFAULT_PUSH_MODE;
   if (target.namesRefspecs) return branchesOfANamedSource(repoRoot, spec.source, mode);
   return branchesOfABarePush(repoRoot, mode);
 }
@@ -42,7 +41,7 @@ function branchesOfABarePush(repoRoot: string, mode: string): Array<string | nul
 }
 
 function withItsUpstream(repoRoot: string, branch: string): Array<string | null> {
-  const merge = storedConfig(repoRoot, `branch.${branch}.merge`);
+  const merge = gitcmd.storedConfig(repoRoot, [`branch.${branch}.merge`]);
   return merge === null ? [branch] : [branch, branchNamed(merge)];
 }
 
@@ -50,11 +49,4 @@ function branchNamed(ref: string): string | null {
   if (RUN_TIME_WORD_RE.test(ref) || CURRENT_BRANCH_NAMES.has(ref)) return null;
   const prefix = BRANCH_REF_PREFIXES.find((candidate) => ref.startsWith(candidate));
   return prefix === undefined ? ref : ref.slice(prefix.length);
-}
-
-function storedConfig(repoRoot: string, key: string): string | null {
-  const read = gitcmd.runUnchecked(repoRoot, ['config', '--get', key]);
-  if (read.returncode === CONFIG_KEY_MISSING) return null;
-  if (read.returncode !== 0) throw new Error(`git config --get ${key}: ${read.stderr.toString().trim()}`);
-  return read.stdout.toString().trim();
 }

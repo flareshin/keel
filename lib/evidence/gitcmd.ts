@@ -189,6 +189,14 @@ export function pushRemote(repo: string, view: ConfigView = STORED_CONFIG): stri
   return DEFAULT_REMOTE;
 }
 
+export function storedConfig(repo: string, keyArgs: readonly string[]): string | null {
+  const args = ['config', '--get', ...keyArgs];
+  const read = runUnchecked(repo, args);
+  if (read.returncode === CONFIG_KEY_MISSING) return null;
+  if (read.returncode !== 0) throw new GitError(`git ${args.join(' ')}: ${stripEitherWay(read.stderr.toString())}`);
+  return read.stdout.toString().trim();
+}
+
 export function pushRemoteMirror(repo: string, remote: string | null, view: ConfigView = STORED_CONFIG): MirrorSetting {
   const name = remote || pushRemote(repo, view);
   const read = runUnchecked(repo, configCommand(view, ['--type=bool', '--get', `remote.${name}.mirror`]), { env: view.env });

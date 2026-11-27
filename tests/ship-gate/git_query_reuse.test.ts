@@ -388,3 +388,14 @@ test('push_acceptsTestsEvidenceOfADeletion_whenStaleTestRunsAreLiveToo', (t) => 
 
   assert.equal(run.rc, 0, run.stderr);
 });
+
+test('storedConfig_readsTheValue_isNullForAMissingKey_andThrowsWhenGitCannotReadIt', (t) => {
+  const repo = new Sandbox(t).clone('acme', 'app');
+  repo.git('config', 'push.default', 'upstream');
+  repo.git('config', 'submodule.recurse', 'sometimes');
+
+  assert.equal(gitcmd.storedConfig(repo.path, ['push.default']), 'upstream');
+  assert.equal(gitcmd.storedConfig(repo.path, ['push.recurseSubmodules']), null);
+  assert.throws(() => gitcmd.storedConfig(repo.path, ['--type=bool', 'submodule.recurse']),
+    (error: Error) => error instanceof gitcmd.GitError && error.message.includes('submodule.recurse'));
+});

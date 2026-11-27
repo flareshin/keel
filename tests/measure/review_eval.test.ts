@@ -355,6 +355,13 @@ describe("review-eval cli", () => {
     assert.equal(readText(path.join(report.raw_dir, "mean-1-1.stderr.txt")), "Background tasks still running 10m after the last turn; stopping them.\n")
   })
 
+  it("driverStderr_ofATimedOutRun_isSavedBesideTheStream", () => {
+    play([{ result: result(), stderr: "still reviewing\n", sleep: 5 }])
+    const [completed, report] = runEval("--case", "mean-1", "--repeat", "1", "--timeout-seconds", "1")
+    assert.equal(completed.status, 1)
+    assert.equal(readText(path.join(report.raw_dir, "mean-1-1.stderr.txt")), "still reviewing\n")
+  })
+
   it("regrade_gradesTheSameRecordsTheSame_andCatchesAChangedGrade", () => {
     play([{ result: result([finding("{{REPO}}/calc.ts:6")]) }])
     const [, report] = runEval("--case", "mean-1", "--repeat", "1")

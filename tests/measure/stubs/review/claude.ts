@@ -56,8 +56,8 @@ function main(): number {
   const sessionId = `session-${callIndex}`
   fs.writeSync(1, JSON.stringify({ type: "system", subtype: "init", session_id: sessionId, model: "stub-model" }) + "\n")
   recordsOf(round).forEach((record, index) => writeRecord(sessionId, index, record))
-  sleep(round.sleep ?? 0)
   if (round.stderr !== undefined) fs.writeSync(2, round.stderr)
+  sleep(round.sleep ?? 0)
   fs.writeSync(1, JSON.stringify({ type: "result", subtype: "success", result: "VERDICT: done" }) + "\n")
   return round.exit ?? 0
 }

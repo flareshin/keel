@@ -6,6 +6,7 @@ import { dirname, join } from "node:path"
 import { after, describe, it } from "node:test"
 import { performance } from "node:perf_hooks"
 import { readTraceEnv, readTracedPaths } from "../../lib/precheck/readtrace.ts"
+import { loadScaledMs } from "../load.ts"
 
 describe("read trace", () => {
   const scratch = realpathSync(mkdtempSync(join(tmpdir(), "keel-readtrace-test-")))
@@ -66,7 +67,7 @@ describe("read trace", () => {
     const started = performance.now()
 
     assert.deepEqual([...readTracedPaths(log, root)], [nested + "/a.js"])
-    assert.ok(performance.now() - started < 5000)
+    assert.ok(performance.now() - started < loadScaledMs(5000))
   })
 
   it("preload_letsACallbackOpenCreateAMissingFile", () => {

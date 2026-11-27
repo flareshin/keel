@@ -95,7 +95,7 @@ class ShellScope {
       this.assign(invocation.assignments);
     }
     if (!keepsPrevious) this.previous = null;
-    if (!keepsPrevious && (invocation.argv.length > 0 || setsDirectoryLookup(invocation.assignments))) {
+    if (!keepsPrevious && (invocation.argv.length > 0 || setsVariableCdReads(invocation.assignments))) {
       this.previousUntrusted = true;
     }
   }
@@ -136,8 +136,8 @@ class ShellScope {
   }
 }
 
-function setsDirectoryLookup(assignments: readonly Assignment[]): boolean {
-  return assignments.some(([variable]) => variable === "CDPATH" || variable === "HOME");
+function setsVariableCdReads(assignments: readonly Assignment[]): boolean {
+  return assignments.some(([variable]) => variable === "CDPATH" || variable === "HOME" || variable === "PWD");
 }
 
 function isModeledDirectoryMove(invocation: Invocation): boolean {

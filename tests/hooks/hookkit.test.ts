@@ -107,6 +107,7 @@ describe("StepsTest", () => {
       "cd /a; cd /b; f; bash -c 'cd d; cd /e; cd -; git status'",
       "cd /a; CDPATH=/x; cd b; cd /e; cd -; git status",
       "cd /a; HOME=/q; cd; cd /e; cd -; git status",
+      "cd /a; PWD=/x; cd /b; cd -; git status",
       "cd /a; env cd /b; cd -; git status",
       "cd /a; nohup cd /b; cd -; git status",
       "cd /a; cd /b; true | cd /c; cd -; git status",

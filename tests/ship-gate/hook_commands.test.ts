@@ -757,7 +757,7 @@ describe('HookBehaviorTest', () => {
     assert.equal(intoTool.rc, 0, intoTool.stderr + intoTool.stdout);
   });
 
-  test('push_failsClosed_whenCdDashHasNoDirectoryToReturnToOrTheCallMayHaveSetOldpwd', (t) => {
+  test('push_failsClosed_whenCdDashMayNotReturnToTheDirectoryTheWalkerTracked', (t) => {
     const sandbox = new Sandbox(t);
     const repo = sandbox.clone('acme', 'app');
     repo.branch('feature');
@@ -767,7 +767,8 @@ describe('HookBehaviorTest', () => {
       `cd /tmp; OLDPWD=${shlexQuote(tool.path)}; cd -; git push origin feature`,
       `bash -c ${shlexQuote(`cd /tmp && OLDPWD=${tool.path} cd - && git push origin feature`)}`,
       `cd ${shlexQuote(tool.path)}; cd /tmp; OLDPWD+=/; cd -; git push origin feature`,
-      `cd ${shlexQuote(tool.path)}; cd /tmp; eval 'true'; cd -; git push origin feature`]) {
+      `cd ${shlexQuote(tool.path)}; cd /tmp; eval 'true'; cd -; git push origin feature`,
+      `cd ${shlexQuote(tool.path)}; cd /tmp; x=OLD; declare \${x}PWD=/tmp; cd -; git push origin feature`]) {
       const run = sandbox.push(repo, command);
       assert.equal(run.rc, 2, command + run.stderr + run.stdout);
       assert.ok(run.stderr.includes('GateError: not a git repository'), run.stderr);

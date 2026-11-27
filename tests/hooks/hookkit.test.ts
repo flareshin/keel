@@ -79,8 +79,13 @@ describe("StepsTest", () => {
     }
   });
 
-  it("steps_leaveCdDashUnresolved_afterADirectoryMoveTheWalkerDoesNotModel", () => {
+  it("steps_leaveCdDashUnresolved_afterAnyCommandOtherThanAModeledDirectoryMove", () => {
     for (const command of [
+      "cd /a; cd /b; git fetch; cd -; git status",
+      "cd /a; cd /b; x=OLD; declare ${x}PWD=/t; cd -; git status",
+      "f() { cd /c; }; cd /a; cd /b; f; cd -; git status",
+      "cd /a; cd /b; $g; cd -; git status",
+      "cd /a; CDPATH=/x cd b; cd -; git status",
       "cd /a; builtin cd /b; cd -; git status",
       "cd /a; pushd /b; pushd; cd -; git status",
       "cd /a; pushd -n /x; cd -; git status",
@@ -88,6 +93,10 @@ describe("StepsTest", () => {
       "cd /a; pushd /b; pushd -1; cd -; git status",
       "cd /a; pushd /b; popd -n; cd -; git status",
       "cd /a; cd /b; cd -P /c; cd -; git status",
+      "cd /a; env cd /b; cd -; git status",
+      "cd /a; nohup cd /b; cd -; git status",
+      "cd /a; cd /b; true | cd /c; cd -; git status",
+      "cd /a; cd /b | cat; cd -; git status",
     ]) {
       const directory = directoriesOf(stepViews(command), ["git", "status"])[0] ?? "";
       assert.ok(directory.endsWith("/$OLDPWD"), `${command} => ${directory}`);

@@ -5,8 +5,6 @@ import { parseCommands } from "./parser.ts";
 import { callValue, expandVariables, PREVIOUS_DIRECTORY, resolveDirectory } from "./variables.ts";
 import type { Variables } from "./variables.ts";
 
-const UNFOLLOWED_COMMANDS = new Set(["eval", "source", ".", "trap", "builtin"]);
-
 export class Step {
   argv: string[];
   environment: Variables;
@@ -51,7 +49,7 @@ export function steps(text: string, cwd: string): Step[] {
     for (const [name, value] of invocation.assignments) environment.set(name, value);
     stepOf.set(command, new Step(invocation.argv, environment, scope.directory, command, scope.expansion(),
                                  invocation.unattributableOptions));
-    scope.follow(invocation);
+    scope.follow(invocation, command);
   }
   return Array.from(stepOf.values());
 }
@@ -62,6 +60,7 @@ class ShellScope {
   variables: Variables = new Map();
   pushed: string[] = [];
   previous: string | null = null;
+  receivesPipe = false;
 
   constructor(directory: string, exported: Variables) {
     this.directory = directory;
@@ -72,11 +71,13 @@ class ShellScope {
     return new Map([...this.variables, ...this.exported]);
   }
 
-  follow(invocation: Invocation): void {
+  follow(invocation: Invocation, command: SimpleCommand): void {
     const name = invocation.name;
     const args = invocation.argv.slice(1);
-    const previousMayMoveUnseen = mayMovePreviousDirectoryUnseen(invocation);
-    if (previousMayMoveUnseen) this.previous = null;
+    const runsInThisShell = !this.receivesPipe && !command.pipesToNext && command.argv[0] === invocation.argv[0];
+    this.receivesPipe = command.pipesToNext;
+    const keepsPrevious = runsInThisShell && isModeledDirectoryMove(invocation);
+    if (!keepsPrevious) this.previous = null;
     if (name === "cd") {
       this.moveTo(this.changedDirectory(args));
     } else if (name === "pushd" && args.length > 0) {
@@ -89,7 +90,7 @@ class ShellScope {
     } else if (invocation.argv.length === 0) {
       this.assign(invocation.assignments);
     }
-    if (previousMayMoveUnseen) this.previous = null;
+    if (!keepsPrevious) this.previous = null;
   }
 
   private exportAll(args: readonly string[]): void {
@@ -128,17 +129,18 @@ class ShellScope {
   }
 }
 
-function mayMovePreviousDirectoryUnseen(invocation: Invocation): boolean {
-  const name = invocation.name;
-  if (UNFOLLOWED_COMMANDS.has(name) || !directoryMoveIsModeled(name, invocation.argv.slice(1))) return true;
-  const words = [...invocation.argv, ...invocation.assignments.flat()];
-  return words.some((word) => word.includes(PREVIOUS_DIRECTORY));
-}
-
-function directoryMoveIsModeled(name: string, args: readonly string[]): boolean {
+function isModeledDirectoryMove(invocation: Invocation): boolean {
+  if (invocation.assignments.length > 0) return false;
+  const args = invocation.argv.slice(1);
   const isOption = (word: string) => word.startsWith("-") || word.startsWith("+");
-  if (name === "cd") return args.length === 0 || (args.length === 1 && (args[0] === "-" || !isOption(args[0] ?? "")));
-  if (name === "pushd") return args.length === 1 && !isOption(args[0] ?? "");
-  if (name === "popd") return args.length === 0;
-  return true;
+  switch (invocation.name) {
+    case "cd":
+      return args.length === 0 || (args.length === 1 && (args[0] === "-" || !isOption(args[0] ?? "")));
+    case "pushd":
+      return args.length === 1 && !isOption(args[0] ?? "");
+    case "popd":
+      return args.length === 0;
+    default:
+      return false;
+  }
 }

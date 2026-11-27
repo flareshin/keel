@@ -548,12 +548,14 @@ describe('IntegrationBasePushTest', () => {
     assertNeedsApproval(sandbox, repo, 'git push origin');
   });
 
-  test('pushWithoutADestination_needsAnApproval_whenTheRemoteMapsItsRefs', (t) => {
-    const [sandbox, repo] = sandboxAndFeature(t);
-    sandbox.pushBundle(repo);
-    repo.git('config', 'remote.origin.push', 'refs/heads/feature:refs/heads/main');
-    assertNeedsApproval(sandbox, repo, PUSH_FEATURE);
-  });
+  for (const command of [PUSH_FEATURE, 'git push']) {
+    test(`pushWithoutADestination_needsAnApproval_whenTheRemoteMapsItsRefs: ${command}`, (t) => {
+      const [sandbox, repo] = sandboxAndFeature(t);
+      sandbox.pushBundle(repo);
+      repo.git('config', 'remote.origin.push', 'refs/heads/feature:refs/heads/main');
+      assertNeedsApproval(sandbox, repo, command);
+    });
+  }
 
   test('pushWithoutADestination_needsAnApproval_whenTheNamedRemoteMapsItsRefs', (t) => {
     const [sandbox, repo] = sandboxAndFeature(t);

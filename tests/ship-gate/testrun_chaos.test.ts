@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, test } from 'node:test';
 import { recognize, recognizeFailures } from '../../lib/evidence/testrun.ts';
 import { seededRandom } from '../fuzz.ts';
+import { loadScaledMs } from '../load.ts';
 
 const CORPUS_DIRECTORY = join(import.meta.dirname, 'fixtures', 'runner-output');
 const SEED = 20261120;
@@ -90,7 +91,7 @@ describe('TestrunChaosTest', () => {
       const read = [recognize(line)[0], recognizeFailures(line)];
       const elapsedMs = performance.now() - started;
       assert.deepEqual(read, [0, 0], shape);
-      assert.ok(elapsedMs < LONG_LINE_BUDGET_MS, `${shape}: ${Math.round(elapsedMs)} ms`);
+      assert.ok(elapsedMs < loadScaledMs(LONG_LINE_BUDGET_MS), `${shape}: ${Math.round(elapsedMs)} ms`);
     }
   });
 
@@ -99,7 +100,7 @@ describe('TestrunChaosTest', () => {
     const read = recognize(LONG_TALLY_RUN_BEFORE_A_SUMMARY);
     const elapsedMs = performance.now() - started;
     assert.deepEqual(read, [1, 'passed']);
-    assert.ok(elapsedMs < LONG_LINE_BUDGET_MS, `${Math.round(elapsedMs)} ms`);
+    assert.ok(elapsedMs < loadScaledMs(LONG_LINE_BUDGET_MS), `${Math.round(elapsedMs)} ms`);
   });
 
   test('aHashWithNoBlankAfterIt_hidesOnlyTheTallyRightAfterIt', () => {

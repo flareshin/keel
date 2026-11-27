@@ -565,6 +565,27 @@ describe('IntegrationBasePushTest', () => {
     assertNeedsApproval(sandbox, repo, 'git push mirror feature');
   });
 
+  test('pushOfATagOntoMain_needsAnApproval', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t);
+    sandbox.pushBundle(repo);
+    repo.git('tag', 'v1');
+    assertNeedsApproval(sandbox, repo, 'git push origin v1:main');
+  });
+
+  test('pushOfAPatternRefspec_isDenied', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t);
+    sandbox.pushBundle(repo);
+    assertDenied(sandbox.push(repo, "git push origin 'refs/heads/*:refs/heads/*'"), 'K1', 'refspec source refs/heads/* does not name a commit');
+  });
+
+  test('push_isDenied_whenAnEnvironmentConfigMayMapTheBranchToMain', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t);
+    sandbox.pushBundle(repo);
+    repo.git('branch', '-q', '--set-upstream-to=origin/main');
+    const command = `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=push.default GIT_CONFIG_VALUE_0=upstream ${PUSH_FEATURE}`;
+    assertDenied(sandbox.push(repo, command), 'K1', '`GIT_CONFIG_COUNT=1` changes git config the gate reads from the clone');
+  });
+
   test('pushOntoAnotherBranch_passesWithoutAnApproval', (t) => {
     const [sandbox, repo] = sandboxAndFeature(t);
     sandbox.pushBundle(repo);

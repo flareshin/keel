@@ -31,7 +31,7 @@ export function pushReadiness(repoPath: string, approval: ApprovalCheck = 'as-th
   const mergeBase = gitcmd.mergeBase(repoRoot, baseRef, head);
   if (mergeBase === null) throw new writers.Usage(`no merge base between ${baseRef} and HEAD`);
   const needsApproval = approval === 'as-the-push'
-    && (registry.pushNeedsApproval(row!) || pushDestination.mayLandOn(repoRoot, row!.integrationBase, pushDestination.BARE_PUSH));
+    && (registry.pushNeedsApproval(row!) || pushDestination.mayLandOn(repoRoot, row!.integrationBase, pushDestination.PUSH_OF_HEAD));
   const decision = verify.judge({ repoRoot, repoKey: repoKey!, row: row!, head, mergeBase, needsApproval, promote: false });
   return {
     repo: repoKey, head, gated: true, ok: decision.ok, risk: decision.riskClass, root_run_id: decision.rootRunId,

@@ -105,7 +105,7 @@ function main(argv: string[]): number {
   const rawDir = createRawDir(config)
   const { grades, faults } = runAll(cases, config, rawDir)
   const report = buildReport(config, grades, faults, rawDir)
-  if (faults.length === 0 && config.full_run) appendJsonl(path.join(env.logsDir(), SUMMARY_LOG), summaryLine(report))
+  if (config.full_run) appendJsonl(path.join(env.logsDir(), SUMMARY_LOG), summaryLine(report))
   printJson(report)
   printSummary(report)
   return faults.length > 0 ? EXIT_NEGATIVE : EXIT_OK
@@ -228,7 +228,7 @@ function buildReport(config: RunConfig, grades: RunGrade[], faults: Fault[], raw
 }
 
 function summaryLine(report: Report): object {
-  return { ts: utcSeconds(new Date()), reviewer: report.reviewer, repeat: report.repeat, numbers: report.numbers, raw_dir: path.basename(report.raw_dir) }
+  return { ts: utcSeconds(new Date()), reviewer: report.reviewer, repeat: report.repeat, numbers: report.numbers, faults: report.faults.length, raw_dir: path.basename(report.raw_dir) }
 }
 
 function floatText(value: number | null): string {

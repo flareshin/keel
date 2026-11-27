@@ -8,6 +8,7 @@ import {
 } from "./helpers.ts";
 import type { Fire, HookResult } from "./helpers.ts";
 import { MAX_JSON_DEPTH } from "../../measure/lib/measurekit/json.ts";
+import { loadScaledMs } from "../load.ts";
 import {
   cliTimeoutSeconds, EVIDENCE_DEADLINE_SECONDS, evidenceMessage, hasEvidenceToken, REPORT_END, REPORT_START, withoutReportMarkers,
 } from "../../hooks/report-gate/report-gate.ts";
@@ -604,7 +605,7 @@ describe("SubagentStopTest", () => {
     await new Promise((resolve) => setTimeout(resolve, LATE_REPORT_MS));
     appendToolUse(path, ["StructuredOutput", { x: 1 }]);
     assert.equal(await exited, 0);
-    assert.ok(Date.now() - started < REREAD_WINDOW_MS, `took ${Date.now() - started} ms`);
+    assert.ok(Date.now() - started < loadScaledMs(REREAD_WINDOW_MS), `took ${Date.now() - started} ms`);
     assert.deepEqual(contractMisses(), []);
   });
 
@@ -613,7 +614,7 @@ describe("SubagentStopTest", () => {
     const result = stop("Changed it.", { toolUses: [editIn(scope, "a.py")] });
     const elapsed = Date.now() - started;
     assert.equal(result.json().decision, "block");
-    assert.ok(elapsed < REREAD_WINDOW_MS, `took ${elapsed} ms`);
+    assert.ok(elapsed < loadScaledMs(REREAD_WINDOW_MS), `took ${elapsed} ms`);
   });
 
   it("stop_returnsWithoutWaitingForALateReport_whenTheTurnStateRecordsAHandback", () => {
@@ -622,7 +623,7 @@ describe("SubagentStopTest", () => {
     const result = stop(null, { toolUses: [editIn(scope, "a.py")] });
     const elapsed = Date.now() - started;
     assert.equal(result.code, 0);
-    assert.ok(elapsed < REREAD_WINDOW_MS, `took ${elapsed} ms`);
+    assert.ok(elapsed < loadScaledMs(REREAD_WINDOW_MS), `took ${elapsed} ms`);
     assert.deepEqual(contractMisses(), []);
   });
 

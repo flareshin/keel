@@ -11,7 +11,7 @@ const GATE_OFF = 'off';
 const GATE_VALUES = ['code', 'smoke', GATE_OFF];
 const RISK_CLASSES = ['heavy', 'smoke-only'];
 const FLAG_VALUES = ['true', 'false'];
-const EMPTY = '-';
+export const NO_VALUE = '-';
 
 export class RegistryError extends Error {
   override name = 'RegistryError';
@@ -94,7 +94,7 @@ export function lookup(repoKey: string | null): GatedRepo | null {
 }
 
 export function riskRules(ruleSet: string): RiskRule[] {
-  if (ruleSet === EMPTY) return [];
+  if (ruleSet === NO_VALUE) return [];
   const rules: RiskRule[] = [];
   for (const row of readTsv(join(env.overlayDir(), 'risk-rules.tsv'), RISK_HEADER)) {
     if (row['set'] !== ruleSet) continue;

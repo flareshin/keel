@@ -28,6 +28,7 @@ import { hereStrings, parseCommands } from "../lib/hookkit/parser.ts";
 import { configOverrides, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, interpretPush, isConfigRead, nextWord, routesPushes } from "../lib/hookkit/gitargs.ts";
 import { pushRemoteMirror } from "../../lib/evidence/gitcmd.ts";
 import { mayLandOn } from "../../lib/evidence/push_destination.ts";
+import * as registry from "../../lib/evidence/registry.ts";
 import type { PushedRef } from "../../lib/evidence/push_destination.ts";
 import type { ConfigView } from "../../lib/evidence/gitcmd.ts";
 import { steps } from "../lib/hookkit/steps.ts";
@@ -57,8 +58,6 @@ const TEE_SHORT_APPEND = /^-[^-]*a/u;
 export const DROP_COMMENTS = "Remove the listed comment lines and resubmit the edit; put the reasoning in the reading guide.";
 export const WRITE_MESSAGE_FILE = "Write the message to a file in a separate call, then pass it with a plain -F <path> (gh: --body-file <path>).";
 const REPO_RULES_HEADER = ["origin_glob", "action", "pattern", "rule_id", "message"] as const;
-const GATED_REPOS_HEADER = ["origin", "gate", "integration_base", "risk_rules", "tests"] as const;
-const GATED_REPOS_OPTIONAL = ["push_approval", "auto_merge"] as const;
 const ACTION_DENY_COMMIT = "deny-commit";
 const ACTION_DENY_PATH = "deny-path";
 const ALWAYS_PROTECTED_BRANCHES = ["main", "master"];
@@ -1065,15 +1064,8 @@ function repoRuleViolations(repoKey: string | null, paths: readonly string[], ac
 }
 
 function protectedBranches(repoKey: string | null): string[] {
-  const base = findIntegrationBase(repoKey);
-  return [...(base ? [base] : []), ...ALWAYS_PROTECTED_BRANCHES];
-}
-
-function findIntegrationBase(repoKey: string | null): string | null {
-  for (const row of readTsv(overlayPath("gated-repos.tsv"), GATED_REPOS_HEADER, GATED_REPOS_OPTIONAL)) {
-    if (repoKey && (row["origin"] ?? "").toLowerCase() === repoKey && row["integration_base"] !== "-") return row["integration_base"] ?? null;
-  }
-  return null;
+  const base = registry.lookup(repoKey)?.integrationBase;
+  return [...(base && base !== registry.NO_VALUE ? [base] : []), ...ALWAYS_PROTECTED_BRANCHES];
 }
 
 interface PushRequest {

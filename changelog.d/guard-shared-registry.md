@@ -1,0 +1,1 @@
+- git-guard reads gated-repos.tsv through the shared registry reader, so a registry row ship-gate rejects (an unknown gate, a flag that is not true or false) now fails a guarded push closed in git-guard too, instead of git-guard reading it as valid.

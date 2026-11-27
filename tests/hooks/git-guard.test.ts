@@ -2094,6 +2094,14 @@ describe("ForcePushTest", () => {
     assertPassed(guard("git push --force-with-lease origin feature", repo));
   });
 
+  it("push_failsClosed_whenTheRegistryHasAGateValueShipGateRejects", () => {
+    sandbox.write(join(sandbox.overlay, "gated-repos.tsv"),
+      "origin\tgate\tintegration_base\trisk_rules\ttests\nexample/app\tbogus\tdevelop\t-\trequired\n");
+    const result = guard("git push --force-with-lease origin feature", repo);
+    assertDenied(result, "F-attribution");
+    assert.ok(result.stderr.includes("RegistryError"), result.stderr);
+  });
+
   it("push_passes_whenDeletingRemoteBranch", () => {
     assertPassed(guard("git push origin --delete old-feature", repo));
   });

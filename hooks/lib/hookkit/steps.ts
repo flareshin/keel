@@ -35,7 +35,7 @@ export class Step {
 export function steps(text: string, cwd: string): Step[] {
   const scopes = new Map<SimpleCommand | null, ShellScope>([[null, new ShellScope(cwd, new Map())]]);
   const stepOf = new Map<SimpleCommand, Step>();
-  const previousUntrustedAt = new Map<SimpleCommand, boolean>();
+  const previousUntrustedAt = new Map<SimpleCommand | null, boolean>();
   for (const command of parseCommands(text)) {
     const script = command.parent;
     let scope = scopes.get(script);

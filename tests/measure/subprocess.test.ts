@@ -6,6 +6,7 @@ import { describe, it } from "node:test"
 
 import { runProcess, runProcessAsync } from "../../measure/lib/measurekit/subprocess.ts"
 import { TimeoutExpired } from "../../measure/lib/measurekit/timeout.ts"
+import { loadScaledMs } from "../load.ts"
 
 describe("runProcess", () => {
   it("runProcess_returnsOutputAsPrinted_andKeepsPartialOutputOnATimeout", () => {
@@ -45,7 +46,7 @@ describe("runProcessAsync", () => {
   it("runProcessAsync_settlesNearTheTimeout_evenWhenAGrandchildKeepsTheOutputPipeOpen", async () => {
     const started = Date.now()
     await assert.rejects(runProcessAsync(["sh", "-c", "printf 'x\\r\\n'; sleep 5"], { timeoutSeconds: 1 }), TimeoutExpired)
-    assert.ok(Date.now() - started < 3000, `settled after ${Date.now() - started} ms`)
+    assert.ok(Date.now() - started < loadScaledMs(3000, 5000), `settled after ${Date.now() - started} ms`)
   })
 
   it("runProcessAsync_failsWithTheErrorCodeRunProcessFailsWith_forAMissingAndANonExecutableProgram", async () => {

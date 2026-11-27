@@ -12,6 +12,8 @@ export const LOCAL_GIT_TIMEOUT_SECONDS = 20;
 export const FETCH_TIMEOUT_SECONDS = 20;
 export const SNAPSHOT_TIMEOUT_SECONDS = 300;
 const DEFAULT_REMOTE = 'origin';
+const CONFIG_KEY_MISSING = 1;
+const GIT_TRUE = 'true';
 export const GH_RESOLVED_BASE = 'base';
 const GH_DEFAULT_REMOTE_KEYS = '^remote\\..*\\.gh-resolved$';
 const GH_RESOLVED_SUFFIX = '.gh-resolved';
@@ -158,15 +160,41 @@ export function remotes(repo: string): string[] {
   return linesOrEmpty(repo, ['remote']);
 }
 
-export function pushRemote(repo: string): string {
+export interface ConfigView {
+  configArgs: readonly string[];
+  env?: NodeJS.ProcessEnv;
+}
+
+export type MirrorSetting = 'mirror' | 'notMirror' | 'unreadable';
+
+const STORED_CONFIG: ConfigView = { configArgs: [] };
+
+export function pushRemote(repo: string, view: ConfigView = STORED_CONFIG): string {
   const branch = currentBranch(repo);
   const keys = branch === null ? ['remote.pushDefault']
     : [`branch.${branch}.pushRemote`, 'remote.pushDefault', `branch.${branch}.remote`];
   for (const key of keys) {
-    const configured = outputOrNull(repo, ['config', '--get', key]);
+    const configured = configValue(repo, view, ['--get', key]);
     if (configured) return configured;
   }
   return DEFAULT_REMOTE;
+}
+
+export function pushRemoteMirror(repo: string, remote: string | null, view: ConfigView = STORED_CONFIG): MirrorSetting {
+  const name = remote || pushRemote(repo, view);
+  const read = runConfig(repo, view, ['--type=bool', '--get', `remote.${name}.mirror`]);
+  if (read.returncode === CONFIG_KEY_MISSING) return 'notMirror';
+  if (read.returncode !== 0) return 'unreadable';
+  return read.stdout.toString().trim() === GIT_TRUE ? 'mirror' : 'notMirror';
+}
+
+function configValue(repo: string, view: ConfigView, args: string[]): string | null {
+  const read = runConfig(repo, view, args);
+  return read.returncode === 0 ? (gateLines(args, read.stdout.toString())[0] ?? null) : null;
+}
+
+function runConfig(repo: string, view: ConfigView, args: string[]): Completed {
+  return runUnchecked(repo, [...view.configArgs, 'config', ...args], { env: view.env });
 }
 
 export function ghDefaultRemote(repo: string): GhDefault | null {

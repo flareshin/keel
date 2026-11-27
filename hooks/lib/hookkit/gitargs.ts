@@ -31,22 +31,22 @@ interface OptionSpec {
 }
 
 const PUSH_OPTIONS: readonly OptionSpec[] = [
-  flag("verbose", "v"), flag("quiet", "q"), valued("repo"), flag("all"), flag("branches"), flag("mirror"),
-  flag("delete", "d"), flag("tags"), flag("dry-run", "n"), flag("porcelain"), flag("force", "f"),
-  optionallyValued("force-with-lease"), flag("force-if-includes"), valued("recurse-submodules"), flag("thin"),
-  valued("receive-pack"), valued("exec"), flag("set-upstream", "u"), flag("progress"), flag("prune"), flag("no-verify"),
-  flag("follow-tags"), optionallyValued("signed"), flag("atomic"), valued("push-option", "o"), flag("ipv4", "4"), flag("ipv6", "6"),
+  flagOption("verbose", "v"), flagOption("quiet", "q"), valueOption("repo"), flagOption("all"), flagOption("branches"), flagOption("mirror"),
+  flagOption("delete", "d"), flagOption("tags"), flagOption("dry-run", "n"), flagOption("porcelain"), flagOption("force", "f"),
+  optionalValueOption("force-with-lease"), flagOption("force-if-includes"), valueOption("recurse-submodules"), flagOption("thin"),
+  valueOption("receive-pack"), valueOption("exec"), flagOption("set-upstream", "u"), flagOption("progress"), flagOption("prune"), flagOption("no-verify"),
+  flagOption("follow-tags"), optionalValueOption("signed"), flagOption("atomic"), valueOption("push-option", "o"), flagOption("ipv4", "4"), flagOption("ipv6", "6"),
 ];
 
-function flag(name: string, short: string | null = null): OptionSpec {
+function flagOption(name: string, short: string | null = null): OptionSpec {
   return { name, short, arity: "flag" };
 }
 
-function valued(name: string, short: string | null = null): OptionSpec {
+function valueOption(name: string, short: string | null = null): OptionSpec {
   return { name, short, arity: "value" };
 }
 
-function optionallyValued(name: string): OptionSpec {
+function optionalValueOption(name: string): OptionSpec {
   return { name, short: null, arity: "optionalValue" };
 }
 
@@ -269,6 +269,27 @@ function configOperands(args: readonly string[]): string[] {
     else if (!word.startsWith("-")) operands.push(word);
   }
   return operands;
+}
+
+export const CONFIG_OVERRIDE_OPTIONS: ReadonlySet<string> = new Set(["-c", "--config-env"]);
+const CONFIG_ENV_OPTION = "--config-env";
+
+export interface ConfigOverrides {
+  configArgs: string[];
+  variables: string[];
+}
+
+export function configOverrides(gitGlobals: readonly string[]): ConfigOverrides {
+  const overrides: ConfigOverrides = { configArgs: [], variables: [] };
+  const words = gitGlobals.values();
+  for (const word of words) {
+    const [option, separator, attached] = partition(word, "=");
+    if (!CONFIG_OVERRIDE_OPTIONS.has(option)) continue;
+    const setting = separator ? attached : (nextWord(words) ?? "");
+    overrides.configArgs.push(option, setting);
+    if (option === CONFIG_ENV_OPTION) overrides.variables.push(partition(setting, "=")[2]);
+  }
+  return overrides;
 }
 
 export function nextWord(words: IteratorObject<string>): string | null {

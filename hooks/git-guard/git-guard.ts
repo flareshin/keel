@@ -25,8 +25,9 @@ import type { CodeChange } from "./notebook.ts";
 import { currentBranch, findRepoKey, findToplevel, git, gitOutputOrNull, isCommit, isOutsideEveryRepository } from "../lib/hookkit/repo.ts";
 import { RUN_TIME_WORD_RE } from "../lib/hookkit/commands.ts";
 import { hereStrings, parseCommands } from "../lib/hookkit/parser.ts";
-import { ghSubcommandArgv, gitDirectory, gitSubcommandIndex, interpretPush, isConfigRead, nextWord } from "../lib/hookkit/gitargs.ts";
-import { pushRemote } from "../../lib/evidence/gitcmd.ts";
+import { configOverrides, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, interpretPush, isConfigRead, nextWord } from "../lib/hookkit/gitargs.ts";
+import { pushRemoteMirror } from "../../lib/evidence/gitcmd.ts";
+import type { ConfigView } from "../../lib/evidence/gitcmd.ts";
 import { steps } from "../lib/hookkit/steps.ts";
 import type { Step } from "../lib/hookkit/steps.ts";
 import { resolveDirectory } from "../lib/hookkit/variables.ts";
@@ -77,6 +78,7 @@ const COMMIT_PATHSPEC_NUL_OPTION = "--pathspec-file-nul";
 const ADD_INTERACTIVE_LONG_OPTIONS: ReadonlySet<string> = new Set(["--patch", "--interactive", "--edit"]);
 const ADD_INTERACTIVE_SHORT_FLAGS: ReadonlySet<string> = new Set(["p", "i", "e"]);
 const INDEX_FILE_VARIABLE = "GIT_INDEX_FILE";
+const CONFIG_VARIABLE_PREFIX = "GIT_CONFIG_";
 const INDEX_COPY_PREFIX = "keel-index-";
 const NOT_STAGING = "not-staging";
 const UNREPLAYABLE = "unreplayable";
@@ -113,7 +115,6 @@ const COMMAND_SHOWN = "command";
 const HOOKED_SUBCOMMANDS: ReadonlySet<string> = new Set(["commit", "merge", "push"]);
 const NO_VERIFY_OPTION = "--no-verify";
 const NO_VERIFY_UNIQUE_FROM = "--no-".length;
-const CONFIG_OPTION = "-c";
 const LIVE_MOVING_SUBCOMMANDS: ReadonlySet<string> = new Set([
   "checkout", "switch", "restore", "reset", "add", "rm", "mv", "commit", "cherry-pick", "revert", "am", "apply",
   "merge", "rebase", "pull", "stash", "clean",
@@ -663,7 +664,7 @@ function checkGitOrPr(
   if (argv[position] === "commit") {
     return checkCommit(argv.slice(position + 1), step, repoDirectory, call.slice(0, index), callHeredocs, plainCallText);
   }
-  if (argv[position] === "push") return checkPush(argv.slice(position + 1), repoDirectory, configOverrides(argv.slice(1, position)));
+  if (argv[position] === "push") return checkPush(argv.slice(position + 1), repoDirectory, pushConfigView(argv.slice(1, position), step));
   return [];
 }
 
@@ -862,13 +863,13 @@ function copyIndex(toplevel: string, destination: string): boolean {
   return true;
 }
 
-function checkPush(args: readonly string[], repoDirectory: string, overrides: readonly string[]): Violation[] {
+function checkPush(args: readonly string[], repoDirectory: string, view: ConfigView): Violation[] {
   const toplevel = findToplevel(repoDirectory);
   if (toplevel === null) return [];
   const push = readPush(args, currentBranch(toplevel));
   const repoKey = findRepoKey(toplevel);
   const violations: Violation[] = [];
-  if (push.force || pushesToAMirror(push, toplevel, overrides)) {
+  if (push.force || mayPushToAMirror(push, toplevel, view)) {
     violations.push({ ruleId: F_FORCE_PUSH, repo: repoKey, text: "Force push rewrites shared history; push without --force, -f or a +refspec." });
   }
   const leased = push.forceWithLease ? leasedProtectedBranches(push, repoKey) : [];
@@ -879,19 +880,15 @@ function checkPush(args: readonly string[], repoDirectory: string, overrides: re
   return violations;
 }
 
-function pushesToAMirror(push: PushRequest, toplevel: string, overrides: readonly string[]): boolean {
-  const remote = push.remote ?? pushRemote(toplevel);
-  return gitOutputOrNull([...overrides, "config", "--type=bool", "--get", `remote.${remote}.mirror`], toplevel) === "true";
+function mayPushToAMirror(push: PushRequest, toplevel: string, view: ConfigView): boolean {
+  return pushRemoteMirror(toplevel, push.remote, view) !== "notMirror";
 }
 
-function configOverrides(gitGlobals: readonly string[]): string[] {
-  const overrides: string[] = [];
-  const words = gitGlobals.values();
-  for (const word of words) {
-    if (word === CONFIG_OPTION) overrides.push(CONFIG_OPTION, nextWord(words) ?? "");
-    else if (word.startsWith(CONFIG_OPTION)) overrides.push(CONFIG_OPTION, word.slice(CONFIG_OPTION.length));
-  }
-  return overrides;
+function pushConfigView(gitGlobals: readonly string[], step: Step): ConfigView {
+  const overrides = configOverrides(gitGlobals);
+  const commandVariables = new Map([...step.expansion, ...step.environment]);
+  const read = [...commandVariables].filter(([name]) => overrides.variables.includes(name) || name.startsWith(CONFIG_VARIABLE_PREFIX));
+  return { configArgs: overrides.configArgs, env: { ...process.env, ...Object.fromEntries(read) } };
 }
 
 function leasedProtectedBranches(push: PushRequest, repoKey: string | null): string[] {

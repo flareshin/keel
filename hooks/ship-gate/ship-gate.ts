@@ -15,7 +15,7 @@ import { parseJson } from "../lib/hookkit/json.ts";
 import { AttributeError, describeError, pythonTypeName, RecursionError, ValueError } from "../lib/hookkit/errors.ts";
 import { readStdin, writeStderr } from "../lib/hookkit/stdio.ts";
 import {
-  attachedGhRepo, configKey, dashedGitSubcommand, GH_REPO_OPTIONS, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, interpretPush,
+  attachedGhRepo, CONFIG_OVERRIDE_OPTIONS, configKey, dashedGitSubcommand, GH_REPO_OPTIONS, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, interpretPush,
   isConfigRead, nextWord,
 } from "../lib/hookkit/gitargs.ts";
 import { RUN_TIME_WORD_RE } from "../lib/hookkit/commands.ts";
@@ -109,7 +109,6 @@ const GC_INTERVAL_SECONDS = 24 * 3600;
 const MERGE_VALUE_FLAGS: ReadonlySet<string> = new Set(["-A", "--author-email", "-b", "--body", "-F", "--body-file", "-t", "--subject"]);
 const REPOINTING_OPTIONS: ReadonlySet<string> = new Set(["--git-dir", "--work-tree"]);
 const REPOINTING_VARIABLES = ["GIT_DIR", "GIT_WORK_TREE"];
-const CONFIG_OVERRIDE_OPTIONS: ReadonlySet<string> = new Set(["-c", "--config-env"]);
 const GH_DEFAULT_VIEW_OPTIONS: ReadonlySet<string> = new Set(["-v", "--view"]);
 const PUSH_ROUTING_SECTIONS: ReadonlySet<string> =
   new Set(["remote", "branch", "url", "push", "include", "includeif", "submodule"]);
@@ -930,8 +929,10 @@ function gatedReposASubmodulePushReaches(push: Push, repoRoot: string, repoKey: 
 }
 
 function pushesEveryRef(push: Push, repoRoot: string): boolean {
-  const remote = push.remote || gitcmd.pushRemote(repoRoot);
-  return push.wholeRepo || storedConfig(repoRoot, ["--type=bool", `remote.${remote}.mirror`]) === "true";
+  if (push.wholeRepo) return true;
+  const mirror = gitcmd.pushRemoteMirror(repoRoot, push.remote || null);
+  if (mirror === "unreadable") throw new GateError(`git config cannot read whether remote ${push.remote || "of this push"} is a mirror`);
+  return mirror === "mirror";
 }
 
 function pushRecursesIntoSubmodules(push: Push, repoRoot: string): boolean {

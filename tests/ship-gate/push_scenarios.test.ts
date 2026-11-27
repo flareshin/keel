@@ -77,6 +77,15 @@ describe('PushScenarioTest', () => {
     assertDenied(sandbox.push(repo, 'git push origin'), 'F-irreversible', 'cannot be attributed to one branch');
   });
 
+  test('barePush_deniesAsWholeRepo_whenThePushRemoteItResolvesIsAMirror', (t) => {
+    const [sandbox, repo] = sandboxAndFeature(t);
+    sandbox.fullBundle(repo);
+    repo.git('remote', 'add', 'backup', repo.git('remote', 'get-url', 'origin').trim());
+    repo.git('config', 'remote.pushDefault', 'backup');
+    repo.git('config', 'remote.backup.mirror', 'true');
+    assertDenied(sandbox.push(repo, 'git push'), 'F-irreversible', 'cannot be attributed to one branch');
+  });
+
   test('push_deniesK3_whenTestsEvidenceMissing', (t) => {
     const [sandbox, repo] = sandboxAndFeature(t);
     sandbox.review(repo);

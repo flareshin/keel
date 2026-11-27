@@ -437,7 +437,6 @@ smoke checks (kind × scope): ledger-format, id-unique, caps (each), id-tagging 
 | ship-gate | Stop after substantive work with no advisor call since the owner's latest prompt | K1 | block |
 | model-assign | model/effort check and rewrite | C-dispatch | deny / record / pass |
 | model-assign | long-brief skill hint: a main-session Agent prompt of 500+ characters, once per session, none for `keel:auditor`, `keel:reporter`, `keel:comment-reviewer` | C-dispatch | warn |
-| handoff (CLI) | snapshot written | C-handoff | record |
 | env-preflight | JDK check and rewrite | S-jdk | deny / record / pass |
 | any | the hook's own internal error | the running check's id, else the hook's first id here | error |
 

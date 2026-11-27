@@ -102,7 +102,12 @@ function runnerItems(runner: string, since: string, finished: FinishedRunners): 
 }
 
 export async function runRunnersConcurrently(rows: LedgerRow[], since: string): Promise<FinishedRunners> {
-  const waiting = [...runnerPaths(rows)]
+  const runners = rows.map((row) => splitMetric(row.metric)).filter(([kind]) => kind === "run").map(([, runner]) => runner)
+  return runNamedRunnersConcurrently(runners, since)
+}
+
+export async function runNamedRunnersConcurrently(runners: string[], since: string): Promise<FinishedRunners> {
+  const waiting = [...runnerPaths(runners)]
   const finished = new Map<string, RunResult | MetricError>()
   const worker = async (): Promise<void> => {
     for (let next = waiting.shift(); next !== undefined; next = waiting.shift()) {
@@ -114,11 +119,10 @@ export async function runRunnersConcurrently(rows: LedgerRow[], since: string): 
   return finished
 }
 
-function runnerPaths(rows: LedgerRow[]): Map<string, string> {
+function runnerPaths(runners: string[]): Map<string, string> {
   const paths = new Map<string, string>()
-  for (const row of rows) {
-    const [kind, runner] = splitMetric(row.metric)
-    const runnerPath = kind === "run" ? findRunner(runner) : null
+  for (const runner of runners) {
+    const runnerPath = findRunner(runner)
     if (runnerPath !== null) paths.set(runner, runnerPath)
   }
   return paths

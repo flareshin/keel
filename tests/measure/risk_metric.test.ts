@@ -338,20 +338,91 @@ describe("risk runner", () => {
     assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(cacheFile(), "utf8")).ships), [`${REPO} ${first}`])
   })
 
+  const recordGitCalls = (): (() => string[]) => {
+    const realGit = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim()
+    const calls = path.join(box.root, "git-calls.txt")
+    const shim = box.write("shim/git", `#!/bin/sh\nprintf '%s\\n' "$*" >> '${calls}'\nexec ${realGit} "$@"\n`, true)
+    box.env["PATH"] = `${path.dirname(shim)}:${box.env["PATH"]}`
+    return () => {
+      const logged = fs.existsSync(calls) ? fs.readFileSync(calls, "utf8").split("\n").filter((line) => line !== "") : []
+      fs.rmSync(calls, { force: true })
+      return logged
+    }
+  }
+
+  const callsOf = (logged: string[], repo: string, subcommand: string): string[] => logged.filter((line) => line.startsWith(`-C ${repo} ${subcommand} `))
+
   it("perCheckoutGitFacts_andTheCheckoutHoldingAHead_areReadOncePerRun_notOncePerShipOrDefect", () => {
     const { repo, bad } = shippedDefectRepo()
     const first = box.git(repo, "rev-parse", "HEAD~1").trim()
     givenPass({ head: bad, ts: daysAgo(31, "10:00:00Z") })
     givenPass({ head: first, ts: daysAgo(20, "10:00:00Z"), risk: "standard" })
     givenDefects("reverts", [defect("1".repeat(40), [bad]), defect("2".repeat(40), [bad])])
-    const realGit = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim()
-    const calls = path.join(box.root, "git-calls.txt")
-    const shim = box.write("shim/git", `#!/bin/sh\nprintf '%s\\n' "$*" >> '${calls}'\nexec ${realGit} "$@"\n`, true)
-    box.env["PATH"] = `${path.dirname(shim)}:${box.env["PATH"]}`
+    const takeGitCalls = recordGitCalls()
     runAttribution()
-    const logged = fs.readFileSync(calls, "utf8").split("\n")
+    const logged = takeGitCalls()
     assert.equal(logged.filter((line) => line.endsWith("rev-parse --verify --quiet refs/remotes/origin/HEAD")).length, 1)
-    assert.equal(logged.filter((line) => line.endsWith(`cat-file -e ${bad}^{commit}`)).length, 1)
+    assert.equal(callsOf(logged, repo, "cat-file").length, 1)
+  })
+
+  it("checkoutLookup_readsEachReviewRootOncePerRun_notOncePerShipHead", () => {
+    const { repo, start } = newRepo()
+    const second = commitAt(repo, daysAgo(31), "Second ship", ["second"], "second.ts")
+    const third = commitAt(repo, daysAgo(25), "Third ship", ["third"], "third.ts")
+    publish(repo)
+    const otherRoot = path.dirname(box.write("other/.keep", ""))
+    box.initRepo(otherRoot)
+    givenReview("review-0-other", { repoRoot: otherRoot })
+    givenPass({ head: start, ts: daysAgo(35, "10:00:00Z") })
+    givenPass({ head: second, ts: daysAgo(31, "10:00:00Z") })
+    givenPass({ head: third, ts: daysAgo(25, "10:00:00Z") })
+    const takeGitCalls = recordGitCalls()
+    runAttribution()
+    const logged = takeGitCalls()
+    assert.deepEqual([callsOf(logged, otherRoot, "cat-file").length, callsOf(logged, repo, "cat-file").length], [1, 1])
+  })
+
+  it("escapedDefects_addNoGitProcessPerDefect_whenTheyTraceToTheSameShips", () => {
+    const { bad, later } = shippedDefectRepo()
+    givenPass({ head: bad, ts: daysAgo(10), risk: "standard" })
+    givenPass({ head: later, ts: daysAgo(8), risk: "light" })
+    const takeGitCalls = recordGitCalls()
+    givenDefects("revert", [defect("1".repeat(40), [bad])])
+    runAttribution()
+    const oneDefect = takeGitCalls()
+    givenDefects("revert", [defect("1".repeat(40), [bad]), defect("2".repeat(40), [later]), defect("3".repeat(40), [later, bad])])
+    const result = runAttribution()
+    const threeDefects = takeGitCalls()
+    assert.deepEqual([itemFor(result, "standard")["escaped_defects"].count, itemFor(result, "light")["escaped_defects"].count], [2, 1])
+    assert.equal(threeDefects.length, oneDefect.length)
+  })
+
+  it("rework_ofAFastForwardedShipMatchingNoBase_diffsEveryCandidateBaseInOneGitProcess", () => {
+    const { repo, head } = unshippedThenShipped()
+    givenPass({ head, ts: OLD_SHIP_TS, files: 9, lines: 99 })
+    const takeGitCalls = recordGitCalls()
+    const rework = itemFor(runMetric(), "light")["rework"]
+    assert.deepEqual(rework.not_computable, { "no base on the first-parent chain matches the pass line's diff stat": 1 })
+    assert.equal(callsOf(takeGitCalls(), repo, "diff-tree").length, 1)
+  })
+
+  it("rework_ofADecidedShip_spawnsOnlyItsTwoBlamesPerShippedFile", () => {
+    const { repo } = newRepo()
+    const shippedFiles = ["first.ts", "second.ts", "third.ts"]
+    gitAt(repo, daysAgo(31), "checkout", "-q", "-b", "feature")
+    const head = shippedFiles.map((file) => commitAt(repo, daysAgo(31), `Add ${file}`, ["one", "two"], file)).at(-1) as string
+    gitAt(repo, daysAgo(30, "08:00:00Z"), "checkout", "-q", "main")
+    gitAt(repo, daysAgo(30, "08:00:00Z"), "merge", "-q", "--no-ff", "-m", "Merge the feature", "feature")
+    publish(repo)
+    givenPass({ head, ts: OLD_SHIP_TS })
+    const takeGitCalls = recordGitCalls()
+    const rework = itemFor(runMetric(), "light")["rework"]
+    const logged = takeGitCalls()
+    assert.deepEqual([rework.decided_ships, rework.shipped_lines, rework.reworked_lines], [1, 6, 0])
+    for (const file of shippedFiles) {
+      const naming = logged.filter((line) => line.includes(file))
+      assert.deepEqual([naming.length, naming.every((line) => line.startsWith(`-C ${repo} blame `))], [2, true], naming.join("\n"))
+    }
   })
 
   it("unreadableReviewOrApprovalEvidence_isSkippedAndCounted_notACrash", () => {
@@ -616,6 +687,19 @@ describe("risk runner", () => {
       assert.match(result.defect_sources["defects-bad"].error, /printed an item that is not/)
     })
   }
+
+  it("escapedDefects_runEveryDefectsRunnerAtTheSameTime_notOneAfterTheOther", () => {
+    givenPass({ risk: "light" })
+    const flags = path.dirname(box.write("flags/.keep", ""))
+    const waitingFor = (own: string, other: string): string => [
+      `touch '${flags}/${own}'`,
+      `tries=0; while [ ! -e '${flags}/${other}' ]; do tries=$((tries + 1)); [ $tries -gt 100 ] && exit 7; sleep 0.1; done`,
+      `echo '{"count": 0, "items": []}'`,
+    ].join("\n")
+    defectsRunner("hotfix", waitingFor("hotfix", "revert"))
+    defectsRunner("revert", waitingFor("revert", "hotfix"))
+    assert.deepEqual(runAttribution().defect_sources, { "defects-hotfix": { count: 0 }, "defects-revert": { count: 0 } })
+  })
 
   it("escapedDefects_withAWellFormedItem_isNotReportedAsAnError", () => {
     givenPass({ risk: "light" })

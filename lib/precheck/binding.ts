@@ -2,11 +2,12 @@ import { diffEntries, diffStats, objectType, textOrThrow } from '../evidence/git
 import type { PathEntry, PathStat } from '../evidence/gitcmd.ts';
 import { isTestPath } from '../evidence/risk.ts';
 import { SCRIPT_FILE } from './consumers.ts';
-import { isRunnableTest } from './select.ts';
+import { isRunnableTest, TEST_GLOBS } from './select.ts';
 
 export const DELETED_BLOB = '0'.repeat(40);
 const PRECHECK_HEADER = /^precheck tree ([0-9a-f]{40})(?: ·|$)/u;
 export const REQUIRED_SCRIPT_SOURCES = 3;
+const UNSUPPORTED_RUNNER_REASON = `no test file matches ${TEST_GLOBS.join(', ')} (the node:test paths keel precheck runs); vitest, jest and JUnit (Maven/Gradle) tests are not supported, so this repo gets no mutation census`;
 
 export interface TestChange {
   lines_removed: boolean;
@@ -22,6 +23,7 @@ export interface PrecheckBinding {
 export interface PrecheckRequirement {
   required: boolean;
   sources: number;
+  unsupported?: string;
 }
 
 export function precheckTreeOf(precheck: string): string | null {
@@ -38,15 +40,18 @@ export function bindPrecheck(repo: string, base: string, end: string, precheckTr
 
 export function precheckRequirement(repo: string, base: string, end: string): PrecheckRequirement {
   const sources = Object.entries(nonTestBlobs(repo, base, end)).filter(([path, blob]) => isPrecheckSource(path, blob)).length;
-  return { required: sources >= REQUIRED_SCRIPT_SOURCES && hasRunnableTest(repo, end), sources };
+  if (sources < REQUIRED_SCRIPT_SOURCES) return { required: false, sources };
+  const unsupported = missingRunnableTestReason(repo, end);
+  return unsupported === null ? { required: true, sources } : { required: false, sources, unsupported };
+}
+
+export function missingRunnableTestReason(repo: string, end: string): string | null {
+  const hasRunnableTest = textOrThrow(repo, ['ls-tree', '-r', '--name-only', end]).split('\n').some(isRunnableTest);
+  return hasRunnableTest ? null : UNSUPPORTED_RUNNER_REASON;
 }
 
 export function isPrecheckSource(path: string, blob: string): boolean {
   return blob !== DELETED_BLOB && SCRIPT_FILE.test(path) && !isTestPath(path);
-}
-
-function hasRunnableTest(repo: string, end: string): boolean {
-  return textOrThrow(repo, ['ls-tree', '-r', '--name-only', end]).split('\n').some(isRunnableTest);
 }
 
 function nonTestBlobs(repo: string, base: string, end: string): Record<string, string> {

@@ -582,7 +582,7 @@ function buildReport(outcome, audit, reviewed, evidenceLines, precheck) {
   return [
     `VERDICT: ${outcome.verdict}`,
     `Diff: ${reviewed.map((target) => `${target.repo_root}: ${toOneLine(target.diff_stat).trim() || '0 files changed'}`).join('; ')}`,
-    ...(precheck ? [`Precheck: ${toOneLine(describePrecheck(precheck))}`] : []),
+    ...(precheck ? [`Precheck: ${toOneLine(describePrecheck(precheck))}`] : describeUnsupportedPrecheck(reviewed[0])),
     `Lenses fired: ${toOneLine(outcome.lensesFired.join(', '))}`,
     describeFindings('Merge-blocking', outcome.blocking),
     describeFindings('Non-blocking', outcome.nonBlocking),
@@ -595,6 +595,11 @@ function buildReport(outcome, audit, reviewed, evidenceLines, precheck) {
     describeLensNotes(audit.lensNotes || []),
     evidenceLines.join('\n'),
   ].join('\n\n')
+}
+
+function describeUnsupportedPrecheck(target) {
+  const reason = target.precheck_required?.unsupported
+  return typeof reason === 'string' ? [`Precheck: unsupported: ${toOneLine(reason)}`] : []
 }
 
 function describeFindings(title, findings) {

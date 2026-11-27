@@ -1138,6 +1138,14 @@ test('lensReview_runsTheReview_whenThePrecheckIsNotRequiredOrTheRequirementCould
   }
 })
 
+test('lensReview_reportsTheUnsupportedReason_whenThePrepareStepSaysTheRepoHasNoTestThePrecheckCanRun', async () => {
+  const reason = 'no test file matches tests/**/*.test.ts (the node:test paths keel precheck runs); vitest is not supported'
+  const { result } = await runWithPrecheck(undefined, requirementPrepared({ required: false, sources: 4, unsupported: reason }))
+  assert.equal(result.verdict, 'PASS')
+  assert.deepEqual(linesStartingWith(result.report, 'Precheck'), [`Precheck: unsupported: ${reason}`])
+  assert.equal(result.report.split('\n\n')[2], `Precheck: unsupported: ${reason}`)
+})
+
 test('lensReview_asksThePrepareStepForTheRequirement_onlyForASingleRootDiffWithoutAPrecheck', async () => {
   const root = await runWithPrecheck(undefined)
   const withPrecheck = await runWithPrecheck(precheckText())

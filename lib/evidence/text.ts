@@ -12,6 +12,10 @@ export function isBlankEitherWay(text: string): boolean {
   return stripEitherWay(text) === '';
 }
 
+export function nonblank(value: unknown): boolean {
+  return typeof value === 'string' && !isBlankEitherWay(value);
+}
+
 export function isWhitespaceBothWays(text: string): boolean {
   return WHITESPACE_BOTH_WAYS.test(text);
 }

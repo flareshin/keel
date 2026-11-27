@@ -4,6 +4,7 @@ import * as codexReview from './codex_review.ts';
 import * as env from './env.ts';
 import * as gitcmd from './gitcmd.ts';
 import * as store from './store.ts';
+import { nonblank } from './text.ts';
 import * as writers from './writers.ts';
 import { isJsonRecord } from './writers.ts';
 import type { JsonObject } from './writers.ts';
@@ -160,7 +161,7 @@ export function validateReport(report: JsonObject, repo: string, target: Target)
     }
     for (const item of Object.values(lenses)) {
       if (!isJsonRecord(item) || !codexReview.hasExactKeys(item, new Set(['status', 'evidence']))
-        || item['status'] !== 'complete' || !codexReview.nonblank(item['evidence'])) {
+        || item['status'] !== 'complete' || !nonblank(item['evidence'])) {
         throw new writers.Refused('incomplete or unproven review lens');
       }
     }
@@ -168,7 +169,7 @@ export function validateReport(report: JsonObject, repo: string, target: Target)
     throw new writers.Refused('verifiers settle findings instead of repeating lens audits');
   }
   if (Object.hasOwn(report, writers.NO_TEST_REASON)
-    && (report['role'] !== 'audit' || !lensNames.includes('tests') || !codexReview.nonblank(report[writers.NO_TEST_REASON]))) {
+    && (report['role'] !== 'audit' || !lensNames.includes('tests') || !nonblank(report[writers.NO_TEST_REASON]))) {
     throw new writers.Refused('no_test_reason must be a nonblank reason from the tests auditor');
   }
   codexReview.validateFindings(report['findings']);

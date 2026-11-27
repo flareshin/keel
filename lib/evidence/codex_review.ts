@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, lstatSync } from 'node:fs';
 import { userInfo } from 'node:os';
 import { join, sep } from 'node:path';
-import { isBlankEitherWay } from './text.ts';
+import { nonblank } from './text.ts';
 import { decodeStrict, isSystemError, resolveLinks, splitLines } from '../../measure/lib/measurekit/files.ts';
 import { compareCodePoints, parseJsonKeepingIntegers } from '../../measure/lib/measurekit/json.ts';
 import * as codexLenses from './codex_lenses.ts';
@@ -153,10 +153,6 @@ export function validateFindings(findings: unknown): void {
     ids.push(finding['id']);
   }
   if (ids.length !== new Set(ids).size) throw new writers.Refused('finding ids must be unique');
-}
-
-export function nonblank(value: unknown): boolean {
-  return typeof value === 'string' && !isBlankEitherWay(value);
 }
 
 export function digest(content: Uint8Array): string {

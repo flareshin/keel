@@ -1,9 +1,9 @@
 import fs from "node:fs"
 import path from "node:path"
 
-import { stateDir } from "../../lib/evidence/env.ts"
+import { GITLINK_MODE, stateDir } from "../../lib/evidence/env.ts"
 import { writeTextAtomic } from "../../lib/link/atomic.ts"
-import { diffStats, GitError as EvidenceGitError } from "../../lib/evidence/gitcmd.ts"
+import { GitError as EvidenceGitError, treeEntry } from "../../lib/evidence/gitcmd.ts"
 import * as store from "../../lib/evidence/store.ts"
 import { EvidenceError, EvidenceTooDeepError } from "../../lib/evidence/store.ts"
 import * as env from "../lib/measurekit/env.ts"
@@ -15,7 +15,7 @@ import { FIRES_LOG } from "../lib/measurekit/fireslog.ts"
 import { GitError, gitSucceeds, runGitOrThrow } from "../lib/measurekit/gitutil.ts"
 import { compareCodePoints, isJsonObject, parseJson, stringifySorted } from "../lib/measurekit/json.ts"
 import type { JsonObject, JsonValue } from "../lib/measurekit/json.ts"
-import { collectMetricItems, defectRunnerNames, isCountedFire, isWithinWindow, MetricError } from "../lib/measurekit/metrics.ts"
+import { collectMetricItems, defectRunnerNames, isCountedFire, isWithinWindow, MetricError, runNamedRunnersConcurrently } from "../lib/measurekit/metrics.ts"
 
 const COMMAND: CommandSpec = {
   prog: "measure/metrics/risk",
@@ -41,6 +41,7 @@ const REWORK_CACHE_FILE = path.join("metrics", "risk-rework.json")
 const REWORK_CACHE_VERSION = 2
 const PRIVATE_FILE_MODE = 0o600
 const UNREADABLE_CACHE_CODES = new Set(["EACCES", "EISDIR"])
+const OBJECT_NAME = /^[0-9a-f]+$/
 
 interface DiffStat {
   files: number
@@ -100,7 +101,12 @@ interface DefaultBranchFetches {
 
 type ShipBase = { base: string } | { reason: string }
 
-function main(argv: string[]): number {
+interface CommitGraph {
+  parents: Map<string, string[]>
+  generation: Map<string, number>
+}
+
+async function main(argv: string[]): Promise<number> {
   const since = dateOption(COMMAND, "--since", stringOption(parseCommandLine(COMMAND, argv), "since")) ?? "0000-00-00"
   const allShips = shipsSince("0000-00-00")
   const ships = allShips.filter((ship) => isWithinWindow({ ts: ship.shippedAt }, since))
@@ -110,15 +116,16 @@ function main(argv: string[]): number {
   const firstApprovals = firstApprovalByRootRun(approvalEvidence.readable)
   const now = new Date()
   const cache = readReworkCache()
-  const defectSources = readDefectSources(since)
-  const traces = defectSources.defects.map((defect) => traceDefect(defect, allShips, reviews))
+  const defectSources = await readDefectSources(since)
+  locateShipHeads(allShips, defectSources.defects, reviews)
+  const traces = defectSources.defects.map((defect) => traceDefect(defect, allShips))
   const items = classesPresent(ships).map((riskClass) => {
     const classShips = ships.filter((ship) => ship.riskClass === riskClass)
     return {
       class: riskClass,
       ships: classShips.length,
       escaped_defects: defectSources.hasUsableSource ? escapedDefectsOf(classShips, traces) : ESCAPED_DEFECTS_NO_SOURCE,
-      rework: summarizeRework(classShips.map((ship) => cachedRework(ship, cache, () => reworkOf(ship, allShips, reviews, now)))),
+      rework: summarizeRework(classShips.map((ship) => cachedRework(ship, cache, () => reworkOf(ship, allShips, now)))),
       review_to_approval: summarizeApprovalWait(classShips, reviews, firstApprovals),
       baseline: BASELINE_DEFERRED,
     }
@@ -155,12 +162,14 @@ function shipsSince(since: string): Ship[] {
   return [...ships.values()]
 }
 
-function readDefectSources(since: string): DefectSources {
+async function readDefectSources(since: string): Promise<DefectSources> {
   const statuses: Record<string, JsonObject> = {}
   const defects = new Map<string, Defect>()
-  for (const name of defectRunnerNames(env.overlayDir())) {
+  const names = defectRunnerNames(env.overlayDir())
+  const finished = await runNamedRunnersConcurrently(names, since)
+  for (const name of names) {
     try {
-      const [, rawItems] = collectMetricItems("run:" + name, since)
+      const [, rawItems] = collectMetricItems("run:" + name, since, finished)
       const parsed = rawItems.map((item) => parseDefect(name, item))
       for (const defect of parsed) {
         const key = shipKey(defect.repo, defect.commit)
@@ -188,7 +197,7 @@ function parseDefect(runner: string, item: JsonValue): Defect {
   return { repo: item["repo"], commit: item["commit"], ts: item["ts"], kind: item["kind"], offending: offending as string[], tracedBy: item["traced_by"] }
 }
 
-function traceDefect(defect: Defect, allShips: Ship[], reviews: ReviewRecord[]): DefectTrace {
+function traceDefect(defect: Defect, allShips: Ship[]): DefectTrace {
   if (defect.offending.length === 0) return { defect, reason: "no offending commit" }
   const repoShips = allShips
     .filter((ship) => sameRepo(ship.repo, defect.repo) && ship.head !== null)
@@ -196,13 +205,13 @@ function traceDefect(defect: Defect, allShips: Ship[], reviews: ReviewRecord[]):
   if (repoShips.length === 0) return { defect, reason: "no shipped head for the repo" }
   const checkouts = new Set<string>()
   for (const ship of repoShips) {
-    const checkout = checkoutHolding(ship.repo, ship.head as string, reviews)
+    const checkout = checkoutHolding(ship.repo, ship.head as string)
     if (checkout === null) continue
     checkouts.add(checkout)
     if (defect.offending.some((sha) => isAncestor(checkout, sha, ship.head as string))) return { defect, ship }
   }
   if (checkouts.size === 0) return { defect, reason: "no local checkout holds a shipped head" }
-  const known = [...checkouts].some((checkout) => defect.offending.some((sha) => gitSucceeds(checkout, ["cat-file", "-e", `${sha}^{commit}`])))
+  const known = [...checkouts].some((checkout) => defect.offending.some((sha) => commitsInCheckout.get(checkout)?.has(sha) === true))
   return { defect, reason: known ? "no shipped head contains the offending commit" : "offending commit not found in the checkout" }
 }
 
@@ -355,11 +364,11 @@ function writeReworkCache(cache: Map<string, DecidedRework>): void {
   writeTextAtomic(path.join(stateDir(), REWORK_CACHE_FILE), stringifySorted({ version: REWORK_CACHE_VERSION, ships }) + "\n", PRIVATE_FILE_MODE)
 }
 
-function reworkOf(ship: Ship, allShips: Ship[], reviews: ReviewRecord[], now: Date): Rework {
+function reworkOf(ship: Ship, allShips: Ship[], now: Date): Rework {
   const horizonDate = addDays(ship.shippedAt.slice(0, 10), REWORK_DAYS) + ship.shippedAt.slice(10)
   if (Date.parse(horizonDate) > now.getTime()) return { state: "pending" }
   if (ship.head === null) return { state: "not computable", reason: "no head" }
-  const checkout = checkoutHolding(ship.repo, ship.head, reviews)
+  const checkout = checkoutHolding(ship.repo, ship.head)
   if (checkout === null) return { state: "not computable", reason: "no local checkout holds the head" }
   const earlierHeads = allShips
     .filter((other) => sameRepo(other.repo, ship.repo) && other.head !== null && other.head !== ship.head && other.shippedAt < ship.shippedAt)
@@ -377,26 +386,50 @@ function sameRepo(left: string, right: string): boolean {
   return left.toLowerCase() === right.toLowerCase()
 }
 
-const checkoutByShipHead = new Map<string, string | null>()
+const checkoutByShipHead = new Map<string, string>()
+const headsByCheckout = new Map<string, string[]>()
+const commitsInCheckout = new Map<string, Set<string>>()
 
-function checkoutHolding(repo: string, head: string, reviews: ReviewRecord[]): string | null {
-  const key = shipKey(repo, head)
-  if (!checkoutByShipHead.has(key)) checkoutByShipHead.set(key, findCheckoutHolding(repo, head, reviews))
-  return checkoutByShipHead.get(key) as string | null
+function checkoutHolding(repo: string, head: string): string | null {
+  return checkoutByShipHead.get(shipKey(repo, head)) ?? null
 }
 
-function findCheckoutHolding(repo: string, head: string, reviews: ReviewRecord[]): string | null {
-  const roots = new Set(reviews.filter((review) => sameRepo(review.repo, repo) && review.repoRoot !== null).map((review) => review.repoRoot as string))
-  for (const root of roots) {
-    if (fs.existsSync(root) && gitSucceeds(root, ["cat-file", "-e", `${head}^{commit}`])) return root
+function locateShipHeads(ships: Ship[], defects: Defect[], reviews: ReviewRecord[]): void {
+  for (const repo of new Set(ships.map((ship) => ship.repo.toLowerCase()))) {
+    let unlocated = [...new Set(ships.filter((ship) => sameRepo(ship.repo, repo) && ship.head !== null).map((ship) => ship.head as string))]
+    const offending = defects.filter((defect) => sameRepo(defect.repo, repo)).flatMap((defect) => defect.offending)
+    const roots = new Set(reviews.filter((review) => sameRepo(review.repo, repo) && review.repoRoot !== null).map((review) => review.repoRoot as string))
+    for (const root of roots) {
+      if (unlocated.length === 0) break
+      if (!fs.existsSync(root)) continue
+      const commits = commitsAmong(root, [...new Set([...unlocated, ...offending])])
+      const held = unlocated.filter((head) => commits.has(head))
+      for (const head of held) checkoutByShipHead.set(shipKey(repo, head), root)
+      headsByCheckout.set(root, [...(headsByCheckout.get(root) ?? []), ...held])
+      commitsInCheckout.set(root, new Set([...(commitsInCheckout.get(root) ?? []), ...commits]))
+      unlocated = unlocated.filter((head) => !commits.has(head))
+    }
   }
-  return null
+}
+
+function commitsAmong(checkout: string, names: string[]): Set<string> {
+  if (names.length === 0) return new Set()
+  let answers: string[]
+  try {
+    answers = lines(runGitOrThrow(checkout, ["cat-file", "--batch-check=%(objectname)"], {}, names.map((name) => `${name}^{commit}\n`).join("")))
+  } catch (error) {
+    if (error instanceof GitError) return new Set()
+    throw error
+  }
+  if (answers.length !== names.length) return new Set()
+  return new Set(names.filter((_, index) => OBJECT_NAME.test(answers[index] as string)))
 }
 
 function reworkInCheckout(checkout: string, ship: Ship, earlierHeads: string[], horizonDate: string): Rework {
   const head = ship.head as string
-  if (!hasOriginHead(checkout)) return { state: "not computable", reason: "no origin/HEAD" }
-  if (!isAncestor(checkout, head, DEFAULT_BRANCH_REF)) return { state: "not computable", reason: "head not on the default branch" }
+  const originHead = originHeadOf(checkout)
+  if (originHead === null) return { state: "not computable", reason: "no origin/HEAD" }
+  if (!isAncestor(checkout, head, originHead)) return { state: "not computable", reason: "head not on the default branch" }
   if (!defaultBranchSeenPast(checkout, horizonDate)) return { state: "not computable", reason: "default branch not fetched past the horizon" }
   const horizon = runGitOrThrow(checkout, ["rev-list", "-1", "--first-parent", `--before=${horizonDate}`, DEFAULT_BRANCH_REF]).trim()
   if (horizon === "" || !isAncestor(checkout, head, horizon)) return { state: "not computable", reason: "head reached the default branch after the horizon" }
@@ -411,18 +444,25 @@ function reworkInCheckout(checkout: string, ship: Ship, earlierHeads: string[], 
   for (const file of lines(runGitOrThrow(checkout, ["diff", "--name-only", "--diff-filter=AMR", base, head]))) {
     shipped += blamedToShip(checkout, head, file, shipCommits, [])
     const later = renames.get(file) ?? file
-    survived += gitSucceeds(checkout, ["cat-file", "-e", `${horizon}:${later}`]) ? blamedToShip(checkout, horizon, later, shipCommits, refactorCommits) : 0
+    survived += isFileAt(checkout, horizon, later) ? blamedToShip(checkout, horizon, later, shipCommits, refactorCommits) : 0
   }
   return { state: "decided", shipped, reworked: Math.max(shipped - survived, 0) }
 }
 
-const originHeadByCheckout = new Map<string, boolean>()
+const originHeadByCheckout = new Map<string, string | null>()
 
-function hasOriginHead(checkout: string): boolean {
-  if (!originHeadByCheckout.has(checkout)) {
-    originHeadByCheckout.set(checkout, gitSucceeds(checkout, ["rev-parse", "--verify", "--quiet", DEFAULT_BRANCH_REF]))
+function originHeadOf(checkout: string): string | null {
+  if (!originHeadByCheckout.has(checkout)) originHeadByCheckout.set(checkout, readOriginHead(checkout))
+  return originHeadByCheckout.get(checkout) as string | null
+}
+
+function readOriginHead(checkout: string): string | null {
+  try {
+    return runGitOrThrow(checkout, ["rev-parse", "--verify", "--quiet", DEFAULT_BRANCH_REF]).trim()
+  } catch (error) {
+    if (error instanceof GitError) return null
+    throw error
   }
-  return originHeadByCheckout.get(checkout) as boolean
 }
 
 function defaultBranchSeenPast(checkout: string, horizonDate: string): boolean {
@@ -469,7 +509,52 @@ function asFetchHeadUrl(url: string): string {
 }
 
 function isAncestor(checkout: string, ancestor: string, descendant: string): boolean {
+  const graph = commitGraphOf(checkout)
+  if (graph !== null && graph.parents.has(descendant)) return reaches(graph, descendant, ancestor)
   return gitSucceeds(checkout, ["merge-base", "--is-ancestor", ancestor, descendant])
+}
+
+const graphByCheckout = new Map<string, CommitGraph | null>()
+
+function commitGraphOf(checkout: string): CommitGraph | null {
+  if (!graphByCheckout.has(checkout)) graphByCheckout.set(checkout, readCommitGraph(checkout))
+  return graphByCheckout.get(checkout) as CommitGraph | null
+}
+
+function readCommitGraph(checkout: string): CommitGraph | null {
+  const originHead = originHeadOf(checkout)
+  const tips = [...(originHead === null ? [] : [originHead]), ...(headsByCheckout.get(checkout) ?? [])]
+  let childrenFirst: string[]
+  try {
+    childrenFirst = lines(runGitOrThrow(checkout, ["rev-list", "--parents", "--topo-order", "--stdin"], {}, tips.map((tip) => tip + "\n").join("")))
+  } catch (error) {
+    if (error instanceof GitError) return null
+    throw error
+  }
+  const parents = new Map<string, string[]>()
+  const generation = new Map<string, number>()
+  for (const line of childrenFirst.reverse()) {
+    const [commit, ...commitParents] = line.split(" ") as [string, ...string[]]
+    parents.set(commit, commitParents)
+    generation.set(commit, 1 + Math.max(0, ...commitParents.map((parent) => generation.get(parent) ?? 0)))
+  }
+  return { parents, generation }
+}
+
+function reaches(graph: CommitGraph, descendant: string, ancestor: string): boolean {
+  const floor = graph.generation.get(ancestor)
+  if (floor === undefined) return false
+  const seen = new Set([descendant])
+  const pending = [descendant]
+  for (let commit = pending.pop(); commit !== undefined; commit = pending.pop()) {
+    if (commit === ancestor) return true
+    for (const parent of graph.parents.get(commit) ?? []) {
+      if (seen.has(parent) || (graph.generation.get(parent) ?? 0) < floor) continue
+      seen.add(parent)
+      pending.push(parent)
+    }
+  }
+  return false
 }
 
 function shipBase(checkout: string, ship: Ship, earlierHeads: string[]): ShipBase {
@@ -484,17 +569,38 @@ function shipBase(checkout: string, ship: Ship, earlierHeads: string[]): ShipBas
   const shipStat = ship.diffStat
   if (shipStat === null) return { base: earlierShip }
   const candidates = firstParentChain.slice(1, firstParentChain.indexOf(earlierShip) + 1)
-  const base = candidates.find((candidate) => sameDiffStat(diffStatBetween(checkout, candidate, head), shipStat))
+  const stats = diffStatsToHead(checkout, head, candidates)
+  const base = candidates.find((_, index) => sameDiffStat(stats[index] as DiffStat, shipStat))
   return base === undefined ? { reason: "no base on the first-parent chain matches the pass line's diff stat" } : { base }
 }
 
-function diffStatBetween(checkout: string, base: string, head: string): DiffStat {
-  const stats = [...diffStats(checkout, base, head).values()]
-  return { files: stats.length, lines: stats.reduce((sum, stat) => sum + stat.added + stat.deleted, 0) }
+function diffStatsToHead(checkout: string, head: string, bases: string[]): DiffStat[] {
+  const args = ["diff-tree", "--stdin", "--always", "-r", "--numstat", "-z", "--no-renames", "--ignore-submodules=none"]
+  const records = runGitOrThrow(checkout, args, {}, bases.map((base) => `${head} ${base}\n`).join("")).split("\0")
+  const stats: DiffStat[] = []
+  for (const record of records) {
+    if (record === head) stats.push({ files: 0, lines: 0 })
+    else if (record !== "") addNumstat(stats.at(-1), record)
+  }
+  if (stats.length !== bases.length) throw new GitError(`git diff-tree --stdin printed ${stats.length} diffs for ${bases.length} bases in ${checkout}`)
+  return stats
+}
+
+function addNumstat(stat: DiffStat | undefined, record: string): void {
+  if (stat === undefined) throw new GitError(`git diff-tree --stdin printed a file before its commit in: ${record}`)
+  const [added, deleted] = record.split("\t")
+  const binary = added === "-"
+  stat.files += 1
+  stat.lines += binary ? 0 : Number(added) + Number(deleted)
 }
 
 function sameDiffStat(left: DiffStat, right: DiffStat): boolean {
   return left.files === right.files && left.lines === right.lines
+}
+
+function isFileAt(checkout: string, revision: string, file: string): boolean {
+  const entry = treeEntry(checkout, revision, file)
+  return entry !== null && entry[0] !== GITLINK_MODE
 }
 
 function refactorOnlyCommits(checkout: string, head: string, horizon: string): string[] {

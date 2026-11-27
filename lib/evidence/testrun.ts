@@ -3,7 +3,7 @@ import type { ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { closeSync, constants, mkdtempSync, openSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { basename, delimiter, join } from 'node:path';
 import { readJsonl } from '../../measure/lib/measurekit/datafiles.ts';
 import * as env from './env.ts';
 import { failedTests } from './failed_tests.ts';
@@ -102,11 +102,22 @@ export async function run(argv: string[], cwd: string, selection: TestSelection 
     ...(flakySignal === null ? {} : { passed_after_failure: flakySignal }),
   });
   if (outcome === 'failures_recognized') printErrorLine(`keel test: the output reports ${failures} failing test${failures === 1 ? '' : 's'} or test file${failures === 1 ? '' : 's'} although the command exited 0; no evidence written`);
+  if (outcome === 'no_tests_recognized') {
+    printErrorLine('keel test: no test summary recognized; no evidence written');
+    if (isQuietMaven(argv)) printErrorLine(`keel test: -q hides surefire's 'Tests run:' line; rerun without -q`);
+  }
   if (outcome === 'tree_changed') printErrorLine('keel test: the working tree changed while the command ran; no evidence written');
   printErrorLine('KEEL-TEST ' + JSON.stringify({
     run_id: runId, count, exit: exitCode, evidence_id: evidenceId, submodule_evidence: submoduleEvidence,
   }));
   return keelExit;
+}
+
+const MAVEN_COMMANDS = new Set(['mvn', 'mvnw']);
+const MAVEN_QUIET_FLAGS = new Set(['-q', '--quiet']);
+
+function isQuietMaven(argv: string[]): boolean {
+  return MAVEN_COMMANDS.has(basename(argv[0]!)) && argv.slice(1).some((arg) => MAVEN_QUIET_FLAGS.has(arg));
 }
 
 function outcomeOf(run: { exitCode: number; outputStayedOpen: boolean; failures: number; count: number; treeChanged: boolean }): Outcome {

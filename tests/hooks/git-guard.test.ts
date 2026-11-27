@@ -1865,6 +1865,12 @@ describe("ForcePushTest", () => {
     }
   });
 
+  it("mirrorPush_deniedWithFForcePush_whenAnUnexportedVariableWouldOverrideTheStoredMirror", () => {
+    sandbox.git(repo, "config", "remote.origin.mirror", "true");
+    assertDenied(guard("GIT_CONFIG_COUNT=1; GIT_CONFIG_KEY_0=remote.origin.mirror; GIT_CONFIG_VALUE_0=false; git push origin", repo),
+      "F-force-push");
+  });
+
   it("push_passes_whenTheCommandOverridesOnlyUnrelatedConfig", () => {
     for (const command of ["git -c user.name=x push origin feature",
       "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=user.name GIT_CONFIG_VALUE_0=x git push origin feature",

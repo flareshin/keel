@@ -273,6 +273,12 @@ function configOperands(args: readonly string[]): string[] {
 
 export const CONFIG_OVERRIDE_OPTIONS: ReadonlySet<string> = new Set(["-c", "--config-env"]);
 const CONFIG_ENV_OPTION = "--config-env";
+const PUSH_ROUTING_SECTIONS: ReadonlySet<string> =
+  new Set(["remote", "branch", "url", "push", "include", "includeif", "submodule"]);
+
+export function routesPushes(key: string): boolean {
+  return PUSH_ROUTING_SECTIONS.has(partition(key, ".")[0].toLowerCase());
+}
 
 export interface ConfigOverrides {
   configArgs: string[];

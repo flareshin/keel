@@ -25,7 +25,7 @@ import type { CodeChange } from "./notebook.ts";
 import { currentBranch, findRepoKey, findToplevel, git, gitOutputOrNull, isCommit, isOutsideEveryRepository } from "../lib/hookkit/repo.ts";
 import { RUN_TIME_WORD_RE } from "../lib/hookkit/commands.ts";
 import { hereStrings, parseCommands } from "../lib/hookkit/parser.ts";
-import { configOverrides, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, interpretPush, isConfigRead, nextWord } from "../lib/hookkit/gitargs.ts";
+import { configOverrides, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, interpretPush, isConfigRead, nextWord, routesPushes } from "../lib/hookkit/gitargs.ts";
 import { pushRemoteMirror } from "../../lib/evidence/gitcmd.ts";
 import type { ConfigView } from "../../lib/evidence/gitcmd.ts";
 import { steps } from "../lib/hookkit/steps.ts";
@@ -80,7 +80,6 @@ const ADD_INTERACTIVE_LONG_OPTIONS: ReadonlySet<string> = new Set(["--patch", "-
 const ADD_INTERACTIVE_SHORT_FLAGS: ReadonlySet<string> = new Set(["p", "i", "e"]);
 const INDEX_FILE_VARIABLE = "GIT_INDEX_FILE";
 const CONFIG_VARIABLE_PREFIX = "GIT_CONFIG_";
-const PUSH_ROUTING_KEY_PREFIXES = ["remote.", "branch."];
 const INDEX_COPY_PREFIX = "keel-index-";
 const NOT_STAGING = "not-staging";
 const UNREPLAYABLE = "unreplayable";
@@ -893,7 +892,7 @@ interface PushConfigView extends ConfigView {
 
 function pushConfigView(gitGlobals: readonly string[], step: Step): PushConfigView {
   const overrides = configOverrides(gitGlobals);
-  const commandVariables = new Map([...step.expansion, ...step.environment]);
+  const commandVariables = step.environment;
   const named = new Set(overrides.settings.flatMap((setting) => "variable" in setting ? [setting.variable] : []));
   const read = [...commandVariables].filter(([name]) => named.has(name) || name.startsWith(CONFIG_VARIABLE_PREFIX));
   const settingValue = (setting: ConfigSetting): string =>
@@ -902,10 +901,6 @@ function pushConfigView(gitGlobals: readonly string[], step: Step): PushConfigVi
     isRunTimeWord(setting.key) || (routesPushes(setting.key) && isRunTimeWord(settingValue(setting))))
     || read.some(([name, value]) => name.startsWith(CONFIG_VARIABLE_PREFIX) && isRunTimeWord(value));
   return { configArgs: overrides.configArgs, env: { ...process.env, ...Object.fromEntries(read) }, routingDecidedAtRunTime };
-}
-
-function routesPushes(key: string): boolean {
-  return PUSH_ROUTING_KEY_PREFIXES.some((prefix) => key.toLowerCase().startsWith(prefix));
 }
 
 function isRunTimeWord(word: string): boolean {

@@ -16,7 +16,7 @@ import { AttributeError, describeError, pythonTypeName, RecursionError, ValueErr
 import { readStdin, writeStderr } from "../lib/hookkit/stdio.ts";
 import {
   attachedGhRepo, CONFIG_OVERRIDE_OPTIONS, configKey, dashedGitSubcommand, GH_REPO_OPTIONS, ghSubcommandArgv, gitDirectory, gitSubcommandIndex, interpretPush,
-  isConfigRead, nextWord,
+  isConfigRead, nextWord, routesPushes,
 } from "../lib/hookkit/gitargs.ts";
 import { RUN_TIME_WORD_RE } from "../lib/hookkit/commands.ts";
 import type { SimpleCommand } from "../lib/hookkit/commands.ts";
@@ -110,8 +110,6 @@ const MERGE_VALUE_FLAGS: ReadonlySet<string> = new Set(["-A", "--author-email", 
 const REPOINTING_OPTIONS: ReadonlySet<string> = new Set(["--git-dir", "--work-tree"]);
 const REPOINTING_VARIABLES = ["GIT_DIR", "GIT_WORK_TREE"];
 const GH_DEFAULT_VIEW_OPTIONS: ReadonlySet<string> = new Set(["-v", "--view"]);
-const PUSH_ROUTING_SECTIONS: ReadonlySet<string> =
-  new Set(["remote", "branch", "url", "push", "include", "includeif", "submodule"]);
 const RECURSION_LEAVING_SUBMODULES_UNPUSHED: ReadonlySet<string> = new Set(["check", "no", "false", "off", "0"]);
 const GIT_CONFIG_KEY_MISSING = 1;
 const CONFIG_VARIABLE_PREFIX = "GIT_CONFIG";
@@ -700,10 +698,6 @@ function writesPushRouting(configArgs: string[]): boolean {
   if (isConfigRead(configArgs)) return false;
   const key = configKey(configArgs);
   return key === null || routesPushes(key);
-}
-
-function routesPushes(key: string): boolean {
-  return PUSH_ROUTING_SECTIONS.has(partition(key, ".")[0].toLowerCase());
 }
 
 export function parsePush(words: string[], args: string[], workdir: string): Push {

@@ -20,11 +20,13 @@ const MAX_TURNS = 20
 const ALLOWED_TOOLS = "Workflow,Skill,Read,Grep,Glob,Bash"
 const DENIED_TOOLS = "Edit,Write,NotebookEdit,WebFetch,WebSearch"
 const DETAIL_EXCERPT_CHARS = 200
+const WAIT_FOR_BACKGROUND_WORKFLOW = { CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS: "0" }
 
 export class BuildError extends Error {}
 
 export interface ReviewRun {
   streamText: string
+  stderrText: string
   workflowRecord: JsonObject | null
   exitCode: number
   timedOut: boolean
@@ -93,12 +95,12 @@ export function runReview(reviewCase: ReviewCase, command: string[], configDir: 
   const parent = resolveLinks(fs.mkdtempSync(path.join(os.tmpdir(), "tmp")))
   try {
     const { repo, base, head } = buildCaseRepo(reviewCase, parent)
-    const claudeRun = runClaude(command, reviewPrompt(reviewCase, repo, base, head), repo, timeoutSeconds)
+    const claudeRun = runClaude(command, reviewPrompt(reviewCase, repo, base, head), repo, timeoutSeconds, WAIT_FOR_BACKGROUND_WORKFLOW)
     const projectDir = projectDirFor(repo, configDir)
     const sessionId = summarizeStream(splitLines(claudeRun.streamText)).init?.["session_id"]
     const record = findWorkflowRecord(projectDir, typeof sessionId === "string" ? sessionId : null)
     fs.rmSync(projectDir, { recursive: true, force: true })
-    return { streamText: claudeRun.streamText, workflowRecord: record, exitCode: claudeRun.exitCode, timedOut: claudeRun.timedOut, repo }
+    return { streamText: claudeRun.streamText, stderrText: claudeRun.stderrText, workflowRecord: record, exitCode: claudeRun.exitCode, timedOut: claudeRun.timedOut, repo }
   } finally {
     fs.rmSync(parent, { recursive: true, force: true })
   }

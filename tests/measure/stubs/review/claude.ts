@@ -16,6 +16,7 @@ interface Round {
   result?: unknown
   sleep?: number
   exit?: number
+  stderr?: string
 }
 
 const SCENARIO_DIR = process.env["KEEL_TEST_SCENARIOS"] as string
@@ -49,12 +50,13 @@ function sleep(seconds: number): void {
 function main(): number {
   const prompt = fs.readFileSync(0, "utf8")
   const callIndex = previousCalls()
-  fs.appendFileSync(CALLS_LOG, JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd(), prompt }) + "\n")
+  fs.appendFileSync(CALLS_LOG, JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd(), prompt, bgWaitCeiling: process.env["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] ?? null }) + "\n")
   const rounds = (JSON.parse(fs.readFileSync(path.join(SCENARIO_DIR, "review.json"), "utf8")) as { rounds: Round[] }).rounds
   const round = rounds[callIndex % rounds.length] as Round
   const sessionId = `session-${callIndex}`
   fs.writeSync(1, JSON.stringify({ type: "system", subtype: "init", session_id: sessionId, model: "stub-model" }) + "\n")
   recordsOf(round).forEach((record, index) => writeRecord(sessionId, index, record))
+  if (round.stderr !== undefined) fs.writeSync(2, round.stderr)
   sleep(round.sleep ?? 0)
   fs.writeSync(1, JSON.stringify({ type: "result", subtype: "success", result: "VERDICT: done" }) + "\n")
   return round.exit ?? 0

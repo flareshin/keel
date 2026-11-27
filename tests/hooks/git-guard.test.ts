@@ -2094,6 +2094,16 @@ describe("ForcePushTest", () => {
     assertPassed(guard("git push --force-with-lease origin feature", repo));
   });
 
+  it("push_namesOnlyTheAlwaysProtectedBranches_whenRoutingIsDecidedAtRunTimeAndTheRegistryNamesNoBase", () => {
+    const rows = ["", "example/app\toff\t-\t-\tnone\n"];
+    for (const row of rows) {
+      sandbox.write(join(sandbox.overlay, "gated-repos.tsv"), "origin\tgate\tintegration_base\trisk_rules\ttests\n" + row);
+      const result = guard('git -c "remote.origin.push=$MAPPING" push --force-with-lease origin feature', repo);
+      assertDenied(result, "F-force-push");
+      assert.ok(result.stderr.includes("--force-with-lease onto main, master is"), JSON.stringify(row) + result.stderr);
+    }
+  });
+
   it("push_failsClosed_whenTheRegistryHasAGateValueShipGateRejects", () => {
     sandbox.write(join(sandbox.overlay, "gated-repos.tsv"),
       "origin\tgate\tintegration_base\trisk_rules\ttests\nexample/app\tbogus\tdevelop\t-\trequired\n");

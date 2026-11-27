@@ -1,4 +1,4 @@
-import { pathToFileURL } from "node:url";
+import { withPreload } from "./preload.ts";
 
 export const FROZEN_NOW_VARIABLE = "KEEL_TEST_FROZEN_NOW";
 
@@ -22,7 +22,5 @@ function freezeClockAt(moment: number): void {
 }
 
 export function frozenClockEnv(moment: string): Record<string, string> {
-  const preload = `--import=${pathToFileURL(import.meta.filename).href}`;
-  const inherited = process.env["NODE_OPTIONS"];
-  return { [FROZEN_NOW_VARIABLE]: moment, NODE_OPTIONS: inherited ? `${inherited} ${preload}` : preload };
+  return withPreload(import.meta.filename, { [FROZEN_NOW_VARIABLE]: moment });
 }

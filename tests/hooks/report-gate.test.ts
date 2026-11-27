@@ -8,6 +8,8 @@ import {
 } from "./helpers.ts";
 import type { Fire, HookResult } from "./helpers.ts";
 import { MAX_JSON_DEPTH } from "../../measure/lib/measurekit/json.ts";
+import { loadScaledMs } from "../load.ts";
+import { loggedSleeps, sleepLogEnv } from "../sleep-log.ts";
 import {
   cliTimeoutSeconds, EVIDENCE_DEADLINE_SECONDS, evidenceMessage, hasEvidenceToken, REPORT_END, REPORT_START, withoutReportMarkers,
 } from "../../hooks/report-gate/report-gate.ts";
@@ -48,6 +50,12 @@ function stop(message: string | null, options: { toolUses?: ToolUse[]; stopHookA
   if (options.agentType === null) delete payload["agent_type"];
   else if (options.agentType !== undefined) payload["agent_type"] = options.agentType;
   return sandbox.runHook(REPORT_GATE, { payload });
+}
+
+function logSleeps(): () => number[] {
+  const path = join(sandbox.root, "sleeps.log");
+  Object.assign(sandbox.env, sleepLogEnv(path));
+  return () => loggedSleeps(path);
 }
 
 function contractMisses(): Fire[] {
@@ -604,25 +612,29 @@ describe("SubagentStopTest", () => {
     await new Promise((resolve) => setTimeout(resolve, LATE_REPORT_MS));
     appendToolUse(path, ["StructuredOutput", { x: 1 }]);
     assert.equal(await exited, 0);
-    assert.ok(Date.now() - started < REREAD_WINDOW_MS, `took ${Date.now() - started} ms`);
+    assert.ok(Date.now() - started < loadScaledMs(REREAD_WINDOW_MS), `took ${Date.now() - started} ms`);
     assert.deepEqual(contractMisses(), []);
   });
 
+  it("stop_waitsForALateReport_whenNeitherThePayloadNorTheTurnStateCarriesOne", () => {
+    const sleeps = logSleeps();
+    stop(null, { toolUses: [editIn(scope, "a.py")] });
+    assert.ok(sleeps().length > 0, "the hook never slept, so the sleep log cannot show a wait");
+  });
+
   it("stop_returnsWithoutWaitingForALateReport_whenThePayloadCarriesTheMessage", () => {
-    const started = Date.now();
+    const sleeps = logSleeps();
     const result = stop("Changed it.", { toolUses: [editIn(scope, "a.py")] });
-    const elapsed = Date.now() - started;
     assert.equal(result.json().decision, "block");
-    assert.ok(elapsed < REREAD_WINDOW_MS, `took ${elapsed} ms`);
+    assert.deepEqual(sleeps(), []);
   });
 
   it("stop_returnsWithoutWaitingForALateReport_whenTheTurnStateRecordsAHandback", () => {
     handback(PASS_REPORT);
-    const started = Date.now();
+    const sleeps = logSleeps();
     const result = stop(null, { toolUses: [editIn(scope, "a.py")] });
-    const elapsed = Date.now() - started;
     assert.equal(result.code, 0);
-    assert.ok(elapsed < REREAD_WINDOW_MS, `took ${elapsed} ms`);
+    assert.deepEqual(sleeps(), []);
     assert.deepEqual(contractMisses(), []);
   });
 
@@ -800,6 +812,7 @@ describe("StructuredReportEvidenceTest", () => {
     ["ALineWrittenAsText", '[{"file": "src/a.py", "line": "12"}]'],
     ["AFractionalLine", '[{"file": "src/a.py", "line": 1.5}]'],
     ["ABlankFile", '[{"file": "  ", "line": 12}]'],
+    ["AFileOfOnlyAByteOrderMark", '[{"file": "\\ufeff", "line": 12}]'],
   ] as const;
 
   for (const [flaw, report] of UNUSABLE_FINDINGS) {
@@ -847,6 +860,10 @@ describe("EvidenceDeadlineTest", () => {
 
   it("cliTimeoutSeconds_roundsDownToWholeSeconds_whenWhatIsLeftIsFractional", () => {
     assert.equal(cliTimeoutSeconds(EVIDENCE_DEADLINE_SECONDS - 7.4), 7);
+  });
+
+  it("cliTimeoutSeconds_stillMakesTheCall_whenExactlyOneSecondOfTheDeadlineIsLeft", () => {
+    assert.equal(cliTimeoutSeconds(EVIDENCE_DEADLINE_SECONDS - 1), 1);
   });
 
   it("cliTimeoutSeconds_skipsTheCall_whenLessThanASecondOfTheDeadlineIsLeft", () => {

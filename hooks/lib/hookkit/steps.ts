@@ -2,10 +2,8 @@ import { partition } from "./text.ts";
 import { commandName, unwrap } from "./commands.ts";
 import type { Assignment, Invocation, SimpleCommand } from "./commands.ts";
 import { parseCommands } from "./parser.ts";
-import { callValue, expandVariables, resolveDirectory } from "./variables.ts";
+import { callValue, expandVariables, PREVIOUS_DIRECTORY, resolveDirectory } from "./variables.ts";
 import type { Variables } from "./variables.ts";
-
-const PREVIOUS_DIRECTORY = "OLDPWD";
 
 export class Step {
   argv: string[];
@@ -61,6 +59,7 @@ class ShellScope {
   exported: Variables;
   variables: Variables = new Map();
   pushed: string[] = [];
+  previous: string | null = null;
 
   constructor(directory: string, exported: Variables) {
     this.directory = directory;
@@ -74,6 +73,7 @@ class ShellScope {
   follow(invocation: Invocation): void {
     const name = invocation.name;
     const args = invocation.argv.slice(1);
+    if (namesPreviousDirectory(invocation)) this.previous = null;
     if (name === "cd") {
       this.moveTo(this.changedDirectory(args));
     } else if (name === "pushd" && args.length > 0) {
@@ -113,13 +113,18 @@ class ShellScope {
   }
 
   private moveTo(directory: string): void {
-    const holder = this.exported.has(PREVIOUS_DIRECTORY) ? this.exported : this.variables;
-    holder.set(PREVIOUS_DIRECTORY, this.directory);
+    this.previous = this.directory;
     this.directory = directory;
   }
 
   private changedDirectory(args: readonly string[]): string {
     const target = args.length > 0 ? (args[0] ?? "") : "~";
-    return resolveDirectory(this.directory, target === "-" ? "$" + PREVIOUS_DIRECTORY : target, this.expansion());
+    if (target !== "-") return resolveDirectory(this.directory, target, this.expansion());
+    return this.previous ?? resolveDirectory(this.directory, "$" + PREVIOUS_DIRECTORY, new Map());
   }
+}
+
+function namesPreviousDirectory(invocation: Invocation): boolean {
+  const named = (word: string) => word === PREVIOUS_DIRECTORY || word.startsWith(PREVIOUS_DIRECTORY + "=");
+  return invocation.assignments.some(([variable]) => variable === PREVIOUS_DIRECTORY) || invocation.argv.slice(1).some(named);
 }

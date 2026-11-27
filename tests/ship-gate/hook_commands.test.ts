@@ -757,14 +757,19 @@ describe('HookBehaviorTest', () => {
     assert.equal(intoTool.rc, 0, intoTool.stderr + intoTool.stdout);
   });
 
-  test('push_failsClosed_whenCdDashHasNoDirectoryToReturnTo', (t) => {
+  test('push_failsClosed_whenCdDashHasNoDirectoryToReturnToOrTheCallNamesOldpwd', (t) => {
     const sandbox = new Sandbox(t);
     const repo = sandbox.clone('acme', 'app');
     repo.branch('feature');
     repo.commit(LOGIC_WITH_TEST);
-    const run = sandbox.push(repo, 'cd - && git push origin feature');
-    assert.equal(run.rc, 2, run.stderr + run.stdout);
-    assert.ok(run.stderr.includes('GateError: not a git repository'), run.stderr);
+    const tool = sandbox.clone('acme', 'tool');
+    for (const command of ['cd - && git push origin feature',
+      `cd /tmp; OLDPWD=${shlexQuote(tool.path)}; cd -; git push origin feature`,
+      `bash -c ${shlexQuote(`cd /tmp && OLDPWD=${tool.path} cd - && git push origin feature`)}`]) {
+      const run = sandbox.push(repo, command);
+      assert.equal(run.rc, 2, command + run.stderr + run.stdout);
+      assert.ok(run.stderr.includes('GateError: not a git repository'), run.stderr);
+    }
   });
 
   test('dryRunPush_passes_whenItsDirectoryIsResolvedOnlyAtRunTime', (t) => {
@@ -784,6 +789,9 @@ describe('HookBehaviorTest', () => {
       assert.ok(run.stderr.includes('GateError: not a git repository'), run.stderr);
       assert.ok(run.stderr.includes('- [K1] next step: the gate reads `'), run.stderr);
     }
+    const unclear = sandbox.push(repo, 'git push --dry-run nowhere feature');
+    assert.equal(unclear.rc, 2, unclear.stderr + unclear.stdout);
+    assert.ok(unclear.stderr.includes('the push target `nowhere` resolves to no URL or existing path'), unclear.stderr);
   });
 
   test('unattributable_isDeniedAsUnattributableNotAsAnInternalError_whenWorkdirIsNotARepo', (t) => {

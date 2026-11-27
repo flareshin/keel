@@ -53,16 +53,20 @@ describe("StepsTest", () => {
       ["cd /a; cd -; cd -; git status", "/a"],
       ["pushd /b; cd -; git status", "/work"],
       ["cd /a; pushd /b; popd; cd -; git status", "/b"],
-      ["cd /a; OLDPWD=/x; cd -; git status", "/x"],
+      ["cd /a; OLDPWD=/x; cd /b; cd -; git status", "/a"],
     ] as const) {
       assert.equal(directoriesOf(stepViews(command), ["git", "status"])[0], expected, command);
     }
   });
 
-  it("steps_leaveCdDashUnresolved_whenTheCallHasNotChangedDirectory", () => {
+  it("steps_leaveCdDashUnresolved_whenTheCallHasNotChangedDirectoryOrNamesOldpwd", () => {
     for (const [command, expected] of [
       ["cd -; git status", "/work/$OLDPWD"],
       ["cd /a; bash -c 'cd -; git status'", "/a/$OLDPWD"],
+      ["cd /a; OLDPWD=/x; cd -; git status", "/a/$OLDPWD"],
+      ["cd /a; OLDPWD=/x cd -; git status", "/a/$OLDPWD"],
+      ["cd /a; export OLDPWD=/x; cd -; git status", "/a/$OLDPWD"],
+      ["cd /a; unset OLDPWD; cd -; git status", "/a/$OLDPWD"],
     ] as const) {
       assert.equal(directoriesOf(stepViews(command), ["git", "status"])[0], expected, command);
     }

@@ -3,10 +3,11 @@ import { WORD_CHARS } from "./text.ts";
 
 const VARIABLE_RE = new RegExp(String.raw`\$\{([${WORD_CHARS}]+)\}|\$([${WORD_CHARS}]+)`, "gu");
 export type Variables = Map<string, string>;
+export const PREVIOUS_DIRECTORY = "OLDPWD";
 
 export function resolveDirectory(directory: string, target: string, environment: Variables): string {
   const lookup = (name: string): string | undefined =>
-    callValue(name, directory, environment) ?? (name === "OLDPWD" ? undefined : environmentValue(name));
+    callValue(name, directory, environment) ?? (name === PREVIOUS_DIRECTORY ? undefined : environmentValue(name));
   return normalizePath(joinPath(directory, expandUser(expandVariables(target, lookup))));
 }
 

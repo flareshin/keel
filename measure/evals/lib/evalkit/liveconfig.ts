@@ -62,6 +62,10 @@ export function configFingerprint(configDir: string, keelHome: string, skill: st
   }
 }
 
+export function servedFilesRoot(configDir: string, keelHome: string): string {
+  return linkMode(configDir, keelHome) === "plugin" ? keelHome : configDir
+}
+
 export function projectDirFor(cwd: string, configDir: string): string {
   return path.join(configDir, "projects", resolveLinks(cwd).replace(PROJECT_SLUG_CHARS, "-"))
 }

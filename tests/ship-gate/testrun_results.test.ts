@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
 import { Sandbox } from './helpers.ts';
 import type { Run } from './helpers.ts';
 
+const NO_TESTS_RECOGNIZED = 4;
 const TREE_CHANGED = 7;
 const OUTPUT_STAYED_OPEN = 8;
 const FAILURES_RECOGNIZED = 6;
@@ -19,6 +20,39 @@ function lastLogRecord(sandbox: Sandbox): any {
 }
 
 describe('TestrunResultsTest', () => {
+  test('keelTest_saysNoSummaryRecognizedAndHintsAtQuiet_whenMvnQuietExitsZeroWithCountZero', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    const mvn = join(repo.path, 'mvnw');
+    writeFileSync(mvn, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    for (const argv of [[mvn, '-q', 'test'], [mvn, '--quiet', 'verify']]) {
+      const run = sandbox.keel(['test', '--', ...argv], { cwd: repo.path });
+      assert.equal(run.rc, NO_TESTS_RECOGNIZED, run.stderr);
+      assert.match(run.stderr, /keel test: no test summary recognized; no evidence written\n/);
+      assert.match(run.stderr, /keel test: -q hides surefire's 'Tests run:' line; rerun without -q\n/);
+    }
+  });
+
+  test('keelTest_givesNoQuietHint_whenANonMvnCommandExitsZeroWithCountZero', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    const run = sandbox.keel(['test', '--', 'bash', '-c', 'exit 0', 'x', '-q'], { cwd: repo.path });
+    assert.equal(run.rc, NO_TESTS_RECOGNIZED, run.stderr);
+    assert.match(run.stderr, /keel test: no test summary recognized; no evidence written\n/);
+    assert.doesNotMatch(run.stderr, /-q hides/);
+  });
+
+  test('keelTest_givesNoQuietHint_whenMvnWithoutQuietExitsZeroWithCountZero', (t) => {
+    const sandbox = new Sandbox(t);
+    const repo = sandbox.clone('acme', 'app');
+    const mvn = join(repo.path, 'mvnw');
+    writeFileSync(mvn, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    const run = sandbox.keel(['test', '--', mvn, 'test'], { cwd: repo.path });
+    assert.equal(run.rc, NO_TESTS_RECOGNIZED, run.stderr);
+    assert.match(run.stderr, /keel test: no test summary recognized; no evidence written\n/);
+    assert.doesNotMatch(run.stderr, /-q hides/);
+  });
+
   test('keelTest_exitsTreeChangedAndSaysWhy_whenAGreenCommandChangesTheTree', (t) => {
     const sandbox = new Sandbox(t);
     const repo = sandbox.clone('acme', 'app');
